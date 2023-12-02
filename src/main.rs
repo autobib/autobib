@@ -1,77 +1,94 @@
-use serde::{Deserialize, Serialize};
-use std::error::Error;
+mod db;
+mod record;
+mod share {
+    pub mod test;
+}
 
-mod arxiv;
+use biblatex::Entry;
 
-fn main() {
-    let args: Vec<String> = std::env::args().collect();
-    let repository = &args[1];
-    let id = &args[2];
-    let result = get_record(repository, id);
-    // Create an empty list of records
-    let mut records: Vec<Record> = Vec::new();
-    match result {
-        Ok(record) => {
-            println!("{:?}", record);
-            // Add the record to the list
-            records.push(record);
-            let yaml = serde_yaml::to_string(&records).unwrap();
-            std::fs::write(CACHE_FILE, yaml).unwrap();
-        }
-        Err(error) => match error {
-            RecordError::InvalidRepository => println!("Invalid repository"),
-            RecordError::InvalidId => println!("Invalid id"),
-            RecordError::Other(message) => println!("Other error: {}", message),
-        },
+use clap::Parser;
+use std::str::FromStr;
+
+use rusqlite::Result;
+
+use crate::db::RecordDatabase;
+use crate::record::RepoId;
+
+const DATABASE_FILE: &str = "cache.db";
+
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct Cli {
+    args: Vec<String>,
+}
+
+fn main() -> Result<(), RecordError> {
+    let cli = Cli::parse();
+
+    // Initialize database
+    let record_db = RecordDatabase::try_new(DATABASE_FILE)?;
+    test_populate_db(&record_db)?; // TODO: remove
+
+    // Collect all entries which are not null
+    let valid_entries: Vec<Entry> = cli
+        .args
+        .into_iter()
+        // parse the repo:id arguments
+        .filter_map(|input| match RepoId::from_str(&input) {
+            Ok(repo_id) => Some(repo_id),
+            Err(error) => {
+                eprintln!("{}", error);
+                None
+            }
+        })
+        .filter_map(|repo_id| {
+            record_db.get(&repo_id).map_or_else(
+                // error retrieving record
+                |err| {
+                    eprintln!("{}", err);
+                    None
+                },
+                |record_cache| {
+                    record_cache.record.or_else(|| {
+                        // null record
+                        eprintln!("Warning: '{}' is a null record!", repo_id);
+                        None
+                    })
+                },
+            )
+        })
+        .collect();
+
+    // print biblatex strings
+    for entry in valid_entries {
+        println!("{}", entry.to_biblatex_string())
     }
-    // let yaml = std::fs::read_to_string(CACHE_FILE).unwrap();
-    // let records: Vec<Record> = serde_yaml::from_str(&yaml).unwrap();
-    // println!("{:?}", records);
+
+    Ok(())
 }
 
-const CACHE_FILE: &str = "cache.yaml";
+use crate::record::{Record, RecordError};
+use biblatex::Bibliography;
 
-fn get_record(repository: &str, id: &str) -> Result<Record, RecordError> {
-    if repository == "arxiv" {
-        let validation_result = arxiv::validate_id(id);
-        if validation_result == ValidationResult::Invalid {
-            return Err(RecordError::InvalidId);
-        }
-        return arxiv::get_record(id);
-    } else {
-        return Err(RecordError::InvalidRepository);
-    }
-}
+/// Populate the database with some records for testing purposes.
+fn test_populate_db(record_db: &RecordDatabase) -> Result<(), RecordError> {
+    let raw = "@article{test:000, author = {Rutar, Alex and Wu, Peiran}, title = {Autobib}}";
+    let bibliography = Bibliography::parse(raw).unwrap();
+    let entry = bibliography.get("test:000").unwrap();
+    record_db.set_cached(
+        &RepoId::from_str("test:000").unwrap(),
+        &Record::new(Some(entry.clone())),
+    )?;
 
-#[derive(Debug, Serialize, Deserialize)]
-struct Record {
-    repository: String,
-    id: String,
-    title: String,
-    authors: Vec<String>,
-}
+    let raw2 = "@article{test:002, author = {Author, Test}, title = {A Sample Paper}}";
+    let bibliography2 = Bibliography::parse(raw2).unwrap();
+    let entry2 = bibliography2.get("test:002").unwrap();
+    record_db.set_cached(
+        &RepoId::from_str("test:002").unwrap(),
+        &Record::new(Some(entry2.clone())),
+    )?;
 
-#[derive(PartialEq, Eq, Debug, Serialize, Deserialize)]
-enum ValidationResult {
-    Valid,
-    Invalid,
-}
+    record_db.set_cached(&RepoId::from_str("test:001").unwrap(), &Record::new(None))?;
 
-#[derive(Debug, Serialize, Deserialize)]
-enum RecordError {
-    InvalidRepository,
-    InvalidId,
-    Other(String),
-}
-
-impl std::fmt::Display for RecordError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        todo!()
-    }
-}
-
-impl Error for RecordError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        None
-    }
+    Ok(())
 }
