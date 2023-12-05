@@ -4,7 +4,7 @@ use biblatex::{Bibliography, Entry};
 pub struct TestRecordSource;
 
 impl RecordSource for TestRecordSource {
-    const REPO: &'static str = "test";
+    const SOURCE_NAME: &'static str = "test";
 
     fn is_valid_id(&self, id: &str) -> bool {
         match id {
