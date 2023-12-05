@@ -54,23 +54,25 @@ pub struct RepoId {
     pub id: String,
 }
 
-/// A valid repo:id has precisely one colon `:`
 impl FromStr for RepoId {
     type Err = RecordError;
-    fn from_str(input: &str) -> Result<Self, Self::Err> {
-        let parts: Vec<&str> = input.split(':').collect();
 
-        if parts.len() == 2 {
-            let repo = parts[0].to_string();
-            let id = parts[1].to_string();
-            Ok(RepoId { repo, id })
-        } else {
-            Err(RecordError::InvalidRepoIdFormat(input.to_string()))
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        let first_colon_position = input.find(':');
+        match first_colon_position {
+            Some(p) => {
+                if p == 0 || p == input.len() - 1 {
+                    return Err(RecordError::InvalidRepoIdFormat(input.to_string()));
+                }
+                let repo = String::from(&input[0..p]);
+                let id = String::from(&input[p + 1..]);
+                Ok(RepoId { repo, id })
+            }
+            None => Err(RecordError::InvalidRepoIdFormat(input.to_string())),
         }
     }
 }
 
-/// Display as repo:id
 impl fmt::Display for RepoId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}:{}", self.repo, self.id)
