@@ -72,20 +72,20 @@ fn test_populate_db(record_db: &RecordDatabase) -> Result<(), RecordError> {
     let raw = "@article{test:000, author = {Rutar, Alex and Wu, Peiran}, title = {Autobib}}";
     let bibliography = Bibliography::parse(raw).unwrap();
     let entry = bibliography.get("test:000").unwrap();
-    record_db.set_cached(
-        &RepoId::from_str("test:000").unwrap(),
-        &Record::new(Some(entry.clone())),
-    )?;
+    record_db.set_cached(&Record::new(
+        RepoId::from_str("test:000").unwrap(),
+        Some(entry.clone()),
+    ))?;
 
     let raw2 = "@article{test:002, author = {Author, Test}, title = {A Sample Paper}}";
     let bibliography2 = Bibliography::parse(raw2).unwrap();
     let entry2 = bibliography2.get("test:002").unwrap();
-    record_db.set_cached(
-        &RepoId::from_str("test:002").unwrap(),
-        &Record::new(Some(entry2.clone())),
-    )?;
+    record_db.set_cached(&Record::new(
+        RepoId::from_str("test:002").unwrap(),
+        Some(entry2.clone()),
+    ))?;
 
-    record_db.set_cached(&RepoId::from_str("test:001").unwrap(), &Record::new(None))?;
+    record_db.set_cached(&Record::new(RepoId::from_str("test:001").unwrap(), None))?;
 
     Ok(())
 }

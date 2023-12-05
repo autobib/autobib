@@ -82,31 +82,34 @@ impl fmt::Display for RepoId {
 /// An individual record, which also caches non-existence of the entry.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Record {
+    pub repo_id: RepoId,
     pub record: Option<Entry>,
     pub accessed: DateTime<Local>,
 }
 
 impl Record {
-    pub fn new(record: Option<Entry>) -> Self {
+    pub fn new(repo_id: RepoId, record: Option<Entry>) -> Self {
         Self {
+            repo_id,
             record,
             accessed: Local::now(),
         }
     }
 
-    pub fn to_param<'a>(&'a self, repo_id: &RepoId) -> (String, String, &'a DateTime<Local>) {
+    pub fn to_param<'a>(&'a self) -> (String, String, &'a DateTime<Local>) {
         // TODO: proper error here
         (
-            repo_id.to_string(),
+            self.repo_id.to_string(),
             serde_json::to_string(&self.record).unwrap(),
             &self.accessed,
         )
     }
 
-    pub fn from_row(row: &rusqlite::Row) -> Result<Self, rusqlite::Error> {
-        let record_cache_str: String = row.get(0)?;
-        let accessed: DateTime<Local> = row.get(1)?;
+    pub fn from_row(repo_id: &RepoId, row: &rusqlite::Row) -> Result<Self, rusqlite::Error> {
+        let record_cache_str: String = row.get("record")?;
+        let accessed: DateTime<Local> = row.get("accessed")?;
         Ok(Record {
+            repo_id: repo_id.clone(),
             record: serde_json::from_str(&record_cache_str).unwrap(),
             accessed,
         })
