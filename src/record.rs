@@ -10,9 +10,9 @@ use std::string::ToString;
 /// Various failure modes for records.
 #[derive(Debug)]
 pub enum RecordError {
+    InvalidRepoIdFormat(String),
     InvalidRepository(RepoId),
     InvalidId(RepoId),
-    InvalidRepoIdFormat(String),
     DatabaseFailure(rusqlite::Error),
     Incomplete,
 }
@@ -26,15 +26,23 @@ impl From<rusqlite::Error> for RecordError {
 impl fmt::Display for RecordError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            RecordError::InvalidRepository(repo_id) => {
-                write!(f, "Warning: '{}' has invalid repo!", repo_id)
-            }
-            RecordError::InvalidId(repo_id) => write!(f, "Warning: '{}' has invalid id!", repo_id),
             RecordError::InvalidRepoIdFormat(input) => {
-                write!(f, "Warning: '{}' is an invalid repo:id!", input)
+                write!(
+                    f,
+                    "'{}' is not in the format of '<repository>:<id>'.",
+                    input
+                )
             }
+            RecordError::InvalidRepository(repo_id) => {
+                write!(f, "'{}' is not a valid repository.", repo_id.repo)
+            }
+            RecordError::InvalidId(repo_id) => write!(
+                f,
+                "'{}' is not a valid id in the repository '{}'.",
+                repo_id.id, repo_id.repo
+            ),
             RecordError::Incomplete => write!(f, "Incomplete record"),
-            RecordError::DatabaseFailure(error) => write!(f, "Error: Database failure: {}", error),
+            RecordError::DatabaseFailure(error) => write!(f, "Database failure: {}", error),
         }
     }
 }
