@@ -1,18 +1,15 @@
+use crate::db::RecordDatabase;
+use crate::record::RepoId;
+use biblatex::Entry;
+use clap::Parser;
+use rusqlite::Result;
+use std::str::FromStr;
+
 mod db;
 mod record;
 mod share {
     pub mod test;
 }
-
-use biblatex::Entry;
-
-use clap::Parser;
-use std::str::FromStr;
-
-use rusqlite::Result;
-
-use crate::db::RecordDatabase;
-use crate::record::RepoId;
 
 const DATABASE_FILE: &str = "cache.db";
 
