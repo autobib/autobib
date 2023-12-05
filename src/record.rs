@@ -34,12 +34,13 @@ impl fmt::Display for RecordError {
                 )
             }
             RecordError::InvalidSource(record_id) => {
-                write!(f, "'{}' is not a valid source.", record_id.source)
+                write!(f, "'{}' is not a valid source.", record_id.source())
             }
             RecordError::InvalidSubId(record_id) => write!(
                 f,
                 "'{}' is not a valid sub-id for the source '{}'.",
-                record_id.sub_id, record_id.source
+                record_id.sub_id(),
+                record_id.source()
             ),
             RecordError::Incomplete => write!(f, "Incomplete record"),
             RecordError::DatabaseFailure(error) => write!(f, "Database failure: {}", error),
@@ -50,8 +51,30 @@ impl fmt::Display for RecordError {
 /// A source (`source`) with corresponding identity (`sub_id`), such as arxiv:0123.4567
 #[derive(Debug, Clone, Hash, PartialEq, Eq, DeserializeFromStr, SerializeDisplay)]
 pub struct RecordId {
-    pub source: String,
-    pub sub_id: String,
+    pub full_id: String,
+    source_length: usize,
+}
+
+impl RecordId {
+    /// Create a new RecordId from a source and sub_id.
+    pub fn new(source: &str, sub_id: &str) -> Self {
+        let full_id = format!("{}:{}", source, sub_id);
+        let source_length = source.len();
+        Self {
+            full_id,
+            source_length,
+        }
+    }
+
+    /// Get the source part of the record id.
+    pub fn source(&self) -> &str {
+        &self.full_id[0..self.source_length]
+    }
+
+    /// Get the part of the record id after the source.
+    pub fn sub_id(&self) -> &str {
+        &self.full_id[self.source_length + 1..]
+    }
 }
 
 impl FromStr for RecordId {
@@ -64,9 +87,11 @@ impl FromStr for RecordId {
                 if p == 0 || p == input.len() - 1 {
                     return Err(RecordError::InvalidRecordIdFormat(input.to_string()));
                 }
-                let source = String::from(&input[0..p]);
-                let sub_id = String::from(&input[p + 1..]);
-                Ok(RecordId { source, sub_id })
+                // TODO: trim whitespace
+                Ok(RecordId {
+                    full_id: String::from(input),
+                    source_length: p,
+                })
             }
             None => Err(RecordError::InvalidRecordIdFormat(input.to_string())),
         }
@@ -75,41 +100,38 @@ impl FromStr for RecordId {
 
 impl fmt::Display for RecordId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}:{}", self.source, self.sub_id)
+        write!(f, "{}", self.full_id)
     }
 }
 
 /// An individual record, which also caches non-existence of the entry.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Record {
-    pub record_id: RecordId,
     pub record: Option<Entry>,
     pub accessed: DateTime<Local>,
 }
 
 impl Record {
-    pub fn new(record_id: RecordId, record: Option<Entry>) -> Self {
+    pub fn new(record: Option<Entry>) -> Self {
         Self {
-            record_id,
             record,
             accessed: Local::now(),
         }
     }
 
-    pub fn to_param<'a>(&'a self) -> (String, String, &'a DateTime<Local>) {
+    pub fn to_param<'a>(&'a self, record_id: &RecordId) -> (String, String, &'a DateTime<Local>) {
         // TODO: proper error here
         (
-            self.record_id.to_string(),
+            record_id.full_id.clone(),
             serde_json::to_string(&self.record).unwrap(),
             &self.accessed,
         )
     }
 
-    pub fn from_row(record_id: &RecordId, row: &rusqlite::Row) -> Result<Self, rusqlite::Error> {
+    pub fn from_row(row: &rusqlite::Row) -> Result<Self, rusqlite::Error> {
         let record_cache_str: String = row.get("record")?;
         let accessed: DateTime<Local> = row.get("accessed")?;
         Ok(Record {
-            record_id: record_id.clone(),
             record: serde_json::from_str(&record_cache_str).unwrap(),
             accessed,
         })
@@ -118,7 +140,7 @@ impl Record {
 
 /// Determine the record source corresponding to the name.
 pub fn lookup_record_source(record_id: &RecordId) -> Result<impl RecordSource, RecordError> {
-    match record_id.source.as_str() {
+    match record_id.source() {
         "test" => Ok(TestRecordSource {}),
         _ => Err(RecordError::InvalidSource(record_id.clone())),
     }

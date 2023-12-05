@@ -40,36 +40,35 @@ impl RecordDatabase {
             .prepare_cached("SELECT record, accessed FROM records WHERE rid = ?1")?;
 
         Ok(selector
-            .query_row([record_id.to_string()], |row| {
-                Record::from_row(record_id, row)
-            })
+            .query_row([record_id.full_id.clone()], Record::from_row)
             .optional()?)
     }
 
     /// Insert record_cache to source:sub_id.
-    pub fn set_cached(&self, record_cache: &Record) -> Result<(), RecordError> {
+    pub fn set_cached(
+        &self,
+        record_id: &RecordId,
+        record_cache: &Record,
+    ) -> Result<(), RecordError> {
         let mut insertor = self.conn.prepare_cached(
             "INSERT OR REPLACE INTO records (rid, record, accessed) values (?1, ?2, ?3)",
         )?;
 
-        insertor.execute(record_cache.to_param())?;
+        insertor.execute(record_cache.to_param(record_id))?;
 
         Ok(())
     }
 
     /// Get the record cache assocated with source:sub_id.
     pub fn get(&self, record_id: &RecordId) -> Result<Record, RecordError> {
-        match self.get_cached(record_id)? {
+        match self.get_cached(&record_id)? {
             Some(cached_record) => Ok(cached_record),
             None => {
-                let record_source = lookup_record_source(record_id)?;
+                let record_source = lookup_record_source(&record_id)?;
 
-                if record_source.is_valid_id(&record_id.sub_id) {
-                    let record_cache = Record::new(
-                        record_id.clone(),
-                        record_source.get_record(&record_id.sub_id)?,
-                    );
-                    self.set_cached(&record_cache)?;
+                if record_source.is_valid_id(record_id.sub_id()) {
+                    let record_cache = Record::new(record_source.get_record(record_id.sub_id())?);
+                    self.set_cached(record_id, &record_cache)?;
 
                     Ok(record_cache)
                 } else {
