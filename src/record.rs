@@ -115,7 +115,8 @@ pub fn lookup_record_source(repo_id: &RepoId) -> Result<impl RecordSource, Recor
 
 /// A RecordSource is, abstractly, a lookup function
 pub trait RecordSource {
+    const REPO: &'static str;
+
     fn is_valid_id(&self, id: &str) -> bool;
     fn get_record(&self, id: &str) -> Result<Option<Entry>, RecordError>;
-    fn repo(&self) -> String;
 }
