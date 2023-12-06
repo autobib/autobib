@@ -51,21 +51,11 @@ impl fmt::Display for RecordError {
 /// A source (`source`) with corresponding identity (`sub_id`), such as arxiv:0123.4567
 #[derive(Debug, Clone, Hash, PartialEq, Eq, DeserializeFromStr, SerializeDisplay)]
 pub struct RecordId {
-    pub full_id: String,
+    full_id: String,
     source_length: usize,
 }
 
 impl RecordId {
-    /// Create a new RecordId from a source and sub_id.
-    pub fn new(source: &str, sub_id: &str) -> Self {
-        let full_id = format!("{}:{}", source, sub_id);
-        let source_length = source.len();
-        Self {
-            full_id,
-            source_length,
-        }
-    }
-
     /// Get the source part of the record id.
     pub fn source(&self) -> &str {
         &self.full_id[0..self.source_length]
@@ -74,6 +64,11 @@ impl RecordId {
     /// Get the part of the record id after the source.
     pub fn sub_id(&self) -> &str {
         &self.full_id[self.source_length + 1..]
+    }
+
+    /// Get the full record id.
+    pub fn full_id(&self) -> &str {
+        &self.full_id
     }
 }
 
@@ -107,34 +102,18 @@ impl fmt::Display for RecordId {
 /// An individual record, which also caches non-existence of the entry.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Record {
-    pub record: Option<Entry>,
-    pub accessed: DateTime<Local>,
+    pub id: RecordId,
+    pub retrieved: DateTime<Local>,
+    pub entry: Option<Entry>,
 }
 
 impl Record {
-    pub fn new(record: Option<Entry>) -> Self {
+    pub fn new(record_id: RecordId, entry: Option<Entry>) -> Self {
         Self {
-            record,
-            accessed: Local::now(),
+            id: record_id,
+            retrieved: Local::now(),
+            entry,
         }
-    }
-
-    pub fn to_param<'a>(&'a self, record_id: &RecordId) -> (String, String, &'a DateTime<Local>) {
-        // TODO: proper error here
-        (
-            record_id.full_id.clone(),
-            serde_json::to_string(&self.record).unwrap(),
-            &self.accessed,
-        )
-    }
-
-    pub fn from_row(row: &rusqlite::Row) -> Result<Self, rusqlite::Error> {
-        let record_cache_str: String = row.get("record")?;
-        let accessed: DateTime<Local> = row.get("accessed")?;
-        Ok(Record {
-            record: serde_json::from_str(&record_cache_str).unwrap(),
-            accessed,
-        })
     }
 }
 
