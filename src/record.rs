@@ -1,7 +1,7 @@
 use crate::share::test::TestRecordSource;
 use biblatex::Entry;
-use chrono::{DateTime, Local};
-use serde::{Deserialize, Serialize};
+// use chrono::{DateTime, Local};
+// use serde::{Deserialize, Serialize};
 use serde_with::{DeserializeFromStr, SerializeDisplay};
 use std::fmt;
 use std::str::FromStr;
@@ -47,6 +47,12 @@ impl fmt::Display for RecordError {
         }
     }
 }
+
+// we probably want something like this
+// pub enum CitationKey {
+//     Alias(String),
+//     RecordId(String, usize),
+// }
 
 /// A source (`source`) with corresponding identity (`sub_id`), such as arxiv:0123.4567
 #[derive(Debug, Clone, Hash, PartialEq, Eq, DeserializeFromStr, SerializeDisplay)]
@@ -99,24 +105,7 @@ impl fmt::Display for RecordId {
     }
 }
 
-/// An individual record, which also caches non-existence of the entry.
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Record {
-    pub id: RecordId,
-    pub retrieved: DateTime<Local>,
-    pub entry: Option<Entry>,
-}
-
-impl Record {
-    pub fn new(record_id: RecordId, entry: Option<Entry>) -> Self {
-        Self {
-            id: record_id,
-            retrieved: Local::now(),
-            entry,
-        }
-    }
-}
-
+// TODO: this function does not actually work with more than one RecordSource...
 /// Determine the record source corresponding to the name.
 pub fn lookup_record_source(record_id: &RecordId) -> Result<impl RecordSource, RecordError> {
     match record_id.source() {
@@ -125,7 +114,7 @@ pub fn lookup_record_source(record_id: &RecordId) -> Result<impl RecordSource, R
     }
 }
 
-/// A RecordSource is, abstractly, a lookup function
+// TODO: improve this trait with more info on implementation
 pub trait RecordSource {
     const SOURCE_NAME: &'static str;
 
