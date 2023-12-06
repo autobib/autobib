@@ -50,16 +50,16 @@ impl RecordDatabase {
         record_id: &RecordId,
         record_cache: &Record,
     ) -> Result<(), RecordError> {
-        let mut insertor = self.conn.prepare_cached(
+        let mut stmt = self.conn.prepare_cached(
             "INSERT OR REPLACE INTO records (rid, record, accessed) values (?1, ?2, ?3)",
         )?;
 
-        insertor.execute(record_cache.to_param(record_id))?;
+        stmt.execute(record_cache.to_param(record_id))?;
 
         Ok(())
     }
 
-    /// Get the record cache assocated with source:sub_id.
+    /// Get the record cache associated with source:sub_id.
     pub fn get(&self, record_id: &RecordId) -> Result<Record, RecordError> {
         match self.get_cached(&record_id)? {
             Some(cached_record) => Ok(cached_record),
