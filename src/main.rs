@@ -1,77 +1,91 @@
-use serde::{Deserialize, Serialize};
-use std::error::Error;
+mod api;
+mod database;
+mod record;
+mod source;
 
-mod arxiv;
+use api::*;
+use biblatex::Bibliography;
+use clap::Parser;
+use rusqlite::Result;
+use std::str::FromStr;
+
+const DATABASE_FILE: &str = "cache.db";
+
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct Cli {
+    args: Vec<String>,
+}
 
 fn main() {
-    let args: Vec<String> = std::env::args().collect();
-    let repository = &args[1];
-    let id = &args[2];
-    let result = get_record(repository, id);
-    // Create an empty list of records
-    let mut records: Vec<Record> = Vec::new();
-    match result {
-        Ok(record) => {
-            println!("{:?}", record);
-            // Add the record to the list
-            records.push(record);
-            let yaml = serde_yaml::to_string(&records).unwrap();
-            std::fs::write(CACHE_FILE, yaml).unwrap();
-        }
-        Err(error) => match error {
-            RecordError::InvalidRepository => println!("Invalid repository"),
-            RecordError::InvalidId => println!("Invalid id"),
-            RecordError::Other(message) => println!("Other error: {}", message),
-        },
-    }
-    // let yaml = std::fs::read_to_string(CACHE_FILE).unwrap();
-    // let records: Vec<Record> = serde_yaml::from_str(&yaml).unwrap();
-    // println!("{:?}", records);
-}
+    let cli = Cli::parse();
 
-const CACHE_FILE: &str = "cache.yaml";
+    // Initialize database
+    let mut record_db = create_test_db().unwrap();
 
-fn get_record(repository: &str, id: &str) -> Result<Record, RecordError> {
-    if repository == "arxiv" {
-        let validation_result = arxiv::validate_id(id);
-        if validation_result == ValidationResult::Invalid {
-            return Err(RecordError::InvalidId);
-        }
-        return arxiv::get_record(id);
-    } else {
-        return Err(RecordError::InvalidRepository);
-    }
-}
+    // Collect all entries which are not null
+    let valid_entries: Vec<Entry> = cli
+        .args
+        .into_iter()
+        // parse the source:sub_id arguments
+        .filter_map(|input| match RecordId::from_str(&input) {
+            Ok(record_id) => Some(record_id),
+            Err(error) => {
+                eprintln!("{}", error);
+                None
+            }
+        })
+        .filter_map(|record_id| {
+            get_record(&mut record_db, record_id).map_or_else(
+                // error retrieving record
+                |err| {
+                    eprintln!("{}", err);
+                    None
+                },
+                |record| {
+                    record.data.or_else(|| {
+                        // null record
+                        eprintln!("Warning: '{}' is a null record!", record.id);
+                        None
+                    })
+                },
+            )
+        })
+        .collect();
 
-#[derive(Debug, Serialize, Deserialize)]
-struct Record {
-    repository: String,
-    id: String,
-    title: String,
-    authors: Vec<String>,
-}
-
-#[derive(PartialEq, Eq, Debug, Serialize, Deserialize)]
-enum ValidationResult {
-    Valid,
-    Invalid,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-enum RecordError {
-    InvalidRepository,
-    InvalidId,
-    Other(String),
-}
-
-impl std::fmt::Display for RecordError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        todo!()
+    // print biblatex strings
+    for entry in valid_entries {
+        println!("{}", entry.to_biblatex_string())
     }
 }
 
-impl Error for RecordError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        None
+/// Populate the database with some records for testing purposes.
+fn create_test_db() -> Result<RecordDatabase, RecordError> {
+    match std::fs::remove_file(DATABASE_FILE) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        _ => panic!("Testing database file has been overwritten!"),
     }
+
+    let mut record_db = RecordDatabase::create(DATABASE_FILE)?;
+
+    let raw = "@article{test:000, author = {Rutar, Alex and Wu, Peiran}, title = {Autobib}}";
+    let bibliography = Bibliography::parse(raw).unwrap();
+    let entry = bibliography.get("test:000").unwrap();
+    record_db.set_cached_data(&Record::new(
+        RecordId::from_str("test:000").unwrap(),
+        Some(entry.clone()),
+    ))?;
+
+    let raw2 = "@article{test:002, author = {Author, Test}, title = {A Sample Paper}}";
+    let bibliography2 = Bibliography::parse(raw2).unwrap();
+    let entry2 = bibliography2.get("test:002").unwrap();
+    record_db.set_cached_data(&Record::new(
+        RecordId::from_str("test:002").unwrap(),
+        Some(entry2.clone()),
+    ))?;
+
+    record_db.set_cached_data(&Record::new(RecordId::from_str("test:001").unwrap(), None))?;
+
+    Ok(record_db)
 }
