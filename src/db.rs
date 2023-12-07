@@ -55,7 +55,7 @@ impl RecordDatabase {
         })
     }
 
-    /// Check if database contains "<source>:<sub_id>".
+    /// Check if database contains '\<source\>:\<sub_id\>'.
     pub fn key(&self, record_id: &RecordId) -> Result<Option<usize>, rusqlite::Error> {
         let mut selector = self
             .conn
@@ -66,7 +66,7 @@ impl RecordDatabase {
             .optional()
     }
 
-    /// Get response for "<source>:<sub_id>", or NotFound.
+    /// Get response for '\<source\>:\<sub_id\>', or NotFound.
     pub fn get_cached_data(&self, record_id: RecordId) -> Result<CacheResponse, rusqlite::Error> {
         // First, try to get the key from CitationKeys
         match self.key(&record_id) {
