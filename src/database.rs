@@ -43,6 +43,9 @@ impl RecordDatabase {
             (),
         )?;
 
+        // Enable foreign keys
+        tx.execute("PRAGMA foreign_keys = ON;", ())?;
+
         Ok(())
     }
 
