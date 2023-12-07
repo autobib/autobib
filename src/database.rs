@@ -1,17 +1,15 @@
 use crate::record::*;
-use rusqlite::{Connection, OptionalExtension, Result, Transaction};
+use rusqlite::{Connection, OpenFlags, OptionalExtension, Result, Transaction};
 
 pub struct RecordDatabase {
     conn: Connection,
 }
 
 impl RecordDatabase {
-    /// Create the underlying database and tables
-    pub fn create(db_file: &str) -> Result<Self, RecordError> {
-        let conn = Connection::open(db_file)?;
 
+    fn initialize_database<'a>(tx: &Transaction<'a>) -> Result<(), rusqlite::Error> {
         // Table to store records
-        conn.execute(
+        tx.execute(
             "CREATE TABLE Records (
                  key INTEGER PRIMARY KEY,
                  record_id TEXT NOT NULL,
@@ -22,7 +20,7 @@ impl RecordDatabase {
         )?;
 
         // Table to store citation keys
-        conn.execute(
+        tx.execute(
             "CREATE TABLE CitationKeys (
                  name TEXT NOT NULL PRIMARY KEY,
                  record_key INTEGER,
@@ -32,13 +30,24 @@ impl RecordDatabase {
         )?;
 
         // Table to store records which do not exist
-        conn.execute(
+        tx.execute(
             "CREATE TABLE NullRecords (
                  record_id TEXT NOT NULL PRIMARY KEY,
                  attempted TEXT NOT NULL
              )",
             (),
         )?;
+
+        Ok(())
+    }
+
+    /// Create the underlying database and tables
+    pub fn create(db_file: &str) -> Result<Self, RecordError> {
+        let mut conn = Connection::open(db_file)?;
+
+        let tx = conn.transaction()?;
+        Self::initialize_database(&tx)?;
+        tx.commit()?;
 
         Ok(RecordDatabase { conn })
     }
@@ -48,7 +57,12 @@ impl RecordDatabase {
     pub fn open(db_file: &str) -> Result<Self, rusqlite::Error> {
         // TODO: validation for consistency?
         Ok(RecordDatabase {
-            conn: Connection::open(db_file)?,
+            conn: Connection::open_with_flags(
+                db_file,
+                OpenFlags::SQLITE_OPEN_READ_WRITE
+                    | OpenFlags::SQLITE_OPEN_URI
+                    | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+            )?,
         })
     }
 
