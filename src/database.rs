@@ -133,8 +133,8 @@ impl RecordDatabase {
         }))
     }
 
-    fn perform_set_transaction<'a>(
-        tx: &mut Transaction<'a>,
+    fn perform_set_cache_transaction(
+        tx: &Transaction,
         record: &Record,
     ) -> Result<(), rusqlite::Error> {
         match &record.data {
@@ -172,10 +172,8 @@ impl RecordDatabase {
     /// Insert record to the Records table and use the resulting key to set the corresponding
     /// CitationKeys entry.
     pub fn set_cached_data(&mut self, record: &Record) -> Result<(), rusqlite::Error> {
-        let mut tx = self.conn.transaction()?;
-
-        Self::perform_set_transaction(&mut tx, &record)?;
-
+        let tx = self.conn.transaction()?;
+        Self::perform_set_cache_transaction(&tx, &record)?;
         tx.commit()
     }
 }
