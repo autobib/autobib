@@ -42,7 +42,7 @@ impl RecordDatabase {
     }
 
     /// Create the underlying database and tables
-    pub fn create(db_file: &str) -> Result<Self, RecordError> {
+    pub fn create(db_file: &str) -> Result<Self, rusqlite::Error> {
         let mut conn = Connection::open(db_file)?;
 
         let tx = conn.transaction()?;
