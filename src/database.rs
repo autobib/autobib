@@ -1,8 +1,5 @@
-use crate::record::{lookup_record_source, RecordError, RecordId, RecordSource};
-use biblatex::Entry;
-use chrono::{DateTime, Local};
+use crate::record::*;
 use rusqlite::{Connection, OptionalExtension, Result, Transaction};
-use std::string::ToString;
 
 pub struct RecordDatabase {
     conn: Connection,
@@ -56,20 +53,20 @@ impl RecordDatabase {
     }
 
     /// Check if database contains '\<source\>:\<sub_id\>'.
-    pub fn key(&self, record_id: &RecordId) -> Result<Option<usize>, rusqlite::Error> {
+    fn get_record_key(&self, record_id: &RecordId) -> Result<Option<usize>, rusqlite::Error> {
         let mut selector = self
             .conn
             .prepare_cached("SELECT record_key FROM CitationKeys WHERE name = ?1")?;
 
         selector
-            .query_row([record_id.to_string()], |row| row.get("record_key"))
+            .query_row([record_id.full_id()], |row| row.get("record_key"))
             .optional()
     }
 
     /// Get response for '\<source\>:\<sub_id\>', or NotFound.
     pub fn get_cached_data(&self, record_id: RecordId) -> Result<CacheResponse, rusqlite::Error> {
         // First, try to get the key from CitationKeys
-        match self.key(&record_id) {
+        match self.get_record_key(&record_id) {
             // If the key exists, get the corresponding record
             Ok(Some(key)) => {
                 let mut record_selector = self
@@ -79,7 +76,7 @@ impl RecordDatabase {
 
                 match record_rows.next() {
                     // Valid record
-                    Ok(Some(row)) => Self::cache_response_from_row(record_id, row),
+                    Ok(Some(row)) => Self::cache_response_from_record_row(record_id, row),
                     Ok(None) => {
                         panic!("A key in CitationKeys does not correspond to a row in Records!")
                     }
@@ -108,7 +105,7 @@ impl RecordDatabase {
         }
     }
 
-    fn cache_response_from_row(
+    fn cache_response_from_record_row(
         record_id: RecordId,
         row: &rusqlite::Row,
     ) -> Result<CacheResponse, rusqlite::Error> {
@@ -166,46 +163,6 @@ impl RecordDatabase {
         Self::perform_set_transaction(&mut tx, &record)?;
 
         tx.commit()
-    }
-
-    /// Get the record associated with record_id
-    pub fn get(&mut self, record_id: RecordId) -> Result<Record, RecordError> {
-        match self.get_cached_data(record_id)? {
-            CacheResponse::Found(cached_record) => Ok(cached_record),
-            CacheResponse::NotFound(record_id) => {
-                let record_source = lookup_record_source(&record_id)?;
-
-                if record_source.is_valid_id(record_id.sub_id()) {
-                    match record_source.get_record(record_id.sub_id()) {
-                        Ok(Some(entry)) => {
-                            let record = Record::new(record_id, Some(entry));
-                            self.set_cached_data(&record)?;
-                            Ok(record)
-                        }
-                        Ok(None) => Ok(Record::new(record_id, None)),
-                        Err(err) => Err(err),
-                    }
-                } else {
-                    Err(RecordError::InvalidSubId(record_id))
-                }
-            }
-        }
-    }
-}
-
-pub struct Record {
-    pub id: RecordId,
-    pub data: Option<Entry>,
-    pub modified: DateTime<Local>,
-}
-
-impl Record {
-    pub fn new(id: RecordId, data: Option<Entry>) -> Self {
-        Self {
-            id,
-            data,
-            modified: Local::now(),
-        }
     }
 }
 

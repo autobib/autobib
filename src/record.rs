@@ -1,11 +1,25 @@
-use crate::share::test::TestRecordSource;
-use biblatex::Entry;
-// use chrono::{DateTime, Local};
+pub use biblatex::Entry;
+pub use chrono::{DateTime, Local};
 // use serde::{Deserialize, Serialize};
 use serde_with::{DeserializeFromStr, SerializeDisplay};
 use std::fmt;
 use std::str::FromStr;
-use std::string::ToString;
+
+pub struct Record {
+    pub id: RecordId,
+    pub data: Option<Entry>,
+    pub modified: DateTime<Local>,
+}
+
+impl Record {
+    pub fn new(id: RecordId, data: Option<Entry>) -> Self {
+        Self {
+            id,
+            data,
+            modified: Local::now(),
+        }
+    }
+}
 
 /// Various failure modes for records.
 #[derive(Debug)]
@@ -54,7 +68,7 @@ impl fmt::Display for RecordError {
 //     RecordId(String, usize),
 // }
 
-/// A source (`source`) with corresponding identity (`sub_id`), such as arxiv:0123.4567
+/// A source (`source`) with corresponding identity (`sub_id`), such as 'arxiv:0123.4567'
 #[derive(Debug, Clone, Hash, PartialEq, Eq, DeserializeFromStr, SerializeDisplay)]
 pub struct RecordId {
     full_id: String,
@@ -103,21 +117,4 @@ impl fmt::Display for RecordId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.full_id)
     }
-}
-
-// TODO: this function does not actually work with more than one RecordSource...
-/// Determine the record source corresponding to the name.
-pub fn lookup_record_source(record_id: &RecordId) -> Result<impl RecordSource, RecordError> {
-    match record_id.source() {
-        "test" => Ok(TestRecordSource {}),
-        _ => Err(RecordError::InvalidSource(record_id.clone())),
-    }
-}
-
-// TODO: improve this trait with more info on implementation
-pub trait RecordSource {
-    const SOURCE_NAME: &'static str;
-
-    fn is_valid_id(&self, id: &str) -> bool;
-    fn get_record(&self, id: &str) -> Result<Option<Entry>, RecordError>;
 }

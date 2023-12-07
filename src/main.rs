@@ -1,15 +1,13 @@
-use crate::db::RecordDatabase;
-use crate::record::RecordId;
-use biblatex::Entry;
+mod api;
+mod database;
+mod record;
+mod source;
+
+use api::*;
+use biblatex::Bibliography;
 use clap::Parser;
 use rusqlite::Result;
 use std::str::FromStr;
-
-mod db;
-mod record;
-mod share {
-    pub mod test;
-}
 
 const DATABASE_FILE: &str = "cache.db";
 
@@ -19,7 +17,7 @@ struct Cli {
     args: Vec<String>,
 }
 
-fn main() -> Result<(), RecordError> {
+fn main() {
     let cli = Cli::parse();
 
     // Initialize database
@@ -38,7 +36,7 @@ fn main() -> Result<(), RecordError> {
             }
         })
         .filter_map(|record_id| {
-            record_db.get(record_id).map_or_else(
+            get_record(&mut record_db, record_id).map_or_else(
                 // error retrieving record
                 |err| {
                     eprintln!("{}", err);
@@ -59,13 +57,7 @@ fn main() -> Result<(), RecordError> {
     for entry in valid_entries {
         println!("{}", entry.to_biblatex_string())
     }
-
-    Ok(())
 }
-
-use crate::db::Record;
-use crate::record::RecordError;
-use biblatex::Bibliography;
 
 /// Populate the database with some records for testing purposes.
 fn create_test_db() -> Result<RecordDatabase, RecordError> {

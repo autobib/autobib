@@ -1,4 +1,4 @@
-use crate::record::{RecordError, RecordSource};
+use super::*;
 use biblatex::{Bibliography, Entry};
 
 pub struct TestRecordSource;
