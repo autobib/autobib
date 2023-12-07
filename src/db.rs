@@ -17,8 +17,8 @@ impl RecordDatabase {
         conn.execute(
             "CREATE TABLE Records (
                  key INTEGER PRIMARY KEY,
-                 record_id TEXT,
-                 data TEXT,
+                 record_id TEXT NOT NULL,
+                 data TEXT NOT NULL,
                  modified TEXT NOT NULL
              )",
             (),
@@ -37,7 +37,7 @@ impl RecordDatabase {
         // Table to store records which do not exist
         conn.execute(
             "CREATE TABLE NullRecords (
-                 record_id TEXT PRIMARY KEY,
+                 record_id TEXT NOT NULL PRIMARY KEY,
                  attempted TEXT NOT NULL
              )",
             (),
