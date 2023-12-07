@@ -69,6 +69,12 @@ use biblatex::Bibliography;
 
 /// Populate the database with some records for testing purposes.
 fn create_test_db() -> Result<RecordDatabase, RecordError> {
+    match std::fs::remove_file(DATABASE_FILE) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        _ => panic!("Testing database file has been overwritten!"),
+    }
+
     let mut record_db = RecordDatabase::create(DATABASE_FILE)?;
 
     let raw = "@article{test:000, author = {Rutar, Alex and Wu, Peiran}, title = {Autobib}}";
