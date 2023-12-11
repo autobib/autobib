@@ -77,7 +77,6 @@ impl RecordDatabase {
         &mut self,
         record_id: RecordId,
     ) -> Result<CacheResponse, rusqlite::Error> {
-
         let tx = self.conn.transaction()?;
         let cache_response = Self::get_cached_data_transaction(&tx, record_id)?;
         tx.commit()?;

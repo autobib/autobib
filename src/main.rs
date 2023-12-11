@@ -1,11 +1,12 @@
 mod api;
 mod database;
+mod entry;
 mod record;
 mod source;
 
 use api::*;
-use biblatex::Bibliography;
 use clap::Parser;
+use entry::Entry;
 use rusqlite::Result;
 use std::str::FromStr;
 
@@ -30,8 +31,8 @@ fn main() {
         // parse the source:sub_id arguments
         .filter_map(|input| match RecordId::from_str(&input) {
             Ok(record_id) => Some(record_id),
-            Err(error) => {
-                eprintln!("{}", error);
+            Err(err) => {
+                eprintln!("{}", err);
                 None
             }
         })
@@ -42,12 +43,12 @@ fn main() {
                     eprintln!("{}", err);
                     None
                 },
-                |record| {
-                    record.data.or_else(|| {
-                        // null record
-                        eprintln!("Warning: '{}' is a null record!", record.id);
+                |record| match record.try_into() {
+                    Ok(raw_biblatex_entry) => Some(raw_biblatex_entry),
+                    Err(err) => {
+                        eprintln!("{}", err);
                         None
-                    })
+                    }
                 },
             )
         })
@@ -55,12 +56,13 @@ fn main() {
 
     // print biblatex strings
     for entry in valid_entries {
-        println!("{}", entry.to_biblatex_string())
+        println!("{}", entry)
     }
 }
 
 /// Populate the database with some records for testing purposes.
 fn create_test_db() -> Result<RecordDatabase, RecordError> {
+    use entry::{AnonymousEntry, Fields};
     match std::fs::remove_file(DATABASE_FILE) {
         Ok(()) => {}
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -69,23 +71,29 @@ fn create_test_db() -> Result<RecordDatabase, RecordError> {
 
     let mut record_db = RecordDatabase::create(DATABASE_FILE)?;
 
-    let raw = "@article{test:000, author = {Rutar, Alex and Wu, Peiran}, title = {Autobib}}";
-    let bibliography = Bibliography::parse(raw).unwrap();
-    let entry = bibliography.get("test:000").unwrap();
+    let entry_1 = AnonymousEntry {
+        entry_type: "code".to_string(),
+        fields: Fields {
+            author: Some("Rutar, Alex and Wu, Peiran".to_string()),
+            title: Some("Autobib".to_string()),
+        },
+    };
     record_db.set_cached_data(&Record::new(
         RecordId::from_str("test:000").unwrap(),
-        Some(entry.clone()),
+        Some(entry_1),
     ))?;
 
-    let raw2 = "@article{test:002, author = {Author, Test}, title = {A Sample Paper}}";
-    let bibliography2 = Bibliography::parse(raw2).unwrap();
-    let entry2 = bibliography2.get("test:002").unwrap();
+    let entry_2 = AnonymousEntry {
+        entry_type: "article".to_string(),
+        fields: Fields {
+            author: Some("Author, Test".to_string()),
+            title: Some("A Sample Paper".to_string()),
+        },
+    };
     record_db.set_cached_data(&Record::new(
         RecordId::from_str("test:002").unwrap(),
-        Some(entry2.clone()),
+        Some(entry_2),
     ))?;
-
-    record_db.set_cached_data(&Record::new(RecordId::from_str("test:001").unwrap(), None))?;
 
     Ok(record_db)
 }

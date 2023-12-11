@@ -1,13 +1,13 @@
 pub use crate::database::{CacheResponse, RecordDatabase};
 pub use crate::record::*;
-use crate::source::test::TestRecordSource;
 use crate::source::RecordSource;
+use crate::source::{arxiv::ArxivRecordSource, test::TestRecordSource};
 
-// TODO: this function does not actually work with more than one RecordSource...
-/// Determine the record source corresponding to the name.
-fn lookup_record_source(record_id: &RecordId) -> Result<impl RecordSource, RecordError> {
+// TODO: implement this statically?
+fn lookup_record_source(record_id: &RecordId) -> Result<Box<dyn RecordSource>, RecordError> {
     match record_id.source() {
-        "test" => Ok(TestRecordSource {}),
+        "arxiv" => Ok(Box::new(ArxivRecordSource {})),
+        "test" => Ok(Box::new(TestRecordSource {})),
         _ => Err(RecordError::InvalidSource(record_id.clone())),
     }
 }

@@ -1,18 +1,31 @@
-pub use biblatex::Entry;
+use crate::entry::{AnonymousEntry, Entry};
 pub use chrono::{DateTime, Local};
-// use serde::{Deserialize, Serialize};
 use serde_with::{DeserializeFromStr, SerializeDisplay};
 use std::fmt;
 use std::str::FromStr;
 
 pub struct Record {
     pub id: RecordId,
-    pub data: Option<Entry>,
+    pub data: Option<AnonymousEntry>,
     pub modified: DateTime<Local>,
 }
 
+impl TryFrom<Record> for Entry {
+    type Error = RecordError;
+
+    fn try_from(record: Record) -> Result<Entry, RecordError> {
+        match record.data {
+            Some(contents) => Ok(Entry {
+                key: record.id.into_string(),
+                contents,
+            }),
+            None => Err(RecordError::NullRecord(record.id)),
+        }
+    }
+}
+
 impl Record {
-    pub fn new(id: RecordId, data: Option<Entry>) -> Self {
+    pub fn new(id: RecordId, data: Option<AnonymousEntry>) -> Self {
         Self {
             id,
             data,
@@ -21,12 +34,15 @@ impl Record {
     }
 }
 
+// TODO: subdivide this into smaller error groups
 /// Various failure modes for records.
 #[derive(Debug)]
 pub enum RecordError {
     InvalidRecordIdFormat(String),
     InvalidSource(RecordId),
     InvalidSubId(RecordId),
+    NullRecord(RecordId),
+    NetworkFailure(reqwest::Error),
     DatabaseFailure(rusqlite::Error),
     Incomplete,
 }
@@ -34,6 +50,12 @@ pub enum RecordError {
 impl From<rusqlite::Error> for RecordError {
     fn from(err: rusqlite::Error) -> Self {
         RecordError::DatabaseFailure(err)
+    }
+}
+
+impl From<reqwest::Error> for RecordError {
+    fn from(err: reqwest::Error) -> Self {
+        RecordError::NetworkFailure(err)
     }
 }
 
@@ -56,17 +78,13 @@ impl fmt::Display for RecordError {
                 record_id.sub_id(),
                 record_id.source()
             ),
-            RecordError::Incomplete => write!(f, "Incomplete record"),
+            RecordError::NullRecord(record_id) => write!(f, "'{}' is a null record", record_id),
             RecordError::DatabaseFailure(error) => write!(f, "Database failure: {}", error),
+            RecordError::NetworkFailure(error) => write!(f, "Network failure: {}", error),
+            RecordError::Incomplete => write!(f, "Incomplete record"),
         }
     }
 }
-
-// we probably want something like this
-// pub enum CitationKey {
-//     Alias(String),
-//     RecordId(String, usize),
-// }
 
 /// A source (`source`) with corresponding identity (`sub_id`), such as 'arxiv:0123.4567'
 #[derive(Debug, Clone, Hash, PartialEq, Eq, DeserializeFromStr, SerializeDisplay)]
@@ -89,6 +107,11 @@ impl RecordId {
     /// Get the full record id.
     pub fn full_id(&self) -> &str {
         &self.full_id
+    }
+
+    /// Return the underlying string
+    pub fn into_string(self) -> String {
+        self.full_id
     }
 }
 

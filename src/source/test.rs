@@ -1,11 +1,9 @@
 use super::*;
-use biblatex::{Bibliography, Entry};
+use crate::entry::{AnonymousEntry, Fields};
 
 pub struct TestRecordSource;
 
 impl RecordSource for TestRecordSource {
-    const SOURCE_NAME: &'static str = "test";
-
     fn is_valid_id(&self, id: &str) -> bool {
         match id {
             "005" => false,
@@ -13,17 +11,16 @@ impl RecordSource for TestRecordSource {
         }
     }
 
-    fn get_record(&self, id: &str) -> Result<Option<Entry>, RecordError> {
+    fn get_record(&self, id: &str) -> Result<Option<AnonymousEntry>, RecordError> {
         // Assume `id` is valid
         match id {
-            "003" => {
-                let raw =
-                    "@article{test:003, author = {Two, Author and One, Author}, title = {Example}}";
-                let bibliography = Bibliography::parse(raw).unwrap();
-                let entry = bibliography.get("test:003").unwrap();
-
-                Ok(Some(entry.clone()))
-            }
+            "003" => Ok(Some(AnonymousEntry {
+                entry_type: "article".to_string(),
+                fields: Fields {
+                    author: Some("Two, Author and One, Author".to_string()),
+                    title: Some("Example".to_string()),
+                },
+            })),
             "004" => Ok(None),
             _ => Err(RecordError::Incomplete),
         }
