@@ -1,7 +1,9 @@
-use crate::record::*;
 use core::convert::AsRef;
-use rusqlite::{Connection, OpenFlags, OptionalExtension, Result, Transaction};
 use std::path::Path;
+
+use rusqlite::{Connection, OpenFlags, OptionalExtension, Result, Transaction};
+
+use crate::record::*;
 
 pub struct RecordDatabase {
     conn: Connection,

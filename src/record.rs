@@ -1,8 +1,10 @@
-use crate::entry::{AnonymousEntry, Entry};
-pub use chrono::{DateTime, Local};
-use serde_with::{DeserializeFromStr, SerializeDisplay};
 use std::fmt;
 use std::str::FromStr;
+
+use chrono::{DateTime, Local};
+use serde_with::{DeserializeFromStr, SerializeDisplay};
+
+use crate::entry::{AnonymousEntry, Entry};
 
 pub struct Record {
     pub id: RecordId,

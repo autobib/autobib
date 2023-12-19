@@ -1,10 +1,10 @@
-use crate::entry::{AnonymousEntry, Fields};
-use crate::source::{RecordError, RecordSource};
 use chrono::{DateTime, Local};
 use itertools::Itertools;
+use regex::Regex;
 use serde::Deserialize;
 
-use regex::Regex;
+use crate::entry::{AnonymousEntry, Fields};
+use crate::source::{RecordError, RecordSource};
 
 const ARXIV_IDENTIFIER_REGEX: &'static str = concat!(
     r"^(",

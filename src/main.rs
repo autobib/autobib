@@ -4,11 +4,13 @@ mod entry;
 mod record;
 mod source;
 
-use api::*;
-use clap::Parser;
-use entry::Entry;
-use rusqlite::Result;
 use std::str::FromStr;
+
+use clap::Parser;
+use rusqlite::Result;
+
+use api::*;
+use entry::Entry;
 
 const DATABASE_FILE: &str = "cache.db";
 
@@ -76,6 +78,7 @@ fn create_test_db() -> Result<RecordDatabase, RecordError> {
         fields: Fields {
             author: Some("Rutar, Alex and Wu, Peiran".to_string()),
             title: Some("Autobib".to_string()),
+            ..Fields::default()
         },
     };
     record_db.set_cached_data(&Record::new(
@@ -88,6 +91,7 @@ fn create_test_db() -> Result<RecordDatabase, RecordError> {
         fields: Fields {
             author: Some("Author, Test".to_string()),
             title: Some("A Sample Paper".to_string()),
+            ..Fields::default()
         },
     };
     record_db.set_cached_data(&Record::new(
