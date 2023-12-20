@@ -19,6 +19,7 @@ impl RecordSource for TestRecordSource {
                 fields: Fields {
                     author: Some("Two, Author and One, Author".to_string()),
                     title: Some("Example".to_string()),
+                    ..Fields::default()
                 },
             })),
             "004" => Ok(None),

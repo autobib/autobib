@@ -1,4 +1,4 @@
-use chrono::{DateTime, Local};
+use chrono::{DateTime, Datelike, Local};
 use itertools::Itertools;
 use regex::Regex;
 use serde::Deserialize;
@@ -54,6 +54,8 @@ impl From<ArxivXMLEntry> for Entry {
                         .map(|auth| auth.name)
                         .join(" and "),
                 ),
+                year: Some(arxiv_xml.updated.year().to_string()),
+                ..Fields::default()
             },
         }
     }

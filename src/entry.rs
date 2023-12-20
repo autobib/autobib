@@ -26,6 +26,10 @@ pub struct Entry {
 pub struct Fields {
     pub title: Option<String>,
     pub author: Option<String>,
+    pub journal: Option<String>,
+    pub volume: Option<String>,
+    pub pages: Option<String>,
+    pub year: Option<String>,
 }
 
 impl Default for Fields {
@@ -33,6 +37,10 @@ impl Default for Fields {
         Self {
             title: None,
             author: None,
+            journal: None,
+            volume: None,
+            pages: None,
+            year: None,
         }
     }
 }
@@ -53,6 +61,10 @@ impl Fields {
 impl Display for Fields {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         Self::write_biblatex_row(f, &"title", &self.title)?;
+        Self::write_biblatex_row(f, &"journal", &self.journal)?;
+        Self::write_biblatex_row(f, &"volume", &self.volume)?;
+        Self::write_biblatex_row(f, &"pages", &self.pages)?;
+        Self::write_biblatex_row(f, &"year", &self.year)?;
         Self::write_biblatex_row(f, &"author", &self.author)
     }
 }

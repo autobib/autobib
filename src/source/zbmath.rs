@@ -44,6 +44,9 @@ impl RecordSource for ZBMathRecordSource {
                     fields: Fields {
                         title: fields.get("Title").cloned(),
                         author: fields.get("Author").cloned(),
+                        journal: fields.get("Journal").cloned(),
+                        volume: fields.get("Volume").cloned(),
+                        pages: fields.get("Pages").cloned(),
                         ..Fields::default()
                     },
                 }))
