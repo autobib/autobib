@@ -4,10 +4,10 @@ use crate::source::RecordSource;
 use crate::source::{arxiv::ArxivRecordSource, test::TestRecordSource};
 
 // TODO: implement this statically?
-fn lookup_record_source(record_id: &RecordId) -> Result<Box<dyn RecordSource>, RecordError> {
+fn lookup_record_source(record_id: &RecordId) -> Result<&'static dyn RecordSource, RecordError> {
     match record_id.source() {
-        "arxiv" => Ok(Box::new(ArxivRecordSource {})),
-        "test" => Ok(Box::new(TestRecordSource {})),
+        "arxiv" => Ok(&ArxivRecordSource {}),
+        "test" => Ok(&TestRecordSource {}),
         _ => Err(RecordError::InvalidSource(record_id.clone())),
     }
 }
