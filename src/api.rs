@@ -1,13 +1,14 @@
 pub use crate::database::{CacheResponse, RecordDatabase};
 pub use crate::record::*;
 use crate::source::RecordSource;
-use crate::source::{arxiv::ArxivRecordSource, test::TestRecordSource};
+use crate::source::{arxiv::ArxivRecordSource, test::TestRecordSource, zbmath::ZBMathRecordSource};
 
 // TODO: implement this statically?
 fn lookup_record_source(record_id: &RecordId) -> Result<&'static dyn RecordSource, RecordError> {
     match record_id.source() {
         "arxiv" => Ok(&ArxivRecordSource {}),
         "test" => Ok(&TestRecordSource {}),
+        "zbmath" => Ok(&ZBMathRecordSource {}),
         _ => Err(RecordError::InvalidSource(record_id.clone())),
     }
 }

@@ -1,5 +1,6 @@
 pub mod arxiv;
 pub mod test;
+pub mod zbmath;
 
 use crate::entry::Entry;
 pub use crate::record::RecordError;
