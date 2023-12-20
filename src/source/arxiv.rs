@@ -3,7 +3,7 @@ use itertools::Itertools;
 use regex::Regex;
 use serde::Deserialize;
 
-use crate::entry::{AnonymousEntry, Fields};
+use crate::entry::{Entry, Fields};
 use crate::source::{RecordError, RecordSource};
 
 const ARXIV_IDENTIFIER_REGEX: &'static str = concat!(
@@ -41,9 +41,9 @@ struct ArxivXMLAuthor {
     name: String,
 }
 
-impl From<ArxivXMLEntry> for AnonymousEntry {
-    fn from(arxiv_xml: ArxivXMLEntry) -> AnonymousEntry {
-        AnonymousEntry {
+impl From<ArxivXMLEntry> for Entry {
+    fn from(arxiv_xml: ArxivXMLEntry) -> Entry {
+        Entry {
             entry_type: "preprint".to_string(),
             fields: Fields {
                 title: Some(arxiv_xml.title),
@@ -67,7 +67,7 @@ impl RecordSource for ArxivRecordSource {
         arxiv_identifier_regex.is_match(id)
     }
 
-    fn get_record(&self, id: &str) -> Result<Option<AnonymousEntry>, RecordError> {
+    fn get_record(&self, id: &str) -> Result<Option<Entry>, RecordError> {
         let body = reqwest::blocking::get(format!(
             "https://export.arxiv.org/api/query?max_results=250&id_list={}",
             id

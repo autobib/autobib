@@ -10,7 +10,7 @@ use clap::Parser;
 use rusqlite::Result;
 
 use api::*;
-use entry::Entry;
+use entry::NamedEntry;
 
 const DATABASE_FILE: &str = "cache.db";
 
@@ -27,7 +27,7 @@ fn main() {
     let mut record_db = create_test_db().unwrap();
 
     // Collect all entries which are not null
-    let valid_entries: Vec<Entry> = cli
+    let valid_entries: Vec<NamedEntry> = cli
         .args
         .into_iter()
         // parse the source:sub_id arguments
@@ -64,7 +64,7 @@ fn main() {
 
 /// Populate the database with some records for testing purposes.
 fn create_test_db() -> Result<RecordDatabase, RecordError> {
-    use entry::{AnonymousEntry, Fields};
+    use entry::{Entry, Fields};
     match std::fs::remove_file(DATABASE_FILE) {
         Ok(()) => {}
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -73,7 +73,7 @@ fn create_test_db() -> Result<RecordDatabase, RecordError> {
 
     let mut record_db = RecordDatabase::create(DATABASE_FILE)?;
 
-    let entry_1 = AnonymousEntry {
+    let entry_1 = Entry {
         entry_type: "code".to_string(),
         fields: Fields {
             author: Some("Rutar, Alex and Wu, Peiran".to_string()),
@@ -86,7 +86,7 @@ fn create_test_db() -> Result<RecordDatabase, RecordError> {
         Some(entry_1),
     ))?;
 
-    let entry_2 = AnonymousEntry {
+    let entry_2 = Entry {
         entry_type: "article".to_string(),
         fields: Fields {
             author: Some("Author, Test".to_string()),

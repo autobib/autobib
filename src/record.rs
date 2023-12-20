@@ -4,20 +4,20 @@ use std::str::FromStr;
 use chrono::{DateTime, Local};
 use serde_with::{DeserializeFromStr, SerializeDisplay};
 
-use crate::entry::{AnonymousEntry, Entry};
+use crate::entry::{Entry, NamedEntry};
 
 pub struct Record {
     pub id: RecordId,
-    pub data: Option<AnonymousEntry>,
+    pub data: Option<Entry>,
     pub modified: DateTime<Local>,
 }
 
-impl TryFrom<Record> for Entry {
+impl TryFrom<Record> for NamedEntry {
     type Error = RecordError;
 
-    fn try_from(record: Record) -> Result<Entry, RecordError> {
+    fn try_from(record: Record) -> Result<NamedEntry, RecordError> {
         match record.data {
-            Some(contents) => Ok(Entry {
+            Some(contents) => Ok(NamedEntry {
                 key: record.id.into_string(),
                 contents,
             }),
@@ -27,7 +27,7 @@ impl TryFrom<Record> for Entry {
 }
 
 impl Record {
-    pub fn new(id: RecordId, data: Option<AnonymousEntry>) -> Self {
+    pub fn new(id: RecordId, data: Option<Entry>) -> Self {
         Self {
             id,
             data,
