@@ -5,8 +5,9 @@ pub mod zbmath;
 use crate::entry::Entry;
 pub use crate::record::RecordError;
 
-// TODO: improve this trait
-pub trait RecordSource {
-    fn is_valid_id(&self, id: &str) -> bool;
-    fn get_record(&self, id: &str) -> Result<Option<Entry>, RecordError>;
-}
+/// A pair `(resolver, validator)` where `resolver` is used to obtain a new record and `validator`
+/// is used to perform inexpensive `sub_id` validation.
+pub type CanonicalSource = (
+    fn(&str) -> Result<Option<Entry>, RecordError>,
+    fn(&str) -> bool,
+);
