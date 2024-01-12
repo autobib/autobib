@@ -4,7 +4,7 @@ use regex::Regex;
 use serde::Deserialize;
 
 use crate::entry::{Entry, Fields};
-use crate::source::{CanonicalSource, RecordError};
+use crate::source::RecordError;
 
 pub const IDENTIFIER_REGEX: &'static str = concat!(
     r"^(",

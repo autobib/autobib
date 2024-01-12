@@ -38,6 +38,17 @@ fn main() {
                 None
             }
         })
+        .filter(|record_id| match validate_record_id(record_id) {
+            ValidationResult::InvalidSource(s) => {
+                eprintln!("invalid source: '{s}'");
+                false
+            }
+            ValidationResult::InvalidSubId(s) => {
+                eprintln!("invalid sub-id: '{s}'");
+                false
+            }
+            ValidationResult::Ok => true,
+        })
         .filter_map(|record_id| {
             get_record(&mut record_db, &record_id).map_or_else(
                 // error retrieving record

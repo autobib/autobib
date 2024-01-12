@@ -1,15 +1,44 @@
 pub use crate::database::{CacheResponse, RecordDatabase};
 pub use crate::record::*;
 
-use crate::source::{arxiv, test, zbmath, CanonicalSource};
+use crate::source::{arxiv, test, zbmath, Resolver, Validator};
 
 /// Map the `source` part of a [`RecordId`] to a [`CanonicalSource`].
-fn lookup_record_source(record_id: &RecordId) -> Result<CanonicalSource, RecordError> {
+fn lookup_resolver(record_id: &RecordId) -> Result<Resolver, RecordError> {
     match record_id.source() {
-        "arxiv" => Ok((arxiv::get_record, arxiv::is_valid_id)),
-        "test" => Ok((test::get_record, test::is_valid_id)),
-        "zbmath" => Ok((zbmath::get_record, zbmath::is_valid_id)),
+        "arxiv" => Ok(arxiv::get_record),
+        "test" => Ok(test::get_record),
+        "zbmath" => Ok(zbmath::get_record),
         _ => Err(RecordError::InvalidSource(record_id.clone())),
+    }
+}
+
+/// Map the `source` part of a [`RecordId`] to a [`CanonicalSource`].
+fn lookup_validator(record_id: &RecordId) -> Option<Validator> {
+    match record_id.source() {
+        "arxiv" => Some(arxiv::is_valid_id),
+        "test" => Some(test::is_valid_id),
+        "zbmath" => Some(zbmath::is_valid_id),
+        _ => None,
+    }
+}
+
+pub enum ValidationResult {
+    InvalidSource(String),
+    InvalidSubId(String),
+    Ok,
+}
+
+pub fn validate_record_id(record_id: &RecordId) -> ValidationResult {
+    match lookup_validator(&record_id) {
+        Some(validator) => {
+            if validator(record_id.sub_id()) {
+                ValidationResult::Ok
+            } else {
+                ValidationResult::InvalidSubId(record_id.sub_id().to_string())
+            }
+        }
+        None => ValidationResult::InvalidSource(record_id.source().to_string()),
     }
 }
 
@@ -22,23 +51,19 @@ pub fn get_record(
         CacheResponse::Found(cached_record) => Ok(Some(cached_record)),
         CacheResponse::FoundNull(_attempted) => Ok(None),
         CacheResponse::NotFound => {
-            let (resolver, validator) = lookup_record_source(&record_id)?;
+            let resolver = lookup_resolver(&record_id)?;
 
-            if validator(record_id.sub_id()) {
-                match resolver(record_id.sub_id()) {
-                    Ok(Some(entry)) => {
-                        let record = Record::new(record_id.clone(), entry);
-                        db.set_cached_data(&record)?;
-                        Ok(Some(record))
-                    }
-                    Ok(None) => {
-                        db.set_cached_null_record(record_id)?;
-                        Ok(None)
-                    }
-                    Err(err) => Err(err),
+            match resolver(record_id.sub_id()) {
+                Ok(Some(entry)) => {
+                    let record = Record::new(record_id.clone(), entry);
+                    db.set_cached_data(&record)?;
+                    Ok(Some(record))
                 }
-            } else {
-                Err(RecordError::InvalidSubId(record_id.clone()))
+                Ok(None) => {
+                    db.set_cached_null_record(record_id)?;
+                    Ok(None)
+                }
+                Err(err) => Err(err),
             }
         }
     }
