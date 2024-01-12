@@ -4,7 +4,7 @@ use std::str::FromStr;
 use chrono::{DateTime, Local};
 use serde_with::{DeserializeFromStr, SerializeDisplay};
 
-use crate::entry::{Entry, NamedEntry};
+use crate::entry::{Entry, KeyedEntry};
 
 pub struct Record {
     pub id: RecordId,
@@ -12,9 +12,9 @@ pub struct Record {
     pub modified: DateTime<Local>,
 }
 
-impl From<Record> for NamedEntry {
-    fn from(record: Record) -> NamedEntry {
-        NamedEntry {
+impl From<Record> for KeyedEntry {
+    fn from(record: Record) -> KeyedEntry {
+        KeyedEntry {
             key: record.id.to_string(),
             contents: record.data,
         }

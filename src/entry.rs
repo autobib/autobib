@@ -3,12 +3,12 @@ use std::fmt::{Display, Formatter};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct NamedEntry {
+pub struct KeyedEntry {
     pub key: String,
     pub contents: Entry,
 }
 
-impl Display for NamedEntry {
+impl Display for KeyedEntry {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "@{}{{{}", self.contents.entry_type, self.key)?;
         write!(f, "{}", self.contents.fields)?;

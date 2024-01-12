@@ -10,7 +10,7 @@ use clap::Parser;
 use rusqlite::Result;
 
 use api::*;
-use entry::NamedEntry;
+use entry::KeyedEntry;
 
 const DATABASE_FILE: &str = "cache.db";
 
@@ -27,7 +27,7 @@ fn main() {
     let mut record_db = create_test_db().unwrap();
 
     // Collect all entries which are not null
-    let valid_entries: Vec<NamedEntry> = cli
+    let valid_entries: Vec<KeyedEntry> = cli
         .args
         .into_iter()
         // parse the source:sub_id arguments
