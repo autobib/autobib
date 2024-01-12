@@ -1,18 +1,28 @@
-pub use biblatex::Entry;
-pub use chrono::{DateTime, Local};
-// use serde::{Deserialize, Serialize};
-use serde_with::{DeserializeFromStr, SerializeDisplay};
 use std::fmt;
 use std::str::FromStr;
 
+use chrono::{DateTime, Local};
+use serde_with::{DeserializeFromStr, SerializeDisplay};
+
+use crate::entry::{Entry, KeyedEntry};
+
 pub struct Record {
     pub id: RecordId,
-    pub data: Option<Entry>,
+    pub data: Entry,
     pub modified: DateTime<Local>,
 }
 
+impl From<Record> for KeyedEntry {
+    fn from(record: Record) -> KeyedEntry {
+        KeyedEntry {
+            key: record.id.to_string(),
+            contents: record.data,
+        }
+    }
+}
+
 impl Record {
-    pub fn new(id: RecordId, data: Option<Entry>) -> Self {
+    pub fn new(id: RecordId, data: Entry) -> Self {
         Self {
             id,
             data,
@@ -21,12 +31,14 @@ impl Record {
     }
 }
 
+// TODO: subdivide this into smaller error groups
 /// Various failure modes for records.
 #[derive(Debug)]
 pub enum RecordError {
     InvalidRecordIdFormat(String),
     InvalidSource(RecordId),
     InvalidSubId(RecordId),
+    NetworkFailure(reqwest::Error),
     DatabaseFailure(rusqlite::Error),
     Incomplete,
 }
@@ -34,6 +46,12 @@ pub enum RecordError {
 impl From<rusqlite::Error> for RecordError {
     fn from(err: rusqlite::Error) -> Self {
         RecordError::DatabaseFailure(err)
+    }
+}
+
+impl From<reqwest::Error> for RecordError {
+    fn from(err: reqwest::Error) -> Self {
+        RecordError::NetworkFailure(err)
     }
 }
 
@@ -56,17 +74,12 @@ impl fmt::Display for RecordError {
                 record_id.sub_id(),
                 record_id.source()
             ),
-            RecordError::Incomplete => write!(f, "Incomplete record"),
             RecordError::DatabaseFailure(error) => write!(f, "Database failure: {}", error),
+            RecordError::NetworkFailure(error) => write!(f, "Network failure: {}", error),
+            RecordError::Incomplete => write!(f, "Incomplete record"),
         }
     }
 }
-
-// we probably want something like this
-// pub enum CitationKey {
-//     Alias(String),
-//     RecordId(String, usize),
-// }
 
 /// A source (`source`) with corresponding identity (`sub_id`), such as 'arxiv:0123.4567'
 #[derive(Debug, Clone, Hash, PartialEq, Eq, DeserializeFromStr, SerializeDisplay)]
