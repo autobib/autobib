@@ -18,7 +18,7 @@ impl TryFrom<Record> for NamedEntry {
     fn try_from(record: Record) -> Result<NamedEntry, RecordError> {
         match record.data {
             Some(contents) => Ok(NamedEntry {
-                key: record.id.into_string(),
+            key: record.id.to_string(),
                 contents,
             }),
             None => Err(RecordError::NullRecord(record.id)),
@@ -109,11 +109,6 @@ impl RecordId {
     /// Get the full record id.
     pub fn full_id(&self) -> &str {
         &self.full_id
-    }
-
-    /// Return the underlying string
-    pub fn into_string(self) -> String {
-        self.full_id
     }
 }
 
