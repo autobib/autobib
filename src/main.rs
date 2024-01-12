@@ -39,16 +39,16 @@ fn main() {
             }
         })
         .filter_map(|record_id| {
-            get_record(&mut record_db, record_id).map_or_else(
+            get_record(&mut record_db, &record_id).map_or_else(
                 // error retrieving record
                 |err| {
                     eprintln!("{}", err);
                     None
                 },
-                |record| match record.try_into() {
-                    Ok(raw_biblatex_entry) => Some(raw_biblatex_entry),
-                    Err(err) => {
-                        eprintln!("{}", err);
+                |record| match record {
+                    Some(record) => Some(record.into()),
+                    None => {
+                        eprintln!("'{}' is a null record", record_id);
                         None
                     }
                 },
@@ -83,7 +83,7 @@ fn create_test_db() -> Result<RecordDatabase, RecordError> {
     };
     record_db.set_cached_data(&Record::new(
         RecordId::from_str("test:000").unwrap(),
-        Some(entry_1),
+        entry_1,
     ))?;
 
     let entry_2 = Entry {
@@ -96,7 +96,7 @@ fn create_test_db() -> Result<RecordDatabase, RecordError> {
     };
     record_db.set_cached_data(&Record::new(
         RecordId::from_str("test:002").unwrap(),
-        Some(entry_2),
+        entry_2,
     ))?;
 
     Ok(record_db)

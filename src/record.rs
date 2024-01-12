@@ -8,26 +8,21 @@ use crate::entry::{Entry, NamedEntry};
 
 pub struct Record {
     pub id: RecordId,
-    pub data: Option<Entry>,
+    pub data: Entry,
     pub modified: DateTime<Local>,
 }
 
-impl TryFrom<Record> for NamedEntry {
-    type Error = RecordError;
-
-    fn try_from(record: Record) -> Result<NamedEntry, RecordError> {
-        match record.data {
-            Some(contents) => Ok(NamedEntry {
+impl From<Record> for NamedEntry {
+    fn from(record: Record) -> NamedEntry {
+        NamedEntry {
             key: record.id.to_string(),
-                contents,
-            }),
-            None => Err(RecordError::NullRecord(record.id)),
+            contents: record.data,
         }
     }
 }
 
 impl Record {
-    pub fn new(id: RecordId, data: Option<Entry>) -> Self {
+    pub fn new(id: RecordId, data: Entry) -> Self {
         Self {
             id,
             data,
@@ -43,7 +38,6 @@ pub enum RecordError {
     InvalidRecordIdFormat(String),
     InvalidSource(RecordId),
     InvalidSubId(RecordId),
-    NullRecord(RecordId),
     NetworkFailure(reqwest::Error),
     DatabaseFailure(rusqlite::Error),
     Incomplete,
@@ -80,7 +74,6 @@ impl fmt::Display for RecordError {
                 record_id.sub_id(),
                 record_id.source()
             ),
-            RecordError::NullRecord(record_id) => write!(f, "'{}' is a null record", record_id),
             RecordError::DatabaseFailure(error) => write!(f, "Database failure: {}", error),
             RecordError::NetworkFailure(error) => write!(f, "Network failure: {}", error),
             RecordError::Incomplete => write!(f, "Incomplete record"),

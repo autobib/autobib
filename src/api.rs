@@ -14,24 +14,28 @@ fn lookup_record_source(record_id: &RecordId) -> Result<&'static dyn RecordSourc
 }
 
 /// Get the record associated with record_id
-pub fn get_record(db: &mut RecordDatabase, record_id: RecordId) -> Result<Record, RecordError> {
+pub fn get_record(
+    db: &mut RecordDatabase,
+    record_id: &RecordId,
+) -> Result<Option<Record>, RecordError> {
     match db.get_cached_data(record_id)? {
-        CacheResponse::Found(cached_record) => Ok(cached_record),
-        CacheResponse::NotFound(record_id) => {
+        CacheResponse::Found(cached_record) => Ok(Some(cached_record)),
+        CacheResponse::FoundNull(attempted) => Ok(None),
+        CacheResponse::NotFound => {
             let record_source = lookup_record_source(&record_id)?;
 
             if record_source.is_valid_id(record_id.sub_id()) {
                 match record_source.get_record(record_id.sub_id()) {
                     Ok(Some(entry)) => {
-                        let record = Record::new(record_id, Some(entry));
+                        let record = Record::new(record_id.clone(), entry);
                         db.set_cached_data(&record)?;
-                        Ok(record)
+                        Ok(Some(record))
                     }
-                    Ok(None) => Ok(Record::new(record_id, None)),
+                    Ok(None) => Ok(None),
                     Err(err) => Err(err),
                 }
             } else {
-                Err(RecordError::InvalidSubId(record_id))
+                Err(RecordError::InvalidSubId(record_id.clone()))
             }
         }
     }
