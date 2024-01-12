@@ -31,7 +31,10 @@ pub fn get_record(
                         db.set_cached_data(&record)?;
                         Ok(Some(record))
                     }
-                    Ok(None) => Ok(None),
+                    Ok(None) => {
+                        db.set_cached_null_record(record_id)?;
+                        Ok(None)
+                    }
                     Err(err) => Err(err),
                 }
             } else {

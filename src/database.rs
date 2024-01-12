@@ -94,6 +94,12 @@ impl RecordDatabase {
         tx.commit()
     }
 
+    pub fn set_cached_null_record(&mut self, record_id: &RecordId) -> Result<(), rusqlite::Error> {
+        let tx = self.conn.transaction()?;
+        Self::set_cached_null_record_transaction(&tx, record_id)?;
+        tx.commit()
+    }
+
     fn get_cached_data_transaction(
         tx: &Transaction,
         record_id: &RecordId,
