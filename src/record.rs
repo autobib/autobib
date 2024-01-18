@@ -94,6 +94,16 @@ impl RecordId {
         &self.full_id[0..self.source_length]
     }
 
+    pub fn from_parts(source: &str, sub_id: &str) -> Self {
+        let mut new = source.to_string();
+        new.push_str(":");
+        new.push_str(sub_id);
+        Self {
+            full_id: new,
+            source_length: source.len(),
+        }
+    }
+
     /// Get the part of the record id after the source.
     pub fn sub_id(&self) -> &str {
         &self.full_id[self.source_length + 1..]

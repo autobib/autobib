@@ -1,24 +1,26 @@
 pub use crate::database::{CacheResponse, RecordDatabase};
 pub use crate::record::*;
 
-use crate::source::{arxiv, test, zbmath, Resolver, Validator};
+use crate::source::{arxiv, test, zbl, zbmath, Source, Validator};
 
-/// Map the `source` part of a [`RecordId`] to a [`CanonicalSource`].
-fn lookup_resolver(record_id: &RecordId) -> Result<Resolver, RecordError> {
+/// Map the `source` part of a [`RecordId`] to a [`Source`].
+fn lookup_source(record_id: &RecordId) -> Result<Source, RecordError> {
     match record_id.source() {
-        "arxiv" => Ok(arxiv::get_record),
-        "test" => Ok(test::get_record),
-        "zbmath" => Ok(zbmath::get_record),
+        "arxiv" => Ok(Source::Canonical(arxiv::get_record)),
+        "test" => Ok(Source::Canonical(test::get_record)),
+        "zbmath" => Ok(Source::Canonical(zbmath::get_record)),
+        "zbl" => Ok(Source::Reference(zbmath::get_record, zbl::get_canonical)),
         _ => Err(RecordError::InvalidSource(record_id.clone())),
     }
 }
 
-/// Map the `source` part of a [`RecordId`] to a [`CanonicalSource`].
+/// Validate a [`RecordId`].
 fn lookup_validator(record_id: &RecordId) -> Option<Validator> {
     match record_id.source() {
         "arxiv" => Some(arxiv::is_valid_id),
         "test" => Some(test::is_valid_id),
         "zbmath" => Some(zbmath::is_valid_id),
+        "zbl" => Some(zbl::is_valid_id),
         _ => None,
     }
 }
@@ -51,16 +53,28 @@ pub fn get_record(
         CacheResponse::Found(cached_record) => Ok(Some(cached_record)),
         CacheResponse::FoundNull(_attempted) => Ok(None),
         CacheResponse::NotFound => {
-            let resolver = lookup_resolver(&record_id)?;
+            // Resolve the reference, if required...
+            let (resolver, new_record_id) = match lookup_source(&record_id)? {
+                Source::Canonical(resolver) => (resolver, record_id.clone()),
+                Source::Reference(resolver, referrer) => {
+                    match referrer(record_id.sub_id()) {
+                        // TODO: cache here
+                        Ok(Some(new_record_id)) => (resolver, new_record_id),
+                        Ok(None) => todo!(),
+                        Err(_) => todo!(),
+                    }
+                }
+            };
 
-            match resolver(record_id.sub_id()) {
+            // ...then look up the record.
+            match resolver(new_record_id.sub_id()) {
                 Ok(Some(entry)) => {
-                    let record = Record::new(record_id.clone(), entry);
+                    let record = Record::new(new_record_id, entry);
                     db.set_cached_data(&record)?;
                     Ok(Some(record))
                 }
                 Ok(None) => {
-                    db.set_cached_null_record(record_id)?;
+                    db.set_cached_null_record(&new_record_id)?;
                     Ok(None)
                 }
                 Err(err) => Err(err),
