@@ -31,7 +31,7 @@ fn main() {
         .args
         .into_iter()
         // parse the source:sub_id arguments
-        .filter_map(|input| match RecordId::from_str(&input) {
+        .filter_map(|input| match CitationKey::from_str(&input) {
             Ok(record_id) => Some(record_id),
             Err(err) => {
                 eprintln!("{err}");
@@ -39,7 +39,7 @@ fn main() {
             }
         })
         // perform "cheap" record_id validation
-        .filter(|record_id| match validate_record_id(record_id) {
+        .filter(|record_id| match validate_citation_key(record_id) {
             ValidationResult::InvalidSource(s) => {
                 eprintln!("invalid source: '{s}'");
                 false
@@ -51,20 +51,20 @@ fn main() {
             ValidationResult::Ok => true,
         })
         // retrieve records
-        .filter_map(|record_id| {
-            get_record(&mut record_db, &record_id).map_or_else(
+        .filter_map(|citation_key| {
+            get_record(&mut record_db, &citation_key).map_or_else(
                 // error retrieving record
                 |err| {
-                    eprintln!("{}", err);
+                    eprintln!("{err}");
                     None
                 },
                 |response| match response {
                     Some(entry) => Some(KeyedEntry {
-                        key: record_id.into(),
+                        key: citation_key,
                         contents: entry,
                     }),
                     None => {
-                        eprintln!("'null record: {record_id}'");
+                        eprintln!("'null record: {citation_key}'");
                         None
                     }
                 },
@@ -97,7 +97,7 @@ fn create_test_db() -> Result<RecordDatabase, RecordError> {
             ..Fields::default()
         },
     };
-    record_db.set_cached_data(&RecordId::from_str("test:000").unwrap(), &entry_1)?;
+    record_db.set_cached_data(&RecordId::from_str("test:000").unwrap(), &entry_1, None)?;
 
     let entry_2 = Entry {
         entry_type: "article".to_string(),
@@ -107,7 +107,7 @@ fn create_test_db() -> Result<RecordDatabase, RecordError> {
             ..Fields::default()
         },
     };
-    record_db.set_cached_data(&RecordId::from_str("test:002").unwrap(), &entry_2)?;
+    record_db.set_cached_data(&RecordId::from_str("test:002").unwrap(), &entry_2, None)?;
 
     Ok(record_db)
 }

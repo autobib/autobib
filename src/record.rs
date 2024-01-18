@@ -7,7 +7,7 @@ use serde_with::{DeserializeFromStr, SerializeDisplay};
 use crate::entry::{Entry, KeyedEntry};
 
 pub struct Record {
-    pub id: RecordId,
+    pub key: CitationKey,
     pub data: Entry,
     pub modified: DateTime<Local>,
 }
@@ -15,16 +15,16 @@ pub struct Record {
 impl From<Record> for KeyedEntry {
     fn from(record: Record) -> KeyedEntry {
         KeyedEntry {
-            key: record.id.to_string(),
+            key: record.key,
             contents: record.data,
         }
     }
 }
 
 impl Record {
-    pub fn new(id: RecordId, data: Entry) -> Self {
+    pub fn new(key: CitationKey, data: Entry) -> Self {
         Self {
-            id,
+            key,
             data,
             modified: Local::now(),
         }
@@ -81,6 +81,99 @@ impl fmt::Display for RecordError {
     }
 }
 
+#[derive(Debug, Clone, Hash, PartialEq, Eq, DeserializeFromStr, SerializeDisplay)]
+pub enum CitationKey {
+    RecordId(RecordId),
+    Alias(String),
+}
+
+impl CitationKey {
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::RecordId(record_id) => record_id.sub_id(),
+            Self::Alias(s) => s.as_str(),
+        }
+    }
+}
+
+pub enum CitationKeyErrorKind {
+    EmptySource,
+    EmptySubId,
+    EmptyAlias,
+}
+
+pub struct CitationKeyError {
+    input: String,
+    kind: CitationKeyErrorKind,
+}
+
+impl CitationKeyError {
+    pub fn new(input: String, kind: CitationKeyErrorKind) -> Self {
+        Self { input, kind }
+    }
+}
+
+impl fmt::Display for CitationKeyError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Invalid citation key '{}': ", self.input)?;
+        match self.kind {
+            CitationKeyErrorKind::EmptySource => {
+                f.write_str("record identifier 'source' must be non-empty")
+            }
+            CitationKeyErrorKind::EmptySubId => {
+                f.write_str("record identifier 'sub_id' must be non-empty")
+            }
+            CitationKeyErrorKind::EmptyAlias => f.write_str("alias must be non-empty"),
+        }
+    }
+}
+
+impl FromStr for CitationKey {
+    type Err = CitationKeyError;
+
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        match input.find(':') {
+            Some(source_length) => {
+                if source_length == 0 {
+                    return Err(CitationKeyError::new(
+                        input.to_string(),
+                        CitationKeyErrorKind::EmptySource,
+                    ));
+                } else if source_length == input.len() - 1 {
+                    return Err(CitationKeyError::new(
+                        input.to_string(),
+                        CitationKeyErrorKind::EmptySubId,
+                    ));
+                }
+                let trimmed = input.trim();
+                Ok(CitationKey::RecordId(RecordId {
+                    full_id: String::from(trimmed),
+                    source_length,
+                }))
+            }
+            None => {
+                if input.len() == 0 {
+                    return Err(CitationKeyError::new(
+                        input.to_string(),
+                        CitationKeyErrorKind::EmptyAlias,
+                    ));
+                } else {
+                    Ok(CitationKey::Alias(input.to_string()))
+                }
+            }
+        }
+    }
+}
+
+impl fmt::Display for CitationKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::RecordId(record_id) => record_id.fmt(f),
+            Self::Alias(s) => f.write_str(s),
+        }
+    }
+}
+
 /// A source (`source`) with corresponding identity (`sub_id`), such as 'arxiv:0123.4567'
 #[derive(Debug, Clone, Hash, PartialEq, Eq, DeserializeFromStr, SerializeDisplay)]
 pub struct RecordId {
@@ -113,13 +206,6 @@ impl RecordId {
     /// Get the full record id.
     pub fn full_id(&self) -> &str {
         &self.full_id
-    }
-}
-
-impl From<RecordId> for String {
-    fn from(record: RecordId) -> Self {
-        let RecordId { full_id, .. } = record;
-        full_id
     }
 }
 

@@ -76,26 +76,82 @@ impl RecordDatabase {
         })
     }
 
-    /// Obtain cached data for '\<source\>:\<sub_id\>'.
-    pub fn get_cached_data(
+    /// Obtain cached data corresponding to a [`CitationKey`].
+    pub fn get_cached_data<'a>(
         &mut self,
-        record_id: &RecordId,
-    ) -> Result<CacheResponse, rusqlite::Error> {
+        citation_key: &'a CitationKey,
+    ) -> Result<CacheResponse<'a>, rusqlite::Error> {
         let tx = self.conn.transaction()?;
-        let cache_response = Self::get_cached_data_transaction(&tx, record_id)?;
+        let cache_response = Self::get_cached_data_transaction(&tx, citation_key)?;
         tx.commit()?;
 
         Ok(cache_response)
     }
 
+    fn get_cached_data_transaction<'a>(
+        tx: &Transaction,
+        citation_key: &'a CitationKey,
+    ) -> Result<CacheResponse<'a>, rusqlite::Error> {
+        // try to get the key from CitationKeys
+        match Self::get_record_key(&tx, &citation_key) {
+            // key exists, get the corresponding record
+            Ok(Some(key)) => {
+                let mut record_selector =
+                    tx.prepare_cached("SELECT modified, data FROM Records WHERE key = ?1")?;
+                let mut record_rows = record_selector.query([key])?;
+
+                match record_rows.next() {
+                    // Valid record
+                    Ok(Some(row)) => {
+                        Self::cache_response_from_record_row(row).map(CacheResponse::Found)
+                    }
+                    Ok(None) => {
+                        // SAFETY: the ON DELETE CASCADE and transaction wrapping should prevent
+                        // this from ever occurring.
+                        panic!("A key in CitationKeys does not correspond to a row in Records!")
+                    }
+                    Err(err) => Err(err),
+                }
+            }
+            // no key
+            Ok(None) => {
+                match citation_key {
+                    // If CitationKey is a RecordId, check for a cached null record.
+                    CitationKey::RecordId(record_id) => {
+                        let mut null_selector = tx.prepare_cached(
+                            "SELECT attempted FROM NullRecords WHERE record_id = ?1",
+                        )?;
+                        let mut null_rows = null_selector.query([&record_id.full_id()])?;
+
+                        match null_rows.next() {
+                            // Cached null
+                            Ok(Some(row)) => Ok(CacheResponse::FoundNull(row.get("attempted")?)),
+                            Ok(None) => Ok(CacheResponse::NotFound(record_id)),
+                            Err(err) => Err(err),
+                        }
+                    }
+                    // If it is an Alias, the CitationKeys table is the canonical source for
+                    // whether or not the alias is set.
+                    CitationKey::Alias(_) => Ok(CacheResponse::NullAlias),
+                }
+            }
+            Err(err) => Err(err),
+        }
+    }
+
     /// Insert a new record into the database.
+    ///
+    /// Every record requires that it is associated with a canonical [`RecordId`], which is passed
+    /// as the main argument. The [`RecordId`] may also be associated with another [`RecordId`]
+    /// acting as a reference source, or with a [`CitationKey::Alias`].
     pub fn set_cached_data(
         &mut self,
         record_id: &RecordId,
         entry: &Entry,
+        reference_id: Option<&RecordId>,
     ) -> Result<(), rusqlite::Error> {
         let tx = self.conn.transaction()?;
-        Self::set_cached_data_transaction(&tx, &record_id, &entry)?;
+        Self::set_cached_data_transaction(&tx, &record_id, &entry, reference_id)?;
         tx.commit()
     }
 
@@ -104,13 +160,14 @@ impl RecordDatabase {
         tx: &Transaction,
         record_id: &RecordId,
         entry: &Entry,
+        reference_id: Option<&RecordId>,
     ) -> Result<(), rusqlite::Error> {
         let mut setter = tx.prepare_cached(
             "INSERT OR REPLACE INTO Records (record_id, data, modified) values (?1, ?2, ?3)",
         )?;
         setter.execute((
             record_id.full_id(),
-            serde_json::to_string(&entry).unwrap(), // TODO: proper error here
+            serde_json::to_string(&entry).unwrap(), // TODO: do something more sensible
             &Local::now(),
         ))?;
 
@@ -122,6 +179,9 @@ impl RecordDatabase {
             "INSERT OR REPLACE INTO CitationKeys (name, record_key) values (?1, ?2)",
         )?;
         key_writer.execute((record_id.full_id(), key))?;
+        if let Some(record_id) = reference_id {
+            key_writer.execute((record_id.full_id(), key))?;
+        }
 
         Ok(())
     }
@@ -132,58 +192,6 @@ impl RecordDatabase {
         tx.commit()
     }
 
-    fn get_cached_data_transaction(
-        tx: &Transaction,
-        record_id: &RecordId,
-    ) -> Result<CacheResponse, rusqlite::Error> {
-        // First, try to get the key from CitationKeys
-        match Self::get_record_key(&tx, &record_id) {
-            // If the key exists, get the corresponding record
-            Ok(Some(key)) => {
-                let mut record_selector =
-                    tx.prepare_cached("SELECT modified, data FROM Records WHERE key = ?1")?;
-                let mut record_rows = record_selector.query([key])?;
-
-                match record_rows.next() {
-                    // Valid record
-                    Ok(Some(row)) => Self::cache_response_from_record_row(record_id, row)
-                        .map(CacheResponse::Found),
-                    Ok(None) => {
-                        panic!("A key in CitationKeys does not correspond to a row in Records!")
-                    }
-                    Err(err) => Err(err),
-                }
-            }
-            // No key, check for cache in NullRecords
-            Ok(None) => {
-                let mut null_selector =
-                    tx.prepare_cached("SELECT attempted FROM NullRecords WHERE record_id = ?1")?;
-                let mut null_rows = null_selector.query([&record_id.full_id()])?;
-
-                match null_rows.next() {
-                    // Cached null
-                    Ok(Some(row)) => Ok(CacheResponse::FoundNull(row.get("attempted")?)),
-                    Ok(None) => Ok(CacheResponse::NotFound),
-                    Err(err) => Err(err),
-                }
-            }
-            Err(err) => Err(err),
-        }
-    }
-
-    /// Determine the key for the internal Records table corresponding to '\<source\>:\<sub_id\>'.
-    fn get_record_key(
-        tx: &Transaction,
-        record_id: &RecordId,
-    ) -> Result<Option<usize>, rusqlite::Error> {
-        let mut selector =
-            tx.prepare_cached("SELECT record_key FROM CitationKeys WHERE name = ?1")?;
-
-        selector
-            .query_row([record_id.full_id()], |row| row.get("record_key"))
-            .optional()
-    }
-
     /// Helper function to wrap the insertion into NullRecords in a transaction.
     fn set_cached_null_record_transaction(
         tx: &Transaction,
@@ -192,19 +200,36 @@ impl RecordDatabase {
         let mut setter = tx.prepare_cached(
             "INSERT OR REPLACE INTO NullRecords (record_id, attempted) values (?1, ?2)",
         )?;
-        setter.execute((record_id.full_id(), Local::now()))?;
+        let cache_time = Local::now();
+        setter.execute((record_id.full_id(), cache_time))?;
+
         Ok(())
     }
 
-    /// Convert a row into a CacheResponse.
+    /// Determine the key for the internal Records table corresponding to [`CitationKey`].
+    ///
+    /// This is performed within a transaction since typically you want to use the resulting row
+    /// identifier for subsequent queries (e.g. to retrieve the corresponding record), in which
+    /// case you want to guarantee that the corresponding row still exists.
+    fn get_record_key(
+        tx: &Transaction,
+        citation_key: &CitationKey,
+    ) -> Result<Option<usize>, rusqlite::Error> {
+        let mut selector =
+            tx.prepare_cached("SELECT record_key FROM CitationKeys WHERE name = ?1")?;
+
+        selector
+            .query_row([citation_key.as_str()], |row| row.get("record_key"))
+            .optional()
+    }
+
+    /// Convert a [`rusqlite::Row`] into a [`CacheResponse`].
+    ///
     /// This assumes that the row was generated by the following query:
     /// ```sql
     /// SELECT modified, data FROM Records WHERE ...
     /// ```
-    fn cache_response_from_record_row(
-        record_id: &RecordId,
-        row: &rusqlite::Row,
-    ) -> Result<Entry, rusqlite::Error> {
+    fn cache_response_from_record_row(row: &rusqlite::Row) -> Result<Entry, rusqlite::Error> {
         let data_str: String = row.get("data")?;
         let modified: DateTime<Local> = row.get("modified")?;
 
@@ -216,8 +241,9 @@ impl RecordDatabase {
 /// 1. Found(Record) where Record.data is Some(Entry): the cache exists, and contains data.
 /// 2. Found(Record) where Record.data is None: the cache exists, and is null.
 /// 3. NotFound(RecordId): RecordId has not been cached.
-pub enum CacheResponse {
+pub enum CacheResponse<'a> {
     Found(Entry),
     FoundNull(DateTime<Local>),
-    NotFound,
+    NullAlias,
+    NotFound(&'a RecordId),
 }

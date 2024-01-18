@@ -2,9 +2,11 @@ use std::fmt::{Display, Formatter};
 
 use serde::{Deserialize, Serialize};
 
+use crate::record::CitationKey;
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct KeyedEntry {
-    pub key: String,
+    pub key: CitationKey,
     pub contents: Entry,
 }
 

@@ -32,6 +32,13 @@ pub enum ValidationResult {
     Ok,
 }
 
+pub fn validate_citation_key(citation_key: &CitationKey) -> ValidationResult {
+    match citation_key {
+        CitationKey::RecordId(record_id) => validate_record_id(&record_id),
+        CitationKey::Alias(_) => ValidationResult::Ok,
+    }
+}
+
 pub fn validate_record_id(record_id: &RecordId) -> ValidationResult {
     match lookup_validator(&record_id) {
         Some(validator) => {
@@ -45,14 +52,17 @@ pub fn validate_record_id(record_id: &RecordId) -> ValidationResult {
     }
 }
 
+/// Resolve the [`RecordId`] using the [`Resolver`] and insert the appropriate cache into the
+/// database.
 fn resolve_helper(
     resolver: Resolver,
     db: &mut RecordDatabase,
     record_id: &RecordId,
+    reference_id: Option<&RecordId>,
 ) -> Result<Option<Entry>, RecordError> {
     match resolver(record_id.sub_id()) {
         Ok(Some(entry)) => {
-            db.set_cached_data(&record_id, &entry)?;
+            db.set_cached_data(&record_id, &entry, reference_id)?;
             Ok(Some(entry))
         }
         Ok(None) => {
@@ -63,30 +73,32 @@ fn resolve_helper(
     }
 }
 
-/// Get the [`Record`] associated with a [`RecordId`].
+/// Get the [`Entry`] associated with a [`CitationKey`].
 pub fn get_record(
     db: &mut RecordDatabase,
-    record_id: &RecordId,
+    citation_key: &CitationKey,
 ) -> Result<Option<Entry>, RecordError> {
-    match db.get_cached_data(record_id)? {
-        CacheResponse::Found(cached_record) => Ok(Some(cached_record)),
+    match db.get_cached_data(citation_key)? {
+        CacheResponse::Found(cached_entry) => Ok(Some(cached_entry)),
         CacheResponse::FoundNull(_attempted) => Ok(None),
-        CacheResponse::NotFound => {
-            // Resolve the reference, if required...
-            let (resolver, new_record_id) = match lookup_source(&record_id)? {
-                Source::Canonical(resolver) => (resolver, record_id.clone()),
-                Source::Reference(resolver, referrer) => {
-                    match referrer(record_id.sub_id()) {
-                        // TODO: cache here
-                        Ok(Some(new_record_id)) => (resolver, new_record_id),
-                        Ok(None) => todo!(),
-                        Err(_) => todo!(),
+        CacheResponse::NullAlias => Ok(None),
+        CacheResponse::NotFound(record_id) => {
+            match lookup_source(&record_id)? {
+                // record_id is a canonical source, so there is no alias to be set
+                Source::Canonical(resolver) => resolve_helper(resolver, db, &record_id, None),
+                // record_id is a reference source, so we must set the alias
+                Source::Reference(resolver, referrer) => match referrer(record_id.sub_id()) {
+                    // resolved to a real record_id
+                    Ok(Some(new_record_id)) => {
+                        resolve_helper(resolver, db, &new_record_id, Some(record_id))
                     }
-                }
-            };
-
-            // ...then look up the record.
-            resolve_helper(resolver, db, &new_record_id)
+                    Ok(None) => {
+                        db.set_cached_null_record(&record_id)?;
+                        Ok(None)
+                    }
+                    Err(why) => Err(why),
+                },
+            }
         }
     }
 }
