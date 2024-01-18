@@ -29,10 +29,6 @@ impl Record {
             modified: Local::now(),
         }
     }
-
-    // pub fn swap_id(&mut self, new_id: RecordId) -> RecordId {
-    //     std::mem::replace(&mut self.id, new_id)
-    // }
 }
 
 // TODO: subdivide this into smaller error groups
@@ -98,6 +94,7 @@ impl RecordId {
         &self.full_id[0..self.source_length]
     }
 
+    /// Construct a RecordId from the source and sub_id components.
     pub fn from_parts(source: &str, sub_id: &str) -> Self {
         let mut new = source.to_string();
         new.push_str(":");
@@ -116,6 +113,13 @@ impl RecordId {
     /// Get the full record id.
     pub fn full_id(&self) -> &str {
         &self.full_id
+    }
+}
+
+impl From<RecordId> for String {
+    fn from(record: RecordId) -> Self {
+        let RecordId { full_id, .. } = record;
+        full_id
     }
 }
 

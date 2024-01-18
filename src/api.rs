@@ -45,7 +45,7 @@ pub fn validate_record_id(record_id: &RecordId) -> ValidationResult {
     }
 }
 
-fn resolve_record_helper(
+fn resolve_helper(
     resolver: Resolver,
     db: &mut RecordDatabase,
     record_id: &RecordId,
@@ -86,7 +86,7 @@ pub fn get_record(
             };
 
             // ...then look up the record.
-            resolve_record_helper(resolver, db, &new_record_id)
+            resolve_helper(resolver, db, &new_record_id)
         }
     }
 }

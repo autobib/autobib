@@ -60,7 +60,7 @@ fn main() {
                 },
                 |response| match response {
                     Some(entry) => Some(KeyedEntry {
-                        key: record_id.to_string(),
+                        key: record_id.into(),
                         contents: entry,
                     }),
                     None => {
