@@ -1,45 +1,12 @@
+mod error;
 mod key;
 
-use std::fmt;
-
+pub use error::*;
 pub use key::*;
 
 use crate::database::{CacheResponse, RecordDatabase};
 use crate::entry::Entry;
 use crate::source::{lookup_source, Resolver, Source};
-
-#[derive(Debug)]
-pub enum RecordError {
-    InvalidSource(String),
-    NetworkFailure(reqwest::Error),
-    DatabaseFailure(rusqlite::Error),
-    Incomplete,
-}
-
-impl From<rusqlite::Error> for RecordError {
-    fn from(err: rusqlite::Error) -> Self {
-        RecordError::DatabaseFailure(err)
-    }
-}
-
-impl From<reqwest::Error> for RecordError {
-    fn from(err: reqwest::Error) -> Self {
-        RecordError::NetworkFailure(err)
-    }
-}
-
-impl fmt::Display for RecordError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            RecordError::InvalidSource(source) => {
-                write!(f, "'{}' is not a valid source.", source)
-            }
-            RecordError::DatabaseFailure(error) => write!(f, "Database failure: {}", error),
-            RecordError::NetworkFailure(error) => write!(f, "Network failure: {}", error),
-            RecordError::Incomplete => write!(f, "Incomplete record"),
-        }
-    }
-}
 
 /// Resolve the [`RecordId`] using the [`Resolver`] and insert the appropriate cache into the
 /// database.
@@ -63,6 +30,8 @@ fn resolve_helper(
 }
 
 /// Get the [`Entry`] associated with a [`CitationKey`].
+///
+/// First,
 pub fn get_record(
     db: &mut RecordDatabase,
     citation_key: &CitationKey,
@@ -75,7 +44,8 @@ pub fn get_record(
             match lookup_source(&record_id.source())? {
                 // record_id is a canonical source, so there is no alias to be set
                 Source::Canonical(resolver) => resolve_helper(resolver, db, &record_id, None),
-                // record_id is a reference source, so we must set the alias
+                // record_id is a reference source, so we find the canonical source and set the
+                // alias
                 Source::Reference(resolver, referrer) => match referrer(record_id.sub_id()) {
                     // resolved to a real record_id
                     Ok(Some(new_record_id)) => {

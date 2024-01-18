@@ -140,24 +140,23 @@ impl RecordDatabase {
 
     /// Insert a new record into the database.
     ///
-    /// Every record requires that it is associated with a canonical [`RecordId`], which is passed
-    /// as the main argument. The [`RecordId`] may also be associated with another [`RecordId`]
-    /// acting as a reference source, or with a [`CitationKey::Alias`].
+    /// Every record requires that it is associated with a canonical [`RecordId`] with a
+    /// corresponding entry. There may also be an associated reference [`RecordId`].
     pub fn set_cached_data(
         &mut self,
-        record_id: &RecordId,
+        canonical_id: &RecordId,
         entry: &Entry,
         reference_id: Option<&RecordId>,
     ) -> Result<(), rusqlite::Error> {
         let tx = self.conn.transaction()?;
-        Self::set_cached_data_transaction(&tx, &record_id, &entry, reference_id)?;
+        Self::set_cached_data_transaction(&tx, &canonical_id, &entry, reference_id)?;
         tx.commit()
     }
 
     /// Helper function to wrap the insertion into Records and CitationKeys in a transaction.
     fn set_cached_data_transaction(
         tx: &Transaction,
-        record_id: &RecordId,
+        canonical_id: &RecordId,
         entry: &Entry,
         reference_id: Option<&RecordId>,
     ) -> Result<(), rusqlite::Error> {
@@ -165,7 +164,7 @@ impl RecordDatabase {
             "INSERT OR REPLACE INTO Records (record_id, data, modified) values (?1, ?2, ?3)",
         )?;
         setter.execute((
-            record_id.full_id(),
+            canonical_id.full_id(),
             serde_json::to_string(&entry).unwrap(), // TODO: do something more sensible
             &Local::now(),
         ))?;
@@ -177,7 +176,7 @@ impl RecordDatabase {
         let mut key_writer = tx.prepare_cached(
             "INSERT OR REPLACE INTO CitationKeys (name, record_key) values (?1, ?2)",
         )?;
-        key_writer.execute((record_id.full_id(), key))?;
+        key_writer.execute((canonical_id.full_id(), key))?;
         if let Some(record_id) = reference_id {
             key_writer.execute((record_id.full_id(), key))?;
         }
@@ -185,6 +184,10 @@ impl RecordDatabase {
         Ok(())
     }
 
+    /// Cache a null record.
+    ///
+    /// If `record_id` has a canonical source, this means that there is no associated entry. If
+    /// `record_id` is a reference source, this means there is no associated canonical `record_id`.
     pub fn set_cached_null_record(&mut self, record_id: &RecordId) -> Result<(), rusqlite::Error> {
         let tx = self.conn.transaction()?;
         Self::set_cached_null_record_transaction(&tx, record_id)?;
@@ -238,13 +241,14 @@ impl RecordDatabase {
     }
 }
 
-/// Represent the possible return types of a request for cached data.
-/// 1. Found(Record) where Record.data is Some(Entry): the cache exists, and contains data.
-/// 2. Found(Record) where Record.data is None: the cache exists, and is null.
-/// 3. NotFound(RecordId): RecordId has not been cached.
+/// The responses from the database in a request for cached data.
 pub enum CacheResponse<'a> {
+    /// Found an [`Entry`], which was last modified at the given time.
     Found(Entry, DateTime<Local>),
+    /// The record is null, and this was last checked at the given time.
     FoundNull(DateTime<Local>),
+    /// The search was for an alias, which did not exist.
     NullAlias,
+    /// The search was for a [`RecordId`], which did not exist.
     NotFound(&'a RecordId),
 }
