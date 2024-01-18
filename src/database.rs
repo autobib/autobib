@@ -4,6 +4,7 @@ use std::path::Path;
 use chrono::{DateTime, Local};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Result, Transaction};
 
+use crate::entry::Entry;
 use crate::record::*;
 
 pub struct RecordDatabase {
@@ -88,10 +89,41 @@ impl RecordDatabase {
     }
 
     /// Insert a new record into the database.
-    pub fn set_cached_data(&mut self, record: &Record) -> Result<(), rusqlite::Error> {
+    pub fn set_cached_data(
+        &mut self,
+        record_id: &RecordId,
+        entry: &Entry,
+    ) -> Result<(), rusqlite::Error> {
         let tx = self.conn.transaction()?;
-        Self::set_cached_data_transaction(&tx, &record)?;
+        Self::set_cached_data_transaction(&tx, &record_id, &entry)?;
         tx.commit()
+    }
+
+    /// Helper function to wrap the insertion into Records and CitationKeys in a transaction.
+    fn set_cached_data_transaction(
+        tx: &Transaction,
+        record_id: &RecordId,
+        entry: &Entry,
+    ) -> Result<(), rusqlite::Error> {
+        let mut setter = tx.prepare_cached(
+            "INSERT OR REPLACE INTO Records (record_id, data, modified) values (?1, ?2, ?3)",
+        )?;
+        setter.execute((
+            record_id.full_id(),
+            serde_json::to_string(&entry).unwrap(), // TODO: proper error here
+            &Local::now(),
+        ))?;
+
+        // get identifier
+        let key = tx.last_insert_rowid();
+
+        // add citation keys
+        let mut key_writer = tx.prepare_cached(
+            "INSERT OR REPLACE INTO CitationKeys (name, record_key) values (?1, ?2)",
+        )?;
+        key_writer.execute((record_id.full_id(), key))?;
+
+        Ok(())
     }
 
     pub fn set_cached_null_record(&mut self, record_id: &RecordId) -> Result<(), rusqlite::Error> {
@@ -152,32 +184,6 @@ impl RecordDatabase {
             .optional()
     }
 
-    /// Helper function to wrap the insertion into Records and CitationKeys in a transaction.
-    fn set_cached_data_transaction(
-        tx: &Transaction,
-        record: &Record,
-    ) -> Result<(), rusqlite::Error> {
-        let mut setter = tx.prepare_cached(
-            "INSERT OR REPLACE INTO Records (record_id, data, modified) values (?1, ?2, ?3)",
-        )?;
-        setter.execute((
-            record.id.full_id(),
-            serde_json::to_string(&record.data).unwrap(), // TODO: proper error here
-            &record.modified,
-        ))?;
-
-        // get identifier
-        let key = tx.last_insert_rowid();
-
-        // add citation keys
-        let mut key_writer = tx.prepare_cached(
-            "INSERT OR REPLACE INTO CitationKeys (name, record_key) values (?1, ?2)",
-        )?;
-        key_writer.execute((record.id.full_id(), key))?;
-
-        Ok(())
-    }
-
     /// Helper function to wrap the insertion into NullRecords in a transaction.
     fn set_cached_null_record_transaction(
         tx: &Transaction,
@@ -198,15 +204,11 @@ impl RecordDatabase {
     fn cache_response_from_record_row(
         record_id: &RecordId,
         row: &rusqlite::Row,
-    ) -> Result<Record, rusqlite::Error> {
+    ) -> Result<Entry, rusqlite::Error> {
         let data_str: String = row.get("data")?;
         let modified: DateTime<Local> = row.get("modified")?;
 
-        Ok(Record {
-            id: record_id.clone(),
-            data: serde_json::from_str(&data_str).unwrap(),
-            modified,
-        })
+        Ok(serde_json::from_str(&data_str).unwrap())
     }
 }
 
@@ -215,7 +217,7 @@ impl RecordDatabase {
 /// 2. Found(Record) where Record.data is None: the cache exists, and is null.
 /// 3. NotFound(RecordId): RecordId has not been cached.
 pub enum CacheResponse {
-    Found(Record),
+    Found(Entry),
     FoundNull(DateTime<Local>),
     NotFound,
 }

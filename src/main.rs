@@ -58,8 +58,11 @@ fn main() {
                     eprintln!("{}", err);
                     None
                 },
-                |record| match record {
-                    Some(record) => Some(record.into()),
+                |response| match response {
+                    Some(entry) => Some(KeyedEntry {
+                        key: record_id.to_string(),
+                        contents: entry,
+                    }),
                     None => {
                         eprintln!("'null record: {record_id}'");
                         None
@@ -94,10 +97,7 @@ fn create_test_db() -> Result<RecordDatabase, RecordError> {
             ..Fields::default()
         },
     };
-    record_db.set_cached_data(&Record::new(
-        RecordId::from_str("test:000").unwrap(),
-        entry_1,
-    ))?;
+    record_db.set_cached_data(&RecordId::from_str("test:000").unwrap(), &entry_1)?;
 
     let entry_2 = Entry {
         entry_type: "article".to_string(),
@@ -107,10 +107,7 @@ fn create_test_db() -> Result<RecordDatabase, RecordError> {
             ..Fields::default()
         },
     };
-    record_db.set_cached_data(&Record::new(
-        RecordId::from_str("test:002").unwrap(),
-        entry_2,
-    ))?;
+    record_db.set_cached_data(&RecordId::from_str("test:002").unwrap(), &entry_2)?;
 
     Ok(record_db)
 }

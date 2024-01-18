@@ -29,6 +29,10 @@ impl Record {
             modified: Local::now(),
         }
     }
+
+    // pub fn swap_id(&mut self, new_id: RecordId) -> RecordId {
+    //     std::mem::replace(&mut self.id, new_id)
+    // }
 }
 
 // TODO: subdivide this into smaller error groups

@@ -1,7 +1,8 @@
 pub use crate::database::{CacheResponse, RecordDatabase};
 pub use crate::record::*;
 
-use crate::source::{arxiv, test, zbl, zbmath, Source, Validator};
+use crate::entry::Entry;
+use crate::source::{arxiv, test, zbl, zbmath, Referrer, Resolver, Source, Validator};
 
 /// Map the `source` part of a [`RecordId`] to a [`Source`].
 fn lookup_source(record_id: &RecordId) -> Result<Source, RecordError> {
@@ -44,11 +45,29 @@ pub fn validate_record_id(record_id: &RecordId) -> ValidationResult {
     }
 }
 
+fn resolve_record_helper(
+    resolver: Resolver,
+    db: &mut RecordDatabase,
+    record_id: &RecordId,
+) -> Result<Option<Entry>, RecordError> {
+    match resolver(record_id.sub_id()) {
+        Ok(Some(entry)) => {
+            db.set_cached_data(&record_id, &entry)?;
+            Ok(Some(entry))
+        }
+        Ok(None) => {
+            db.set_cached_null_record(&record_id)?;
+            Ok(None)
+        }
+        Err(err) => Err(err),
+    }
+}
+
 /// Get the [`Record`] associated with a [`RecordId`].
 pub fn get_record(
     db: &mut RecordDatabase,
     record_id: &RecordId,
-) -> Result<Option<Record>, RecordError> {
+) -> Result<Option<Entry>, RecordError> {
     match db.get_cached_data(record_id)? {
         CacheResponse::Found(cached_record) => Ok(Some(cached_record)),
         CacheResponse::FoundNull(_attempted) => Ok(None),
@@ -67,18 +86,7 @@ pub fn get_record(
             };
 
             // ...then look up the record.
-            match resolver(new_record_id.sub_id()) {
-                Ok(Some(entry)) => {
-                    let record = Record::new(new_record_id, entry);
-                    db.set_cached_data(&record)?;
-                    Ok(Some(record))
-                }
-                Ok(None) => {
-                    db.set_cached_null_record(&new_record_id)?;
-                    Ok(None)
-                }
-                Err(err) => Err(err),
-            }
+            resolve_record_helper(resolver, db, &new_record_id)
         }
     }
 }
