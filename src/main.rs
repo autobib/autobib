@@ -34,10 +34,11 @@ fn main() {
         .filter_map(|input| match RecordId::from_str(&input) {
             Ok(record_id) => Some(record_id),
             Err(err) => {
-                eprintln!("{}", err);
+                eprintln!("{err}");
                 None
             }
         })
+        // perform "cheap" record_id validation
         .filter(|record_id| match validate_record_id(record_id) {
             ValidationResult::InvalidSource(s) => {
                 eprintln!("invalid source: '{s}'");
@@ -49,6 +50,7 @@ fn main() {
             }
             ValidationResult::Ok => true,
         })
+        // retrieve records
         .filter_map(|record_id| {
             get_record(&mut record_db, &record_id).map_or_else(
                 // error retrieving record
@@ -59,7 +61,7 @@ fn main() {
                 |record| match record {
                     Some(record) => Some(record.into()),
                     None => {
-                        eprintln!("'{}' is a null record", record_id);
+                        eprintln!("'null record: {record_id}'");
                         None
                     }
                 },
