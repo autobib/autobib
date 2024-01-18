@@ -1,14 +1,16 @@
+mod key;
+
 use std::fmt;
-use std::str::FromStr;
 
-use serde_with::{DeserializeFromStr, SerializeDisplay};
+pub use key::*;
 
-// TODO: subdivide this into smaller error groups
-/// Various failure modes for records.
+use crate::database::{CacheResponse, RecordDatabase};
+use crate::entry::Entry;
+use crate::source::{lookup_source, Resolver, Source};
+
 #[derive(Debug)]
 pub enum RecordError {
-    InvalidRecordIdFormat(String),
-    InvalidSource(RecordId),
+    InvalidSource(String),
     NetworkFailure(reqwest::Error),
     DatabaseFailure(rusqlite::Error),
     Incomplete,
@@ -29,15 +31,8 @@ impl From<reqwest::Error> for RecordError {
 impl fmt::Display for RecordError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            RecordError::InvalidRecordIdFormat(input) => {
-                write!(
-                    f,
-                    "'{}' is not in the format of '<source>:<sub_id>'.",
-                    input
-                )
-            }
-            RecordError::InvalidSource(record_id) => {
-                write!(f, "'{}' is not a valid source.", record_id.source())
+            RecordError::InvalidSource(source) => {
+                write!(f, "'{}' is not a valid source.", source)
             }
             RecordError::DatabaseFailure(error) => write!(f, "Database failure: {}", error),
             RecordError::NetworkFailure(error) => write!(f, "Network failure: {}", error),
@@ -46,157 +41,53 @@ impl fmt::Display for RecordError {
     }
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, DeserializeFromStr, SerializeDisplay)]
-pub enum CitationKey {
-    RecordId(RecordId),
-    Alias(String),
-}
-
-impl CitationKey {
-    pub fn as_str(&self) -> &str {
-        match self {
-            Self::RecordId(record_id) => record_id.sub_id(),
-            Self::Alias(s) => s.as_str(),
+/// Resolve the [`RecordId`] using the [`Resolver`] and insert the appropriate cache into the
+/// database.
+fn resolve_helper(
+    resolver: Resolver,
+    db: &mut RecordDatabase,
+    record_id: &RecordId,
+    reference_id: Option<&RecordId>,
+) -> Result<Option<Entry>, RecordError> {
+    match resolver(record_id.sub_id()) {
+        Ok(Some(entry)) => {
+            db.set_cached_data(&record_id, &entry, reference_id)?;
+            Ok(Some(entry))
         }
-    }
-}
-
-pub enum CitationKeyErrorKind {
-    EmptySource,
-    EmptySubId,
-    EmptyAlias,
-}
-
-pub struct CitationKeyError {
-    input: String,
-    kind: CitationKeyErrorKind,
-}
-
-impl CitationKeyError {
-    pub fn new(input: String, kind: CitationKeyErrorKind) -> Self {
-        Self { input, kind }
-    }
-}
-
-impl fmt::Display for CitationKeyError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Invalid citation key '{}': ", self.input)?;
-        match self.kind {
-            CitationKeyErrorKind::EmptySource => {
-                f.write_str("record identifier 'source' must be non-empty")
-            }
-            CitationKeyErrorKind::EmptySubId => {
-                f.write_str("record identifier 'sub_id' must be non-empty")
-            }
-            CitationKeyErrorKind::EmptyAlias => f.write_str("alias must be non-empty"),
+        Ok(None) => {
+            db.set_cached_null_record(&record_id)?;
+            Ok(None)
         }
+        Err(err) => Err(err),
     }
 }
 
-impl FromStr for CitationKey {
-    type Err = CitationKeyError;
-
-    fn from_str(input: &str) -> Result<Self, Self::Err> {
-        match input.find(':') {
-            Some(source_length) => {
-                if source_length == 0 {
-                    return Err(CitationKeyError::new(
-                        input.to_string(),
-                        CitationKeyErrorKind::EmptySource,
-                    ));
-                } else if source_length == input.len() - 1 {
-                    return Err(CitationKeyError::new(
-                        input.to_string(),
-                        CitationKeyErrorKind::EmptySubId,
-                    ));
-                }
-                let trimmed = input.trim();
-                Ok(CitationKey::RecordId(RecordId {
-                    full_id: String::from(trimmed),
-                    source_length,
-                }))
-            }
-            None => {
-                if input.len() == 0 {
-                    return Err(CitationKeyError::new(
-                        input.to_string(),
-                        CitationKeyErrorKind::EmptyAlias,
-                    ));
-                } else {
-                    Ok(CitationKey::Alias(input.to_string()))
-                }
+/// Get the [`Entry`] associated with a [`CitationKey`].
+pub fn get_record(
+    db: &mut RecordDatabase,
+    citation_key: &CitationKey,
+) -> Result<Option<Entry>, RecordError> {
+    match db.get_cached_data(citation_key)? {
+        CacheResponse::Found(cached_entry, _modified) => Ok(Some(cached_entry)),
+        CacheResponse::FoundNull(_attempted) => Ok(None),
+        CacheResponse::NullAlias => Ok(None),
+        CacheResponse::NotFound(record_id) => {
+            match lookup_source(&record_id.source())? {
+                // record_id is a canonical source, so there is no alias to be set
+                Source::Canonical(resolver) => resolve_helper(resolver, db, &record_id, None),
+                // record_id is a reference source, so we must set the alias
+                Source::Reference(resolver, referrer) => match referrer(record_id.sub_id()) {
+                    // resolved to a real record_id
+                    Ok(Some(new_record_id)) => {
+                        resolve_helper(resolver, db, &new_record_id, Some(record_id))
+                    }
+                    Ok(None) => {
+                        db.set_cached_null_record(&record_id)?;
+                        Ok(None)
+                    }
+                    Err(why) => Err(why),
+                },
             }
         }
-    }
-}
-
-impl fmt::Display for CitationKey {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::RecordId(record_id) => record_id.fmt(f),
-            Self::Alias(s) => f.write_str(s),
-        }
-    }
-}
-
-/// A source (`source`) with corresponding identity (`sub_id`), such as 'arxiv:0123.4567'
-#[derive(Debug, Clone, Hash, PartialEq, Eq, DeserializeFromStr, SerializeDisplay)]
-pub struct RecordId {
-    full_id: String,
-    source_length: usize,
-}
-
-impl RecordId {
-    /// Get the source part of the record id.
-    pub fn source(&self) -> &str {
-        &self.full_id[0..self.source_length]
-    }
-
-    /// Construct a RecordId from the source and sub_id components.
-    pub fn from_parts(source: &str, sub_id: &str) -> Self {
-        let mut new = source.to_string();
-        new.push_str(":");
-        new.push_str(sub_id);
-        Self {
-            full_id: new,
-            source_length: source.len(),
-        }
-    }
-
-    /// Get the part of the record id after the source.
-    pub fn sub_id(&self) -> &str {
-        &self.full_id[self.source_length + 1..]
-    }
-
-    /// Get the full record id.
-    pub fn full_id(&self) -> &str {
-        &self.full_id
-    }
-}
-
-impl FromStr for RecordId {
-    type Err = RecordError;
-
-    fn from_str(input: &str) -> Result<Self, Self::Err> {
-        let first_colon_position = input.find(':');
-        match first_colon_position {
-            Some(p) => {
-                if p == 0 || p == input.len() - 1 {
-                    return Err(RecordError::InvalidRecordIdFormat(input.to_string()));
-                }
-                // TODO: trim whitespace
-                Ok(RecordId {
-                    full_id: String::from(input),
-                    source_length: p,
-                })
-            }
-            None => Err(RecordError::InvalidRecordIdFormat(input.to_string())),
-        }
-    }
-}
-
-impl fmt::Display for RecordId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.full_id)
     }
 }

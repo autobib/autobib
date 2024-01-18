@@ -1,4 +1,3 @@
-mod api;
 mod database;
 mod entry;
 mod record;
@@ -9,8 +8,8 @@ use std::str::FromStr;
 use clap::Parser;
 use rusqlite::Result;
 
-use api::*;
 use entry::KeyedEntry;
+use record::*;
 
 const DATABASE_FILE: &str = "cache.db";
 
@@ -30,25 +29,13 @@ fn main() {
     let valid_entries: Vec<KeyedEntry> = cli
         .args
         .into_iter()
-        // parse the source:sub_id arguments
+        // parse the source:sub_id arguments and perform cheap validation
         .filter_map(|input| match CitationKey::from_str(&input) {
             Ok(record_id) => Some(record_id),
             Err(err) => {
                 eprintln!("{err}");
                 None
             }
-        })
-        // perform "cheap" record_id validation
-        .filter(|record_id| match validate_citation_key(record_id) {
-            ValidationResult::InvalidSource(s) => {
-                eprintln!("invalid source: '{s}'");
-                false
-            }
-            ValidationResult::InvalidSubId(s) => {
-                eprintln!("invalid sub-id: '{s}'");
-                false
-            }
-            ValidationResult::Ok => true,
         })
         // retrieve records
         .filter_map(|citation_key| {
@@ -78,6 +65,8 @@ fn main() {
     }
 }
 
+use crate::database::RecordDatabase;
+
 /// Populate the database with some records for testing purposes.
 fn create_test_db() -> Result<RecordDatabase, RecordError> {
     use entry::{Entry, Fields};
@@ -97,7 +86,7 @@ fn create_test_db() -> Result<RecordDatabase, RecordError> {
             ..Fields::default()
         },
     };
-    record_db.set_cached_data(&RecordId::from_str("test:000").unwrap(), &entry_1, None)?;
+    record_db.set_cached_data(&RecordId::from_parts("test", "000"), &entry_1, None)?;
 
     let entry_2 = Entry {
         entry_type: "article".to_string(),
@@ -107,7 +96,7 @@ fn create_test_db() -> Result<RecordDatabase, RecordError> {
             ..Fields::default()
         },
     };
-    record_db.set_cached_data(&RecordId::from_str("test:002").unwrap(), &entry_2, None)?;
+    record_db.set_cached_data(&RecordId::from_parts("test", "002"), &entry_2, None)?;
 
     Ok(record_db)
 }
