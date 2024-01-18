@@ -102,9 +102,8 @@ impl RecordDatabase {
 
                 match record_rows.next() {
                     // Valid record
-                    Ok(Some(row)) => {
-                        Self::cache_response_from_record_row(row).map(CacheResponse::Found)
-                    }
+                    Ok(Some(row)) => Self::cache_response_from_record_row(row)
+                        .map(|(entry, modified)| CacheResponse::Found(entry, modified)),
                     Ok(None) => {
                         // SAFETY: the ON DELETE CASCADE and transaction wrapping should prevent
                         // this from ever occurring.
@@ -229,11 +228,13 @@ impl RecordDatabase {
     /// ```sql
     /// SELECT modified, data FROM Records WHERE ...
     /// ```
-    fn cache_response_from_record_row(row: &rusqlite::Row) -> Result<Entry, rusqlite::Error> {
+    fn cache_response_from_record_row(
+        row: &rusqlite::Row,
+    ) -> Result<(Entry, DateTime<Local>), rusqlite::Error> {
         let data_str: String = row.get("data")?;
         let modified: DateTime<Local> = row.get("modified")?;
 
-        Ok(serde_json::from_str(&data_str).unwrap())
+        Ok((serde_json::from_str(&data_str).unwrap(), modified))
     }
 }
 
@@ -242,7 +243,7 @@ impl RecordDatabase {
 /// 2. Found(Record) where Record.data is None: the cache exists, and is null.
 /// 3. NotFound(RecordId): RecordId has not been cached.
 pub enum CacheResponse<'a> {
-    Found(Entry),
+    Found(Entry, DateTime<Local>),
     FoundNull(DateTime<Local>),
     NullAlias,
     NotFound(&'a RecordId),

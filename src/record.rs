@@ -1,35 +1,7 @@
 use std::fmt;
 use std::str::FromStr;
 
-use chrono::{DateTime, Local};
 use serde_with::{DeserializeFromStr, SerializeDisplay};
-
-use crate::entry::{Entry, KeyedEntry};
-
-pub struct Record {
-    pub key: CitationKey,
-    pub data: Entry,
-    pub modified: DateTime<Local>,
-}
-
-impl From<Record> for KeyedEntry {
-    fn from(record: Record) -> KeyedEntry {
-        KeyedEntry {
-            key: record.key,
-            contents: record.data,
-        }
-    }
-}
-
-impl Record {
-    pub fn new(key: CitationKey, data: Entry) -> Self {
-        Self {
-            key,
-            data,
-            modified: Local::now(),
-        }
-    }
-}
 
 // TODO: subdivide this into smaller error groups
 /// Various failure modes for records.
@@ -37,7 +9,6 @@ impl Record {
 pub enum RecordError {
     InvalidRecordIdFormat(String),
     InvalidSource(RecordId),
-    InvalidSubId(RecordId),
     NetworkFailure(reqwest::Error),
     DatabaseFailure(rusqlite::Error),
     Incomplete,
@@ -68,12 +39,6 @@ impl fmt::Display for RecordError {
             RecordError::InvalidSource(record_id) => {
                 write!(f, "'{}' is not a valid source.", record_id.source())
             }
-            RecordError::InvalidSubId(record_id) => write!(
-                f,
-                "'{}' is not a valid sub-id for the source '{}'.",
-                record_id.sub_id(),
-                record_id.source()
-            ),
             RecordError::DatabaseFailure(error) => write!(f, "Database failure: {}", error),
             RecordError::NetworkFailure(error) => write!(f, "Network failure: {}", error),
             RecordError::Incomplete => write!(f, "Incomplete record"),

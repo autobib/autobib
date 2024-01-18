@@ -2,7 +2,7 @@ pub use crate::database::{CacheResponse, RecordDatabase};
 pub use crate::record::*;
 
 use crate::entry::Entry;
-use crate::source::{arxiv, test, zbl, zbmath, Referrer, Resolver, Source, Validator};
+use crate::source::{arxiv, test, zbl, zbmath, Resolver, Source, Validator};
 
 /// Map the `source` part of a [`RecordId`] to a [`Source`].
 fn lookup_source(record_id: &RecordId) -> Result<Source, RecordError> {
@@ -79,7 +79,7 @@ pub fn get_record(
     citation_key: &CitationKey,
 ) -> Result<Option<Entry>, RecordError> {
     match db.get_cached_data(citation_key)? {
-        CacheResponse::Found(cached_entry) => Ok(Some(cached_entry)),
+        CacheResponse::Found(cached_entry, _modified) => Ok(Some(cached_entry)),
         CacheResponse::FoundNull(_attempted) => Ok(None),
         CacheResponse::NullAlias => Ok(None),
         CacheResponse::NotFound(record_id) => {
