@@ -1,7 +1,10 @@
+use reqwest::StatusCode;
 use std::fmt;
 
 #[derive(Debug)]
 pub enum RecordError {
+    UnexpectedFailure(String),
+    UnexpectedStatusCode(StatusCode),
     InvalidSource(String),
     NetworkFailure(reqwest::Error),
     DatabaseFailure(rusqlite::Error),
@@ -27,6 +30,10 @@ impl fmt::Display for RecordError {
                 write!(f, "'{}' is not a valid source.", source)
             }
             RecordError::DatabaseFailure(error) => write!(f, "Database failure: {}", error),
+            RecordError::UnexpectedFailure(reason) => write!(f, "Unexpected failure: {}", reason),
+            RecordError::UnexpectedStatusCode(code) => {
+                write!(f, "Unexpected status code: {}", code)
+            }
             RecordError::NetworkFailure(error) => write!(f, "Network failure: {}", error),
             RecordError::Incomplete => write!(f, "Incomplete record"),
         }

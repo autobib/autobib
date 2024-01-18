@@ -30,8 +30,6 @@ fn resolve_helper(
 }
 
 /// Get the [`Entry`] associated with a [`CitationKey`].
-///
-/// First,
 pub fn get_record(
     db: &mut RecordDatabase,
     citation_key: &CitationKey,

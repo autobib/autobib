@@ -19,16 +19,14 @@ struct OnlyCitationKey<'r> {
 }
 
 pub fn get_canonical(id: &str) -> Result<Option<RecordId>, RecordError> {
-    let response = reqwest::blocking::get(format!("https://zbmath.org/bibtex/{}.bib", id))?;
+    let response = reqwest::blocking::get(format!("https://zbmath.org/bibtex/{id}.bib"))?;
 
     let body = match response.status() {
         StatusCode::OK => response.bytes()?,
         StatusCode::NOT_FOUND => {
             return Ok(None);
         }
-        _ => {
-            return Err(RecordError::Incomplete);
-        } //TODO: fixme
+        code => return Err(RecordError::UnexpectedStatusCode(code)),
     };
 
     let mut entry_iter = SliceReader::new(&body).deserialize().into_iter_entry();
@@ -39,9 +37,13 @@ pub fn get_canonical(id: &str) -> Result<Option<RecordId>, RecordError> {
             if key.starts_with(PREFIX) {
                 Ok(Some(RecordId::from_parts("zbmath", &key[PREFIX.len()..])))
             } else {
-                Err(RecordError::Incomplete) // TODO: fixme
+                Err(RecordError::UnexpectedFailure(
+                    "zbMATH bibtex record has unexpected citation key format!".to_string(),
+                ))
             }
         }
-        _ => Err(RecordError::Incomplete), // TODO: fixme
+        _ => Err(RecordError::UnexpectedFailure(
+            "zbMATH bibtex record is not a valid bibtex!".to_string(),
+        )),
     }
 }

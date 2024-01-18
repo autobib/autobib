@@ -1,6 +1,7 @@
 use std::fmt::{Display, Formatter};
 
 use serde::{Deserialize, Serialize};
+use serde_aux::prelude::*;
 
 use crate::record::CitationKey;
 
@@ -21,6 +22,7 @@ impl Display for KeyedEntry {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Entry {
     pub entry_type: String,
+    #[serde(deserialize_with = "deserialize_struct_case_insensitive")]
     pub fields: Fields,
 }
 

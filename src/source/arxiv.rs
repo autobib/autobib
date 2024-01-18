@@ -1,6 +1,7 @@
 use chrono::{DateTime, Datelike, Local};
 use itertools::Itertools;
 use regex::Regex;
+use reqwest::StatusCode;
 use serde::Deserialize;
 
 use crate::entry::{Entry, Fields};
@@ -62,19 +63,26 @@ impl From<ArxivXMLEntry> for Entry {
 }
 
 pub fn get_record(id: &str) -> Result<Option<Entry>, RecordError> {
-    let body = reqwest::blocking::get(format!(
-        "https://export.arxiv.org/api/query?max_results=250&id_list={}",
-        id
-    ))?
-    .text()?;
+    let response = reqwest::blocking::get(format!(
+        "https://export.arxiv.org/api/query?max_results=250&id_list={id}"
+    ))?;
 
-    // TODO: suppressing parse failure as null record
+    let body = match response.status() {
+        StatusCode::OK => response.text()?,
+        StatusCode::NOT_FOUND => {
+            return Ok(None);
+        }
+        code => return Err(RecordError::UnexpectedStatusCode(code)),
+    };
+
     match quick_xml::de::from_str::<ArxivXML>(&body) {
         Ok(parsed) => {
             let first_entry = parsed.entry.into_iter().nth(0).unwrap();
             Ok(Some(first_entry.into()))
         }
-        Err(_) => Ok(None),
+        Err(_) => Err(RecordError::UnexpectedFailure(
+            "arxiv xml response has unexpected format!".to_string(),
+        )),
     }
 }
 
