@@ -1,3 +1,4 @@
+use regex::Regex;
 use reqwest::StatusCode;
 use serde::Deserialize;
 use serde_bibtex::SliceReader;
@@ -5,14 +6,16 @@ use serde_bibtex::SliceReader;
 use crate::RecordError;
 use crate::RecordId;
 
+const ZBL_IDENTIFIER_REGEX: &'static str = r"^[0-9]{4}\.[0-9]{5}$";
+
+pub fn is_valid_id(id: &str) -> bool {
+    let zbl_identifier_regex = Regex::new(ZBL_IDENTIFIER_REGEX).unwrap();
+    zbl_identifier_regex.is_match(id)
+}
+
 #[derive(Debug, Deserialize, PartialEq)]
 struct OnlyCitationKey<'r> {
     citation_key: &'r str,
-}
-
-pub fn is_valid_id(_id: &str) -> bool {
-    // TODO: fixme
-    true
 }
 
 pub fn get_canonical(id: &str) -> Result<Option<RecordId>, RecordError> {
@@ -32,8 +35,9 @@ pub fn get_canonical(id: &str) -> Result<Option<RecordId>, RecordError> {
 
     match entry_iter.next() {
         Some(Ok(OnlyCitationKey { citation_key: key })) => {
-            if key.starts_with("zbMATH") {
-                Ok(Some(RecordId::from_parts("zbmath", &key[6..])))
+            const PREFIX: &'static str = "zbMATH";
+            if key.starts_with(PREFIX) {
+                Ok(Some(RecordId::from_parts("zbmath", &key[PREFIX.len()..])))
             } else {
                 Err(RecordError::Incomplete) // TODO: fixme
             }

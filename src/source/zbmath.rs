@@ -9,6 +9,11 @@ use crate::RecordError;
 
 const ZBMATH_IDENTIFIER_REGEX: &'static str = r"^[0-9]{8}$";
 
+pub fn is_valid_id(id: &str) -> bool {
+    let zbmath_identifier_regex = Regex::new(ZBMATH_IDENTIFIER_REGEX).unwrap();
+    zbmath_identifier_regex.is_match(id)
+}
+
 pub fn get_record(id: &str) -> Result<Option<Entry>, RecordError> {
     let response = reqwest::blocking::get(format!("https://zbmath.org/bibtex/{}.bib", id))?;
 
@@ -45,9 +50,4 @@ pub fn get_record(id: &str) -> Result<Option<Entry>, RecordError> {
         }
         None => panic!("No matching entry!"),
     }
-}
-
-pub fn is_valid_id(id: &str) -> bool {
-    let zbmath_identifier_regex = Regex::new(ZBMATH_IDENTIFIER_REGEX).unwrap();
-    zbmath_identifier_regex.is_match(id)
 }
