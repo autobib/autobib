@@ -1,12 +1,13 @@
 use chrono::{DateTime, Datelike, Local};
 use itertools::Itertools;
 use regex::Regex;
+use reqwest::StatusCode;
 use serde::Deserialize;
 
 use crate::entry::{Entry, Fields};
-use crate::source::{RecordError, RecordSource};
+use crate::source::RecordError;
 
-const ARXIV_IDENTIFIER_REGEX: &'static str = concat!(
+pub const IDENTIFIER_REGEX: &'static str = concat!(
     r"^(",
     // old style:
     r"(",
@@ -61,28 +62,31 @@ impl From<ArxivXMLEntry> for Entry {
     }
 }
 
-pub struct ArxivRecordSource;
+pub fn get_record(id: &str) -> Result<Option<Entry>, RecordError> {
+    let response = reqwest::blocking::get(format!(
+        "https://export.arxiv.org/api/query?max_results=250&id_list={id}"
+    ))?;
 
-impl RecordSource for ArxivRecordSource {
-    fn is_valid_id(&self, id: &str) -> bool {
-        let arxiv_identifier_regex = Regex::new(ARXIV_IDENTIFIER_REGEX).unwrap();
-        arxiv_identifier_regex.is_match(id)
-    }
-
-    fn get_record(&self, id: &str) -> Result<Option<Entry>, RecordError> {
-        let body = reqwest::blocking::get(format!(
-            "https://export.arxiv.org/api/query?max_results=250&id_list={}",
-            id
-        ))?
-        .text()?;
-
-        // TODO: suppressing parse failure as null record
-        match quick_xml::de::from_str::<ArxivXML>(&body) {
-            Ok(parsed) => {
-                let first_entry = parsed.entry.into_iter().nth(0).unwrap();
-                Ok(Some(first_entry.into()))
-            }
-            Err(_) => Ok(None),
+    let body = match response.status() {
+        StatusCode::OK => response.text()?,
+        StatusCode::NOT_FOUND => {
+            return Ok(None);
         }
+        code => return Err(RecordError::UnexpectedStatusCode(code)),
+    };
+
+    match quick_xml::de::from_str::<ArxivXML>(&body) {
+        Ok(parsed) => {
+            let first_entry = parsed.entry.into_iter().nth(0).unwrap();
+            Ok(Some(first_entry.into()))
+        }
+        Err(_) => Err(RecordError::UnexpectedFailure(
+            "arxiv xml response has unexpected format!".to_string(),
+        )),
     }
+}
+
+pub fn is_valid_id(id: &str) -> bool {
+    let arxiv_identifier_regex = Regex::new(IDENTIFIER_REGEX).unwrap();
+    arxiv_identifier_regex.is_match(id)
 }
