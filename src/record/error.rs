@@ -27,14 +27,14 @@ impl fmt::Display for RecordError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             RecordError::InvalidSource(source) => {
-                write!(f, "'{}' is not a valid source.", source)
+                write!(f, "Invalid source: '{source}'")
             }
-            RecordError::DatabaseFailure(error) => write!(f, "Database failure: {}", error),
-            RecordError::UnexpectedFailure(reason) => write!(f, "Unexpected failure: {}", reason),
+            RecordError::DatabaseFailure(error) => write!(f, "Database failure: {error}"),
+            RecordError::UnexpectedFailure(reason) => write!(f, "Unexpected failure: {reason}"),
             RecordError::UnexpectedStatusCode(code) => {
-                write!(f, "Unexpected status code: {}", code)
+                write!(f, "Unexpected status code: {code}")
             }
-            RecordError::NetworkFailure(error) => write!(f, "Network failure: {}", error),
+            RecordError::NetworkFailure(error) => write!(f, "Network failure: {error}"),
             RecordError::Incomplete => write!(f, "Incomplete record"),
         }
     }
