@@ -1,133 +1,61 @@
-use std::fmt;
-use std::str::FromStr;
+mod error;
+mod key;
 
-use chrono::{DateTime, Local};
-use serde_with::{DeserializeFromStr, SerializeDisplay};
+pub use error::*;
+pub use key::*;
 
-use crate::entry::{Entry, KeyedEntry};
+use crate::database::{CacheResponse, RecordDatabase};
+use crate::entry::Entry;
+use crate::source::{lookup_source, Resolver, Source};
 
-pub struct Record {
-    pub id: RecordId,
-    pub data: Entry,
-    pub modified: DateTime<Local>,
-}
-
-impl From<Record> for KeyedEntry {
-    fn from(record: Record) -> KeyedEntry {
-        KeyedEntry {
-            key: record.id.to_string(),
-            contents: record.data,
+/// Resolve the [`RecordId`] using the [`Resolver`] and insert the appropriate cache into the
+/// database.
+fn resolve_helper(
+    resolver: Resolver,
+    db: &mut RecordDatabase,
+    record_id: &RecordId,
+    reference_id: Option<&RecordId>,
+) -> Result<Option<Entry>, RecordError> {
+    match resolver(record_id.sub_id()) {
+        Ok(Some(entry)) => {
+            db.set_cached_data(&record_id, &entry, reference_id)?;
+            Ok(Some(entry))
         }
-    }
-}
-
-impl Record {
-    pub fn new(id: RecordId, data: Entry) -> Self {
-        Self {
-            id,
-            data,
-            modified: Local::now(),
+        Ok(None) => {
+            db.set_cached_null_record(&record_id)?;
+            Ok(None)
         }
+        Err(err) => Err(err),
     }
 }
 
-// TODO: subdivide this into smaller error groups
-/// Various failure modes for records.
-#[derive(Debug)]
-pub enum RecordError {
-    InvalidRecordIdFormat(String),
-    InvalidSource(RecordId),
-    InvalidSubId(RecordId),
-    NetworkFailure(reqwest::Error),
-    DatabaseFailure(rusqlite::Error),
-    Incomplete,
-}
-
-impl From<rusqlite::Error> for RecordError {
-    fn from(err: rusqlite::Error) -> Self {
-        RecordError::DatabaseFailure(err)
-    }
-}
-
-impl From<reqwest::Error> for RecordError {
-    fn from(err: reqwest::Error) -> Self {
-        RecordError::NetworkFailure(err)
-    }
-}
-
-impl fmt::Display for RecordError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            RecordError::InvalidRecordIdFormat(input) => {
-                write!(
-                    f,
-                    "'{}' is not in the format of '<source>:<sub_id>'.",
-                    input
-                )
+/// Get the [`Entry`] associated with a [`CitationKey`].
+pub fn get_record(
+    db: &mut RecordDatabase,
+    citation_key: &CitationKey,
+) -> Result<Option<Entry>, RecordError> {
+    match db.get_cached_data(citation_key)? {
+        CacheResponse::Found(cached_entry, _modified) => Ok(Some(cached_entry)),
+        CacheResponse::FoundNull(_attempted) => Ok(None),
+        CacheResponse::NullAlias => Ok(None),
+        CacheResponse::NotFound(record_id) => {
+            match lookup_source(&record_id.source())? {
+                // record_id is a canonical source, so there is no alias to be set
+                Source::Canonical(resolver) => resolve_helper(resolver, db, &record_id, None),
+                // record_id is a reference source, so we find the canonical source and set the
+                // alias
+                Source::Reference(resolver, referrer) => match referrer(record_id.sub_id()) {
+                    // resolved to a real record_id
+                    Ok(Some(new_record_id)) => {
+                        resolve_helper(resolver, db, &new_record_id, Some(record_id))
+                    }
+                    Ok(None) => {
+                        db.set_cached_null_record(&record_id)?;
+                        Ok(None)
+                    }
+                    Err(why) => Err(why),
+                },
             }
-            RecordError::InvalidSource(record_id) => {
-                write!(f, "'{}' is not a valid source.", record_id.source())
-            }
-            RecordError::InvalidSubId(record_id) => write!(
-                f,
-                "'{}' is not a valid sub-id for the source '{}'.",
-                record_id.sub_id(),
-                record_id.source()
-            ),
-            RecordError::DatabaseFailure(error) => write!(f, "Database failure: {}", error),
-            RecordError::NetworkFailure(error) => write!(f, "Network failure: {}", error),
-            RecordError::Incomplete => write!(f, "Incomplete record"),
         }
-    }
-}
-
-/// A source (`source`) with corresponding identity (`sub_id`), such as 'arxiv:0123.4567'
-#[derive(Debug, Clone, Hash, PartialEq, Eq, DeserializeFromStr, SerializeDisplay)]
-pub struct RecordId {
-    full_id: String,
-    source_length: usize,
-}
-
-impl RecordId {
-    /// Get the source part of the record id.
-    pub fn source(&self) -> &str {
-        &self.full_id[0..self.source_length]
-    }
-
-    /// Get the part of the record id after the source.
-    pub fn sub_id(&self) -> &str {
-        &self.full_id[self.source_length + 1..]
-    }
-
-    /// Get the full record id.
-    pub fn full_id(&self) -> &str {
-        &self.full_id
-    }
-}
-
-impl FromStr for RecordId {
-    type Err = RecordError;
-
-    fn from_str(input: &str) -> Result<Self, Self::Err> {
-        let first_colon_position = input.find(':');
-        match first_colon_position {
-            Some(p) => {
-                if p == 0 || p == input.len() - 1 {
-                    return Err(RecordError::InvalidRecordIdFormat(input.to_string()));
-                }
-                // TODO: trim whitespace
-                Ok(RecordId {
-                    full_id: String::from(input),
-                    source_length: p,
-                })
-            }
-            None => Err(RecordError::InvalidRecordIdFormat(input.to_string())),
-        }
-    }
-}
-
-impl fmt::Display for RecordId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.full_id)
     }
 }
