@@ -14,7 +14,7 @@ pub enum CitationKey {
 impl CitationKey {
     pub fn as_str(&self) -> &str {
         match self {
-            Self::RecordId(record_id) => record_id.sub_id(),
+            Self::RecordId(record_id) => record_id.full_id(),
             Self::Alias(s) => s.as_str(),
         }
     }
