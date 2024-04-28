@@ -91,8 +91,9 @@ fn main() {
 }
 
 /// Validate and retrieve records.
-/// During validation, invalid citation keys are filtered out and error messages are printed.
-/// During retrieval, records are fetched from the database, with null records filtered out, and error messages are printed;
+///
+/// - During validation, filter invalid citation keys and print error messages.
+/// - During retrieval, filter null records and print error messages.
 fn validate_and_retrieve<'a, T: Iterator<Item = &'a str>>(
     citation_keys: T,
     mut record_db: RecordDatabase,
