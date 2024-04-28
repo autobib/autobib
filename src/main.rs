@@ -5,7 +5,7 @@ mod source;
 
 use std::str::FromStr;
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use rusqlite::Result;
 
 use entry::KeyedEntry;
@@ -16,52 +16,73 @@ const DATABASE_FILE: &str = "cache.db";
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
-    args: Vec<String>,
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    Alias,
+    /// Retrieve records given citation keys.
+    Get {
+        /// The citation keys to retrieve.
+        citation_keys: Vec<String>,
+    },
+    Auto,
 }
 
 fn main() {
     let cli = Cli::parse();
 
-    // Initialize database
-    let mut record_db = create_test_db().unwrap();
+    match cli.command {
+        Command::Alias => {
+            println!("Alias command not implemented.");
+        }
+        Command::Get { citation_keys } => {
+            // Initialize database
+            let mut record_db = create_test_db().unwrap();
 
-    // Collect all entries which are not null
-    let valid_entries: Vec<KeyedEntry> = cli
-        .args
-        .into_iter()
-        // parse the source:sub_id arguments and perform cheap validation
-        .filter_map(|input| match CitationKey::from_str(&input) {
-            Ok(record_id) => Some(record_id),
-            Err(err) => {
-                eprintln!("{err}");
-                None
-            }
-        })
-        // retrieve records
-        .filter_map(|citation_key| {
-            get_record(&mut record_db, &citation_key).map_or_else(
-                // error retrieving record
-                |err| {
-                    eprintln!("{err}");
-                    None
-                },
-                |response| match response {
-                    Some(entry) => Some(KeyedEntry {
-                        key: citation_key,
-                        contents: entry,
-                    }),
-                    None => {
-                        eprintln!("'null record: {citation_key}'");
+            // Collect all entries which are not null
+            let valid_entries: Vec<KeyedEntry> = citation_keys
+                .into_iter()
+                // parse the source:sub_id arguments and perform cheap validation
+                .filter_map(|input| match CitationKey::from_str(&input) {
+                    Ok(record_id) => Some(record_id),
+                    Err(err) => {
+                        eprintln!("{err}");
                         None
                     }
-                },
-            )
-        })
-        .collect();
+                })
+                // retrieve records
+                .filter_map(|citation_key| {
+                    get_record(&mut record_db, &citation_key).map_or_else(
+                        // error retrieving record
+                        |err| {
+                            eprintln!("{err}");
+                            None
+                        },
+                        |response| match response {
+                            Some(entry) => Some(KeyedEntry {
+                                key: citation_key,
+                                contents: entry,
+                            }),
+                            None => {
+                                eprintln!("'null record: {citation_key}'");
+                                None
+                            }
+                        },
+                    )
+                })
+                .collect();
 
-    // print biblatex strings
-    for entry in valid_entries {
-        println!("{}", entry)
+            // print biblatex strings
+            for entry in valid_entries {
+                println!("{}", entry)
+            }
+        }
+        Command::Auto => {
+            println!("Auto command not implemented.");
+        }
     }
 }
 
