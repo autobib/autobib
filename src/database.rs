@@ -53,7 +53,7 @@ impl RecordDatabase {
                  record_id TEXT NOT NULL,
                  data TEXT NOT NULL,
                  modified TEXT NOT NULL
-             )",
+             ) STRICT",
             (),
         )?;
 
@@ -66,7 +66,7 @@ impl RecordDatabase {
                       FOREIGN KEY (record_key)
                       REFERENCES Records(key)
                       ON DELETE CASCADE
-             )",
+             ) STRICT",
             (),
         )?;
 
@@ -75,7 +75,7 @@ impl RecordDatabase {
             "CREATE TABLE NullRecords (
                  record_id TEXT NOT NULL PRIMARY KEY,
                  attempted TEXT NOT NULL
-             )",
+             ) STRICT",
             (),
         )?;
 
