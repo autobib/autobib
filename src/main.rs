@@ -55,38 +55,8 @@ fn main() {
         }
         Command::Get { citation_keys } => {
             // Collect all entries which are not null
-            let valid_entries: Vec<KeyedEntry> = citation_keys
-                .iter()
-                // parse the source:sub_id arguments and perform cheap validation
-                .filter_map(|input| match CitationKey::from_str(input) {
-                    Ok(record_id) => Some(record_id),
-                    Err(err) => {
-                        eprintln!("{err}");
-                        None
-                    }
-                })
-                // retrieve records
-                .filter_map(|citation_key| {
-                    get_record(&mut record_db, &citation_key).map_or_else(
-                        // error retrieving record
-                        |err| {
-                            eprintln!("{err}");
-                            None
-                        },
-                        |response| match response {
-                            Some(entry) => Some(KeyedEntry {
-                                key: citation_key,
-                                contents: entry,
-                            }),
-                            None => {
-                                eprintln!("'null record: {citation_key}'");
-                                None
-                            }
-                        },
-                    )
-                })
-                .collect();
-
+            let valid_entries =
+                validate_and_retrieve(citation_keys.iter().map(|s| s as &str), record_db);
             // print biblatex strings
             for entry in valid_entries {
                 println!("{}", entry)
@@ -96,6 +66,45 @@ fn main() {
             eprintln!("Auto command not implemented.");
         }
     }
+}
+
+/// Validate and retrieve records.
+/// During validation, invalid citation keys are filtered out and error messages are printed.
+/// During retrieval, records are fetched from the database, with null records filtered out, and error messages are printed;
+fn validate_and_retrieve<'a, T: Iterator<Item = &'a str>>(
+    citation_keys: T,
+    mut record_db: RecordDatabase,
+) -> Vec<KeyedEntry> {
+    citation_keys
+        // parse the source:sub_id arguments and perform cheap validation
+        .filter_map(|input| match CitationKey::from_str(input) {
+            Ok(record_id) => Some(record_id),
+            Err(err) => {
+                eprintln!("{err}");
+                None
+            }
+        })
+        // retrieve records
+        .filter_map(|citation_key| {
+            get_record(&mut record_db, &citation_key).map_or_else(
+                // error retrieving record
+                |err| {
+                    eprintln!("{err}");
+                    None
+                },
+                |response| match response {
+                    Some(entry) => Some(KeyedEntry {
+                        key: citation_key,
+                        contents: entry,
+                    }),
+                    None => {
+                        eprintln!("'null record: {citation_key}'");
+                        None
+                    }
+                },
+            )
+        })
+        .collect()
 }
 
 /// Populate the database with some records for testing purposes.
