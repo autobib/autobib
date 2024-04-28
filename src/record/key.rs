@@ -77,11 +77,13 @@ impl FromStr for CitationKey {
                 }
 
                 // check that the source and sub_id are valid
-                let source = &input[..source_length];
-                let sub_id = &input[source_length + 1..];
-                match lookup_validator(source) {
-                    Some(validator) if validator(sub_id) => {
-                        Ok(CitationKey::RecordId(RecordId::from_parts(source, sub_id)))
+                let record_id = RecordId {
+                    full_id: String::from(input),
+                    source_length,
+                };
+                match lookup_validator(record_id.source()) {
+                    Some(validator) if validator(record_id.sub_id()) => {
+                        Ok(CitationKey::RecordId(record_id))
                     }
                     Some(_) => Err(CitationKeyError::new(
                         input,
