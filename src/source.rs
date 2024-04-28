@@ -26,7 +26,7 @@ pub fn lookup_source(source: &str) -> Result<SourceHandler, RecordError> {
             zbmath::get_record,
             zbl::get_canonical,
         )),
-        _ => Err(RecordError::InvalidSource(source.to_string())),
+        _ => panic!("Invalid source should have been caught by the 'lookup validator'!"),
     }
 }
 

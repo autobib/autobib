@@ -7,10 +7,8 @@ use crate::database::DatabaseError;
 pub enum RecordError {
     UnexpectedFailure(String),
     UnexpectedStatusCode(StatusCode),
-    InvalidSource(String),
     NetworkFailure(reqwest::Error),
     DatabaseFailure(DatabaseError),
-    Incomplete,
 }
 
 impl From<DatabaseError> for RecordError {
@@ -28,16 +26,12 @@ impl From<reqwest::Error> for RecordError {
 impl fmt::Display for RecordError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            RecordError::InvalidSource(source) => {
-                write!(f, "Invalid source: '{source}'")
-            }
             RecordError::DatabaseFailure(error) => write!(f, "Database failure: {error}"),
             RecordError::UnexpectedFailure(reason) => write!(f, "Unexpected failure: {reason}"),
             RecordError::UnexpectedStatusCode(code) => {
                 write!(f, "Unexpected status code: {code}")
             }
             RecordError::NetworkFailure(error) => write!(f, "Network failure: {error}"),
-            RecordError::Incomplete => write!(f, "Incomplete record"),
         }
     }
 }

@@ -20,6 +20,8 @@ pub fn get_record(id: &str) -> Result<Option<Entry>, RecordError> {
             },
         })),
         "004" => Ok(None),
-        _ => Err(RecordError::Incomplete),
+        _ => Err(RecordError::UnexpectedFailure(
+            "Something bad happened!".to_string(),
+        )),
     }
 }
