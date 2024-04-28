@@ -6,6 +6,7 @@ use crate::database::DatabaseError;
 #[derive(Debug)]
 pub enum RecordError {
     UnexpectedFailure(String),
+    MissingAlias(String),
     UnexpectedStatusCode(StatusCode),
     NetworkFailure(reqwest::Error),
     DatabaseFailure(DatabaseError),
@@ -32,6 +33,7 @@ impl fmt::Display for RecordError {
                 write!(f, "Unexpected status code: {code}")
             }
             RecordError::NetworkFailure(error) => write!(f, "Network failure: {error}"),
+            RecordError::MissingAlias(alias) => write!(f, "Alias '{alias}' does not exist"),
         }
     }
 }

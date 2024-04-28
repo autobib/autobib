@@ -168,14 +168,34 @@ impl RecordDatabase {
                     }
                     // If it is an Alias, the CitationKeys table is the canonical source for
                     // whether or not the alias is set.
-                    CitationKeyInput::Alias(_) => Ok(CacheResponse::NullAlias),
+                    CitationKeyInput::Alias(alias) => {
+                        Ok(CacheResponse::NullAlias(alias.repr().into()))
+                    }
                 }
             }
             Err(err) => Err(err),
         }
     }
 
-    /// Delete a citation alias.
+    /// Rename an alias.
+    pub fn rename_alias(&mut self, alias: &Alias, new: &Alias) -> Result<(), DatabaseError> {
+        let tx = self.conn.transaction()?;
+        let status = Self::rename_alias_transaction(&tx, alias, new)?;
+        tx.commit()?;
+        Ok(status)
+    }
+
+    /// Rename an alias within a transaction.
+    fn rename_alias_transaction(
+        tx: &Transaction,
+        name: &Alias,
+        new: &Alias,
+    ) -> Result<(), DatabaseError> {
+        let mut updater = tx.prepare_cached("UPDATE CitationKeys SET name = ?1 WHERE name = ?2")?;
+        Ok(updater.execute((new.repr(), name.repr())).map(|_| ())?)
+    }
+
+    /// Delete an alias.
     pub fn delete_alias(&mut self, alias: &Alias) -> Result<(), DatabaseError> {
         let tx = self.conn.transaction()?;
         let status = Self::delete_citation_key_row_transaction(&tx, alias)?;
@@ -407,7 +427,7 @@ pub enum CacheResponse<'a> {
     /// The record is null, and this was last checked at the given time.
     FoundNull(DateTime<Local>),
     /// The search was for an alias, which did not exist.
-    NullAlias,
+    NullAlias(String),
     /// The search was for a [`RecordId`], which did not exist.
     NotFound(&'a RecordId),
 }

@@ -37,7 +37,7 @@ pub fn get_record(
     match db.get_cached_data(citation_key)? {
         CacheResponse::Found(cached_entry, _modified) => Ok(Some(cached_entry)),
         CacheResponse::FoundNull(_attempted) => Ok(None),
-        CacheResponse::NullAlias => Ok(None),
+        CacheResponse::NullAlias(alias) => Err(RecordError::MissingAlias(alias)),
         CacheResponse::NotFound(record_id) => {
             match lookup_source(&record_id.source())? {
                 // record_id is a canonical source, so there is no alias to be set

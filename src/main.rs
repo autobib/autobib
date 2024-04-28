@@ -67,7 +67,12 @@ enum AliasCommand {
         #[arg(value_parser = from_str_parser::<Alias>)]
         alias: Alias,
     },
-    Rename,
+    Rename {
+        #[arg(value_parser = from_str_parser::<Alias>)]
+        alias: Alias,
+        #[arg(value_parser = from_str_parser::<Alias>)]
+        new: Alias,
+    },
 }
 
 fn fail_on_err<T, E: fmt::Display>(err: Result<T, E>) {
@@ -109,7 +114,9 @@ fn main() {
             }
             // TODO: deletion fails silently if the alias does not exist
             AliasCommand::Delete { alias } => fail_on_err(record_db.delete_alias(&alias)),
-            AliasCommand::Rename => todo!(),
+            AliasCommand::Rename { alias, new } => {
+                fail_on_err(record_db.rename_alias(&alias, &new))
+            }
         },
         Command::Get { citation_keys } => {
             // Collect all entries which are not null
