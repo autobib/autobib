@@ -67,6 +67,7 @@ impl RecordDatabase {
     /// Opening an existing database file on disk.
     pub fn open<P: AsRef<Path>>(db_file: P) -> Result<Self, rusqlite::Error> {
         Ok(RecordDatabase {
+            // TODO: handle invalid schema
             conn: Connection::open_with_flags(
                 db_file,
                 OpenFlags::SQLITE_OPEN_READ_WRITE
@@ -74,6 +75,14 @@ impl RecordDatabase {
                     | OpenFlags::SQLITE_OPEN_NO_MUTEX,
             )?,
         })
+    }
+
+    pub fn open_or_create<P: AsRef<Path>>(db_file: P) -> Result<Self, rusqlite::Error> {
+        match Self::open(&db_file) {
+            Ok(db) => Ok(db),
+            // TODO: check if the error is due to the file not existing
+            Err(_) => Self::create(&db_file),
+        }
     }
 
     /// Obtain cached data corresponding to a [`CitationKey`].

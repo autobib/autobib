@@ -3,19 +3,25 @@ mod entry;
 mod record;
 mod source;
 
+use std::path::PathBuf;
 use std::str::FromStr;
 
 use clap::{Parser, Subcommand};
 use rusqlite::Result;
 
+use database::RecordDatabase;
 use entry::KeyedEntry;
 use record::*;
 
+// TODO: Replace with XDG
 const DATABASE_FILE: &str = "cache.db";
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
+    #[arg(long)]
+    database: Option<PathBuf>,
+
     #[command(subcommand)]
     command: Command,
 }
@@ -34,19 +40,25 @@ enum Command {
 fn main() {
     let cli = Cli::parse();
 
+    // Open or create the database
+    let mut record_db = if let Some(db_path) = cli.database {
+        // at a user-provided path
+        RecordDatabase::open_or_create(&db_path).expect("Failed to open or create database.")
+    } else {
+        // at the default path
+        RecordDatabase::open_or_create(DATABASE_FILE).expect("Failed to open or create database.")
+    };
+
     match cli.command {
         Command::Alias => {
-            println!("Alias command not implemented.");
+            eprintln!("Alias command not implemented.");
         }
         Command::Get { citation_keys } => {
-            // Initialize database
-            let mut record_db = create_test_db().unwrap();
-
             // Collect all entries which are not null
             let valid_entries: Vec<KeyedEntry> = citation_keys
-                .into_iter()
+                .iter()
                 // parse the source:sub_id arguments and perform cheap validation
-                .filter_map(|input| match CitationKey::from_str(&input) {
+                .filter_map(|input| match CitationKey::from_str(input) {
                     Ok(record_id) => Some(record_id),
                     Err(err) => {
                         eprintln!("{err}");
@@ -81,12 +93,10 @@ fn main() {
             }
         }
         Command::Auto => {
-            println!("Auto command not implemented.");
+            eprintln!("Auto command not implemented.");
         }
     }
 }
-
-use crate::database::RecordDatabase;
 
 /// Populate the database with some records for testing purposes.
 fn create_test_db() -> Result<RecordDatabase, RecordError> {
