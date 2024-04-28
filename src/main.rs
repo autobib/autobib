@@ -28,8 +28,10 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    #[command(alias = "a")]
     Alias,
     /// Retrieve records given citation keys.
+    #[command(alias = "g")]
     Get {
         /// The citation keys to retrieve.
         citation_keys: Vec<String>,
