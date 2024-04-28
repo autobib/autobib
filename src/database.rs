@@ -175,6 +175,23 @@ impl RecordDatabase {
         }
     }
 
+    /// Delete a citation alias.
+    pub fn delete_alias(&mut self, alias: &Alias) -> Result<(), DatabaseError> {
+        let tx = self.conn.transaction()?;
+        let status = Self::delete_citation_key_row_transaction(&tx, alias)?;
+        tx.commit()?;
+        Ok(status)
+    }
+
+    /// Delete a citation key row within a transaction.
+    fn delete_citation_key_row_transaction<T: CitationKey>(
+        tx: &Transaction,
+        name: &T,
+    ) -> Result<(), DatabaseError> {
+        let mut deleter = tx.prepare_cached("DELETE FROM CitationKeys WHERE name = ?1")?;
+        Ok(deleter.execute((name.repr(),)).map(|_| ())?)
+    }
+
     /// Insert a new citation alias.
     pub fn insert_alias<T: CitationKey>(
         &mut self,

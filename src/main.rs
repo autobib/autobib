@@ -63,8 +63,21 @@ enum AliasCommand {
         #[arg(value_parser = from_str_parser::<CitationKeyInput>)]
         target: CitationKeyInput,
     },
-    Delete,
+    Delete {
+        #[arg(value_parser = from_str_parser::<Alias>)]
+        alias: Alias,
+    },
     Rename,
+}
+
+fn fail_on_err<T, E: fmt::Display>(err: Result<T, E>) {
+    match err {
+        Err(why) => {
+            eprintln!("{why}");
+            process::exit(1)
+        }
+        _ => (),
+    }
 }
 
 fn main() {
@@ -90,23 +103,12 @@ fn main() {
         Command::Alias { alias_command } => match alias_command {
             AliasCommand::Add { alias, target } => {
                 // first retrieve 'target', in case it does not yet exist in the database
-                match get_record(&mut record_db, &target) {
-                    Ok(_) => {}
-                    Err(why) => {
-                        eprintln!("{why}");
-                        process::exit(1);
-                    }
-                }
+                fail_on_err(get_record(&mut record_db, &target));
                 // then link to it
-                match record_db.insert_alias(&alias, &target) {
-                    Err(why) => {
-                        eprintln!("{why}");
-                        process::exit(1);
-                    }
-                    _ => (),
-                }
+                fail_on_err(record_db.insert_alias(&alias, &target));
             }
-            AliasCommand::Delete => todo!(),
+            // TODO: deletion fails silently if the alias does not exist
+            AliasCommand::Delete { alias } => fail_on_err(record_db.delete_alias(&alias)),
             AliasCommand::Rename => todo!(),
         },
         Command::Get { citation_keys } => {
