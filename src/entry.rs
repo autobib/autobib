@@ -3,11 +3,11 @@ use std::fmt::{Display, Formatter};
 use serde::{Deserialize, Serialize};
 use serde_aux::prelude::*;
 
-use crate::record::CitationKey;
+use crate::record::CitationKeyInput;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct KeyedEntry {
-    pub key: CitationKey,
+    pub key: CitationKeyInput,
     pub contents: Entry,
 }
 

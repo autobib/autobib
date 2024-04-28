@@ -30,7 +30,10 @@ struct Cli {
 enum Command {
     /// Manage aliases.
     #[command(alias = "a")]
-    Alias,
+    Alias {
+        #[command(subcommand)]
+        alias_command: AliasCommand,
+    },
     /// Retrieve records given citation keys.
     #[command(alias = "g")]
     Get {
@@ -40,6 +43,16 @@ enum Command {
     /// Generate records from sourc(es).
     #[command(alias = "s")]
     Source,
+    /// Show metadata for citation key.
+    #[command(alias = "sh")]
+    Show,
+}
+
+#[derive(Subcommand)]
+enum AliasCommand {
+    Add,
+    Delete,
+    Rename,
 }
 
 fn main() {
@@ -55,8 +68,13 @@ fn main() {
     };
 
     match cli.command {
-        Command::Alias => {
-            eprintln!("Alias command not implemented.");
+        Command::Alias { alias_command: cmd } => {
+            match cmd {
+                AliasCommand::Add => todo!(),
+                AliasCommand::Delete => todo!(),
+                AliasCommand::Rename => todo!(),
+            }
+            // eprintln!("Alias command not implemented.");
         }
         Command::Get { citation_keys } => {
             // Collect all entries which are not null
@@ -67,9 +85,8 @@ fn main() {
                 println!("{}", entry)
             }
         }
-        Command::Source => {
-            eprintln!("Auto command not implemented.");
-        }
+        Command::Source => todo!(),
+        Command::Show => todo!(),
     }
 }
 
@@ -82,7 +99,7 @@ fn validate_and_retrieve<'a, T: Iterator<Item = &'a str>>(
 ) -> Vec<KeyedEntry> {
     citation_keys
         // parse the source:sub_id arguments and perform cheap validation
-        .filter_map(|input| match CitationKey::from_str(input) {
+        .filter_map(|input| match CitationKeyInput::from_str(input) {
             Ok(record_id) => Some(record_id),
             Err(err) => {
                 eprintln!("{err}");
