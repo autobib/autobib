@@ -28,6 +28,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Manage aliases.
     #[command(alias = "a")]
     Alias,
     /// Retrieve records given citation keys.
@@ -64,7 +65,7 @@ fn main() {
                 println!("{}", entry)
             }
         }
-        Command::Auto => {
+        Command::Source => {
             eprintln!("Auto command not implemented.");
         }
     }
