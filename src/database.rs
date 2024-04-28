@@ -157,7 +157,7 @@ impl RecordDatabase {
                         let mut null_selector = tx.prepare_cached(
                             "SELECT attempted FROM NullRecords WHERE record_id = ?1",
                         )?;
-                        let mut null_rows = null_selector.query([&record_id.repr()])?;
+                        let mut null_rows = null_selector.query([&record_id.name()])?;
 
                         match null_rows.next() {
                             // Cached null
@@ -169,7 +169,7 @@ impl RecordDatabase {
                     // If it is an Alias, the CitationKeys table is the canonical source for
                     // whether or not the alias is set.
                     CitationKeyInput::Alias(alias) => {
-                        Ok(CacheResponse::NullAlias(alias.repr().into()))
+                        Ok(CacheResponse::NullAlias(alias.name().into()))
                     }
                 }
             }
@@ -192,7 +192,7 @@ impl RecordDatabase {
         new: &Alias,
     ) -> Result<(), DatabaseError> {
         let mut updater = tx.prepare_cached("UPDATE CitationKeys SET name = ?1 WHERE name = ?2")?;
-        Self::map_citation_key_result(updater.execute((new.repr(), name.repr())), name)
+        Self::map_citation_key_result(updater.execute((new.name(), name.name())), name)
     }
 
     /// Take the result of a SQLite operation, suppressing the output and processing the error.
@@ -205,7 +205,7 @@ impl RecordDatabase {
             Err(err) => match err.sqlite_error_code() {
                 // the UNIQUE constraint is violated, so the key already exists
                 Some(rusqlite::ErrorCode::ConstraintViolation) => {
-                    Err(DatabaseError::CitationKeyExists(citation_key.repr().into()))
+                    Err(DatabaseError::CitationKeyExists(citation_key.name().into()))
                 }
                 _ => Err(err.into()),
             },
@@ -226,7 +226,7 @@ impl RecordDatabase {
         name: &T,
     ) -> Result<(), DatabaseError> {
         let mut deleter = tx.prepare_cached("DELETE FROM CitationKeys WHERE name = ?1")?;
-        Ok(deleter.execute((name.repr(),)).map(|_| ())?)
+        Ok(deleter.execute((name.name(),)).map(|_| ())?)
     }
 
     /// Insert a new citation alias.
@@ -259,7 +259,7 @@ impl RecordDatabase {
             // TODO: provide a better error message if citation key is missing and
             //       the corresponding citation key is in NullRecords
             Ok(None) => Err(DatabaseError::CitationKeyMissing(String::from(
-                target.repr(),
+                target.name(),
             ))),
             Err(why) => Err(why.into()),
         }
@@ -284,7 +284,7 @@ impl RecordDatabase {
             }
         };
         let mut key_writer = tx.prepare_cached(stmt)?;
-        Self::map_citation_key_result(key_writer.execute((name.repr(), key)), name)
+        Self::map_citation_key_result(key_writer.execute((name.name(), key)), name)
     }
 
     /// Insert a new record into the database.
@@ -377,7 +377,7 @@ impl RecordDatabase {
             tx.prepare_cached("SELECT record_key FROM CitationKeys WHERE name = ?1")?;
 
         Ok(selector
-            .query_row([citation_key.repr()], |row| row.get("record_key"))
+            .query_row([citation_key.name()], |row| row.get("record_key"))
             .optional()?)
     }
 

@@ -8,7 +8,7 @@ use serde_with::{DeserializeFromStr, SerializeDisplay};
 /// A type which can act as a [`CitationKey`].
 pub trait CitationKey {
     /// String representation of the citation key.
-    fn repr(&self) -> &str;
+    fn name(&self) -> &str;
 }
 
 /// A wrapper class for a user-supplied input which might be a [`RecordId`] or an [`Alias`].
@@ -19,10 +19,10 @@ pub enum CitationKeyInput {
 }
 
 impl CitationKey for CitationKeyInput {
-    fn repr(&self) -> &str {
+    fn name(&self) -> &str {
         match self {
-            Self::RecordId(record_id) => record_id.repr(),
-            Self::Alias(alias) => alias.repr(),
+            Self::RecordId(record_id) => record_id.name(),
+            Self::Alias(alias) => alias.name(),
         }
     }
 }
@@ -95,7 +95,7 @@ impl fmt::Display for CitationKeyInput {
 pub struct Alias(String);
 
 impl CitationKey for Alias {
-    fn repr(&self) -> &str {
+    fn name(&self) -> &str {
         &self.0
     }
 }
@@ -210,7 +210,7 @@ impl FromStr for RecordId {
 }
 
 impl CitationKey for RecordId {
-    fn repr(&self) -> &str {
+    fn name(&self) -> &str {
         self.full_id()
     }
 }
