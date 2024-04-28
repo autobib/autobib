@@ -60,7 +60,7 @@ impl fmt::Display for CitationKeyError {
             CitationKeyErrorKind::EmptyAlias => f.write_str("alias must be non-empty"),
             CitationKeyErrorKind::InvalidSource => f.write_str("'source' is invalid"),
             CitationKeyErrorKind::InvalidSubId => {
-                f.write_str("'sub_id' is invalid for the provided source")
+                f.write_str("sub-id is invalid for the provided source")
             }
             CitationKeyErrorKind::AliasContainsColon => f.write_str("alias cannot contain colon"),
             CitationKeyErrorKind::RecordIdMissingColon => {

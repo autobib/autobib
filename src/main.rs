@@ -99,8 +99,8 @@ fn main() {
                 }
                 // then link to it
                 match record_db.insert_alias(&alias, &target) {
-                    Err(e) => {
-                        eprintln!("{e}");
+                    Err(why) => {
+                        eprintln!("{why}");
                         process::exit(1);
                     }
                     _ => (),

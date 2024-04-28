@@ -228,7 +228,16 @@ impl RecordDatabase {
             }
         };
         let mut key_writer = tx.prepare_cached(stmt)?;
-        Ok(key_writer.execute((name.repr(), key)).map(|_| ())?)
+        match key_writer.execute((name.repr(), key)) {
+            Ok(_) => Ok(()),
+            Err(err) => match err.sqlite_error_code() {
+                // the UNIQUE constraint is violated, so the key already exists
+                Some(rusqlite::ErrorCode::ConstraintViolation) => {
+                    Err(DatabaseError::CitationKeyExists(name.repr().into()))
+                }
+                _ => Err(err.into()),
+            },
+        }
     }
 
     /// Insert a new record into the database.
@@ -352,8 +361,8 @@ impl std::fmt::Display for DatabaseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             DatabaseError::SQL(err) => err.fmt(f),
-            DatabaseError::CitationKeyExists(k) => write!(f, "Citation key exists: {k}"),
-            DatabaseError::CitationKeyMissing(k) => write!(f, "Citation key missing: {k}"),
+            DatabaseError::CitationKeyExists(k) => write!(f, "Citation key exists: '{k}'"),
+            DatabaseError::CitationKeyMissing(k) => write!(f, "Citation key missing: '{k}'"),
         }
     }
 }
