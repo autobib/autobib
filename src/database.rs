@@ -192,7 +192,24 @@ impl RecordDatabase {
         new: &Alias,
     ) -> Result<(), DatabaseError> {
         let mut updater = tx.prepare_cached("UPDATE CitationKeys SET name = ?1 WHERE name = ?2")?;
-        Ok(updater.execute((new.repr(), name.repr())).map(|_| ())?)
+        Self::map_citation_key_result(updater.execute((new.repr(), name.repr())), name)
+    }
+
+    /// Take the result of a SQLite operation, suppressing the output and processing the error.
+    fn map_citation_key_result<R, T: CitationKey>(
+        res: Result<R, rusqlite::Error>,
+        citation_key: &T,
+    ) -> Result<(), DatabaseError> {
+        match res {
+            Ok(_) => Ok(()),
+            Err(err) => match err.sqlite_error_code() {
+                // the UNIQUE constraint is violated, so the key already exists
+                Some(rusqlite::ErrorCode::ConstraintViolation) => {
+                    Err(DatabaseError::CitationKeyExists(citation_key.repr().into()))
+                }
+                _ => Err(err.into()),
+            },
+        }
     }
 
     /// Delete an alias.
@@ -239,6 +256,8 @@ impl RecordDatabase {
                 CitationKeyInsertMode::FailIfExists,
             ),
             // target does not exist
+            // TODO: provide a better error message if citation key is missing and
+            //       the corresponding citation key is in NullRecords
             Ok(None) => Err(DatabaseError::CitationKeyMissing(String::from(
                 target.repr(),
             ))),
@@ -265,16 +284,7 @@ impl RecordDatabase {
             }
         };
         let mut key_writer = tx.prepare_cached(stmt)?;
-        match key_writer.execute((name.repr(), key)) {
-            Ok(_) => Ok(()),
-            Err(err) => match err.sqlite_error_code() {
-                // the UNIQUE constraint is violated, so the key already exists
-                Some(rusqlite::ErrorCode::ConstraintViolation) => {
-                    Err(DatabaseError::CitationKeyExists(name.repr().into()))
-                }
-                _ => Err(err.into()),
-            },
-        }
+        Self::map_citation_key_result(key_writer.execute((name.repr(), key)), name)
     }
 
     /// Insert a new record into the database.
