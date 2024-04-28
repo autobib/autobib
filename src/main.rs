@@ -37,14 +37,16 @@ enum Command {
         /// The citation keys to retrieve.
         citation_keys: Vec<String>,
     },
-    Auto,
+    /// Generate records from sourc(es).
+    #[command(alias = "s")]
+    Source,
 }
 
 fn main() {
     let cli = Cli::parse();
 
     // Open or create the database
-    let mut record_db = if let Some(db_path) = cli.database {
+    let record_db = if let Some(db_path) = cli.database {
         // at a user-provided path
         RecordDatabase::open_or_create(&db_path).expect("Failed to open or create database.")
     } else {
