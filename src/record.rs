@@ -6,7 +6,7 @@ pub use key::*;
 
 use crate::database::{CacheResponse, RecordDatabase};
 use crate::entry::Entry;
-use crate::source::{lookup_source, Resolver, Source};
+use crate::source::{lookup_source, Resolver, SourceHandler};
 
 /// Resolve the [`RecordId`] using the [`Resolver`] and insert the appropriate cache into the
 /// database.
@@ -41,20 +41,24 @@ pub fn get_record(
         CacheResponse::NotFound(record_id) => {
             match lookup_source(&record_id.source())? {
                 // record_id is a canonical source, so there is no alias to be set
-                Source::Canonical(resolver) => resolve_helper(resolver, db, &record_id, None),
+                SourceHandler::Canonical(resolver) => {
+                    resolve_helper(resolver, db, &record_id, None)
+                }
                 // record_id is a reference source, so we find the canonical source and set the
                 // alias
-                Source::Reference(resolver, referrer) => match referrer(record_id.sub_id()) {
-                    // resolved to a real record_id
-                    Ok(Some(new_record_id)) => {
-                        resolve_helper(resolver, db, &new_record_id, Some(record_id))
+                SourceHandler::Reference(resolver, referrer) => {
+                    match referrer(record_id.sub_id()) {
+                        // resolved to a real record_id
+                        Ok(Some(new_record_id)) => {
+                            resolve_helper(resolver, db, &new_record_id, Some(record_id))
+                        }
+                        Ok(None) => {
+                            db.set_cached_null_record(&record_id)?;
+                            Ok(None)
+                        }
+                        Err(why) => Err(why),
                     }
-                    Ok(None) => {
-                        db.set_cached_null_record(&record_id)?;
-                        Ok(None)
-                    }
-                    Err(why) => Err(why),
-                },
+                }
             }
         }
     }
