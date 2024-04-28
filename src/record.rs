@@ -32,7 +32,7 @@ fn resolve_helper(
 /// Get the [`Entry`] associated with a [`CitationKey`].
 pub fn get_record(
     db: &mut RecordDatabase,
-    citation_key: &CitationKey,
+    citation_key: &CitationKeyInput,
 ) -> Result<Option<Entry>, RecordError> {
     match db.get_cached_data(citation_key)? {
         CacheResponse::Found(cached_entry, _modified) => Ok(Some(cached_entry)),
@@ -41,24 +41,20 @@ pub fn get_record(
         CacheResponse::NotFound(record_id) => {
             match lookup_source(&record_id.source())? {
                 // record_id is a canonical source, so there is no alias to be set
-                SourceHandler::Canonical(resolver) => {
-                    resolve_helper(resolver, db, &record_id, None)
-                }
+                SourceHandler::Canonical(resolver) => resolve_helper(resolver, db, &record_id, None),
                 // record_id is a reference source, so we find the canonical source and set the
                 // alias
-                SourceHandler::Reference(resolver, referrer) => {
-                    match referrer(record_id.sub_id()) {
-                        // resolved to a real record_id
-                        Ok(Some(new_record_id)) => {
-                            resolve_helper(resolver, db, &new_record_id, Some(record_id))
-                        }
-                        Ok(None) => {
-                            db.set_cached_null_record(&record_id)?;
-                            Ok(None)
-                        }
-                        Err(why) => Err(why),
+                SourceHandler::Reference(resolver, referrer) => match referrer(record_id.sub_id()) {
+                    // resolved to a real record_id
+                    Ok(Some(new_record_id)) => {
+                        resolve_helper(resolver, db, &new_record_id, Some(record_id))
                     }
-                }
+                    Ok(None) => {
+                        db.set_cached_null_record(&record_id)?;
+                        Ok(None)
+                    }
+                    Err(why) => Err(why),
+                },
             }
         }
     }
