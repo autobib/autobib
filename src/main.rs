@@ -7,14 +7,11 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use clap::{Parser, Subcommand};
-use rusqlite::Result;
+use xdg::BaseDirectories;
 
 use database::RecordDatabase;
 use entry::KeyedEntry;
 use record::*;
-
-// TODO: Replace with XDG
-const DATABASE_FILE: &str = "cache.db";
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -44,7 +41,7 @@ enum Command {
     #[command(alias = "s")]
     Source,
     /// Show metadata for citation key.
-    #[command(alias = "sh")]
+    #[command()]
     Show,
 }
 
@@ -64,24 +61,29 @@ fn main() {
         RecordDatabase::open_or_create(&db_path).expect("Failed to open or create database.")
     } else {
         // at the default path
-        RecordDatabase::open_or_create(DATABASE_FILE).expect("Failed to open or create database.")
+        let xdg_dirs =
+            BaseDirectories::with_prefix("autobib").expect("Could not find valid base directory.");
+        RecordDatabase::open_or_create(
+            xdg_dirs
+                .place_data_file("cache.db")
+                .expect("Failed to create data directory."),
+        )
+        .expect("Failed to open or create database.")
     };
 
     match cli.command {
-        Command::Alias { alias_command: cmd } => {
-            match cmd {
-                AliasCommand::Add => todo!(),
-                AliasCommand::Delete => todo!(),
-                AliasCommand::Rename => todo!(),
-            }
-            // eprintln!("Alias command not implemented.");
-        }
+        Command::Alias { alias_command: cmd } => match cmd {
+            AliasCommand::Add => todo!(),
+            AliasCommand::Delete => todo!(),
+            AliasCommand::Rename => todo!(),
+        },
         Command::Get { citation_keys } => {
             // Collect all entries which are not null
             let valid_entries =
                 validate_and_retrieve(citation_keys.iter().map(|s| s as &str), record_db);
             // print biblatex strings
             for entry in valid_entries {
+                // TODO: replace me when serde_bibtex serialize is implemented
                 println!("{}", entry)
             }
         }
@@ -128,38 +130,4 @@ fn validate_and_retrieve<'a, T: Iterator<Item = &'a str>>(
             )
         })
         .collect()
-}
-
-/// Populate the database with some records for testing purposes.
-fn create_test_db() -> Result<RecordDatabase, RecordError> {
-    use entry::{Entry, Fields};
-    match std::fs::remove_file(DATABASE_FILE) {
-        Ok(()) => {}
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        _ => panic!("Testing database file has been overwritten!"),
-    }
-
-    let mut record_db = RecordDatabase::create(DATABASE_FILE)?;
-
-    let entry_1 = Entry {
-        entry_type: "code".to_string(),
-        fields: Fields {
-            author: Some("Rutar, Alex and Wu, Peiran".to_string()),
-            title: Some("Autobib".to_string()),
-            ..Fields::default()
-        },
-    };
-    record_db.set_cached_data(&RecordId::from_parts("test", "000"), &entry_1, None)?;
-
-    let entry_2 = Entry {
-        entry_type: "article".to_string(),
-        fields: Fields {
-            author: Some("Author, Test".to_string()),
-            title: Some("A Sample Paper".to_string()),
-            ..Fields::default()
-        },
-    };
-    record_db.set_cached_data(&RecordId::from_parts("test", "002"), &entry_2, None)?;
-
-    Ok(record_db)
 }
