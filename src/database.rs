@@ -34,7 +34,7 @@ impl RecordDatabase {
     /// CanonicalId |        YES        |          YES          |          YES
     /// ReferenceId |        NO         |          YES          |          YES
     /// Alias       |        NO         |          NO           |          YES
-    pub fn create<P: AsRef<Path>>(db_file: P) -> Result<Self, rusqlite::Error> {
+    pub fn create<P: AsRef<Path>>(db_file: P) -> Result<Self, DatabaseError> {
         let mut conn = Connection::open(db_file)?;
 
         let tx = conn.transaction()?;
@@ -45,7 +45,7 @@ impl RecordDatabase {
     }
 
     /// Initialize the tables within a transaction.
-    fn initialize_database(tx: &Transaction) -> Result<(), rusqlite::Error> {
+    fn initialize_database(tx: &Transaction) -> Result<(), DatabaseError> {
         // Table to store records
         tx.execute(
             "CREATE TABLE Records (
@@ -86,7 +86,7 @@ impl RecordDatabase {
     }
 
     /// Open an existing database file on disk.
-    pub fn open<P: AsRef<Path>>(db_file: P) -> Result<Self, rusqlite::Error> {
+    pub fn open<P: AsRef<Path>>(db_file: P) -> Result<Self, DatabaseError> {
         Ok(RecordDatabase {
             // TODO: handle invalid schema
             conn: Connection::open_with_flags(
@@ -99,7 +99,7 @@ impl RecordDatabase {
     }
 
     /// Open an existing database file, or create it if it does not exist.
-    pub fn open_or_create<P: AsRef<Path>>(db_file: P) -> Result<Self, rusqlite::Error> {
+    pub fn open_or_create<P: AsRef<Path>>(db_file: P) -> Result<Self, DatabaseError> {
         match Self::open(&db_file) {
             Ok(db) => Ok(db),
             // TODO: check if the error is due to the file not existing
@@ -116,7 +116,7 @@ impl RecordDatabase {
     pub fn get_cached_data<'a>(
         &mut self,
         citation_key: &'a CitationKeyInput,
-    ) -> Result<CacheResponse<'a>, rusqlite::Error> {
+    ) -> Result<CacheResponse<'a>, DatabaseError> {
         let tx = self.conn.transaction()?;
         let cache_response = Self::get_cached_data_transaction(&tx, citation_key)?;
         tx.commit()?;
@@ -128,7 +128,7 @@ impl RecordDatabase {
     fn get_cached_data_transaction<'a>(
         tx: &Transaction,
         citation_key: &'a CitationKeyInput,
-    ) -> Result<CacheResponse<'a>, rusqlite::Error> {
+    ) -> Result<CacheResponse<'a>, DatabaseError> {
         // try to get the key from CitationKeys
         match Self::get_record_key(&tx, citation_key) {
             // key exists, get the corresponding record
@@ -146,7 +146,7 @@ impl RecordDatabase {
                         // this from ever occurring.
                         panic!("A key in CitationKeys does not correspond to a row in Records!")
                     }
-                    Err(err) => Err(err),
+                    Err(err) => Err(err.into()),
                 }
             }
             // no key
@@ -163,7 +163,7 @@ impl RecordDatabase {
                             // Cached null
                             Ok(Some(row)) => Ok(CacheResponse::FoundNull(row.get("attempted")?)),
                             Ok(None) => Ok(CacheResponse::NotFound(record_id)),
-                            Err(err) => Err(err),
+                            Err(err) => Err(err.into()),
                         }
                     }
                     // If it is an Alias, the CitationKeys table is the canonical source for
@@ -180,7 +180,7 @@ impl RecordDatabase {
         &mut self,
         alias: &Alias,
         target: &T,
-    ) -> Result<CitationKeyInsertStatus, rusqlite::Error> {
+    ) -> Result<(), DatabaseError> {
         let tx = self.conn.transaction()?;
         let status = Self::insert_alias_transaction(&tx, alias, target)?;
         tx.commit()?;
@@ -192,7 +192,7 @@ impl RecordDatabase {
         tx: &Transaction,
         alias: &Alias,
         target: &T,
-    ) -> Result<CitationKeyInsertStatus, rusqlite::Error> {
+    ) -> Result<(), DatabaseError> {
         match Self::get_record_key(tx, target) {
             // target exists
             Ok(Some(key)) => Self::create_citation_key_row_transaction(
@@ -200,11 +200,12 @@ impl RecordDatabase {
                 alias,
                 key,
                 CitationKeyInsertMode::FailIfExists,
-            )
-            .map(|()| CitationKeyInsertStatus::Success),
+            ),
             // target does not exist
-            Ok(None) => Ok(CitationKeyInsertStatus::TargetMissing),
-            Err(why) => Err(why),
+            Ok(None) => Err(DatabaseError::CitationKeyMissing(String::from(
+                target.repr(),
+            ))),
+            Err(why) => Err(why.into()),
         }
     }
 
@@ -214,7 +215,7 @@ impl RecordDatabase {
         name: &T,
         key: i64,
         mode: CitationKeyInsertMode,
-    ) -> Result<(), rusqlite::Error> {
+    ) -> Result<(), DatabaseError> {
         let stmt = match mode {
             CitationKeyInsertMode::Overwrite => {
                 "INSERT OR REPLACE INTO CitationKeys (name, record_key) values (?1, ?2)"
@@ -227,7 +228,7 @@ impl RecordDatabase {
             }
         };
         let mut key_writer = tx.prepare_cached(stmt)?;
-        key_writer.execute((name.repr(), key)).map(|_| ())
+        Ok(key_writer.execute((name.repr(), key)).map(|_| ())?)
     }
 
     /// Insert a new record into the database.
@@ -239,10 +240,10 @@ impl RecordDatabase {
         canonical_id: &RecordId,
         entry: &Entry,
         reference_id: Option<&RecordId>,
-    ) -> Result<(), rusqlite::Error> {
+    ) -> Result<(), DatabaseError> {
         let tx = self.conn.transaction()?;
         Self::set_cached_data_transaction(&tx, &canonical_id, &entry, reference_id)?;
-        tx.commit()
+        Ok(tx.commit()?)
     }
 
     /// Helper function to wrap the insertion into Records and CitationKeys in a transaction.
@@ -251,7 +252,7 @@ impl RecordDatabase {
         canonical_id: &RecordId,
         entry: &Entry,
         reference_id: Option<&RecordId>,
-    ) -> Result<(), rusqlite::Error> {
+    ) -> Result<(), DatabaseError> {
         let mut setter = tx.prepare_cached(
             "INSERT OR REPLACE INTO Records (record_id, data, modified) values (?1, ?2, ?3)",
         )?;
@@ -287,17 +288,17 @@ impl RecordDatabase {
     ///
     /// If `record_id` has a canonical source, this means that there is no associated entry. If
     /// `record_id` is a reference source, this means there is no associated canonical `record_id`.
-    pub fn set_cached_null_record(&mut self, record_id: &RecordId) -> Result<(), rusqlite::Error> {
+    pub fn set_cached_null_record(&mut self, record_id: &RecordId) -> Result<(), DatabaseError> {
         let tx = self.conn.transaction()?;
         Self::set_cached_null_record_transaction(&tx, record_id)?;
-        tx.commit()
+        Ok(tx.commit()?)
     }
 
     /// Helper function to wrap the insertion into NullRecords in a transaction.
     fn set_cached_null_record_transaction(
         tx: &Transaction,
         record_id: &RecordId,
-    ) -> Result<(), rusqlite::Error> {
+    ) -> Result<(), DatabaseError> {
         let mut setter = tx.prepare_cached(
             "INSERT OR REPLACE INTO NullRecords (record_id, attempted) values (?1, ?2)",
         )?;
@@ -315,13 +316,13 @@ impl RecordDatabase {
     fn get_record_key<T: CitationKey>(
         tx: &Transaction,
         citation_key: &T,
-    ) -> Result<Option<i64>, rusqlite::Error> {
+    ) -> Result<Option<i64>, DatabaseError> {
         let mut selector =
             tx.prepare_cached("SELECT record_key FROM CitationKeys WHERE name = ?1")?;
 
-        selector
+        Ok(selector
             .query_row([citation_key.repr()], |row| row.get("record_key"))
-            .optional()
+            .optional()?)
     }
 
     /// Convert a [`rusqlite::Row`] into a [`CacheResponse`].
@@ -332,11 +333,34 @@ impl RecordDatabase {
     /// ```
     fn cache_response_from_record_row(
         row: &rusqlite::Row,
-    ) -> Result<(Entry, DateTime<Local>), rusqlite::Error> {
+    ) -> Result<(Entry, DateTime<Local>), DatabaseError> {
         let data_str: String = row.get("data")?;
         let modified: DateTime<Local> = row.get("modified")?;
 
         Ok((serde_json::from_str(&data_str).unwrap(), modified))
+    }
+}
+
+#[derive(Debug)]
+pub enum DatabaseError {
+    SQL(rusqlite::Error),
+    CitationKeyExists(String),
+    CitationKeyMissing(String),
+}
+
+impl std::fmt::Display for DatabaseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DatabaseError::SQL(err) => err.fmt(f),
+            DatabaseError::CitationKeyExists(k) => write!(f, "Citation key exists: {k}"),
+            DatabaseError::CitationKeyMissing(k) => write!(f, "Citation key missing: {k}"),
+        }
+    }
+}
+
+impl From<rusqlite::Error> for DatabaseError {
+    fn from(err: rusqlite::Error) -> Self {
+        Self::SQL(err)
     }
 }
 
@@ -348,16 +372,6 @@ pub enum CitationKeyInsertMode {
     FailIfExists,
     /// Ignore if there is an existing citation key.
     IgnoreIfExists,
-}
-
-/// The result of a citation key insertion.
-pub enum CitationKeyInsertStatus {
-    /// The citation key was successfully inserted.
-    Success,
-    /// A key with the same name already exists.
-    CitationKeyExists,
-    /// The target key did not exist.
-    TargetMissing,
 }
 
 /// The responses from the database in a request for cached data.

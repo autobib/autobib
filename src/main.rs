@@ -3,7 +3,9 @@ mod entry;
 mod record;
 mod source;
 
+use std::fmt;
 use std::path::PathBuf;
+use std::process;
 use std::str::FromStr;
 
 use clap::{Parser, Subcommand};
@@ -45,9 +47,22 @@ enum Command {
     Show,
 }
 
+/// Parse an argument using a [`FromStr`] implementation.
+fn from_str_parser<T: FromStr>(s: &str) -> Result<T, String>
+where
+    <T as FromStr>::Err: fmt::Display,
+{
+    T::from_str(s).map_err(|e| e.to_string())
+}
+
 #[derive(Subcommand)]
 enum AliasCommand {
-    Add,
+    Add {
+        #[arg(value_parser = from_str_parser::<Alias>)]
+        alias: Alias,
+        #[arg(value_parser = from_str_parser::<CitationKeyInput>)]
+        target: CitationKeyInput,
+    },
     Delete,
     Rename,
 }
@@ -56,7 +71,7 @@ fn main() {
     let cli = Cli::parse();
 
     // Open or create the database
-    let record_db = if let Some(db_path) = cli.database {
+    let mut record_db = if let Some(db_path) = cli.database {
         // at a user-provided path
         RecordDatabase::open_or_create(&db_path).expect("Failed to open or create database.")
     } else {
@@ -72,8 +87,14 @@ fn main() {
     };
 
     match cli.command {
-        Command::Alias { alias_command: cmd } => match cmd {
-            AliasCommand::Add => todo!(),
+        Command::Alias { alias_command } => match alias_command {
+            AliasCommand::Add { alias, target } => match record_db.insert_alias(&alias, &target) {
+                Err(e) => {
+                    eprintln!("{e}");
+                    process::exit(1);
+                }
+                _ => (),
+            },
             AliasCommand::Delete => todo!(),
             AliasCommand::Rename => todo!(),
         },

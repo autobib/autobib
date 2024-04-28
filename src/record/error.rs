@@ -1,18 +1,20 @@
 use reqwest::StatusCode;
 use std::fmt;
 
+use crate::database::DatabaseError;
+
 #[derive(Debug)]
 pub enum RecordError {
     UnexpectedFailure(String),
     UnexpectedStatusCode(StatusCode),
     InvalidSource(String),
     NetworkFailure(reqwest::Error),
-    DatabaseFailure(rusqlite::Error),
+    DatabaseFailure(DatabaseError),
     Incomplete,
 }
 
-impl From<rusqlite::Error> for RecordError {
-    fn from(err: rusqlite::Error) -> Self {
+impl From<DatabaseError> for RecordError {
+    fn from(err: DatabaseError) -> Self {
         RecordError::DatabaseFailure(err)
     }
 }
