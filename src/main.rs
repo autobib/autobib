@@ -88,13 +88,24 @@ fn main() {
 
     match cli.command {
         Command::Alias { alias_command } => match alias_command {
-            AliasCommand::Add { alias, target } => match record_db.insert_alias(&alias, &target) {
-                Err(e) => {
-                    eprintln!("{e}");
-                    process::exit(1);
+            AliasCommand::Add { alias, target } => {
+                // first retrieve 'target', in case it does not yet exist in the database
+                match get_record(&mut record_db, &target) {
+                    Ok(_) => {}
+                    Err(why) => {
+                        eprintln!("{why}");
+                        process::exit(1);
+                    }
                 }
-                _ => (),
-            },
+                // then link to it
+                match record_db.insert_alias(&alias, &target) {
+                    Err(e) => {
+                        eprintln!("{e}");
+                        process::exit(1);
+                    }
+                    _ => (),
+                }
+            }
             AliasCommand::Delete => todo!(),
             AliasCommand::Rename => todo!(),
         },
