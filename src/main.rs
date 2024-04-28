@@ -144,7 +144,7 @@ fn validate_and_retrieve<'a, T: Iterator<Item = &'a str>>(
                         contents: entry,
                     }),
                     None => {
-                        eprintln!("'null record: {citation_key}'");
+                        eprintln!("Null record '{citation_key}'");
                         None
                     }
                 },
