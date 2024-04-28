@@ -30,7 +30,7 @@ pub fn get_record(id: &str) -> Result<Option<Entry>, RecordError> {
     match entry_iter.next() {
         Some(Ok(entry)) => Ok(Some(entry)),
         _ => Err(RecordError::UnexpectedFailure(
-            "Failed to parse ZBMath bibtex response!".to_string(),
+            "zbMATH bibtex record is invalid bibtex!".to_string(),
         )),
     }
 }

@@ -43,7 +43,7 @@ pub fn get_canonical(id: &str) -> Result<Option<RecordId>, RecordError> {
             }
         }
         _ => Err(RecordError::UnexpectedFailure(
-            "zbMATH bibtex record is not a valid bibtex!".to_string(),
+            "zbMATH bibtex record is invalid bibtex!".to_string(),
         )),
     }
 }
