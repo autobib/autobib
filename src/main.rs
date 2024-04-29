@@ -91,12 +91,12 @@ fn main() {
     // Open or create the database
     let mut record_db = if let Some(db_path) = cli.database {
         // at a user-provided path
-        RecordDatabase::open_or_create(&db_path).expect("Failed to open or create database.")
+        RecordDatabase::open(&db_path).expect("Failed to open database.")
     } else {
         // at the default path
         let xdg_dirs =
             BaseDirectories::with_prefix("autobib").expect("Could not find valid base directory.");
-        RecordDatabase::open_or_create(
+        RecordDatabase::open(
             xdg_dirs
                 .place_data_file("cache.db")
                 .expect("Failed to create data directory."),

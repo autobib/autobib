@@ -2,7 +2,7 @@ use core::convert::AsRef;
 use std::path::Path;
 
 use chrono::{DateTime, Local};
-use rusqlite::{Connection, OpenFlags, OptionalExtension, Result, Transaction};
+use rusqlite::{Connection, OptionalExtension, Result, Transaction};
 
 use crate::entry::Entry;
 use crate::record::*;
@@ -12,9 +12,12 @@ pub struct RecordDatabase {
 }
 
 impl RecordDatabase {
-    /// Create a new database file and initialize the table structure.
+    /// Create or open a database file.
     ///
-    /// The tables are as follows.
+    /// If the expected tables are missing, create them. If the expected tables already exist but
+    /// do not have the expected schema, this causes an error.
+    ///
+    /// The expected tables are as follows.
     ///
     /// 1. `Records`. This is the primary table used to store records. The integer primary key
     ///    `key` is used as the internal unambiguous reference for each record and is used for
@@ -34,76 +37,70 @@ impl RecordDatabase {
     /// CanonicalId |        YES        |          YES          |          YES
     /// ReferenceId |        NO         |          YES          |          YES
     /// Alias       |        NO         |          NO           |          YES
-    pub fn create<P: AsRef<Path>>(db_file: P) -> Result<Self, DatabaseError> {
+    pub fn open<P: AsRef<Path>>(db_file: P) -> Result<Self, DatabaseError> {
+        // create a new database if it does not exist; otherwise open the existing database
         let mut conn = Connection::open(db_file)?;
-
         let tx = conn.transaction()?;
-        Self::initialize_database(&tx)?;
+
+        tx.execute("PRAGMA foreign_keys = ON;", ())?;
+
+        // validate the expected table schemas, creating missing tables if they do not exist
+        Self::initialize_table(&tx, "Records", include_str!("database/records.sql"))?;
+        Self::initialize_table(
+            &tx,
+            "CitationKeys",
+            include_str!("database/citation_keys.sql"),
+        )?;
+        Self::initialize_table(
+            &tx,
+            "NullRecords",
+            include_str!("database/null_records.sql"),
+        )?;
+
         tx.commit()?;
 
         Ok(RecordDatabase { conn })
     }
 
-    /// Initialize the tables within a transaction.
-    fn initialize_database(tx: &Transaction) -> Result<(), DatabaseError> {
-        // Table to store records
-        tx.execute(
-            "CREATE TABLE Records (
-                 key INTEGER PRIMARY KEY,
-                 record_id TEXT NOT NULL,
-                 data TEXT NOT NULL,
-                 modified TEXT NOT NULL
-             ) STRICT",
-            (),
-        )?;
-
-        // Table to store citation keys
-        tx.execute(
-            "CREATE TABLE CitationKeys (
-                 name TEXT NOT NULL PRIMARY KEY,
-                 record_key INTEGER,
-                 CONSTRAINT foreign_record_key
-                      FOREIGN KEY (record_key)
-                      REFERENCES Records(key)
-                      ON DELETE CASCADE
-             ) STRICT",
-            (),
-        )?;
-
-        // Table to store records which do not exist
-        tx.execute(
-            "CREATE TABLE NullRecords (
-                 record_id TEXT NOT NULL PRIMARY KEY,
-                 attempted TEXT NOT NULL
-             ) STRICT",
-            (),
-        )?;
-
-        // Enable foreign keys
-        tx.execute("PRAGMA foreign_keys = ON;", ())?;
-
-        Ok(())
+    /// Validate the table schema of an existing table, or return an appropriate error.
+    fn validate_table_schema(
+        tx: &Transaction,
+        table_name: &str,
+        expected_schema: &str,
+    ) -> Result<(), DatabaseError> {
+        let mut table_selector =
+            tx.prepare_cached("SELECT sql FROM sqlite_schema WHERE name = ?1;")?;
+        let mut record_rows = table_selector.query([table_name])?;
+        match record_rows.next() {
+            Ok(Some(row)) => {
+                let table_schema: String = row.get("sql")?;
+                if table_schema == expected_schema {
+                    Ok(())
+                } else {
+                    Err(DatabaseError::TableIncorrectSchema(
+                        table_name.into(),
+                        table_schema,
+                    ))
+                }
+            }
+            Ok(None) => Err(DatabaseError::TableMissing(table_name.into())),
+            Err(why) => Err(why.into()),
+        }
     }
 
-    /// Open an existing database file on disk.
-    pub fn open<P: AsRef<Path>>(db_file: P) -> Result<Self, DatabaseError> {
-        Ok(RecordDatabase {
-            // TODO: handle invalid schema
-            conn: Connection::open_with_flags(
-                db_file,
-                OpenFlags::SQLITE_OPEN_READ_WRITE
-                    | OpenFlags::SQLITE_OPEN_URI
-                    | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-            )?,
-        })
-    }
-
-    /// Open an existing database file, or create it if it does not exist.
-    pub fn open_or_create<P: AsRef<Path>>(db_file: P) -> Result<Self, DatabaseError> {
-        match Self::open(&db_file) {
-            Ok(db) => Ok(db),
-            // TODO: check if the error is due to the file not existing
-            Err(_) => Self::create(&db_file),
+    /// Initialize a table inside a transaction.
+    fn initialize_table(
+        tx: &Transaction,
+        table_name: &str,
+        schema: &str,
+    ) -> Result<(), DatabaseError> {
+        match Self::validate_table_schema(&tx, table_name, schema) {
+            Ok(()) => Ok(()),
+            Err(DatabaseError::TableMissing(_)) => {
+                tx.execute(schema, ())?;
+                Ok(())
+            }
+            Err(e) => Err(e),
         }
     }
 
@@ -400,6 +397,8 @@ impl RecordDatabase {
 #[derive(Debug)]
 pub enum DatabaseError {
     SQL(rusqlite::Error),
+    TableMissing(String),
+    TableIncorrectSchema(String, String),
     CitationKeyExists(String),
     CitationKeyMissing(String),
 }
@@ -409,6 +408,10 @@ impl std::fmt::Display for DatabaseError {
         match self {
             DatabaseError::SQL(err) => err.fmt(f),
             DatabaseError::CitationKeyExists(k) => write!(f, "Citation key exists: '{k}'"),
+            DatabaseError::TableMissing(table) => write!(f, "Database missing table: '{table}'"),
+            DatabaseError::TableIncorrectSchema(table, schema) => {
+                write!(f, "Table '{table}' has unexpected schema:\n{schema}")
+            }
             DatabaseError::CitationKeyMissing(k) => write!(f, "Citation key missing: '{k}'"),
         }
     }
