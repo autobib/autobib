@@ -1,6 +1,6 @@
 use regex::Regex;
 use reqwest::StatusCode;
-use serde_bibtex::SliceReader;
+use serde_bibtex::de::Deserializer;
 
 use crate::source::Entry;
 use crate::RecordError;
@@ -23,9 +23,7 @@ pub fn get_record(id: &str) -> Result<Option<Entry>, RecordError> {
         code => return Err(RecordError::UnexpectedStatusCode(code)),
     };
 
-    let mut entry_iter = SliceReader::new(&body)
-        .deserialize()
-        .into_iter_entry::<Entry>();
+    let mut entry_iter = Deserializer::from_slice(&body).into_iter_entry::<Entry>();
 
     match entry_iter.next() {
         Some(Ok(entry)) => Ok(Some(entry)),
