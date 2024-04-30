@@ -39,50 +39,35 @@ enum Command {
         /// The citation keys to retrieve.
         citation_keys: Vec<String>,
     },
-    /// Generate records from sourc(es).
-    #[command(alias = "s")]
-    Source,
     /// Show metadata for citation key.
     #[command()]
     Show,
-}
-
-/// Parse an argument using a [`FromStr`] implementation.
-fn from_str_parser<T: FromStr>(s: &str) -> Result<T, String>
-where
-    <T as FromStr>::Err: fmt::Display,
-{
-    T::from_str(s).map_err(|e| e.to_string())
+    /// Generate records from source(s).
+    #[command(alias = "s")]
+    Source,
 }
 
 #[derive(Subcommand)]
 enum AliasCommand {
     Add {
-        #[arg(value_parser = from_str_parser::<Alias>)]
         alias: Alias,
-        #[arg(value_parser = from_str_parser::<CitationKeyInput>)]
         target: CitationKeyInput,
     },
     Delete {
-        #[arg(value_parser = from_str_parser::<Alias>)]
         alias: Alias,
     },
     Rename {
-        #[arg(value_parser = from_str_parser::<Alias>)]
         alias: Alias,
-        #[arg(value_parser = from_str_parser::<Alias>)]
         new: Alias,
     },
 }
 
-fn fail_on_err<T, E: fmt::Display>(err: Result<T, E>) {
-    match err {
-        Err(why) => {
-            eprintln!("{why}");
-            process::exit(1)
-        }
-        _ => (),
-    }
+// TODO: replace this with a proper error handling mechanism
+fn fail_on_err<T, E: fmt::Display>(result: Result<T, E>) -> T {
+    result.unwrap_or_else(|e| {
+        eprintln!("{e}");
+        process::exit(1)
+    })
 }
 
 fn main() {

@@ -27,6 +27,7 @@ impl CitationKey for CitationKeyInput {
     }
 }
 
+#[derive(Debug)]
 pub struct CitationKeyError {
     input: String,
     kind: CitationKeyErrorKind,
@@ -41,6 +42,7 @@ impl CitationKeyError {
     }
 }
 
+#[derive(Debug)]
 pub enum CitationKeyErrorKind {
     EmptySource,
     EmptySubId,
@@ -50,6 +52,8 @@ pub enum CitationKeyErrorKind {
     RecordIdMissingColon,
     EmptyAlias,
 }
+
+impl std::error::Error for CitationKeyError {}
 
 impl fmt::Display for CitationKeyError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -62,7 +66,9 @@ impl fmt::Display for CitationKeyError {
             CitationKeyErrorKind::InvalidSubId => {
                 f.write_str("sub-id is invalid for the provided source")
             }
-            CitationKeyErrorKind::AliasContainsColon => f.write_str("alias cannot contain colon"),
+            CitationKeyErrorKind::AliasContainsColon => {
+                f.write_str("alias must not contain a colon")
+            }
             CitationKeyErrorKind::RecordIdMissingColon => {
                 f.write_str("record id must contain colon")
             }
