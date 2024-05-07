@@ -80,9 +80,9 @@ pub fn get_record(id: &str) -> Result<Option<Entry>, RecordError> {
             let first_entry = parsed.entry.into_iter().nth(0).unwrap();
             Ok(Some(first_entry.into()))
         }
-        Err(_) => Err(RecordError::UnexpectedFailure(
-            "arxiv xml response has unexpected format!".to_string(),
-        )),
+        // This is somewhat suboptimal, but arxiv seems to constantly change their error format
+        // which makes it hard to properly check if the error is spurious or not.
+        Err(_) => Ok(None),
     }
 }
 

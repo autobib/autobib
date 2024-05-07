@@ -3,17 +3,22 @@ use std::fmt::{Display, Formatter};
 use serde::{Deserialize, Serialize};
 use serde_aux::prelude::*;
 
-use crate::record::CitationKey;
+use crate::record::CitationKeyInput;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct KeyedEntry {
-    pub key: CitationKey,
+    pub key: CitationKeyInput,
     pub contents: Entry,
 }
 
 impl Display for KeyedEntry {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "@{}{{{}", self.contents.entry_type, self.key)?;
+        write!(
+            f,
+            "@{}{{{},",
+            self.contents.entry_type.to_lowercase(),
+            self.key
+        )?;
         write!(f, "{}", self.contents.fields)?;
         write!(f, "\n}}")
     }

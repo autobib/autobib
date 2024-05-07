@@ -1,6 +1,6 @@
 use regex::Regex;
 use reqwest::StatusCode;
-use serde_bibtex::SliceReader;
+use serde_bibtex::de::Deserializer;
 
 use crate::source::Entry;
 use crate::RecordError;
@@ -13,26 +13,22 @@ pub fn is_valid_id(id: &str) -> bool {
 }
 
 pub fn get_record(id: &str) -> Result<Option<Entry>, RecordError> {
-    let response = reqwest::blocking::get(format!("https://zbmath.org/bibtex/{}.bib", id))?;
+    let response = reqwest::blocking::get(format!("https://zbmath.org/bibtex/{id}.bib"))?;
 
     let body = match response.status() {
         StatusCode::OK => response.bytes()?,
         StatusCode::NOT_FOUND => {
             return Ok(None);
         }
-        _ => {
-            return Err(RecordError::Incomplete);
-        } //TODO: fixme
+        code => return Err(RecordError::UnexpectedStatusCode(code)),
     };
 
-    let mut entry_iter = SliceReader::new(&body)
-        .deserialize()
-        .into_iter_entry::<Entry>();
+    let mut entry_iter = Deserializer::from_slice(&body).into_iter_entry::<Entry>();
 
-    // TODO: panicking on parse failure
-    // let mut p = Parser::from_str(&body).unwrap();
     match entry_iter.next() {
         Some(Ok(entry)) => Ok(Some(entry)),
-        _ => Err(RecordError::Incomplete),
+        _ => Err(RecordError::UnexpectedFailure(
+            "zbMATH bibtex record is invalid bibtex!".to_string(),
+        )),
     }
 }

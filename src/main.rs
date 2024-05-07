@@ -3,34 +3,132 @@ mod entry;
 mod record;
 mod source;
 
+use std::fmt;
+use std::path::PathBuf;
+use std::process;
 use std::str::FromStr;
 
-use clap::Parser;
-use rusqlite::Result;
+use clap::{Parser, Subcommand};
+use xdg::BaseDirectories;
 
+use database::RecordDatabase;
 use entry::KeyedEntry;
 use record::*;
-
-const DATABASE_FILE: &str = "cache.db";
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
-    args: Vec<String>,
+    #[arg(long)]
+    database: Option<PathBuf>,
+
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// Manage aliases.
+    #[command(alias = "a")]
+    Alias {
+        #[command(subcommand)]
+        alias_command: AliasCommand,
+    },
+    /// Retrieve records given citation keys.
+    #[command(alias = "g")]
+    Get {
+        /// The citation keys to retrieve.
+        citation_keys: Vec<String>,
+    },
+    /// Show metadata for citation key.
+    #[command()]
+    Show,
+    /// Generate records from source(s).
+    #[command(alias = "s")]
+    Source,
+}
+
+#[derive(Subcommand)]
+enum AliasCommand {
+    Add {
+        alias: Alias,
+        target: CitationKeyInput,
+    },
+    Delete {
+        alias: Alias,
+    },
+    Rename {
+        alias: Alias,
+        new: Alias,
+    },
+}
+
+// TODO: replace this with a proper error handling mechanism
+fn fail_on_err<T, E: fmt::Display>(result: Result<T, E>) -> T {
+    result.unwrap_or_else(|e| {
+        eprintln!("{e}");
+        process::exit(1)
+    })
 }
 
 fn main() {
     let cli = Cli::parse();
 
-    // Initialize database
-    let mut record_db = create_test_db().unwrap();
+    // Open or create the database
+    let mut record_db = if let Some(db_path) = cli.database {
+        // at a user-provided path
+        RecordDatabase::open(&db_path).expect("Failed to open database.")
+    } else {
+        // at the default path
+        let xdg_dirs =
+            BaseDirectories::with_prefix("autobib").expect("Could not find valid base directory.");
+        RecordDatabase::open(
+            xdg_dirs
+                .place_data_file("cache.db")
+                .expect("Failed to create data directory."),
+        )
+        .expect("Failed to open or create database.")
+    };
 
-    // Collect all entries which are not null
-    let valid_entries: Vec<KeyedEntry> = cli
-        .args
-        .into_iter()
+    match cli.command {
+        Command::Alias { alias_command } => match alias_command {
+            AliasCommand::Add { alias, target } => {
+                // first retrieve 'target', in case it does not yet exist in the database
+                fail_on_err(get_record(&mut record_db, &target));
+                // then link to it
+                fail_on_err(record_db.insert_alias(&alias, &target));
+            }
+            // TODO: deletion fails silently if the alias does not exist
+            AliasCommand::Delete { alias } => fail_on_err(record_db.delete_alias(&alias)),
+            AliasCommand::Rename { alias, new } => {
+                fail_on_err(record_db.rename_alias(&alias, &new))
+            }
+        },
+        Command::Get { citation_keys } => {
+            // Collect all entries which are not null
+            let valid_entries =
+                validate_and_retrieve(citation_keys.iter().map(|s| s as &str), record_db);
+            // print biblatex strings
+            for entry in valid_entries {
+                // TODO: replace me when serde_bibtex serialize is implemented
+                println!("{}", entry)
+            }
+        }
+        Command::Source => todo!(),
+        Command::Show => todo!(),
+    }
+}
+
+/// Validate and retrieve records.
+///
+/// - During validation, filter invalid citation keys and print error messages.
+/// - During retrieval, filter null records and print error messages.
+fn validate_and_retrieve<'a, T: Iterator<Item = &'a str>>(
+    citation_keys: T,
+    mut record_db: RecordDatabase,
+) -> Vec<KeyedEntry> {
+    citation_keys
         // parse the source:sub_id arguments and perform cheap validation
-        .filter_map(|input| match CitationKey::from_str(&input) {
+        .filter_map(|input| match CitationKeyInput::from_str(input) {
             Ok(record_id) => Some(record_id),
             Err(err) => {
                 eprintln!("{err}");
@@ -51,52 +149,11 @@ fn main() {
                         contents: entry,
                     }),
                     None => {
-                        eprintln!("'null record: {citation_key}'");
+                        eprintln!("Null record '{citation_key}'");
                         None
                     }
                 },
             )
         })
-        .collect();
-
-    // print biblatex strings
-    for entry in valid_entries {
-        println!("{}", entry)
-    }
-}
-
-use crate::database::RecordDatabase;
-
-/// Populate the database with some records for testing purposes.
-fn create_test_db() -> Result<RecordDatabase, RecordError> {
-    use entry::{Entry, Fields};
-    match std::fs::remove_file(DATABASE_FILE) {
-        Ok(()) => {}
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        _ => panic!("Testing database file has been overwritten!"),
-    }
-
-    let mut record_db = RecordDatabase::create(DATABASE_FILE)?;
-
-    let entry_1 = Entry {
-        entry_type: "code".to_string(),
-        fields: Fields {
-            author: Some("Rutar, Alex and Wu, Peiran".to_string()),
-            title: Some("Autobib".to_string()),
-            ..Fields::default()
-        },
-    };
-    record_db.set_cached_data(&RecordId::from_parts("test", "000"), &entry_1, None)?;
-
-    let entry_2 = Entry {
-        entry_type: "article".to_string(),
-        fields: Fields {
-            author: Some("Author, Test".to_string()),
-            title: Some("A Sample Paper".to_string()),
-            ..Fields::default()
-        },
-    };
-    record_db.set_cached_data(&RecordId::from_parts("test", "002"), &entry_2, None)?;
-
-    Ok(record_db)
+        .collect()
 }
