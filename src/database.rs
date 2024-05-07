@@ -2,47 +2,60 @@ use core::convert::AsRef;
 use std::path::Path;
 
 use chrono::{DateTime, Local};
-use rusqlite::{Connection, OptionalExtension, Result, Transaction};
+use rusqlite::{Connection, OptionalExtension, Transaction};
 
 use crate::entry::Entry;
-use crate::record::*;
+use crate::error::DatabaseError;
+use crate::record::{Alias, RemoteId};
 
+type DatabaseEntryId = i64;
+
+/// This trait represents types which can be stored as a row in the SQL database underlying a
+/// [`RecordDatabase`].
+pub trait CitationKey {
+    /// The string to use as the key for a row.
+    fn name(&self) -> &str;
+}
+
+/// Internal representation of the underlying SQL database.
+///
+/// The table structure is as follows.
+///
+/// 1. `Records`. This is the primary table used to store records. The integer primary key
+///    `key` is used as the internal unambiguous reference for each record and is used for
+///    resource de-duplication.
+/// 2. `CitationKeys`. This is the table used to store any citation key which is inserted into
+///    a table. Since multiple citation keys may refer to the same underlying record, this is
+///    simply a lookup table for the corresponding record, and the corresponding rows are
+///    automatically deleted when the record is deleted.
+/// 3. `NullRecords`. This is a cache table used to keep track of records which are known to
+///    not exist.
+///
+/// The two citation key types, [`Alias`] and [`RemoteId`], with the variants `CanonicalId` and
+/// `ReferenceId` for [`RemoteId`], are stored according to the following table.
+///
+/// |            | Stored in Records | Stored in NullRecords | Stored in CitationKeys |
+/// |------------|-------------------|-----------------------|------------------------|
+/// |CanonicalId |        YES        |          YES          |          YES           |
+/// |ReferenceId |        NO         |          YES          |          YES           |
+/// |Alias       |        NO         |          NO           |          YES           |
 pub struct RecordDatabase {
     conn: Connection,
 }
 
 impl RecordDatabase {
-    /// Create or open a database file.
+    /// Open a database file.
     ///
     /// If the expected tables are missing, create them. If the expected tables already exist but
-    /// do not have the expected schema, this causes an error.
-    ///
-    /// The expected tables are as follows.
-    ///
-    /// 1. `Records`. This is the primary table used to store records. The integer primary key
-    ///    `key` is used as the internal unambiguous reference for each record and is used for
-    ///    resource de-duplication.
-    /// 2. `CitationKeys`. This is the table used to store any citation key which is inserted into
-    ///    a table. Since multiple citation keys may refer to the same underlying record, this is
-    ///    simply a lookup table for the corresponding record, and the corresponding rows are
-    ///    automatically deleted when the record is deleted.
-    /// 3. `NullRecords`. This is a cache table used to keep track of records which are known to
-    ///    not exist.
-    ///
-    /// The two citation key types, [`Alias`] and [`RecordId`], with the variants `CanonicalId` and
-    /// `ReferenceId` for [`RecordId`], are stored according to the following table.
-    ///
-    ///             | Stored in Records | Stored in NullRecords | Stored in CitationKeys
-    /// ------------|-------------------|-----------------------|-----------------------
-    /// CanonicalId |        YES        |          YES          |          YES
-    /// ReferenceId |        NO         |          YES          |          YES
-    /// Alias       |        NO         |          NO           |          YES
+    /// do not have the expected schema, this causes an error. The expected tables are as
+    /// detailed in the documentation for [`RecordDatabase`].
     pub fn open<P: AsRef<Path>>(db_file: P) -> Result<Self, DatabaseError> {
         // create a new database if it does not exist; otherwise open the existing database
         let mut conn = Connection::open(db_file)?;
         let tx = conn.transaction()?;
 
-        tx.execute("PRAGMA foreign_keys = ON;", ())?;
+        // initialize connection state; e.g. set foreign_keys = ON
+        tx.execute(include_str!("database/initialize.sql"), ())?;
 
         // validate the expected table schemas, creating missing tables if they do not exist
         Self::initialize_table(&tx, "Records", include_str!("database/records.sql"))?;
@@ -62,14 +75,14 @@ impl RecordDatabase {
         Ok(RecordDatabase { conn })
     }
 
-    /// Validate the table schema of an existing table, or return an appropriate error.
+    /// Validate the schema of an existing table, or return an appropriate error.
     fn validate_table_schema(
         tx: &Transaction,
         table_name: &str,
         expected_schema: &str,
     ) -> Result<(), DatabaseError> {
         let mut table_selector =
-            tx.prepare_cached("SELECT sql FROM sqlite_schema WHERE name = ?1;")?;
+            tx.prepare_cached(include_str!("database/get_table_schema.sql"))?;
         let mut record_rows = table_selector.query([table_name])?;
         match record_rows.next() {
             Ok(Some(row)) => {
@@ -94,7 +107,7 @@ impl RecordDatabase {
         table_name: &str,
         schema: &str,
     ) -> Result<(), DatabaseError> {
-        match Self::validate_table_schema(&tx, table_name, schema) {
+        match Self::validate_table_schema(tx, table_name, schema) {
             Ok(()) => Ok(()),
             Err(DatabaseError::TableMissing(_)) => {
                 tx.execute(schema, ())?;
@@ -104,98 +117,221 @@ impl RecordDatabase {
         }
     }
 
-    /// Obtain cached data corresponding to a [`CitationKeyInput`].
-    ///
-    /// Note that the `citation_key` argument must be an actual [`CitationKeyInput`], rather than a
-    /// type which implements [`CitationKey`]. The reason for this is that this function must
-    /// distinguish between being [`RecordId`] or an [`Alias`], since non-presence in the table in
-    /// each case is handled in a slightly different way.
-    pub fn get_cached_data<'a>(
+    /// Get the cached data corresponding to a [`CitationKey`].
+    pub fn get_cached_data<K: CitationKey>(
         &mut self,
-        citation_key: &'a CitationKeyInput,
-    ) -> Result<CacheResponse<'a>, DatabaseError> {
+        citation_key: &K,
+    ) -> Result<RecordsResponse, DatabaseError> {
         let tx = self.conn.transaction()?;
-        let cache_response = Self::get_cached_data_transaction(&tx, citation_key)?;
+        let response = Self::get_cached_data_tx(&tx, citation_key)?;
         tx.commit()?;
-
-        Ok(cache_response)
+        Ok(response)
     }
 
-    /// Obtain cached data corresponding to a [`CitationKeyInput`] within a provided transaction.
-    fn get_cached_data_transaction<'a>(
+    /// Get the cached data corresponding to a [`CitationKey`] inside a transaction.
+    fn get_cached_data_tx<K: CitationKey>(
         tx: &Transaction,
-        citation_key: &'a CitationKeyInput,
-    ) -> Result<CacheResponse<'a>, DatabaseError> {
-        // try to get the key from CitationKeys
-        match Self::get_record_key(&tx, citation_key) {
-            // key exists, get the corresponding record
-            Ok(Some(key)) => {
+        citation_key: &K,
+    ) -> Result<RecordsResponse, DatabaseError> {
+        match Self::get_record_key(tx, citation_key)? {
+            // target exists
+            Some(key) => {
                 let mut record_selector =
-                    tx.prepare_cached("SELECT modified, data FROM Records WHERE key = ?1")?;
+                    tx.prepare_cached(include_str!("database/get_cached_data.sql"))?;
                 let mut record_rows = record_selector.query([key])?;
 
-                match record_rows.next() {
-                    // Valid record
-                    Ok(Some(row)) => Self::cache_response_from_record_row(row)
-                        .map(|(entry, modified)| CacheResponse::Found(entry, modified)),
-                    Ok(None) => {
-                        // SAFETY: the ON DELETE CASCADE and transaction wrapping should prevent
-                        // this from ever occurring.
-                        panic!("A key in CitationKeys does not correspond to a row in Records!")
-                    }
-                    Err(err) => Err(err.into()),
-                }
+                // SAFETY: key always corresponds to a valid row
+                //         because of ON DELETE CASCADE
+                let row = record_rows.next()?.expect("RowId does not exist!)");
+                Self::cache_response_from_record_row(row).map(|(entry, canonical, modified)| {
+                    RecordsResponse::Found(entry, canonical, modified)
+                })
             }
-            // no key
-            Ok(None) => {
-                match citation_key {
-                    // If CitationKey is a RecordId, check for a cached null record.
-                    CitationKeyInput::RecordId(record_id) => {
-                        let mut null_selector = tx.prepare_cached(
-                            "SELECT attempted FROM NullRecords WHERE record_id = ?1",
-                        )?;
-                        let mut null_rows = null_selector.query([&record_id.name()])?;
-
-                        match null_rows.next() {
-                            // Cached null
-                            Ok(Some(row)) => Ok(CacheResponse::FoundNull(row.get("attempted")?)),
-                            Ok(None) => Ok(CacheResponse::NotFound(record_id)),
-                            Err(err) => Err(err.into()),
-                        }
-                    }
-                    // If it is an Alias, the CitationKeys table is the canonical source for
-                    // whether or not the alias is set.
-                    CitationKeyInput::Alias(alias) => {
-                        Ok(CacheResponse::NullAlias(alias.name().into()))
-                    }
-                }
-            }
-            Err(err) => Err(err),
+            None => Ok(RecordsResponse::NotFound),
         }
     }
 
-    /// Rename an alias.
-    pub fn rename_alias(&mut self, alias: &Alias, new: &Alias) -> Result<(), DatabaseError> {
+    /// Get the cached data corresponding to a [`CitationKey`].
+    // pub fn get_cached_data_and_ref<K: CitationKey, R: Iterator>(
+    pub fn get_cached_data_and_ref<'a, K: CitationKey, R: Iterator<Item = &'a RemoteId>>(
+        &mut self,
+        citation_key: &K,
+        refs: R,
+    ) -> Result<RecordsResponse, DatabaseError> {
         let tx = self.conn.transaction()?;
-        let status = Self::rename_alias_transaction(&tx, alias, new)?;
+        let response = Self::get_cached_data_and_ref_tx(&tx, citation_key, refs)?;
         tx.commit()?;
-        Ok(status)
+        Ok(response)
+    }
+
+    /// Get the cached data corresponding to a [`CitationKey`] inside a transaction.
+    fn get_cached_data_and_ref_tx<'a, K: CitationKey, R: Iterator<Item = &'a RemoteId>>(
+        tx: &Transaction,
+        citation_key: &K,
+        refs: R,
+    ) -> Result<RecordsResponse, DatabaseError> {
+        match Self::get_record_key(tx, citation_key)? {
+            // target exists
+            Some(key) => {
+                let mut record_selector =
+                    tx.prepare_cached(include_str!("database/get_cached_data.sql"))?;
+                let mut record_rows = record_selector.query([key])?;
+
+                // insert refs
+                for remote_id in refs {
+                    Self::set_citation_key_row_tx(
+                        tx,
+                        remote_id,
+                        key,
+                        CitationKeyInsertMode::Overwrite,
+                    )?;
+                }
+
+                // SAFETY: key always corresponds to a valid row
+                //         because of ON DELETE CASCADE
+                let row = record_rows.next()?.expect("RowId does not exist!)");
+                Self::cache_response_from_record_row(row).map(|(entry, canonical, modified)| {
+                    RecordsResponse::Found(entry, canonical, modified)
+                })
+            }
+            None => Ok(RecordsResponse::NotFound),
+        }
+    }
+
+    /// Process a [`rusqlite::Row`] into a manageable type.
+    ///
+    /// This assumes that the row was generated by the following query:
+    /// ```sql
+    /// SELECT record_id, modified, data FROM Records WHERE ...
+    /// ```
+    fn cache_response_from_record_row(
+        row: &rusqlite::Row,
+    ) -> Result<(Entry, RemoteId, DateTime<Local>), DatabaseError> {
+        let data_str: String = row.get("data")?;
+        let record_id_str: String = row.get("record_id")?;
+        let modified: DateTime<Local> = row.get("modified")?;
+
+        Ok((
+            // TODO: fixme when `set_cached_data` is fixed
+            serde_json::from_str(&data_str).unwrap(),
+            RemoteId::new_unchecked(record_id_str),
+            modified,
+        ))
+    }
+
+    /// Insert a new record into the database.
+    ///
+    /// Every record requires that it is associated with a canonical [`RemoteId`] with a
+    /// corresponding entry. There may also be associated references.
+    pub fn set_cached_data<'a, R: Iterator<Item = &'a RemoteId>>(
+        &mut self,
+        canonical_id: &RemoteId,
+        entry: &Entry,
+        remote_id_iter: R,
+    ) -> Result<(), DatabaseError> {
+        let tx = self.conn.transaction()?;
+        Self::set_cached_data_tx(&tx, canonical_id, entry, remote_id_iter)?;
+        Ok(tx.commit()?)
+    }
+
+    /// Helper function to wrap the insertion into Records and CitationKeys in a transaction.
+    fn set_cached_data_tx<'a, R: Iterator<Item = &'a RemoteId>>(
+        tx: &Transaction,
+        canonical_id: &RemoteId,
+        entry: &Entry,
+        remote_id_iter: R,
+    ) -> Result<(), DatabaseError> {
+        let mut setter = tx.prepare_cached(include_str!("database/set_cached_data.sql"))?;
+        setter.execute((
+            canonical_id.name(),
+            // TODO: do something more sensible, and fix `cache_response_from_record_row`
+            serde_json::to_string(&entry).unwrap(),
+            &Local::now(),
+        ))?;
+
+        // get identifier
+        let key = tx.last_insert_rowid();
+
+        // add citation keys
+        for remote_id in remote_id_iter {
+            Self::set_citation_key_row_tx(tx, remote_id, key, CitationKeyInsertMode::Overwrite)?;
+        }
+
+        Ok(())
+    }
+
+    /// Check if the [`RemoteId`] is a cached null record.
+    pub fn get_cached_null(
+        &mut self,
+        remote_id: &RemoteId,
+    ) -> Result<NullRecordsResponse, DatabaseError> {
+        let tx = self.conn.transaction()?;
+        let response = Self::get_cached_null_tx(&tx, remote_id)?;
+        tx.commit()?;
+        Ok(response)
+    }
+
+    /// Check if the [`RemoteId`] is a cached null record within a transaction.
+    fn get_cached_null_tx(
+        tx: &Transaction,
+        remote_id: &RemoteId,
+    ) -> Result<NullRecordsResponse, DatabaseError> {
+        let mut null_selector = tx.prepare_cached(include_str!("database/get_cached_null.sql"))?;
+        let mut null_rows = null_selector.query([&remote_id.name()])?;
+
+        match null_rows.next() {
+            // Cached null
+            Ok(Some(row)) => Ok(NullRecordsResponse::Found(row.get("attempted")?)),
+            Ok(None) => Ok(NullRecordsResponse::NotFound),
+            Err(err) => Err(err.into()),
+        }
+    }
+
+    /// Cache a null record.
+    ///
+    /// If `record_id` has a canonical source, this means that there is no associated entry. If
+    /// `record_id` is a reference source, this means there is no associated canonical `record_id`.
+    pub fn set_cached_null<'a, R: Iterator<Item = &'a RemoteId>>(
+        &mut self,
+        remote_id_iter: R,
+    ) -> Result<(), DatabaseError> {
+        let tx = self.conn.transaction()?;
+        Self::set_cached_null_tx(&tx, remote_id_iter)?;
+        Ok(tx.commit()?)
+    }
+
+    /// Helper function to wrap the insertion into NullRecords in a transaction.
+    fn set_cached_null_tx<'a, R: Iterator<Item = &'a RemoteId>>(
+        tx: &Transaction,
+        remote_id_iter: R,
+    ) -> Result<(), DatabaseError> {
+        let mut setter = tx.prepare_cached(include_str!("database/set_cached_null.sql"))?;
+        let cache_time = Local::now();
+        for remote_id in remote_id_iter {
+            setter.execute((remote_id.name(), cache_time))?;
+        }
+
+        Ok(())
+    }
+
+    /// Rename an alias.
+    pub fn rename_alias(&mut self, old: &Alias, new: &Alias) -> Result<(), DatabaseError> {
+        let tx = self.conn.transaction()?;
+        Self::rename_alias_tx(&tx, old, new)?;
+        tx.commit()?;
+        Ok(())
     }
 
     /// Rename an alias within a transaction.
-    fn rename_alias_transaction(
-        tx: &Transaction,
-        name: &Alias,
-        new: &Alias,
-    ) -> Result<(), DatabaseError> {
-        let mut updater = tx.prepare_cached("UPDATE CitationKeys SET name = ?1 WHERE name = ?2")?;
-        Self::map_citation_key_result(updater.execute((new.name(), name.name())), name)
+    fn rename_alias_tx(tx: &Transaction, old: &Alias, new: &Alias) -> Result<(), DatabaseError> {
+        let mut updater = tx.prepare_cached(include_str!("database/rename_citation_key.sql"))?;
+        Self::map_citation_key_result(updater.execute((new.name(), old.name())), old)
     }
 
     /// Take the result of a SQLite operation, suppressing the output and processing the error.
-    fn map_citation_key_result<R, T: CitationKey>(
-        res: Result<R, rusqlite::Error>,
-        citation_key: &T,
+    fn map_citation_key_result<T, K: CitationKey>(
+        res: Result<T, rusqlite::Error>,
+        citation_key: &K,
     ) -> Result<(), DatabaseError> {
         match res {
             Ok(_) => Ok(()),
@@ -212,61 +348,56 @@ impl RecordDatabase {
     /// Delete an alias.
     pub fn delete_alias(&mut self, alias: &Alias) -> Result<(), DatabaseError> {
         let tx = self.conn.transaction()?;
-        let status = Self::delete_citation_key_row_transaction(&tx, alias)?;
+        Self::delete_citation_key_row_tx(&tx, alias)?;
         tx.commit()?;
-        Ok(status)
+        Ok(())
     }
 
     /// Delete a citation key row within a transaction.
-    fn delete_citation_key_row_transaction<T: CitationKey>(
+    fn delete_citation_key_row_tx<K: CitationKey>(
         tx: &Transaction,
-        name: &T,
+        citation_key: &K,
     ) -> Result<(), DatabaseError> {
         let mut deleter = tx.prepare_cached("DELETE FROM CitationKeys WHERE name = ?1")?;
-        Ok(deleter.execute((name.name(),)).map(|_| ())?)
+        Ok(deleter.execute((citation_key.name(),)).map(|_| ())?)
     }
 
     /// Insert a new citation alias.
-    pub fn insert_alias<T: CitationKey>(
+    pub fn insert_alias<K: CitationKey>(
         &mut self,
         alias: &Alias,
-        target: &T,
+        target: &K,
     ) -> Result<(), DatabaseError> {
         let tx = self.conn.transaction()?;
-        let status = Self::insert_alias_transaction(&tx, alias, target)?;
+        Self::insert_alias_tx(&tx, alias, target)?;
         tx.commit()?;
-        Ok(status)
+        Ok(())
     }
 
     /// Insert a new citation alias within a transaction.
-    fn insert_alias_transaction<T: CitationKey>(
+    fn insert_alias_tx<K: CitationKey>(
         tx: &Transaction,
         alias: &Alias,
-        target: &T,
+        target: &K,
     ) -> Result<(), DatabaseError> {
         match Self::get_record_key(tx, target) {
             // target exists
-            Ok(Some(key)) => Self::create_citation_key_row_transaction(
-                tx,
-                alias,
-                key,
-                CitationKeyInsertMode::FailIfExists,
-            ),
+            Ok(Some(key)) => {
+                Self::set_citation_key_row_tx(tx, alias, key, CitationKeyInsertMode::FailIfExists)
+            }
             // target does not exist
             // TODO: provide a better error message if citation key is missing and
             //       the corresponding citation key is in NullRecords
-            Ok(None) => Err(DatabaseError::CitationKeyMissing(String::from(
-                target.name(),
-            ))),
-            Err(why) => Err(why.into()),
+            Ok(None) => Err(DatabaseError::CitationKeyMissing(target.name().into())),
+            Err(why) => Err(why),
         }
     }
 
     /// Insert a new citation key referencing the internal key `key`.
-    fn create_citation_key_row_transaction<T: CitationKey>(
+    fn set_citation_key_row_tx<K: CitationKey>(
         tx: &Transaction,
-        name: &T,
-        key: i64,
+        name: &K,
+        key: DatabaseEntryId,
         mode: CitationKeyInsertMode,
     ) -> Result<(), DatabaseError> {
         let stmt = match mode {
@@ -284,143 +415,37 @@ impl RecordDatabase {
         Self::map_citation_key_result(key_writer.execute((name.name(), key)), name)
     }
 
-    /// Insert a new record into the database.
-    ///
-    /// Every record requires that it is associated with a canonical [`RecordId`] with a
-    /// corresponding entry. There may also be an associated reference [`RecordId`].
-    pub fn set_cached_data(
-        &mut self,
-        canonical_id: &RecordId,
-        entry: &Entry,
-        reference_id: Option<&RecordId>,
-    ) -> Result<(), DatabaseError> {
-        let tx = self.conn.transaction()?;
-        Self::set_cached_data_transaction(&tx, &canonical_id, &entry, reference_id)?;
-        Ok(tx.commit()?)
-    }
-
-    /// Helper function to wrap the insertion into Records and CitationKeys in a transaction.
-    fn set_cached_data_transaction(
-        tx: &Transaction,
-        canonical_id: &RecordId,
-        entry: &Entry,
-        reference_id: Option<&RecordId>,
-    ) -> Result<(), DatabaseError> {
-        let mut setter = tx.prepare_cached(
-            "INSERT OR REPLACE INTO Records (record_id, data, modified) values (?1, ?2, ?3)",
-        )?;
-        setter.execute((
-            canonical_id.full_id(),
-            serde_json::to_string(&entry).unwrap(), // TODO: do something more sensible
-            &Local::now(),
-        ))?;
-
-        // get identifier
-        let key = tx.last_insert_rowid();
-
-        // add citation keys
-        Self::create_citation_key_row_transaction(
-            tx,
-            canonical_id,
-            key,
-            CitationKeyInsertMode::Overwrite,
-        )?;
-        if let Some(record_id) = reference_id {
-            Self::create_citation_key_row_transaction(
-                tx,
-                record_id,
-                key,
-                CitationKeyInsertMode::Overwrite,
-            )?;
-        }
-
-        Ok(())
-    }
-
-    /// Cache a null record.
-    ///
-    /// If `record_id` has a canonical source, this means that there is no associated entry. If
-    /// `record_id` is a reference source, this means there is no associated canonical `record_id`.
-    pub fn set_cached_null_record(&mut self, record_id: &RecordId) -> Result<(), DatabaseError> {
-        let tx = self.conn.transaction()?;
-        Self::set_cached_null_record_transaction(&tx, record_id)?;
-        Ok(tx.commit()?)
-    }
-
-    /// Helper function to wrap the insertion into NullRecords in a transaction.
-    fn set_cached_null_record_transaction(
-        tx: &Transaction,
-        record_id: &RecordId,
-    ) -> Result<(), DatabaseError> {
-        let mut setter = tx.prepare_cached(
-            "INSERT OR REPLACE INTO NullRecords (record_id, attempted) values (?1, ?2)",
-        )?;
-        let cache_time = Local::now();
-        setter.execute((record_id.full_id(), cache_time))?;
-
-        Ok(())
-    }
-
     /// Determine the key for the internal Records table corresponding to [`CitationKey`].
     ///
     /// This is performed within a transaction since typically you want to use the resulting row
     /// identifier for subsequent queries (e.g. to retrieve the corresponding record), in which
     /// case you want to guarantee that the corresponding row still exists.
-    fn get_record_key<T: CitationKey>(
+    fn get_record_key<K: CitationKey>(
         tx: &Transaction,
-        citation_key: &T,
-    ) -> Result<Option<i64>, DatabaseError> {
-        let mut selector =
-            tx.prepare_cached("SELECT record_key FROM CitationKeys WHERE name = ?1")?;
+        record_id: &K,
+    ) -> Result<Option<DatabaseEntryId>, DatabaseError> {
+        let mut selector = tx.prepare_cached(include_str!("database/get_record_key.sql"))?;
 
         Ok(selector
-            .query_row([citation_key.name()], |row| row.get("record_key"))
+            .query_row([record_id.name()], |row| row.get("record_key"))
             .optional()?)
     }
-
-    /// Convert a [`rusqlite::Row`] into a [`CacheResponse`].
-    ///
-    /// This assumes that the row was generated by the following query:
-    /// ```sql
-    /// SELECT modified, data FROM Records WHERE ...
-    /// ```
-    fn cache_response_from_record_row(
-        row: &rusqlite::Row,
-    ) -> Result<(Entry, DateTime<Local>), DatabaseError> {
-        let data_str: String = row.get("data")?;
-        let modified: DateTime<Local> = row.get("modified")?;
-
-        Ok((serde_json::from_str(&data_str).unwrap(), modified))
-    }
 }
 
-#[derive(Debug)]
-pub enum DatabaseError {
-    SQL(rusqlite::Error),
-    TableMissing(String),
-    TableIncorrectSchema(String, String),
-    CitationKeyExists(String),
-    CitationKeyMissing(String),
+/// Response type from the `Records` table as returned by [`RecordDatabase::get_cached_data`].
+pub enum RecordsResponse {
+    /// Data was found; canonical; last modified.
+    Found(Entry, RemoteId, DateTime<Local>),
+    /// Data was not found.
+    NotFound,
 }
 
-impl std::fmt::Display for DatabaseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            DatabaseError::SQL(err) => err.fmt(f),
-            DatabaseError::CitationKeyExists(k) => write!(f, "Citation key exists: '{k}'"),
-            DatabaseError::TableMissing(table) => write!(f, "Database missing table: '{table}'"),
-            DatabaseError::TableIncorrectSchema(table, schema) => {
-                write!(f, "Table '{table}' has unexpected schema:\n{schema}")
-            }
-            DatabaseError::CitationKeyMissing(k) => write!(f, "Citation key missing: '{k}'"),
-        }
-    }
-}
-
-impl From<rusqlite::Error> for DatabaseError {
-    fn from(err: rusqlite::Error) -> Self {
-        Self::SQL(err)
-    }
+/// Response type from the `NullRecords` table as returned by [`RecordDatabase::get_cached_null`].
+pub enum NullRecordsResponse {
+    /// Null was found; last attempted.
+    Found(DateTime<Local>),
+    /// Null was not found.
+    NotFound,
 }
 
 /// The type of citation key insertion to perform.
@@ -431,16 +456,4 @@ pub enum CitationKeyInsertMode {
     FailIfExists,
     /// Ignore if there is an existing citation key.
     IgnoreIfExists,
-}
-
-/// The responses from the database in a request for cached data.
-pub enum CacheResponse<'a> {
-    /// Found an [`Entry`], which was last modified at the given time.
-    Found(Entry, DateTime<Local>),
-    /// The record is null, and this was last checked at the given time.
-    FoundNull(DateTime<Local>),
-    /// The search was for an alias, which did not exist.
-    NullAlias(String),
-    /// The search was for a [`RecordId`], which did not exist.
-    NotFound(&'a RecordId),
 }

@@ -1,19 +1,20 @@
-mod database;
+pub mod database;
 mod entry;
+pub mod error;
 mod record;
-mod source;
+pub mod source;
 
+use std::collections::HashMap;
 use std::fmt;
 use std::path::PathBuf;
 use std::process;
-use std::str::FromStr;
 
 use clap::{Parser, Subcommand};
 use xdg::BaseDirectories;
 
-use database::RecordDatabase;
+pub use database::{CitationKey, RecordDatabase};
 use entry::KeyedEntry;
-use record::*;
+pub use record::{get_record, Alias, RecordId, RemoteId};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -49,17 +50,9 @@ enum Command {
 
 #[derive(Subcommand)]
 enum AliasCommand {
-    Add {
-        alias: Alias,
-        target: CitationKeyInput,
-    },
-    Delete {
-        alias: Alias,
-    },
-    Rename {
-        alias: Alias,
-        new: Alias,
-    },
+    Add { alias: Alias, target: RecordId },
+    Delete { alias: Alias },
+    Rename { alias: Alias, new: Alias },
 }
 
 // TODO: replace this with a proper error handling mechanism
@@ -76,9 +69,10 @@ fn main() {
     // Open or create the database
     let mut record_db = if let Some(db_path) = cli.database {
         // at a user-provided path
-        RecordDatabase::open(&db_path).expect("Failed to open database.")
+        RecordDatabase::open(db_path).expect("Failed to open database.")
     } else {
         // at the default path
+        // TODO: properly handle errors
         let xdg_dirs =
             BaseDirectories::with_prefix("autobib").expect("Could not find valid base directory.");
         RecordDatabase::open(
@@ -93,7 +87,7 @@ fn main() {
         Command::Alias { alias_command } => match alias_command {
             AliasCommand::Add { alias, target } => {
                 // first retrieve 'target', in case it does not yet exist in the database
-                fail_on_err(get_record(&mut record_db, &target));
+                // fail_on_err(get_record(&mut record_db, &target));
                 // then link to it
                 fail_on_err(record_db.insert_alias(&alias, &target));
             }
@@ -108,52 +102,50 @@ fn main() {
             let valid_entries =
                 validate_and_retrieve(citation_keys.iter().map(|s| s as &str), record_db);
             // print biblatex strings
-            for entry in valid_entries {
-                // TODO: replace me when serde_bibtex serialize is implemented
-                println!("{}", entry)
-            }
+            print_records(valid_entries)
         }
         Command::Source => todo!(),
         Command::Show => todo!(),
     }
 }
 
+/// Iterate over records, printing the entries and warning about duplicates.
+fn print_records(records: HashMap<RemoteId, Vec<KeyedEntry>>) {
+    for (canonical, entry_vec) in records.iter() {
+        if entry_vec.len() > 1 {
+            // TODO: better printing
+            eprint!("Duplicate keys for '{canonical}':");
+            for entry in entry_vec.iter() {
+                eprint!(" '{}'", entry.key);
+            }
+            eprintln!();
+        }
+        for record in entry_vec {
+            println!("{record}");
+        }
+    }
+}
+
 /// Validate and retrieve records.
-///
-/// - During validation, filter invalid citation keys and print error messages.
-/// - During retrieval, filter null records and print error messages.
 fn validate_and_retrieve<'a, T: Iterator<Item = &'a str>>(
     citation_keys: T,
     mut record_db: RecordDatabase,
-) -> Vec<KeyedEntry> {
-    citation_keys
-        // parse the source:sub_id arguments and perform cheap validation
-        .filter_map(|input| match CitationKeyInput::from_str(input) {
-            Ok(record_id) => Some(record_id),
-            Err(err) => {
-                eprintln!("{err}");
-                None
-            }
-        })
-        // retrieve records
+) -> HashMap<RemoteId, Vec<KeyedEntry>> {
+    let mut records: HashMap<RemoteId, Vec<KeyedEntry>> = HashMap::new();
+
+    for (record, canonical) in citation_keys
+        .map(RecordId::from)
         .filter_map(|citation_key| {
-            get_record(&mut record_db, &citation_key).map_or_else(
-                // error retrieving record
+            get_record(&mut record_db, citation_key).map_or_else(
                 |err| {
                     eprintln!("{err}");
                     None
                 },
-                |response| match response {
-                    Some(entry) => Some(KeyedEntry {
-                        key: citation_key,
-                        contents: entry,
-                    }),
-                    None => {
-                        eprintln!("Null record '{citation_key}'");
-                        None
-                    }
-                },
+                Some,
             )
         })
-        .collect()
+    {
+        records.entry(canonical).or_default().push(record)
+    }
+    records
 }
