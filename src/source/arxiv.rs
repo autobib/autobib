@@ -4,10 +4,9 @@ use regex::Regex;
 use reqwest::StatusCode;
 use serde::Deserialize;
 
-use crate::entry::{Entry, Fields};
-use crate::source::RecordError;
+use super::{Entry, Fields, SourceError};
 
-pub const IDENTIFIER_REGEX: &'static str = concat!(
+pub const IDENTIFIER_REGEX: &str = concat!(
     r"^(",
     // old style:
     r"(",
@@ -45,7 +44,7 @@ struct ArxivXMLAuthor {
 impl From<ArxivXMLEntry> for Entry {
     fn from(arxiv_xml: ArxivXMLEntry) -> Entry {
         Entry {
-            entry_type: "preprint".to_string(),
+            entry_type: "preprint".into(),
             fields: Fields {
                 title: Some(arxiv_xml.title),
                 author: Some(
@@ -62,7 +61,7 @@ impl From<ArxivXMLEntry> for Entry {
     }
 }
 
-pub fn get_record(id: &str) -> Result<Option<Entry>, RecordError> {
+pub fn get_record(id: &str) -> Result<Option<Entry>, SourceError> {
     let response = reqwest::blocking::get(format!(
         "https://export.arxiv.org/api/query?max_results=250&id_list={id}"
     ))?;
@@ -72,12 +71,12 @@ pub fn get_record(id: &str) -> Result<Option<Entry>, RecordError> {
         StatusCode::NOT_FOUND => {
             return Ok(None);
         }
-        code => return Err(RecordError::UnexpectedStatusCode(code)),
+        code => return Err(SourceError::UnexpectedStatusCode(code)),
     };
 
     match quick_xml::de::from_str::<ArxivXML>(&body) {
         Ok(parsed) => {
-            let first_entry = parsed.entry.into_iter().nth(0).unwrap();
+            let first_entry = parsed.entry.into_iter().next().unwrap();
             Ok(Some(first_entry.into()))
         }
         // This is somewhat suboptimal, but arxiv seems to constantly change their error format
