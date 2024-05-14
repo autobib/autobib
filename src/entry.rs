@@ -3,11 +3,9 @@ use std::fmt::{Display, Formatter};
 use serde::{Deserialize, Serialize};
 use serde_aux::prelude::*;
 
-use crate::record::CitationKeyInput;
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct KeyedEntry {
-    pub key: CitationKeyInput,
+    pub key: String,
     pub contents: Entry,
 }
 
@@ -31,7 +29,16 @@ pub struct Entry {
     pub fields: Fields,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+impl Entry {
+    pub fn add_key<T: Into<String>>(self, key: T) -> KeyedEntry {
+        KeyedEntry {
+            key: key.into(),
+            contents: self,
+        }
+    }
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Fields {
     pub title: Option<String>,
     pub author: Option<String>,
@@ -39,19 +46,6 @@ pub struct Fields {
     pub volume: Option<String>,
     pub pages: Option<String>,
     pub year: Option<String>,
-}
-
-impl Default for Fields {
-    fn default() -> Self {
-        Self {
-            title: None,
-            author: None,
-            journal: None,
-            volume: None,
-            pages: None,
-            year: None,
-        }
-    }
 }
 
 impl Fields {
@@ -69,11 +63,11 @@ impl Fields {
 
 impl Display for Fields {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        Self::write_biblatex_row(f, &"title", &self.title)?;
-        Self::write_biblatex_row(f, &"journal", &self.journal)?;
-        Self::write_biblatex_row(f, &"volume", &self.volume)?;
-        Self::write_biblatex_row(f, &"pages", &self.pages)?;
-        Self::write_biblatex_row(f, &"year", &self.year)?;
-        Self::write_biblatex_row(f, &"author", &self.author)
+        Self::write_biblatex_row(f, "title", &self.title)?;
+        Self::write_biblatex_row(f, "journal", &self.journal)?;
+        Self::write_biblatex_row(f, "volume", &self.volume)?;
+        Self::write_biblatex_row(f, "pages", &self.pages)?;
+        Self::write_biblatex_row(f, "year", &self.year)?;
+        Self::write_biblatex_row(f, "author", &self.author)
     }
 }

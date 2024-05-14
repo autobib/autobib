@@ -1,41 +1,36 @@
 pub mod arxiv;
-pub mod test;
+pub mod jfm;
 pub mod zbl;
 pub mod zbmath;
 
-use crate::entry::Entry;
-use crate::record::RecordError;
-use crate::RecordId;
+use crate::entry::{Entry, Fields};
+use crate::error::SourceError;
+use crate::record::RemoteId;
 
-pub type Resolver = fn(&str) -> Result<Option<Entry>, RecordError>;
-pub type Referrer = fn(&str) -> Result<Option<RecordId>, RecordError>;
+use either::Either;
+
+/// A resolver, which converts a `sub_id` into an [`Entry`].
+pub type Resolver = fn(&str) -> Result<Option<Entry>, SourceError>;
+/// A referrer, which converts a `sub_id` into a [`RemoteId`].
+pub type Referrer = fn(&str) -> Result<Option<RemoteId>, SourceError>;
+/// A validator, which checks that a `sub_id` is valid.
 pub type Validator = fn(&str) -> bool;
 
-pub enum SourceHandler {
-    Canonical(Resolver),
-    Reference(Resolver, Referrer),
-}
-
-/// Map the `source` part of a [`RecordId`] to a [`Source`].
-pub fn lookup_source(source: &str) -> Result<SourceHandler, RecordError> {
+/// Map the `source` part of a [`RemoteId`] to a [`Resolver`] or [`Referrer`].
+pub fn lookup_source(source: &str) -> Either<Resolver, Referrer> {
     match source {
-        "arxiv" => Ok(SourceHandler::Canonical(arxiv::get_record)),
-        "test" => Ok(SourceHandler::Canonical(test::get_record)),
-        "zbmath" => Ok(SourceHandler::Canonical(zbmath::get_record)),
-        "zbl" => Ok(SourceHandler::Reference(
-            zbmath::get_record,
-            zbl::get_canonical,
-        )),
+        "arxiv" => Either::Left(arxiv::get_record),
+        "zbmath" => Either::Left(zbmath::get_record),
+        "zbl" => Either::Right(zbl::get_canonical),
         // SAFETY: An invalid source should have been caught by a call to lookup_validator
-        _ => panic!("Invalid source!"),
+        _ => panic!("Invalid source '{source}'!"),
     }
 }
 
-/// Validate a [`RecordId`].
+/// Validate a [`RemoteId`].
 pub fn lookup_validator(source: &str) -> Option<Validator> {
     match source {
         "arxiv" => Some(arxiv::is_valid_id),
-        "test" => Some(test::is_valid_id),
         "zbmath" => Some(zbmath::is_valid_id),
         "zbl" => Some(zbl::is_valid_id),
         _ => None,

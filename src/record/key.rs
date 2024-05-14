@@ -1,104 +1,74 @@
 use std::fmt;
 use std::str::FromStr;
 
+use either::Either;
+use serde::{Deserialize, Serialize};
+
+use crate::error::{RecordError, RecordErrorKind};
 use crate::source::lookup_validator;
+use crate::CitationKey;
 
-use serde_with::{DeserializeFromStr, SerializeDisplay};
-
-/// A type which can act as a [`CitationKey`].
-pub trait CitationKey {
-    /// String representation of the citation key.
-    fn name(&self) -> &str;
+/// An unvalidated wrapper for user input representing either a `source:sub_id` or an `alias`.
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
+pub struct RecordId {
+    full_id: String,
+    source_len: Option<usize>,
 }
 
-/// A wrapper class for a user-supplied input which might be a [`RecordId`] or an [`Alias`].
-#[derive(Debug, Clone, Hash, PartialEq, Eq, DeserializeFromStr, SerializeDisplay)]
-pub enum CitationKeyInput {
-    RecordId(RecordId),
-    Alias(Alias),
+impl RecordId {
+    /// Convert a [`RecordId`] into either an [`Alias`] or a [`RemoteId`].
+    ///
+    /// The [`Alias`] conversion is infallible (validation only requires checking that the
+    /// colon is not present) whereas the [`RemoteId`] conversion can fail if `source` is
+    /// invalid or if `sub_id` is invalid given the source.
+    pub fn resolve(self) -> Result<Either<Alias, RemoteId>, RecordError> {
+        match self.source_len {
+            Some(_) => self.try_into().map(Either::Right),
+            None => self.try_into().map(Either::Left),
+        }
+    }
 }
 
-impl CitationKey for CitationKeyInput {
+impl CitationKey for RecordId {
     fn name(&self) -> &str {
-        match self {
-            Self::RecordId(record_id) => record_id.name(),
-            Self::Alias(alias) => alias.name(),
-        }
+        &self.full_id
     }
 }
 
-#[derive(Debug)]
-pub struct CitationKeyError {
-    input: String,
-    kind: CitationKeyErrorKind,
+impl fmt::Display for RecordId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.name().fmt(f)
+    }
 }
 
-impl CitationKeyError {
-    pub fn new(input: &str, kind: CitationKeyErrorKind) -> Self {
+impl From<RecordId> for String {
+    fn from(record_id: RecordId) -> Self {
+        record_id.full_id
+    }
+}
+
+/// Convert an `&str` to a [`RecordId`]. The input is whitespace-trimmed. Otherwise, this
+/// implementation is very cheap and does no validation.
+impl From<&str> for RecordId {
+    fn from(s: &str) -> Self {
+        let full_id: String = s.trim().into();
+        let source_len = full_id.find(':');
         Self {
-            input: input.to_string(),
-            kind,
+            full_id,
+            source_len,
         }
     }
 }
 
-#[derive(Debug)]
-pub enum CitationKeyErrorKind {
-    EmptySource,
-    EmptySubId,
-    InvalidSource,
-    InvalidSubId,
-    AliasContainsColon,
-    RecordIdMissingColon,
-    EmptyAlias,
-}
-
-impl std::error::Error for CitationKeyError {}
-
-impl fmt::Display for CitationKeyError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Invalid citation key '{}': ", self.input)?;
-        match self.kind {
-            CitationKeyErrorKind::EmptySource => f.write_str("'source' must be non-empty"),
-            CitationKeyErrorKind::EmptySubId => f.write_str("'sub_id' must be non-empty"),
-            CitationKeyErrorKind::EmptyAlias => f.write_str("alias must be non-empty"),
-            CitationKeyErrorKind::InvalidSource => f.write_str("'source' is invalid"),
-            CitationKeyErrorKind::InvalidSubId => {
-                f.write_str("sub-id is invalid for the provided source")
-            }
-            CitationKeyErrorKind::AliasContainsColon => {
-                f.write_str("alias must not contain a colon")
-            }
-            CitationKeyErrorKind::RecordIdMissingColon => {
-                f.write_str("record id must contain colon")
-            }
-        }
-    }
-}
-
-impl FromStr for CitationKeyInput {
-    type Err = CitationKeyError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.contains(':') {
-            Ok(CitationKeyInput::RecordId(RecordId::from_str(s)?))
-        } else {
-            Ok(CitationKeyInput::Alias(Alias::from_str(s)?))
-        }
-    }
-}
-
-impl fmt::Display for CitationKeyInput {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::RecordId(record_id) => record_id.fmt(f),
-            Self::Alias(alias) => alias.fmt(f),
-        }
-    }
-}
-
+/// A validated `alias`.
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct Alias(String);
+
+impl From<Alias> for String {
+    fn from(alias: Alias) -> Self {
+        alias.0
+    }
+}
 
 impl CitationKey for Alias {
     fn name(&self) -> &str {
@@ -106,123 +76,150 @@ impl CitationKey for Alias {
     }
 }
 
+impl FromStr for Alias {
+    type Err = RecordError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        RecordId::from(s).try_into()
+    }
+}
+
 impl fmt::Display for Alias {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
+        self.0.fmt(f)
     }
 }
 
-impl FromStr for Alias {
-    type Err = CitationKeyError;
+impl TryFrom<RecordId> for Alias {
+    type Error = RecordError;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let input = s.trim();
-        match input.find(':') {
-            None => {
-                if input.len() == 0 {
-                    return Err(CitationKeyError::new(
-                        input,
-                        CitationKeyErrorKind::EmptyAlias,
-                    ));
-                } else {
-                    Ok(Alias(input.to_string()))
-                }
+    fn try_from(record_id: RecordId) -> Result<Self, Self::Error> {
+        if let RecordId {
+            full_id: s,
+            source_len: None,
+        } = record_id
+        {
+            if !s.is_empty() {
+                Ok(Self(s))
+            } else {
+                Err(RecordError {
+                    input: s,
+                    kind: RecordErrorKind::EmptyAlias,
+                })
             }
-            _ => Err(CitationKeyError::new(
-                input,
-                CitationKeyErrorKind::AliasContainsColon,
-            )),
+        } else {
+            Err(RecordError {
+                input: record_id.full_id,
+                kind: RecordErrorKind::RecordIdIsNotAlias,
+            })
         }
     }
 }
 
-/// A source (`source`) with corresponding identity (`sub_id`), such as 'arxiv:0123.4567'
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub struct RecordId {
+/// A validated `source:sub_id`.
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+pub struct RemoteId {
     full_id: String,
-    source_length: usize,
+    source_len: usize,
 }
 
-impl RecordId {
-    /// Get the source part of the record id.
+impl RemoteId {
+    /// Get the `source` part of the remote id.
     pub fn source(&self) -> &str {
-        &self.full_id[..self.source_length]
+        &self.full_id[..self.source_len]
     }
 
-    /// Get the part of the record id after the source.
+    /// Get the `sub_id` part of the remote id, after the separator.
     pub fn sub_id(&self) -> &str {
-        &self.full_id[self.source_length + 1..]
+        &self.full_id[self.source_len + 1..]
     }
 
-    /// Get the full record id.
-    pub fn full_id(&self) -> &str {
+    /// Construct a [`RemoteId`] from the source and sub_id components.
+    pub fn from_parts(source: &str, sub_id: &str) -> Self {
+        let mut full_id = source.to_string();
+        full_id.push(':');
+        full_id.push_str(sub_id);
+        Self {
+            full_id,
+            source_len: source.len(),
+        }
+    }
+
+    pub(crate) fn new_unchecked(full_id: String) -> Self {
+        let source_len = full_id.find(':').unwrap();
+        Self {
+            full_id,
+            source_len,
+        }
+    }
+}
+
+impl CitationKey for RemoteId {
+    fn name(&self) -> &str {
         &self.full_id
     }
+}
 
-    /// Construct a RecordId from the source and sub_id components.
-    pub fn from_parts(source: &str, sub_id: &str) -> Self {
-        let mut new = source.to_string();
-        new.push_str(":");
-        new.push_str(sub_id);
-        Self {
-            full_id: new,
-            source_length: source.len(),
-        }
+impl fmt::Display for RemoteId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.name().fmt(f)
     }
 }
 
-impl FromStr for RecordId {
-    type Err = CitationKeyError;
+impl From<RemoteId> for String {
+    fn from(remote_id: RemoteId) -> Self {
+        remote_id.full_id
+    }
+}
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let input = s.trim();
-        match input.find(':') {
-            Some(source_length) => {
-                if source_length == 0 {
-                    return Err(CitationKeyError::new(
-                        input,
-                        CitationKeyErrorKind::EmptySource,
-                    ));
-                } else if source_length == input.len() - 1 {
-                    return Err(CitationKeyError::new(
-                        input,
-                        CitationKeyErrorKind::EmptySubId,
-                    ));
-                }
+impl TryFrom<RecordId> for RemoteId {
+    type Error = RecordError;
 
-                // check that the source and sub_id are valid
-                let record_id = RecordId {
-                    full_id: String::from(input),
-                    source_length,
+    fn try_from(record_id: RecordId) -> Result<Self, Self::Error> {
+        match record_id.source_len {
+            Some(source_len) => {
+                let remote_id = Self {
+                    full_id: record_id.full_id,
+                    source_len,
                 };
-                match lookup_validator(record_id.source()) {
-                    Some(validator) if validator(record_id.sub_id()) => Ok(record_id),
-                    Some(_) => Err(CitationKeyError::new(
-                        input,
-                        CitationKeyErrorKind::InvalidSubId,
-                    )),
-                    None => Err(CitationKeyError::new(
-                        input,
-                        CitationKeyErrorKind::InvalidSource,
-                    )),
+
+                if remote_id.sub_id().is_empty() {
+                    Err(RecordError {
+                        input: remote_id.name().into(),
+                        kind: RecordErrorKind::EmptySource,
+                    })
+                } else if remote_id.sub_id().is_empty() {
+                    Err(RecordError {
+                        input: remote_id.name().into(),
+                        kind: RecordErrorKind::EmptySubId,
+                    })
+                } else {
+                    // perform cheap validation based on the source
+                    match lookup_validator(remote_id.source()) {
+                        Some(validator) if validator(remote_id.sub_id()) => Ok(remote_id),
+                        Some(_) => Err(RecordError {
+                            input: remote_id.full_id,
+                            kind: RecordErrorKind::InvalidSubId,
+                        }),
+                        None => Err(RecordError {
+                            input: remote_id.full_id,
+                            kind: RecordErrorKind::InvalidSource,
+                        }),
+                    }
                 }
             }
-            _ => Err(CitationKeyError::new(
-                input,
-                CitationKeyErrorKind::RecordIdMissingColon,
-            )),
+            None => Err(RecordError {
+                input: record_id.name().into(),
+                kind: RecordErrorKind::RecordIdIsNotAlias,
+            }),
         }
     }
 }
 
-impl CitationKey for RecordId {
-    fn name(&self) -> &str {
-        self.full_id()
-    }
-}
+impl FromStr for RemoteId {
+    type Err = RecordError;
 
-impl fmt::Display for RecordId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.full_id)
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        RecordId::from(s).try_into()
     }
 }
