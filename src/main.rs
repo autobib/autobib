@@ -6,6 +6,7 @@ mod record;
 pub mod source;
 
 use std::collections::{HashMap, HashSet};
+use std::ffi::OsStr;
 use std::fmt;
 use std::fs::File;
 use std::io::Read;
@@ -110,14 +111,30 @@ fn main() {
         }
         Command::Source { paths } => {
             let mut buffer = Vec::new();
-            let mut keys = HashSet::new();
+            let mut citation_keys = HashSet::new();
             for path in paths {
                 buffer.clear();
-                let mut f = File::open(path).unwrap();
-                f.read_to_end(&mut buffer).unwrap();
-                get_citekeys(&buffer, &mut keys);
+                match path.extension().and_then(OsStr::to_str) {
+                    Some("tex") => {
+                        // TODO: proper file error handling
+                        let mut f = File::open(path).unwrap();
+                        f.read_to_end(&mut buffer).unwrap();
+                        get_citekeys(&buffer, &mut citation_keys);
+                    }
+                    Some(ext) => {
+                        eprintln!("Error: File type '{ext}' not supported");
+                        process::exit(1)
+                    }
+                    None => {
+                        eprintln!("Error: File type required");
+                        process::exit(1)
+                    }
+                }
             }
-            println!("{:?}", keys);
+            let valid_entries =
+                validate_and_retrieve(citation_keys.iter().map(|s| s as &str), record_db);
+            // print biblatex strings
+            print_records(valid_entries)
         }
         Command::Show => todo!(),
     }

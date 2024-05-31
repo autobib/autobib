@@ -33,7 +33,7 @@ fn ascii_macro(buffer: &[u8], mut pos: usize) -> (Option<&str>, usize) {
         end += 1;
     }
 
-    // found some: cast to string (safe since chars are ascii lowercase)
+    // found: cast to string (safe since chars are ascii lowercase)
     if pos < end {
         (
             Some(unsafe { std::str::from_utf8_unchecked(&buffer[pos..end]) }),
