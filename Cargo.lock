@@ -129,6 +129,7 @@ dependencies = [
  "clap",
  "either",
  "itertools",
+ "memchr",
  "quick-xml",
  "regex",
  "reqwest",
