@@ -33,7 +33,7 @@ fn ascii_macro(buffer: &[u8], mut pos: usize) -> (Option<&str>, usize) {
         end += 1;
     }
 
-    // found some: convert to string (safe since chars are ascii lowercase)
+    // found some: cast to string (safe since chars are ascii lowercase)
     if pos < end {
         (
             Some(unsafe { std::str::from_utf8_unchecked(&buffer[pos..end]) }),
@@ -53,10 +53,8 @@ fn macro_opt_argument(buffer: &[u8], mut pos: usize) -> usize {
                 pos = pos + offset;
                 match &buffer[pos] {
                     b']' => break pos + 1,
-                    b'%' => pos = comment_and_ws(buffer, pos),
-                    _ => unreachable!(),
+                    _ => pos = comment_and_ws(buffer, pos),
                 }
-                // if let Some(offset) = memchr(b']', &buffer[pos + 1..]) {
             } else {
                 break pos;
             }
@@ -86,12 +84,11 @@ fn macro_argument(buffer: &[u8], mut pos: usize) -> (Option<String>, usize) {
                         contents.extend(&buffer[start..pos]);
                         break (String::from_utf8(contents).ok(), pos + 1);
                     }
-                    b'%' => {
+                    _ => {
                         contents.extend(&buffer[start..pos]);
                         pos = comment_and_ws(buffer, pos);
                         start = pos;
                     }
-                    _ => unreachable!(),
                 }
             } else {
                 break (None, pos);
@@ -102,7 +99,7 @@ fn macro_argument(buffer: &[u8], mut pos: usize) -> (Option<String>, usize) {
     }
 }
 
-/// parse the citation contents and append new keys to `keys`.
+/// Parse the citation contents and append new keys to `keys`.
 fn parse_cite_contents<'a>(contents: &str, keys: &mut HashSet<String>) {
     keys.extend(
         contents
@@ -113,9 +110,10 @@ fn parse_cite_contents<'a>(contents: &str, keys: &mut HashSet<String>) {
     )
 }
 
-/// get all citation keys in the buffer
-/// Citekeys appear in the buffer in the form `\...cite{key1, key2}`, when they are not embedded
-/// inside comments.
+/// Get all citation keys in the buffer.
+///
+/// Citekeys essentially appear in the buffer in the form `\...cite{key1, key2}`, though there is a decent
+/// amount of extra work required to properly handle comments and other subtleties.
 pub fn get_citekeys(buffer: &[u8], keys: &mut HashSet<String>) -> () {
     let mut pos: usize = 0;
 
