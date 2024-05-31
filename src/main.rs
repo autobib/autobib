@@ -7,12 +7,11 @@ pub mod source;
 
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
-use std::fmt;
 use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
-use std::process;
 
+use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use xdg::BaseDirectories;
 
@@ -60,32 +59,17 @@ enum AliasCommand {
     Rename { alias: Alias, new: Alias },
 }
 
-// TODO: replace this with a proper error handling mechanism
-fn fail_on_err<T, E: fmt::Display>(result: Result<T, E>) -> T {
-    result.unwrap_or_else(|e| {
-        eprintln!("{e}");
-        process::exit(1)
-    })
-}
-
-fn main() {
+fn main() -> Result<()> {
     let cli = Cli::parse();
 
     // Open or create the database
     let mut record_db = if let Some(db_path) = cli.database {
         // at a user-provided path
-        RecordDatabase::open(db_path).expect("Failed to open database.")
+        RecordDatabase::open(db_path)?
     } else {
         // at the default path
-        // TODO: properly handle errors
-        let xdg_dirs =
-            BaseDirectories::with_prefix("autobib").expect("Could not find valid base directory.");
-        RecordDatabase::open(
-            xdg_dirs
-                .place_data_file("cache.db")
-                .expect("Failed to create data directory."),
-        )
-        .expect("Failed to open or create database.")
+        let xdg_dirs = BaseDirectories::with_prefix("autobib")?;
+        RecordDatabase::open(xdg_dirs.place_data_file("cache.db")?)?
     };
 
     match cli.command {
@@ -94,12 +78,12 @@ fn main() {
                 // first retrieve 'target', in case it does not yet exist in the database
                 // fail_on_err(get_record(&mut record_db, &target));
                 // then link to it
-                fail_on_err(record_db.insert_alias(&alias, &target));
+                record_db.insert_alias(&alias, &target)?;
             }
             // TODO: deletion fails silently if the alias does not exist
-            AliasCommand::Delete { alias } => fail_on_err(record_db.delete_alias(&alias)),
+            AliasCommand::Delete { alias } => record_db.delete_alias(&alias)?,
             AliasCommand::Rename { alias, new } => {
-                fail_on_err(record_db.rename_alias(&alias, &new))
+                record_db.rename_alias(&alias, &new)?;
             }
         },
         Command::Get { citation_keys } => {
@@ -116,18 +100,17 @@ fn main() {
                 buffer.clear();
                 match path.extension().and_then(OsStr::to_str) {
                     Some("tex") => {
-                        // TODO: proper file error handling
-                        let mut f = File::open(path).unwrap();
-                        f.read_to_end(&mut buffer).unwrap();
+                        let mut f = File::open(path.clone()).with_context(|| {
+                            format!("Source file '{}' could not be opened.", path.display())
+                        })?;
+                        f.read_to_end(&mut buffer)?;
                         get_citekeys(&buffer, &mut citation_keys);
                     }
                     Some(ext) => {
-                        eprintln!("Error: File type '{ext}' not supported");
-                        process::exit(1)
+                        bail!("File type '{ext}' not supported")
                     }
                     None => {
-                        eprintln!("Error: File type required");
-                        process::exit(1)
+                        bail!("File type required")
                     }
                 }
             }
@@ -137,7 +120,8 @@ fn main() {
             print_records(valid_entries)
         }
         Command::Show => todo!(),
-    }
+    };
+    Ok(())
 }
 
 /// Iterate over records, printing the entries and warning about duplicates.

@@ -25,3 +25,5 @@ impl From<reqwest::Error> for SourceError {
         Self::NetworkFailure(err)
     }
 }
+
+impl std::error::Error for SourceError {}
