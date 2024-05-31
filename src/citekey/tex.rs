@@ -117,30 +117,32 @@ fn parse_cite_contents<'a>(contents: &str, keys: &mut HashSet<String>) {
 pub fn get_citekeys(buffer: &[u8], keys: &mut HashSet<String>) -> () {
     let mut pos: usize = 0;
 
-    while pos < buffer.len() {
-        match buffer[pos] {
-            b'%' => match memchr(b'\n', &buffer[pos..]) {
-                Some(skip) => {
-                    pos += skip + 1;
-                }
-                None => todo!(),
-            },
-            b'\\' => {
-                let (opt_cmd, next) = ascii_macro(buffer, pos);
-                pos = next;
-                if let Some(cmd) = opt_cmd {
-                    if cmd.ends_with("cite") {
-                        let (opt_contents, next) = macro_argument(buffer, pos);
-                        pos = next;
-                        if let Some(contents) = opt_contents {
-                            parse_cite_contents(&contents, keys);
+    loop {
+        if let Some(next) = memchr2(b'%', b'\\', &buffer[pos..]) {
+            pos = pos + next;
+            match buffer[pos] {
+                b'\\' => {
+                    let (opt_cmd, next) = ascii_macro(buffer, pos);
+                    pos = next;
+                    if let Some(cmd) = opt_cmd {
+                        if cmd.ends_with("cite") {
+                            let (opt_contents, next) = macro_argument(buffer, pos);
+                            pos = next;
+                            if let Some(contents) = opt_contents {
+                                parse_cite_contents(&contents, keys);
+                            }
                         }
                     }
                 }
+                _ => match memchr(b'\n', &buffer[pos..]) {
+                    Some(skip) => {
+                        pos += skip + 1;
+                    }
+                    None => break,
+                },
             }
-            _ => {
-                pos += 1;
-            }
+        } else {
+            break;
         }
     }
 }
