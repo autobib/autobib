@@ -16,8 +16,6 @@ pub enum RecordErrorKind {
     EmptyAlias,
 }
 
-impl std::error::Error for RecordError {}
-
 impl fmt::Display for RecordError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Invalid citation key '{}': ", self.input)?;
@@ -33,3 +31,5 @@ impl fmt::Display for RecordError {
         }
     }
 }
+
+impl std::error::Error for RecordError {}
