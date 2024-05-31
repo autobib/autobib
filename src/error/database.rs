@@ -26,3 +26,5 @@ impl From<rusqlite::Error> for DatabaseError {
         Self::SQLiteError(err)
     }
 }
+
+impl std::error::Error for DatabaseError {}
