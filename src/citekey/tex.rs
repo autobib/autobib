@@ -39,8 +39,11 @@ fn ascii_macro(buffer: &[u8], mut pos: usize) -> (Option<&str>, usize) {
             Some(unsafe { std::str::from_utf8_unchecked(&buffer[pos..end]) }),
             end,
         )
-    } else {
+    } else if end == buffer.len() {
         (None, pos)
+    // skip a character to handle the `\\` case
+    } else {
+        (None, pos + 1)
     }
 }
 
