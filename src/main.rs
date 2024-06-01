@@ -13,6 +13,7 @@ use std::path::PathBuf;
 
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
+use itertools::Itertools;
 use xdg::BaseDirectories;
 
 use citekey::tex::get_citekeys;
@@ -128,12 +129,10 @@ fn main() -> Result<()> {
 fn print_records(records: HashMap<RemoteId, Vec<KeyedEntry>>) {
     for (canonical, entry_vec) in records.iter() {
         if entry_vec.len() > 1 {
-            // TODO: better printing
-            eprint!("Duplicate keys for '{canonical}':");
-            for entry in entry_vec.iter() {
-                eprint!(" '{}'", entry.key);
-            }
-            eprintln!();
+            eprintln!(
+                "Duplicate keys for '{canonical}': {}",
+                entry_vec.iter().map(|e| &e.key).join(", ")
+            );
         }
         for record in entry_vec {
             println!("{record}");
