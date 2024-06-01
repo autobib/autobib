@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use regex::Regex;
 
 use memchr::{memchr, memchr2, memchr3};
 
@@ -27,9 +28,9 @@ fn ascii_macro(buffer: &[u8], mut pos: usize) -> (Option<&str>, usize) {
         return (None, pos);
     }
 
-    // take characters as long as they are ascii lowercase
+    // take characters as long as they are ascii lowercase or `*`
     let mut end = pos;
-    while end < buffer.len() && buffer[end].is_ascii_lowercase() {
+    while end < buffer.len() && (buffer[end].is_ascii_lowercase() || buffer[end] == b'*') {
         end += 1;
     }
 
@@ -113,6 +114,12 @@ fn parse_cite_contents<'a>(contents: &str, keys: &mut HashSet<String>) {
     )
 }
 
+/// Check if the macro name is an expected citation macro.
+fn is_citation_macro_name(cmd: &str) -> bool {
+    let is_citation_macro_regex = Regex::new(r"(^[a-z]*cite\*?$)|(^cite[a-z]*\*?$)").unwrap();
+    return is_citation_macro_regex.is_match(cmd)
+}
+
 /// Get all citation keys in the buffer.
 ///
 /// Citekeys essentially appear in the buffer in the form `\...cite{key1, key2}`, though there is a decent
@@ -128,7 +135,7 @@ pub fn get_citekeys(buffer: &[u8], keys: &mut HashSet<String>) -> () {
                     let (opt_cmd, next) = ascii_macro(buffer, pos);
                     pos = next;
                     if let Some(cmd) = opt_cmd {
-                        if cmd.ends_with("cite") {
+                        if is_citation_macro_name(cmd) {
                             let (opt_contents, next) = macro_argument(buffer, pos);
                             pos = next;
                             if let Some(contents) = opt_contents {
