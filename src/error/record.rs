@@ -1,6 +1,8 @@
 use std::fmt;
 
-#[derive(Debug)]
+use thiserror::Error;
+
+#[derive(Error, Debug)]
 pub struct RecordError {
     pub input: String,
     pub kind: RecordErrorKind,
@@ -31,5 +33,3 @@ impl fmt::Display for RecordError {
         }
     }
 }
-
-impl std::error::Error for RecordError {}

@@ -1,29 +1,13 @@
 use reqwest::StatusCode;
-use std::fmt;
 
-#[derive(Debug)]
+use thiserror::Error;
+
+#[derive(Error, Debug)]
 pub enum SourceError {
-    NetworkFailure(reqwest::Error),
+    #[error("Network failure: {0}")]
+    NetworkFailure(#[from] reqwest::Error),
+    #[error("Unexpected status code: {0}")]
     UnexpectedStatusCode(StatusCode),
+    #[error("Unexpected failure: {0}")]
     Unexpected(String),
 }
-
-impl fmt::Display for SourceError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            SourceError::Unexpected(reason) => write!(f, "Unexpected failure: {reason}"),
-            SourceError::UnexpectedStatusCode(code) => {
-                write!(f, "Unexpected status code: {code}")
-            }
-            SourceError::NetworkFailure(error) => write!(f, "Network failure: {error}"),
-        }
-    }
-}
-
-impl From<reqwest::Error> for SourceError {
-    fn from(err: reqwest::Error) -> Self {
-        Self::NetworkFailure(err)
-    }
-}
-
-impl std::error::Error for SourceError {}
