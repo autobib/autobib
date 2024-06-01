@@ -65,7 +65,7 @@ enum AliasCommand {
     Rename { alias: Alias, new: Alias },
 }
 
-fn main() -> Result<()> {
+fn main() {
     let cli = Cli::parse();
 
     // initialize warnings
@@ -77,6 +77,13 @@ fn main() -> Result<()> {
             .unwrap();
     }
 
+    // run the cli
+    if let Err(err) = run_cli(cli) {
+        error!("{err}")
+    }
+}
+
+fn run_cli(cli: Cli) -> Result<()> {
     // Open or create the database
     let mut record_db = if let Some(db_path) = cli.database {
         // at a user-provided path
@@ -144,7 +151,7 @@ fn print_records(records: HashMap<RemoteId, Vec<KeyedEntry>>) {
     for (canonical, entry_vec) in records.iter() {
         if entry_vec.len() > 1 {
             warn!(
-                "Duplicate keys for '{canonical}': {}",
+                "Multiple keys for `{canonical}`: {}",
                 entry_vec.iter().map(|e| &e.key).join(", ")
             );
         }

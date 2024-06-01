@@ -20,7 +20,7 @@ pub enum RecordErrorKind {
 
 impl fmt::Display for RecordError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Invalid citation key '{}': ", self.input)?;
+        write!(f, "Invalid citation key `{}`: ", self.input)?;
         match self.kind {
             RecordErrorKind::EmptySource => f.write_str("'source' must be non-empty"),
             RecordErrorKind::EmptySubId => f.write_str("'sub_id' must be non-empty"),
