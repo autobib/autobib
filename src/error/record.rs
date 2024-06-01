@@ -1,6 +1,8 @@
 use std::fmt;
 
-#[derive(Debug)]
+use thiserror::Error;
+
+#[derive(Error, Debug)]
 pub struct RecordError {
     pub input: String,
     pub kind: RecordErrorKind,
@@ -18,7 +20,7 @@ pub enum RecordErrorKind {
 
 impl fmt::Display for RecordError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Invalid citation key '{}': ", self.input)?;
+        write!(f, "Invalid citation key `{}`: ", self.input)?;
         match self.kind {
             RecordErrorKind::EmptySource => f.write_str("'source' must be non-empty"),
             RecordErrorKind::EmptySubId => f.write_str("'sub_id' must be non-empty"),
@@ -31,5 +33,3 @@ impl fmt::Display for RecordError {
         }
     }
 }
-
-impl std::error::Error for RecordError {}
