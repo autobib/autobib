@@ -20,6 +20,7 @@ pub type Validator = fn(&str) -> bool;
 pub fn lookup_source(source: &str) -> Either<Resolver, Referrer> {
     match source {
         "arxiv" => Either::Left(arxiv::get_record),
+        "jfm" => Either::Right(jfm::get_canonical),
         "zbmath" => Either::Left(zbmath::get_record),
         "zbl" => Either::Right(zbl::get_canonical),
         // SAFETY: An invalid source should have been caught by a call to lookup_validator
@@ -31,6 +32,7 @@ pub fn lookup_source(source: &str) -> Either<Resolver, Referrer> {
 pub fn lookup_validator(source: &str) -> Option<Validator> {
     match source {
         "arxiv" => Some(arxiv::is_valid_id),
+        "jfm" => Some(jfm::is_valid_id),
         "zbmath" => Some(zbmath::is_valid_id),
         "zbl" => Some(zbl::is_valid_id),
         _ => None,
