@@ -14,6 +14,7 @@ use std::path::PathBuf;
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use itertools::Itertools;
+use log::{error, warn};
 use xdg::BaseDirectories;
 
 use citekey::tex::get_citekeys;
@@ -62,6 +63,12 @@ enum AliasCommand {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+
+    stderrlog::new()
+        .module(module_path!())
+        .verbosity(2)
+        .init()
+        .unwrap();
 
     // Open or create the database
     let mut record_db = if let Some(db_path) = cli.database {
@@ -129,7 +136,7 @@ fn main() -> Result<()> {
 fn print_records(records: HashMap<RemoteId, Vec<KeyedEntry>>) {
     for (canonical, entry_vec) in records.iter() {
         if entry_vec.len() > 1 {
-            eprintln!(
+            warn!(
                 "Duplicate keys for '{canonical}': {}",
                 entry_vec.iter().map(|e| &e.key).join(", ")
             );
@@ -152,7 +159,7 @@ fn validate_and_retrieve<'a, T: Iterator<Item = &'a str>>(
         .filter_map(|citation_key| {
             get_record(&mut record_db, citation_key).map_or_else(
                 |err| {
-                    eprintln!("{err}");
+                    error!("{err}");
                     None
                 },
                 Some,
