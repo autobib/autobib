@@ -12,4 +12,6 @@ pub enum DatabaseError {
     CitationKeyExists(String),
     #[error("Citation key missing: {0}")]
     CitationKeyMissing(String),
+    #[error("Citation key is null: {0}")]
+    CitationKeyNull(String),
 }
