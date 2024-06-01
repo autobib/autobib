@@ -1,5 +1,6 @@
-use std::collections::HashSet;
+use lazy_static::lazy_static;
 use regex::Regex;
+use std::collections::HashSet;
 
 use memchr::{memchr, memchr2, memchr3};
 
@@ -114,10 +115,14 @@ fn parse_cite_contents<'a>(contents: &str, keys: &mut HashSet<String>) {
     )
 }
 
+lazy_static! {
+    static ref CITATION_MACRO_RE: Regex =
+        Regex::new(r"(^[a-z]*cite\*?$)|(^cite[a-z]*\*?$)").unwrap();
+}
+
 /// Check if the macro name is an expected citation macro.
 fn is_citation_macro_name(cmd: &str) -> bool {
-    let is_citation_macro_regex = Regex::new(r"(^[a-z]*cite\*?$)|(^cite[a-z]*\*?$)").unwrap();
-    return is_citation_macro_regex.is_match(cmd)
+    return CITATION_MACRO_RE.is_match(cmd);
 }
 
 /// Get all citation keys in the buffer.
