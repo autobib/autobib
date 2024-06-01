@@ -362,8 +362,19 @@ impl RecordDatabase {
         tx: &Transaction,
         citation_key: &K,
     ) -> Result<(), DatabaseError> {
-        let mut deleter = tx.prepare_cached("DELETE FROM CitationKeys WHERE name = ?1")?;
-        Ok(deleter.execute((citation_key.name(),)).map(|_| ())?)
+        let mut deleter =
+            tx.prepare_cached("DELETE FROM CitationKeys WHERE name = ?1 RETURNING *")?;
+        deleter
+            .query_row([citation_key.name()], |_| Ok(()))
+            .optional()?
+            .map_or_else(
+                || {
+                    Err(DatabaseError::AliasDeleteMissing(
+                        citation_key.name().into(),
+                    ))
+                },
+                |_| Ok(()),
+            )
     }
 
     /// Insert a new citation alias.
