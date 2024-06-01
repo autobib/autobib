@@ -55,7 +55,7 @@ fn macro_opt_argument(buffer: &[u8], mut pos: usize) -> usize {
         pos += 1;
         loop {
             if let Some(offset) = memchr2(b']', b'%', &buffer[pos..]) {
-                pos = pos + offset;
+                pos += offset;
                 match &buffer[pos] {
                     b']' => break pos + 1,
                     _ => pos = comment_and_ws(buffer, pos),
@@ -80,7 +80,7 @@ fn macro_argument(buffer: &[u8], mut pos: usize) -> (Option<String>, usize) {
         let mut contents: Vec<u8> = Vec::new();
         loop {
             if let Some(offset) = memchr3(b'{', b'}', b'%', &buffer[pos..]) {
-                pos = pos + offset;
+                pos += offset;
                 match &buffer[pos] {
                     b'{' => {
                         break (None, pos + 1);
@@ -105,7 +105,7 @@ fn macro_argument(buffer: &[u8], mut pos: usize) -> (Option<String>, usize) {
 }
 
 /// Parse the citation contents and append new keys to `keys`.
-fn parse_cite_contents<'a>(contents: &str, keys: &mut HashSet<String>) {
+fn parse_cite_contents(contents: &str, keys: &mut HashSet<String>) {
     keys.extend(
         contents
             .split(',')
@@ -122,42 +122,38 @@ lazy_static! {
 
 /// Check if the macro name is an expected citation macro.
 fn is_citation_macro_name(cmd: &str) -> bool {
-    return CITATION_MACRO_RE.is_match(cmd);
+    CITATION_MACRO_RE.is_match(cmd)
 }
 
 /// Get all citation keys in the buffer.
 ///
 /// Citekeys essentially appear in the buffer in the form `\...cite{key1, key2}`, though there is a decent
 /// amount of extra work required to properly handle comments and other subtleties.
-pub fn get_citekeys(buffer: &[u8], keys: &mut HashSet<String>) -> () {
+pub fn get_citekeys(buffer: &[u8], keys: &mut HashSet<String>) {
     let mut pos: usize = 0;
 
-    loop {
-        if let Some(next) = memchr2(b'%', b'\\', &buffer[pos..]) {
-            pos = pos + next;
-            match buffer[pos] {
-                b'\\' => {
-                    let (opt_cmd, next) = ascii_macro(buffer, pos);
-                    pos = next;
-                    if let Some(cmd) = opt_cmd {
-                        if is_citation_macro_name(cmd) {
-                            let (opt_contents, next) = macro_argument(buffer, pos);
-                            pos = next;
-                            if let Some(contents) = opt_contents {
-                                parse_cite_contents(&contents, keys);
-                            }
+    while let Some(next) = memchr2(b'%', b'\\', &buffer[pos..]) {
+        pos += next;
+        match buffer[pos] {
+            b'\\' => {
+                let (opt_cmd, next) = ascii_macro(buffer, pos);
+                pos = next;
+                if let Some(cmd) = opt_cmd {
+                    if is_citation_macro_name(cmd) {
+                        let (opt_contents, next) = macro_argument(buffer, pos);
+                        pos = next;
+                        if let Some(contents) = opt_contents {
+                            parse_cite_contents(&contents, keys);
                         }
                     }
                 }
-                _ => match memchr(b'\n', &buffer[pos..]) {
-                    Some(skip) => {
-                        pos += skip + 1;
-                    }
-                    None => break,
-                },
             }
-        } else {
-            break;
+            _ => match memchr(b'\n', &buffer[pos..]) {
+                Some(skip) => {
+                    pos += skip + 1;
+                }
+                None => break,
+            },
         }
     }
 }

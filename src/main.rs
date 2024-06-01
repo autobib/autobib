@@ -98,7 +98,7 @@ fn run_cli(cli: Cli) -> Result<()> {
         Command::Alias { alias_command } => match alias_command {
             AliasCommand::Add { alias, target } => {
                 // first retrieve 'target', in case it does not yet exist in the database
-                // fail_on_err(get_record(&mut record_db, &target));
+                get_record(&mut record_db, target.clone())?;
                 // then link to it
                 record_db.insert_alias(&alias, &target)?;
             }

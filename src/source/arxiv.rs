@@ -53,7 +53,7 @@ impl From<ArxivXMLEntry> for Entry {
         let arxiv_id = arxiv_xml
             .id
             .strip_prefix("http://arxiv.org/abs/")
-            .and_then(|s| s.rfind('v').and_then(|idx| Some(s[..idx].into())));
+            .and_then(|s| s.rfind('v').map(|idx| s[..idx].into()));
 
         Entry {
             entry_type: "preprint".into(),

@@ -433,6 +433,7 @@ impl RecordDatabase {
 }
 
 /// Response type from the `Records` table as returned by [`RecordDatabase::get_cached_data`].
+#[allow(clippy::large_enum_variant)]
 pub enum RecordsResponse {
     /// Data was found; canonical; last modified.
     Found(Entry, RemoteId, DateTime<Local>),
