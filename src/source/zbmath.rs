@@ -1,14 +1,16 @@
+use lazy_static::lazy_static;
 use regex::Regex;
 use reqwest::StatusCode;
 use serde_bibtex::de::Deserializer;
 
 use super::{Entry, SourceError};
 
-const ZBMATH_IDENTIFIER_REGEX: &str = r"^[0-9]{8}$";
+lazy_static! {
+    static ref ZBMATH_IDENTIFIER_RE: Regex = Regex::new(r"^[0-9]{8}$").unwrap();
+}
 
 pub fn is_valid_id(id: &str) -> bool {
-    let zbmath_identifier_regex = Regex::new(ZBMATH_IDENTIFIER_REGEX).unwrap();
-    zbmath_identifier_regex.is_match(id)
+    ZBMATH_IDENTIFIER_RE.is_match(id)
 }
 
 pub fn get_record(id: &str) -> Result<Option<Entry>, SourceError> {

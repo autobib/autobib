@@ -136,6 +136,7 @@ dependencies = [
  "clap",
  "either",
  "itertools",
+ "lazy_static",
  "memchr",
  "quick-xml",
  "regex",
