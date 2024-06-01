@@ -20,7 +20,7 @@ fn comment_and_ws(buffer: &[u8], mut pos: usize) -> usize {
     buffer.len()
 }
 
-/// Try to parse a macro `\<name>` where `<name>` is ascii lowercase.
+/// Try to parse a macro `\<name>` where `<name>` is ascii lowercase or starred.
 fn ascii_macro(buffer: &[u8], mut pos: usize) -> (Option<&str>, usize) {
     // check the first char
     if buffer[pos] == b'\\' {
@@ -35,7 +35,8 @@ fn ascii_macro(buffer: &[u8], mut pos: usize) -> (Option<&str>, usize) {
         end += 1;
     }
 
-    // found: cast to string (safe since chars are ascii lowercase)
+    // found: cast to string
+    // SAFETY: chars are ascii lowercase or *
     if pos < end {
         (
             Some(unsafe { std::str::from_utf8_unchecked(&buffer[pos..end]) }),
@@ -72,6 +73,7 @@ fn macro_opt_argument(buffer: &[u8], mut pos: usize) -> usize {
 /// Return the argument of a macro, skipping any optional arguments and pruning comments and some
 /// whitespace.
 fn macro_argument(buffer: &[u8], mut pos: usize) -> (Option<String>, usize) {
+    pos = comment_and_ws(buffer, pos);
     pos = macro_opt_argument(buffer, pos);
     pos = comment_and_ws(buffer, pos);
     if let Some(b'{') = buffer.get(pos) {
