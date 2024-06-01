@@ -7,8 +7,10 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0"
+log = { version = "0.4", features = ["release_max_level_info"] }
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4.5", features = ["derive"] }
+clap-verbosity-flag = "2.2"
 either = "1.11"
 itertools = "0.12"
 lazy_static = "1.4"
@@ -22,4 +24,6 @@ serde-aux = "4.5"
 serde_bibtex = "0.2.4"
 serde_json = "1.0"
 serde_with = "3.8"
+stderrlog = "0.6"
+thiserror = "1.0"
 xdg = "2.5"

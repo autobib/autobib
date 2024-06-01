@@ -13,6 +13,9 @@ use std::path::PathBuf;
 
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
+use clap_verbosity_flag::{Verbosity, WarnLevel};
+use itertools::Itertools;
+use log::{error, info, warn};
 use xdg::BaseDirectories;
 
 use citekey::tex::get_citekeys;
@@ -25,6 +28,9 @@ pub use record::{get_record, Alias, RecordId, RemoteId};
 struct Cli {
     #[arg(long)]
     database: Option<PathBuf>,
+
+    #[command(flatten)]
+    verbose: Verbosity<WarnLevel>,
 
     #[command(subcommand)]
     command: Command,
@@ -59,9 +65,25 @@ enum AliasCommand {
     Rename { alias: Alias, new: Alias },
 }
 
-fn main() -> Result<()> {
+fn main() {
     let cli = Cli::parse();
 
+    // initialize warnings
+    if let Some(level) = cli.verbose.log_level() {
+        stderrlog::new()
+            .module(module_path!())
+            .verbosity(level)
+            .init()
+            .unwrap();
+    }
+
+    // run the cli
+    if let Err(err) = run_cli(cli) {
+        error!("{err}")
+    }
+}
+
+fn run_cli(cli: Cli) -> Result<()> {
     // Open or create the database
     let mut record_db = if let Some(db_path) = cli.database {
         // at a user-provided path
@@ -128,12 +150,10 @@ fn main() -> Result<()> {
 fn print_records(records: HashMap<RemoteId, Vec<KeyedEntry>>) {
     for (canonical, entry_vec) in records.iter() {
         if entry_vec.len() > 1 {
-            // TODO: better printing
-            eprint!("Duplicate keys for '{canonical}':");
-            for entry in entry_vec.iter() {
-                eprint!(" '{}'", entry.key);
-            }
-            eprintln!();
+            warn!(
+                "Multiple keys for `{canonical}`: {}",
+                entry_vec.iter().map(|e| &e.key).join(", ")
+            );
         }
         for record in entry_vec {
             println!("{record}");
@@ -153,7 +173,7 @@ fn validate_and_retrieve<'a, T: Iterator<Item = &'a str>>(
         .filter_map(|citation_key| {
             get_record(&mut record_db, citation_key).map_or_else(
                 |err| {
-                    eprintln!("{err}");
+                    error!("{err}");
                     None
                 },
                 Some,
