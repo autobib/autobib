@@ -13,8 +13,9 @@ use std::path::PathBuf;
 
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
+use clap_verbosity_flag::{Verbosity, WarnLevel};
 use itertools::Itertools;
-use log::{error, warn};
+use log::{error, info, warn};
 use xdg::BaseDirectories;
 
 use citekey::tex::get_citekeys;
@@ -27,6 +28,9 @@ pub use record::{get_record, Alias, RecordId, RemoteId};
 struct Cli {
     #[arg(long)]
     database: Option<PathBuf>,
+
+    #[command(flatten)]
+    verbose: Verbosity<WarnLevel>,
 
     #[command(subcommand)]
     command: Command,
@@ -64,11 +68,14 @@ enum AliasCommand {
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    stderrlog::new()
-        .module(module_path!())
-        .verbosity(2)
-        .init()
-        .unwrap();
+    // initialize warnings
+    if let Some(level) = cli.verbose.log_level() {
+        stderrlog::new()
+            .module(module_path!())
+            .verbosity(level)
+            .init()
+            .unwrap();
+    }
 
     // Open or create the database
     let mut record_db = if let Some(db_path) = cli.database {

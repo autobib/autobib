@@ -134,6 +134,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "clap",
+ "clap-verbosity-flag",
  "either",
  "itertools",
  "lazy_static",
@@ -238,6 +239,16 @@ checksum = "90bc066a67923782aa8515dbaea16946c5bcc5addbd668bb80af688e53e548a0"
 dependencies = [
  "clap_builder",
  "clap_derive",
+]
+
+[[package]]
+name = "clap-verbosity-flag"
+version = "2.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bb9b20c0dd58e4c2e991c8d203bbeb76c11304d1011659686b5b644bc29aa478"
+dependencies = [
+ "clap",
+ "log",
 ]
 
 [[package]]
