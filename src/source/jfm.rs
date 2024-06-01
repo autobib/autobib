@@ -1,14 +1,16 @@
+use lazy_static::lazy_static;
 use regex::Regex;
 use reqwest::StatusCode;
 use serde::Deserialize;
 
 use super::{RemoteId, SourceError};
 
-const JFM_IDENTIFIER_REGEX: &str = r"^[0-9]{2}\.[0-9]{4}\.[0-9]{2}$";
+lazy_static! {
+    static ref JFM_IDENTIFIER_RE: Regex = Regex::new(r"^[0-9]{2}\.[0-9]{4}\.[0-9]{2}$").unwrap();
+}
 
 pub fn is_valid_id(id: &str) -> bool {
-    let jfm_identifier_regex = Regex::new(JFM_IDENTIFIER_REGEX).unwrap();
-    jfm_identifier_regex.is_match(id)
+    JFM_IDENTIFIER_RE.is_match(id)
 }
 
 #[derive(Debug, Deserialize, PartialEq)]

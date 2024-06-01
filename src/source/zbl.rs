@@ -1,3 +1,4 @@
+use lazy_static::lazy_static;
 use regex::Regex;
 use reqwest::StatusCode;
 use serde::Deserialize;
@@ -5,11 +6,12 @@ use serde_bibtex::de::Deserializer;
 
 use super::{RemoteId, SourceError};
 
-const ZBL_IDENTIFIER_REGEX: &str = r"^[0-9]{4}\.[0-9]{5}$";
+lazy_static! {
+    static ref ZBL_IDENTIFIER_RE: Regex = Regex::new(r"^[0-9]{4}\.[0-9]{5}$").unwrap();
+}
 
 pub fn is_valid_id(id: &str) -> bool {
-    let zbl_identifier_regex = Regex::new(ZBL_IDENTIFIER_REGEX).unwrap();
-    zbl_identifier_regex.is_match(id)
+    ZBL_IDENTIFIER_RE.is_match(id)
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
