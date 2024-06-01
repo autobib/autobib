@@ -49,6 +49,7 @@ pub struct Fields {
     pub year: Option<String>,
     #[serde(alias = "DOI")]
     pub doi: Option<String>,
+    pub arxiv: Option<String>,
     #[serde(alias = "Language")]
     pub language: Option<String>,
 }
@@ -88,6 +89,7 @@ impl Display for Fields {
         write_biblatex_row(f, "pages", &self.pages)?;
         write_biblatex_row(f, "year", &self.year)?;
         write_biblatex_row(f, "doi", &self.doi)?;
+        write_biblatex_row(f, "arxiv", &self.arxiv)?;
         write_biblatex_row(f, "language", &self.language)?;
         Ok(())
     }

@@ -15,7 +15,7 @@ use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use clap_verbosity_flag::{Verbosity, WarnLevel};
 use itertools::Itertools;
-use log::{error, info, warn};
+use log::{error, warn};
 use xdg::BaseDirectories;
 
 use citekey::tex::get_citekeys;
