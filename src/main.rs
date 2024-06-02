@@ -2,6 +2,7 @@ mod citekey;
 pub mod database;
 mod entry;
 pub mod error;
+mod http;
 mod record;
 pub mod source;
 
@@ -20,6 +21,7 @@ use xdg::BaseDirectories;
 use citekey::{get_citekeys, guess_source_file_type, SourceFileType};
 pub use database::{CitationKey, RecordDatabase};
 use entry::KeyedEntry;
+pub use http::HttpClient;
 pub use record::{get_record, Alias, RecordId, RemoteId};
 
 #[derive(Parser)]
@@ -99,11 +101,14 @@ fn run_cli(cli: Cli) -> Result<()> {
         RecordDatabase::open(xdg_dirs.place_data_file("cache.db")?)?
     };
 
+    // Initialize the reqwest Client
+    let client = HttpClient::new()?;
+
     match cli.command {
         Command::Alias { alias_command } => match alias_command {
             AliasCommand::Add { alias, target } => {
                 // first retrieve 'target', in case it does not yet exist in the database
-                get_record(&mut record_db, target.clone())?;
+                get_record(&mut record_db, target.clone(), &client)?;
                 // then link to it
                 record_db.insert_alias(&alias, &target)?;
             }
@@ -114,8 +119,11 @@ fn run_cli(cli: Cli) -> Result<()> {
         },
         Command::Get { citation_keys } => {
             // Collect all entries which are not null
-            let valid_entries =
-                validate_and_retrieve(citation_keys.iter().map(|s| s as &str), &mut record_db);
+            let valid_entries = validate_and_retrieve(
+                citation_keys.iter().map(|s| s as &str),
+                &mut record_db,
+                &client,
+            );
             // print biblatex strings
             print_records(valid_entries)
         }
@@ -137,8 +145,11 @@ fn run_cli(cli: Cli) -> Result<()> {
                 )
             }
 
-            let valid_entries =
-                validate_and_retrieve(citation_keys.iter().map(|s| s as &str), &mut record_db);
+            let valid_entries = validate_and_retrieve(
+                citation_keys.iter().map(|s| s as &str),
+                &mut record_db,
+                &client,
+            );
 
             print_records(valid_entries)
         }
@@ -169,13 +180,14 @@ fn print_records(records: HashMap<RemoteId, Vec<KeyedEntry>>) {
 fn validate_and_retrieve<'a, T: Iterator<Item = &'a str>>(
     citation_keys: T,
     record_db: &mut RecordDatabase,
+    client: &HttpClient,
 ) -> HashMap<RemoteId, Vec<KeyedEntry>> {
     let mut records: HashMap<RemoteId, Vec<KeyedEntry>> = HashMap::new();
 
     for (record, canonical) in citation_keys
         .map(RecordId::from)
         .filter_map(|citation_key| {
-            get_record(record_db, citation_key).map_or_else(
+            get_record(record_db, citation_key, client).map_or_else(
                 |err| {
                     error!("{err}");
                     None
