@@ -1,5 +1,8 @@
 mod key;
 
+use either::Either;
+use log::info;
+
 pub use key::{Alias, RecordId, RemoteId};
 
 use crate::database::{NullRecordsResponse, RecordDatabase, RecordsResponse};
@@ -10,8 +13,6 @@ use crate::HttpClient;
 
 use private::Context;
 
-use either::Either;
-
 /// Get the [`KeyedEntry`] associated with a [`RecordId`], or `None` if the [`KeyedEntry`] does not exist.
 pub fn get_record(
     db: &mut RecordDatabase,
@@ -19,7 +20,10 @@ pub fn get_record(
     client: &HttpClient,
 ) -> Result<(KeyedEntry, RemoteId), Error> {
     match db.get_cached_data(&record_id)? {
-        RecordsResponse::Found(entry, canonical, _) => Ok((entry.add_key(record_id), canonical)),
+        RecordsResponse::Found(entry, canonical, _) => {
+            info!("Found cached record for `{record_id}`");
+            Ok((entry.add_key(record_id), canonical))
+        }
         RecordsResponse::NotFound => match record_id.resolve()? {
             Either::Left(alias) => Err(Error::NullAlias(alias)),
             Either::Right(remote_id) => remote_resolve(db, Context::new(remote_id), client),
@@ -35,39 +39,43 @@ fn remote_resolve(
 ) -> Result<(KeyedEntry, RemoteId), Error> {
     loop {
         let top = context.peek();
+
         match db.get_cached_null(top)? {
             NullRecordsResponse::Found(_when) => {
                 // skip top element of Context since it is already cached
                 db.set_cached_null(context.descend().skip(1))?;
                 break Err(Error::NullRemoteId(context.into_top()));
             }
-            NullRecordsResponse::NotFound => match lookup_source(top.source()) {
-                Either::Left(resolver) => match resolver(top.sub_id(), client)? {
-                    Some(entry) => {
-                        db.set_cached_data(top, &entry, context.descend())?;
-                        let (bottom, top) = context.into_ends();
-                        break Ok((entry.add_key(bottom), top));
-                    }
-                    None => {
-                        db.set_cached_null(context.descend())?;
-                        break Err(Error::NullRemoteId(context.into_bottom()));
-                    }
-                },
-                Either::Right(referrer) => match referrer(top.sub_id(), client)? {
-                    Some(new_remote_id) => {
-                        match db.get_cached_data_and_ref(&new_remote_id, context.descend())? {
-                            RecordsResponse::Found(entry, canonical, _) => {
-                                break Ok((entry.add_key(new_remote_id), canonical))
-                            }
-                            RecordsResponse::NotFound => context.push(new_remote_id),
+            NullRecordsResponse::NotFound => {
+                info!("Resolving remote record for `{top}`");
+                match lookup_source(top.source()) {
+                    Either::Left(resolver) => match resolver(top.sub_id(), client)? {
+                        Some(entry) => {
+                            db.set_cached_data(top, &entry, context.descend())?;
+                            let (bottom, top) = context.into_ends();
+                            break Ok((entry.add_key(bottom), top));
                         }
-                    }
-                    None => {
-                        db.set_cached_null(context.descend())?;
-                        break Err(Error::NullRemoteId(context.into_bottom()));
-                    }
-                },
-            },
+                        None => {
+                            db.set_cached_null(context.descend())?;
+                            break Err(Error::NullRemoteId(context.into_bottom()));
+                        }
+                    },
+                    Either::Right(referrer) => match referrer(top.sub_id(), client)? {
+                        Some(new_remote_id) => {
+                            match db.get_cached_data_and_ref(&new_remote_id, context.descend())? {
+                                RecordsResponse::Found(entry, canonical, _) => {
+                                    break Ok((entry.add_key(new_remote_id), canonical))
+                                }
+                                RecordsResponse::NotFound => context.push(new_remote_id),
+                            }
+                        }
+                        None => {
+                            db.set_cached_null(context.descend())?;
+                            break Err(Error::NullRemoteId(context.into_bottom()));
+                        }
+                    },
+                }
+            }
         }
     }
 }

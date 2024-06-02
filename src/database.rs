@@ -2,6 +2,7 @@ use core::convert::AsRef;
 use std::path::Path;
 
 use chrono::{DateTime, Local};
+use log::debug;
 use rusqlite::{Connection, OptionalExtension, Transaction};
 
 use crate::entry::Entry;
@@ -50,14 +51,16 @@ impl RecordDatabase {
     /// do not have the expected schema, this causes an error. The expected tables are as
     /// detailed in the documentation for [`RecordDatabase`].
     pub fn open<P: AsRef<Path>>(db_file: P) -> Result<Self, DatabaseError> {
-        // create a new database if it does not exist; otherwise open the existing database
+        debug!(
+            "Initializing new connection to `{}`",
+            db_file.as_ref().display()
+        );
         let mut conn = Connection::open(db_file)?;
         let tx = conn.transaction()?;
 
-        // initialize connection state; e.g. set foreign_keys = ON
+        debug!("Enabling foreign_keys");
         tx.execute(include_str!("database/initialize.sql"), ())?;
 
-        // validate the expected table schemas, creating missing tables if they do not exist
         Self::initialize_table(&tx, "Records", include_str!("database/records.sql"))?;
         Self::initialize_table(
             &tx,
@@ -82,6 +85,7 @@ impl RecordDatabase {
     ///
     /// See [SQLite docs](https://www.sqlite.org/pragma.html#pragma_optimize) for more detail.
     pub fn optimize(&mut self) -> Result<(), DatabaseError> {
+        debug!("Optimizing database");
         self.conn.execute("PRAGMA optimize", ())?;
         Ok(())
     }
@@ -118,6 +122,7 @@ impl RecordDatabase {
         table_name: &str,
         schema: &str,
     ) -> Result<(), DatabaseError> {
+        debug!("Initializing new or validating existing table `{table_name}`");
         match Self::validate_table_schema(tx, table_name, schema) {
             Ok(()) => Ok(()),
             Err(DatabaseError::TableMissing(_)) => {
@@ -133,6 +138,7 @@ impl RecordDatabase {
         &mut self,
         citation_key: &K,
     ) -> Result<RecordsResponse, DatabaseError> {
+        debug!("Looking up cached data for `{}`", citation_key.name());
         let tx = self.conn.transaction()?;
         let response = Self::get_cached_data_tx(&tx, citation_key)?;
         tx.commit()?;
@@ -169,6 +175,7 @@ impl RecordDatabase {
         citation_key: &K,
         refs: R,
     ) -> Result<RecordsResponse, DatabaseError> {
+        debug!("Getting cached data for `{}`", citation_key.name());
         let tx = self.conn.transaction()?;
         let response = Self::get_cached_data_and_ref_tx(&tx, citation_key, refs)?;
         tx.commit()?;
@@ -240,6 +247,7 @@ impl RecordDatabase {
         entry: &Entry,
         remote_id_iter: R,
     ) -> Result<(), DatabaseError> {
+        debug!("Setting cached data for `{canonical_id}`");
         let tx = self.conn.transaction()?;
         Self::set_cached_data_tx(&tx, canonical_id, entry, remote_id_iter)?;
         Ok(tx.commit()?)
@@ -262,6 +270,7 @@ impl RecordDatabase {
 
         // get identifier
         let key = tx.last_insert_rowid();
+        debug!("Cached data assigned internal ID `{key}`");
 
         // add citation keys
         for remote_id in remote_id_iter {
@@ -276,6 +285,7 @@ impl RecordDatabase {
         &mut self,
         remote_id: &RemoteId,
     ) -> Result<NullRecordsResponse, DatabaseError> {
+        debug!("Looking up cached null for `{remote_id}`");
         let tx = self.conn.transaction()?;
         let response = Self::get_cached_null_tx(&tx, remote_id)?;
         tx.commit()?;
@@ -426,6 +436,11 @@ impl RecordDatabase {
         key: DatabaseEntryId,
         mode: CitationKeyInsertMode,
     ) -> Result<(), DatabaseError> {
+        debug!(
+            "Creating CitationKey row `{}` for internal ID `{key}`",
+            name.name()
+        );
+
         let stmt = match mode {
             CitationKeyInsertMode::Overwrite => {
                 "INSERT OR REPLACE INTO CitationKeys (name, record_key) values (?1, ?2)"
