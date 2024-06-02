@@ -2,6 +2,7 @@
 name = "autobib"
 authors = ["Alex Rutar <alex@rutar.org>", "Peiran Wu"]
 description = "An automatic bibliography generation tool."
+homepage = "https://github.com/wupr/autobib"
 version = "0.1.0"
 edition = "2021"
 
@@ -25,4 +26,4 @@ serde_json = "1.0"
 serde_with = "3.8"
 stderrlog = "0.6"
 thiserror = "1.0"
-xdg = "2.5"
+directories = "5.0"

@@ -2,24 +2,26 @@ mod citekey;
 pub mod database;
 mod entry;
 pub mod error;
+mod http;
 mod record;
 pub mod source;
 
 use std::collections::{HashMap, HashSet};
-use std::fs::File;
+use std::fs::{create_dir_all, File};
 use std::io::Read;
 use std::path::PathBuf;
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use clap::{Parser, Subcommand};
 use clap_verbosity_flag::{Verbosity, WarnLevel};
+use directories::ProjectDirs;
 use itertools::Itertools;
-use log::{error, warn};
-use xdg::BaseDirectories;
+use log::{error, info, warn};
 
 use citekey::{get_citekeys, guess_source_file_type, SourceFileType};
 pub use database::{CitationKey, RecordDatabase};
 use entry::KeyedEntry;
+pub use http::HttpClient;
 pub use record::{get_record, Alias, RecordId, RemoteId};
 
 #[derive(Parser)]
@@ -89,21 +91,39 @@ fn main() {
 }
 
 fn run_cli(cli: Cli) -> Result<()> {
+    // Initialize project directory.
+    let proj_dirs = match ProjectDirs::from("com", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_NAME")) {
+        Some(p) => p,
+        None => return Err(anyhow!("Failed to get project working directory.")),
+    };
+
     // Open or create the database
     let mut record_db = if let Some(db_path) = cli.database {
         // at a user-provided path
+        info!("Using user-provided database file `{}`", db_path.display());
+
         RecordDatabase::open(db_path)?
     } else {
         // at the default path
-        let xdg_dirs = BaseDirectories::with_prefix("autobib")?;
-        RecordDatabase::open(xdg_dirs.place_data_file("cache.db")?)?
+        create_dir_all(proj_dirs.data_dir())?;
+        let default_db_path = proj_dirs.data_dir().join("records.db");
+        info!(
+            "Using default database file `{}`",
+            default_db_path.display()
+        );
+
+        RecordDatabase::open(default_db_path)?
     };
 
+    // Initialize the reqwest Client
+    let client = HttpClient::new()?;
+
+    // Run the cli
     match cli.command {
         Command::Alias { alias_command } => match alias_command {
             AliasCommand::Add { alias, target } => {
                 // first retrieve 'target', in case it does not yet exist in the database
-                get_record(&mut record_db, target.clone())?;
+                get_record(&mut record_db, target.clone(), &client)?;
                 // then link to it
                 record_db.insert_alias(&alias, &target)?;
             }
@@ -114,8 +134,11 @@ fn run_cli(cli: Cli) -> Result<()> {
         },
         Command::Get { citation_keys } => {
             // Collect all entries which are not null
-            let valid_entries =
-                validate_and_retrieve(citation_keys.iter().map(|s| s as &str), &mut record_db);
+            let valid_entries = validate_and_retrieve(
+                citation_keys.iter().map(|s| s as &str),
+                &mut record_db,
+                &client,
+            );
             // print biblatex strings
             print_records(valid_entries)
         }
@@ -137,14 +160,18 @@ fn run_cli(cli: Cli) -> Result<()> {
                 )
             }
 
-            let valid_entries =
-                validate_and_retrieve(citation_keys.iter().map(|s| s as &str), &mut record_db);
+            let valid_entries = validate_and_retrieve(
+                citation_keys.iter().map(|s| s as &str),
+                &mut record_db,
+                &client,
+            );
 
             print_records(valid_entries)
         }
         Command::Show => todo!(),
     };
 
+    // Clean up
     record_db.optimize()?;
 
     Ok(())
@@ -169,13 +196,14 @@ fn print_records(records: HashMap<RemoteId, Vec<KeyedEntry>>) {
 fn validate_and_retrieve<'a, T: Iterator<Item = &'a str>>(
     citation_keys: T,
     record_db: &mut RecordDatabase,
+    client: &HttpClient,
 ) -> HashMap<RemoteId, Vec<KeyedEntry>> {
     let mut records: HashMap<RemoteId, Vec<KeyedEntry>> = HashMap::new();
 
     for (record, canonical) in citation_keys
         .map(RecordId::from)
         .filter_map(|citation_key| {
-            get_record(record_db, citation_key).map_or_else(
+            get_record(record_db, citation_key, client).map_or_else(
                 |err| {
                     error!("{err}");
                     None

@@ -5,7 +5,7 @@ use regex::Regex;
 use reqwest::StatusCode;
 use serde::Deserialize;
 
-use super::{Entry, Fields, SourceError};
+use super::{Entry, Fields, HttpClient, SourceError};
 
 lazy_static! {
     static ref ARXIV_IDENTIFIER_RE: Regex = Regex::new(concat!(
@@ -74,8 +74,8 @@ impl From<ArxivXMLEntry> for Entry {
     }
 }
 
-pub fn get_record(id: &str) -> Result<Option<Entry>, SourceError> {
-    let response = reqwest::blocking::get(format!(
+pub fn get_record(id: &str, client: &HttpClient) -> Result<Option<Entry>, SourceError> {
+    let response = client.get(format!(
         "https://export.arxiv.org/api/query?max_results=250&id_list={id}"
     ))?;
 
