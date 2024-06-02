@@ -122,13 +122,18 @@ fn run_cli(cli: Cli) -> Result<()> {
     match cli.command {
         Command::Alias { alias_command } => match alias_command {
             AliasCommand::Add { alias, target } => {
+                info!("Creating alias `{alias}` for `{target}`");
                 // first retrieve 'target', in case it does not yet exist in the database
                 get_record(&mut record_db, target.clone(), &client)?;
                 // then link to it
                 record_db.insert_alias(&alias, &target)?;
             }
-            AliasCommand::Delete { alias } => record_db.delete_alias(&alias)?,
+            AliasCommand::Delete { alias } => {
+                info!("Deleting alias `{alias}`");
+                record_db.delete_alias(&alias)?
+            }
             AliasCommand::Rename { alias, new } => {
+                info!("Rename alias `{alias}` to `{new}`");
                 record_db.rename_alias(&alias, &new)?;
             }
         },
@@ -139,6 +144,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                 &mut record_db,
                 &client,
             );
+
             // print biblatex strings
             print_records(valid_entries)
         }
@@ -147,17 +153,23 @@ fn run_cli(cli: Cli) -> Result<()> {
             let mut citation_keys = HashSet::new();
 
             for path in paths {
-                buffer.clear();
-                let mut f = File::open(path.clone()).with_context(|| {
-                    format!("Source file '{}' could not be opened.", path.display())
-                })?;
-                f.read_to_end(&mut buffer)?;
-
-                get_citekeys(
-                    file_type.unwrap_or(guess_source_file_type(&path)?),
-                    &buffer,
-                    &mut citation_keys,
-                )
+                match File::open(path.clone()).and_then(|mut f| f.read_to_end(&mut buffer)) {
+                    Ok(_) => match guess_source_file_type(&path) {
+                        Ok(mode) => {
+                            info!("Reading citation keys from `{}`", path.display());
+                            get_citekeys(file_type.unwrap_or(mode), &buffer, &mut citation_keys);
+                            buffer.clear();
+                        }
+                        Err(err) => error!(
+                            "File `{}`: {err}. Force filetype with `--file-type`.",
+                            path.display()
+                        ),
+                    },
+                    Err(err) => error!(
+                        "Failed to read contents of path `{}`: {err}",
+                        path.display()
+                    ),
+                };
             }
 
             let valid_entries = validate_and_retrieve(
