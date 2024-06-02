@@ -75,6 +75,17 @@ impl RecordDatabase {
         Ok(RecordDatabase { conn })
     }
 
+    /// Optimize the database.
+    ///
+    /// This should be called when the database connection is closed, or periodically during
+    /// long-running operation.
+    ///
+    /// See [SQLite docs](https://www.sqlite.org/pragma.html#pragma_optimize) for more detail.
+    pub fn optimize(&mut self) -> Result<(), DatabaseError> {
+        self.conn.execute("PRAGMA optimize", ())?;
+        Ok(())
+    }
+
     /// Validate the schema of an existing table, or return an appropriate error.
     fn validate_table_schema(
         tx: &Transaction,

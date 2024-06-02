@@ -115,7 +115,7 @@ fn run_cli(cli: Cli) -> Result<()> {
         Command::Get { citation_keys } => {
             // Collect all entries which are not null
             let valid_entries =
-                validate_and_retrieve(citation_keys.iter().map(|s| s as &str), record_db);
+                validate_and_retrieve(citation_keys.iter().map(|s| s as &str), &mut record_db);
             // print biblatex strings
             print_records(valid_entries)
         }
@@ -138,12 +138,15 @@ fn run_cli(cli: Cli) -> Result<()> {
             }
 
             let valid_entries =
-                validate_and_retrieve(citation_keys.iter().map(|s| s as &str), record_db);
+                validate_and_retrieve(citation_keys.iter().map(|s| s as &str), &mut record_db);
 
             print_records(valid_entries)
         }
         Command::Show => todo!(),
     };
+
+    record_db.optimize()?;
+
     Ok(())
 }
 
@@ -165,14 +168,14 @@ fn print_records(records: HashMap<RemoteId, Vec<KeyedEntry>>) {
 /// Validate and retrieve records.
 fn validate_and_retrieve<'a, T: Iterator<Item = &'a str>>(
     citation_keys: T,
-    mut record_db: RecordDatabase,
+    record_db: &mut RecordDatabase,
 ) -> HashMap<RemoteId, Vec<KeyedEntry>> {
     let mut records: HashMap<RemoteId, Vec<KeyedEntry>> = HashMap::new();
 
     for (record, canonical) in citation_keys
         .map(RecordId::from)
         .filter_map(|citation_key| {
-            get_record(&mut record_db, citation_key).map_or_else(
+            get_record(record_db, citation_key).map_or_else(
                 |err| {
                     error!("{err}");
                     None
