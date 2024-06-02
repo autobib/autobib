@@ -7,16 +7,16 @@ mod record;
 pub mod source;
 
 use std::collections::{HashMap, HashSet};
-use std::fs::File;
+use std::fs::{create_dir_all, File};
 use std::io::Read;
 use std::path::PathBuf;
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use clap::{Parser, Subcommand};
 use clap_verbosity_flag::{Verbosity, WarnLevel};
+use directories::ProjectDirs;
 use itertools::Itertools;
-use log::{error, warn};
-use xdg::BaseDirectories;
+use log::{error, info, warn};
 
 use citekey::{get_citekeys, guess_source_file_type, SourceFileType};
 pub use database::{CitationKey, RecordDatabase};
@@ -91,19 +91,34 @@ fn main() {
 }
 
 fn run_cli(cli: Cli) -> Result<()> {
+    // Initialize project directory.
+    let proj_dirs = match ProjectDirs::from("com", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_NAME")) {
+        Some(p) => p,
+        None => return Err(anyhow!("Failed to get project working directory.")),
+    };
+
     // Open or create the database
     let mut record_db = if let Some(db_path) = cli.database {
         // at a user-provided path
+        info!("Using user-provided database file `{}`", db_path.display());
+
         RecordDatabase::open(db_path)?
     } else {
         // at the default path
-        let xdg_dirs = BaseDirectories::with_prefix("autobib")?;
-        RecordDatabase::open(xdg_dirs.place_data_file("cache.db")?)?
+        create_dir_all(proj_dirs.data_dir())?;
+        let default_db_path = proj_dirs.data_dir().join("records.db");
+        info!(
+            "Using default database file `{}`",
+            default_db_path.display()
+        );
+
+        RecordDatabase::open(default_db_path)?
     };
 
     // Initialize the reqwest Client
     let client = HttpClient::new()?;
 
+    // Run the cli
     match cli.command {
         Command::Alias { alias_command } => match alias_command {
             AliasCommand::Add { alias, target } => {
@@ -156,6 +171,7 @@ fn run_cli(cli: Cli) -> Result<()> {
         Command::Show => todo!(),
     };
 
+    // Clean up
     record_db.optimize()?;
 
     Ok(())

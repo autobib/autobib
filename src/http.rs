@@ -3,7 +3,16 @@ use reqwest::{
     Error, IntoUrl,
 };
 
-static APP_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"),);
+static APP_USER_AGENT: &str = concat!(
+    env!("CARGO_PKG_NAME"),
+    "/",
+    env!("CARGO_PKG_VERSION"),
+    " (",
+    env!("CARGO_PKG_HOMEPAGE"),
+    "; ",
+    env!("CARGO_PKG_AUTHORS"),
+    ")",
+);
 
 /// A wrapper around a [`reqwest::blocking::Client`].
 pub struct HttpClient {
