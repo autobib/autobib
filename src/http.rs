@@ -1,6 +1,9 @@
+use std::thread::sleep;
+use std::time::Duration;
+
 use reqwest::{
     blocking::{Client, Response},
-    Error, IntoUrl,
+    Error, StatusCode,
 };
 
 static APP_USER_AGENT: &str = concat!(
@@ -27,7 +30,24 @@ impl HttpClient {
     }
 
     /// Make a request to a given url.
-    pub fn get<U: IntoUrl>(&self, url: U) -> Result<Response, Error> {
-        self.client.get(url).send()
+    pub fn get<U: AsRef<str>>(&self, url: U) -> Result<Response, Error> {
+        // initial backoff
+        let mut backoff = Duration::from_millis(500);
+
+        loop {
+            match self.client.get(url.as_ref()).send() {
+                Ok(resp) => break Ok(resp),
+                Err(err) => {
+                    if err.status() == Some(StatusCode::SERVICE_UNAVAILABLE)
+                        || err.status() == Some(StatusCode::TOO_MANY_REQUESTS)
+                    {
+                        sleep(backoff);
+                        backoff *= 2;
+                    } else {
+                        break Err(err);
+                    }
+                }
+            }
+        }
     }
 }

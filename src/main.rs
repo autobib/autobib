@@ -11,7 +11,7 @@ use std::fs::{create_dir_all, File};
 use std::io::Read;
 use std::path::PathBuf;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use clap::{Parser, Subcommand};
 use clap_verbosity_flag::{Verbosity, WarnLevel};
 use directories::ProjectDirs;
