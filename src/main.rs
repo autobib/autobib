@@ -6,19 +6,18 @@ mod record;
 pub mod source;
 
 use std::collections::{HashMap, HashSet};
-use std::ffi::OsStr;
 use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use clap_verbosity_flag::{Verbosity, WarnLevel};
 use itertools::Itertools;
 use log::{error, warn};
 use xdg::BaseDirectories;
 
-use citekey::tex::get_citekeys;
+use citekey::{get_citekeys, guess_source_file_type, SourceFileType};
 pub use database::{CitationKey, RecordDatabase};
 use entry::KeyedEntry;
 pub use record::{get_record, Alias, RecordId, RemoteId};
@@ -53,9 +52,15 @@ enum Command {
     /// Show metadata for citation key.
     #[command()]
     Show,
-    /// Generate records from source(s).
+    /// Generate records by searching for citation keys inside files.
     #[command(alias = "s")]
-    Source { paths: Vec<PathBuf> },
+    Source {
+        /// The files in which to search.
+        paths: Vec<PathBuf>,
+        /// Override file type detection.
+        #[arg(long)]
+        file_type: Option<SourceFileType>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -98,11 +103,10 @@ fn run_cli(cli: Cli) -> Result<()> {
         Command::Alias { alias_command } => match alias_command {
             AliasCommand::Add { alias, target } => {
                 // first retrieve 'target', in case it does not yet exist in the database
-                // fail_on_err(get_record(&mut record_db, &target));
+                get_record(&mut record_db, target.clone())?;
                 // then link to it
                 record_db.insert_alias(&alias, &target)?;
             }
-            // TODO: deletion fails silently if the alias does not exist
             AliasCommand::Delete { alias } => record_db.delete_alias(&alias)?,
             AliasCommand::Rename { alias, new } => {
                 record_db.rename_alias(&alias, &new)?;
@@ -115,30 +119,27 @@ fn run_cli(cli: Cli) -> Result<()> {
             // print biblatex strings
             print_records(valid_entries)
         }
-        Command::Source { paths } => {
+        Command::Source { paths, file_type } => {
             let mut buffer = Vec::new();
             let mut citation_keys = HashSet::new();
+
             for path in paths {
                 buffer.clear();
-                match path.extension().and_then(OsStr::to_str) {
-                    Some("tex") => {
-                        let mut f = File::open(path.clone()).with_context(|| {
-                            format!("Source file '{}' could not be opened.", path.display())
-                        })?;
-                        f.read_to_end(&mut buffer)?;
-                        get_citekeys(&buffer, &mut citation_keys);
-                    }
-                    Some(ext) => {
-                        bail!("File type '{ext}' not supported")
-                    }
-                    None => {
-                        bail!("File type required")
-                    }
-                }
+                let mut f = File::open(path.clone()).with_context(|| {
+                    format!("Source file '{}' could not be opened.", path.display())
+                })?;
+                f.read_to_end(&mut buffer)?;
+
+                get_citekeys(
+                    file_type.unwrap_or(guess_source_file_type(&path)?),
+                    &buffer,
+                    &mut citation_keys,
+                )
             }
+
             let valid_entries =
                 validate_and_retrieve(citation_keys.iter().map(|s| s as &str), record_db);
-            // print biblatex strings
+
             print_records(valid_entries)
         }
         Command::Show => todo!(),
