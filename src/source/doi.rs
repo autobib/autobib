@@ -3,7 +3,7 @@ use regex::Regex;
 use reqwest::StatusCode;
 use serde_bibtex::de::Deserializer;
 
-use super::{Entry, SourceError};
+use super::{Entry, HttpClient, SourceError};
 
 lazy_static! {
     static ref DOI_IDENTIFIER_RE: Regex =
@@ -14,8 +14,8 @@ pub fn is_valid_id(id: &str) -> bool {
     DOI_IDENTIFIER_RE.is_match(id)
 }
 
-pub fn get_record(id: &str) -> Result<Option<Entry>, SourceError> {
-    let response = reqwest::blocking::get(format!(
+pub fn get_record(id: &str, client: &HttpClient) -> Result<Option<Entry>, SourceError> {
+    let response = client.get(format!(
         "https://api.crossref.org/works/{id}/transform/application/x-bibtex"
     ))?;
 

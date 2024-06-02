@@ -7,13 +7,14 @@ pub mod zbmath;
 use crate::entry::{Entry, Fields};
 use crate::error::SourceError;
 use crate::record::RemoteId;
+use crate::HttpClient;
 
 use either::Either;
 
 /// A resolver, which converts a `sub_id` into an [`Entry`].
-pub type Resolver = fn(&str) -> Result<Option<Entry>, SourceError>;
+pub type Resolver = fn(&str, &HttpClient) -> Result<Option<Entry>, SourceError>;
 /// A referrer, which converts a `sub_id` into a [`RemoteId`].
-pub type Referrer = fn(&str) -> Result<Option<RemoteId>, SourceError>;
+pub type Referrer = fn(&str, &HttpClient) -> Result<Option<RemoteId>, SourceError>;
 /// A validator, which checks that a `sub_id` is valid.
 pub type Validator = fn(&str) -> bool;
 

@@ -6,6 +6,7 @@ use crate::database::{NullRecordsResponse, RecordDatabase, RecordsResponse};
 use crate::entry::KeyedEntry;
 use crate::error::Error;
 use crate::source::lookup_source;
+use crate::HttpClient;
 
 use private::Context;
 
@@ -15,12 +16,13 @@ use either::Either;
 pub fn get_record(
     db: &mut RecordDatabase,
     record_id: RecordId,
+    client: &HttpClient,
 ) -> Result<(KeyedEntry, RemoteId), Error> {
     match db.get_cached_data(&record_id)? {
         RecordsResponse::Found(entry, canonical, _) => Ok((entry.add_key(record_id), canonical)),
         RecordsResponse::NotFound => match record_id.resolve()? {
             Either::Left(alias) => Err(Error::NullAlias(alias)),
-            Either::Right(remote_id) => remote_resolve(db, Context::new(remote_id)),
+            Either::Right(remote_id) => remote_resolve(db, Context::new(remote_id), client),
         },
     }
 }
@@ -29,6 +31,7 @@ pub fn get_record(
 fn remote_resolve(
     db: &mut RecordDatabase,
     mut context: Context,
+    client: &HttpClient,
 ) -> Result<(KeyedEntry, RemoteId), Error> {
     loop {
         let top = context.peek();
@@ -39,7 +42,7 @@ fn remote_resolve(
                 break Err(Error::NullRemoteId(context.into_top()));
             }
             NullRecordsResponse::NotFound => match lookup_source(top.source()) {
-                Either::Left(resolver) => match resolver(top.sub_id())? {
+                Either::Left(resolver) => match resolver(top.sub_id(), client)? {
                     Some(entry) => {
                         db.set_cached_data(top, &entry, context.descend())?;
                         let (bottom, top) = context.into_ends();
@@ -50,7 +53,7 @@ fn remote_resolve(
                         break Err(Error::NullRemoteId(context.into_bottom()));
                     }
                 },
-                Either::Right(referrer) => match referrer(top.sub_id())? {
+                Either::Right(referrer) => match referrer(top.sub_id(), client)? {
                     Some(new_remote_id) => {
                         match db.get_cached_data_and_ref(&new_remote_id, context.descend())? {
                             RecordsResponse::Found(entry, canonical, _) => {

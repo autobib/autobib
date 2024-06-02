@@ -3,7 +3,7 @@ use regex::{bytes::Regex as BytesRegex, Regex};
 use reqwest::StatusCode;
 use serde::Deserialize;
 
-use super::{RemoteId, SourceError};
+use super::{HttpClient, RemoteId, SourceError};
 
 lazy_static! {
     static ref JFM_IDENTIFIER_RE: Regex = Regex::new(r"^[0-9]{2}\.[0-9]{4}\.[0-9]{2}$").unwrap();
@@ -19,9 +19,9 @@ struct OnlyEntryKey<'r> {
     entry_key: &'r str,
 }
 
-pub fn get_canonical(id: &str) -> Result<Option<RemoteId>, SourceError> {
+pub fn get_canonical(id: &str, client: &HttpClient) -> Result<Option<RemoteId>, SourceError> {
     let url = format!("https://zbmath.org/{id}");
-    let response = reqwest::blocking::get(&url)?;
+    let response = client.get(&url)?;
 
     let body = match response.status() {
         StatusCode::OK => response.bytes()?,

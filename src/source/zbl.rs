@@ -4,7 +4,7 @@ use reqwest::StatusCode;
 use serde::Deserialize;
 use serde_bibtex::de::Deserializer;
 
-use super::{RemoteId, SourceError};
+use super::{HttpClient, RemoteId, SourceError};
 
 lazy_static! {
     static ref ZBL_IDENTIFIER_RE: Regex = Regex::new(r"^[0-9]{4}\.[0-9]{5}$").unwrap();
@@ -19,8 +19,8 @@ struct OnlyEntryKey<'r> {
     entry_key: &'r str,
 }
 
-pub fn get_canonical(id: &str) -> Result<Option<RemoteId>, SourceError> {
-    let response = reqwest::blocking::get(format!("https://zbmath.org/bibtex/{id}.bib"))?;
+pub fn get_canonical(id: &str, client: &HttpClient) -> Result<Option<RemoteId>, SourceError> {
+    let response = client.get(format!("https://zbmath.org/bibtex/{id}.bib"))?;
 
     let body = match response.status() {
         StatusCode::OK => response.bytes()?,
