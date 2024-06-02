@@ -20,11 +20,13 @@ pub struct HttpClient {
 }
 
 impl HttpClient {
+    /// Initialize a new client.
     pub fn new() -> Result<Self, Error> {
         let client = Client::builder().user_agent(APP_USER_AGENT).build()?;
         Ok(HttpClient { client })
     }
 
+    /// Make a request to a given url.
     pub fn get<U: IntoUrl>(&self, url: U) -> Result<Response, Error> {
         self.client.get(url).send()
     }
