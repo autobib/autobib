@@ -75,6 +75,17 @@ impl RecordDatabase {
         Ok(RecordDatabase { conn })
     }
 
+    /// Optimize the database.
+    ///
+    /// This should be called when the database connection is closed, or periodically during
+    /// long-running operation.
+    ///
+    /// See [SQLite docs](https://www.sqlite.org/pragma.html#pragma_optimize) for more detail.
+    pub fn optimize(&mut self) -> Result<(), DatabaseError> {
+        self.conn.execute("PRAGMA optimize", ())?;
+        Ok(())
+    }
+
     /// Validate the schema of an existing table, or return an appropriate error.
     fn validate_table_schema(
         tx: &Transaction,
@@ -362,19 +373,14 @@ impl RecordDatabase {
         tx: &Transaction,
         citation_key: &K,
     ) -> Result<(), DatabaseError> {
-        let mut deleter =
-            tx.prepare_cached("DELETE FROM CitationKeys WHERE name = ?1 RETURNING *")?;
-        deleter
-            .query_row([citation_key.name()], |_| Ok(()))
-            .optional()?
-            .map_or_else(
-                || {
-                    Err(DatabaseError::AliasDeleteMissing(
-                        citation_key.name().into(),
-                    ))
-                },
-                |_| Ok(()),
-            )
+        let mut deleter = tx.prepare_cached("DELETE FROM CitationKeys WHERE name = ?1")?;
+        if deleter.execute((citation_key.name(),))? == 0 {
+            Err(DatabaseError::AliasDeleteMissing(
+                citation_key.name().into(),
+            ))
+        } else {
+            Ok(())
+        }
     }
 
     /// Insert a new citation alias.
