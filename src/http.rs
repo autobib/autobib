@@ -3,6 +3,8 @@ use reqwest::{
     Error, IntoUrl,
 };
 
+static APP_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"),);
+
 /// A wrapper around a [`reqwest::blocking::Client`].
 pub struct HttpClient {
     client: Client,
@@ -10,7 +12,7 @@ pub struct HttpClient {
 
 impl HttpClient {
     pub fn new() -> Result<Self, Error> {
-        let client = Client::builder().build()?;
+        let client = Client::builder().user_agent(APP_USER_AGENT).build()?;
         Ok(HttpClient { client })
     }
 
