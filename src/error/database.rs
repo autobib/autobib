@@ -8,8 +8,12 @@ pub enum DatabaseError {
     TableMissing(String),
     #[error("Table `{0}` has unexpected schema:\n{1}")]
     TableIncorrectSchema(String, String),
-    #[error("Citation key already exists: {0}")]
+    #[error("Citation key already exists: `{0}`")]
     CitationKeyExists(String),
-    #[error("Citation key missing: {0}")]
+    #[error("Citation key missing: `{0}`")]
     CitationKeyMissing(String),
+    #[error("Could not delete alias which does not exist: `{0}`")]
+    AliasDeleteMissing(String),
+    #[error("Citation key is null: `{0}`")]
+    CitationKeyNull(String),
 }

@@ -272,12 +272,16 @@ impl RecordDatabase {
     }
 
     /// Check if the [`RemoteId`] is a cached null record within a transaction.
-    fn get_cached_null_tx(
+    ///
+    /// We allow `target` to be any `CitationKey` since sometimes it is convenient to check for the
+    /// presence of an arbitrary `CitationKey` without wanting to first determine if it is a
+    /// `RemoteId`.
+    fn get_cached_null_tx<K: CitationKey>(
         tx: &Transaction,
-        remote_id: &RemoteId,
+        target: &K,
     ) -> Result<NullRecordsResponse, DatabaseError> {
         let mut null_selector = tx.prepare_cached(include_str!("database/get_cached_null.sql"))?;
-        let mut null_rows = null_selector.query([&remote_id.name()])?;
+        let mut null_rows = null_selector.query([&target.name()])?;
 
         match null_rows.next() {
             // Cached null
@@ -358,8 +362,19 @@ impl RecordDatabase {
         tx: &Transaction,
         citation_key: &K,
     ) -> Result<(), DatabaseError> {
-        let mut deleter = tx.prepare_cached("DELETE FROM CitationKeys WHERE name = ?1")?;
-        Ok(deleter.execute((citation_key.name(),)).map(|_| ())?)
+        let mut deleter =
+            tx.prepare_cached("DELETE FROM CitationKeys WHERE name = ?1 RETURNING *")?;
+        deleter
+            .query_row([citation_key.name()], |_| Ok(()))
+            .optional()?
+            .map_or_else(
+                || {
+                    Err(DatabaseError::AliasDeleteMissing(
+                        citation_key.name().into(),
+                    ))
+                },
+                |_| Ok(()),
+            )
     }
 
     /// Insert a new citation alias.
@@ -386,9 +401,14 @@ impl RecordDatabase {
                 Self::set_citation_key_row_tx(tx, alias, key, CitationKeyInsertMode::FailIfExists)
             }
             // target does not exist
-            // TODO: provide a better error message if citation key is missing and
-            //       the corresponding citation key is in NullRecords
-            Ok(None) => Err(DatabaseError::CitationKeyMissing(target.name().into())),
+            Ok(None) => match Self::get_cached_null_tx(tx, target)? {
+                NullRecordsResponse::Found(_) => {
+                    Err(DatabaseError::CitationKeyNull(target.name().into()))
+                }
+                NullRecordsResponse::NotFound => {
+                    Err(DatabaseError::CitationKeyMissing(target.name().into()))
+                }
+            },
             Err(why) => Err(why),
         }
     }
@@ -433,6 +453,7 @@ impl RecordDatabase {
 }
 
 /// Response type from the `Records` table as returned by [`RecordDatabase::get_cached_data`].
+#[allow(clippy::large_enum_variant)]
 pub enum RecordsResponse {
     /// Data was found; canonical; last modified.
     Found(Entry, RemoteId, DateTime<Local>),
