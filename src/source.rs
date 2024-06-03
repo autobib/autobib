@@ -1,25 +1,34 @@
+//! # Abstractions over remote resources
+//! This module implements remote resource resolution.
+//!
+//! The fundamental types are [`Resolver`], [`Referrer`], and [`Validator`], which abstract over
+//! resource acquisition and resolution from a remote resource.
 pub mod arxiv;
 pub mod doi;
 pub mod jfm;
 pub mod zbl;
 pub mod zbmath;
 
-use crate::entry::{Entry, Fields};
-use crate::error::SourceError;
+use either::Either;
+use serde::Deserialize;
+
+// re-imports exposed to source implementations
+use crate::db::RecordData;
+use crate::error::{RecordDataError, SourceError};
 use crate::record::RemoteId;
 use crate::HttpClient;
 
-use either::Either;
+/// A resolver, which converts a `sub_id` into [`RecordData`].
+pub type Resolver = fn(&str, &HttpClient) -> Result<Option<RecordData>, SourceError>;
 
-/// A resolver, which converts a `sub_id` into an [`Entry`].
-pub type Resolver = fn(&str, &HttpClient) -> Result<Option<Entry>, SourceError>;
-/// A referrer, which converts a `sub_id` into a [`RemoteId`].
+/// A referrer, which converts a `sub_id` into [`RemoteId`].
 pub type Referrer = fn(&str, &HttpClient) -> Result<Option<RemoteId>, SourceError>;
+
 /// A validator, which checks that a `sub_id` is valid.
 pub type Validator = fn(&str) -> bool;
 
 /// Map the `source` part of a [`RemoteId`] to a [`Resolver`] or [`Referrer`].
-pub fn lookup_source(source: &str) -> Either<Resolver, Referrer> {
+pub(crate) fn lookup_source(source: &str) -> Either<Resolver, Referrer> {
     match source {
         "arxiv" => Either::Left(arxiv::get_record),
         "doi" => Either::Left(doi::get_record),
@@ -32,7 +41,7 @@ pub fn lookup_source(source: &str) -> Either<Resolver, Referrer> {
 }
 
 /// Validate a [`RemoteId`].
-pub fn lookup_validator(source: &str) -> Option<Validator> {
+pub(crate) fn lookup_validator(source: &str) -> Option<Validator> {
     match source {
         "arxiv" => Some(arxiv::is_valid_id),
         "doi" => Some(doi::is_valid_id),
@@ -40,5 +49,82 @@ pub fn lookup_validator(source: &str) -> Option<Validator> {
         "zbmath" => Some(zbmath::is_valid_id),
         "zbl" => Some(zbl::is_valid_id),
         _ => None,
+    }
+}
+
+/// A receiving struct type useful for deserializing bibtex from an external source.
+///
+/// This struct can be fallibly converted into a [`RecordData`].
+#[derive(Debug, Deserialize)]
+struct SourceBibtex {
+    entry_type: String,
+    fields: SourceBibtexFields,
+}
+
+/// The fields of a [`SourceBibtex`] struct.
+///
+/// The aliases are required to handle <https://zbmath.org> bibtex field name formatting.
+/// This can be written in a more robust way if
+/// <https://github.com/serde-rs/serde/pull/1902> or
+/// <https://github.com/serde-rs/serde/pull/2161> are merged.
+///
+/// DO NOT USE [`serde_aux` case insensitive
+/// deserialization](https://docs.rs/serde-aux/latest/serde_aux/container_attributes/fn.deserialize_struct_case_insensitive.html).
+/// The problem is that `serde_aux` internally first deserializes to a map, and then deserializes
+/// into a struct. Since `serde_bibtex` uses skipped fields to ignore undefined macros,
+/// this can/will cause problems when deserializing.
+#[derive(Debug, Default, Deserialize)]
+struct SourceBibtexFields {
+    #[serde(alias = "Title")]
+    pub title: Option<String>,
+    #[serde(alias = "Author")]
+    pub author: Option<String>,
+    #[serde(alias = "Journal")]
+    pub journal: Option<String>,
+    #[serde(alias = "Volume")]
+    pub volume: Option<String>,
+    #[serde(alias = "Pages")]
+    pub pages: Option<String>,
+    #[serde(alias = "Year")]
+    pub year: Option<String>,
+    #[serde(alias = "DOI")]
+    pub doi: Option<String>,
+    #[serde(alias = "Language")]
+    pub language: Option<String>,
+}
+
+macro_rules! convert_field {
+    ($fields:ident, $record_data:ident, $field:ident) => {
+        if let Some($field) = $fields.$field {
+            $record_data.try_insert(stringify!($field).into(), $field)?;
+        };
+    };
+    ($fields:ident, $record_data:ident, $field:ident, $($tail:ident),+) => {
+        convert_field!($fields, $record_data, $field);
+        convert_field!($fields, $record_data, $($tail),+);
+    };
+}
+
+impl TryFrom<SourceBibtex> for RecordData {
+    type Error = RecordDataError;
+
+    fn try_from(value: SourceBibtex) -> Result<Self, Self::Error> {
+        let SourceBibtex { entry_type, fields } = value;
+        let mut record_data = RecordData::try_new(entry_type.to_lowercase())?;
+
+        convert_field!(
+            fields,
+            record_data,
+            title,
+            author,
+            journal,
+            volume,
+            pages,
+            year,
+            doi,
+            language
+        );
+
+        Ok(record_data)
     }
 }

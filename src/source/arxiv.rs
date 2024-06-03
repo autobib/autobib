@@ -5,7 +5,7 @@ use regex::Regex;
 use reqwest::StatusCode;
 use serde::Deserialize;
 
-use super::{Entry, Fields, HttpClient, SourceError};
+use super::{HttpClient, RecordData, RecordDataError, SourceError};
 
 lazy_static! {
     static ref ARXIV_IDENTIFIER_RE: Regex = Regex::new(concat!(
@@ -48,33 +48,69 @@ struct ArxivXMLAuthor {
     name: String,
 }
 
-impl From<ArxivXMLEntry> for Entry {
-    fn from(arxiv_xml: ArxivXMLEntry) -> Entry {
-        let arxiv_id = arxiv_xml
-            .id
+impl TryFrom<ArxivXMLEntry> for RecordData {
+    type Error = RecordDataError;
+
+    // fn from(arxiv_xml: ArxivXMLEntry) -> RecordData {
+    //     let arxiv_id = arxiv_xml
+    //         .id
+    //         .strip_prefix("http://arxiv.org/abs/")
+    //         .and_then(|s| s.rfind('v').map(|idx| s[..idx].into()));
+
+    //     Entry {
+    //         entry_type: "preprint".into(),
+    //         fields: Fields {
+    //             title: Some(arxiv_xml.title),
+    //             author: Some(
+    //                 arxiv_xml
+    //                     .author
+    //                     .into_iter()
+    //                     .map(|auth| auth.name)
+    //                     .join(" and "),
+    //             ),
+    //             year: Some(arxiv_xml.published.year().to_string()),
+    //             arxiv: arxiv_id,
+    //             ..Fields::default()
+    //         },
+    //     }
+    // }
+
+    fn try_from(arxiv_xml: ArxivXMLEntry) -> Result<Self, Self::Error> {
+        // SAFETY: the 'preprint' satisfies the requirements of try_new
+        let mut record_data = RecordData::try_new("preprint".into()).unwrap();
+
+        let ArxivXMLEntry {
+            title,
+            author,
+            id,
+            published,
+        } = arxiv_xml;
+
+        // arxiv id
+        let arxiv_id_opt = id
             .strip_prefix("http://arxiv.org/abs/")
             .and_then(|s| s.rfind('v').map(|idx| s[..idx].into()));
 
-        Entry {
-            entry_type: "preprint".into(),
-            fields: Fields {
-                title: Some(arxiv_xml.title),
-                author: Some(
-                    arxiv_xml
-                        .author
-                        .into_iter()
-                        .map(|auth| auth.name)
-                        .join(" and "),
-                ),
-                year: Some(arxiv_xml.published.year().to_string()),
-                arxiv: arxiv_id,
-                ..Fields::default()
-            },
+        // title
+        record_data.try_insert("title".into(), title)?;
+        if let Some(arxiv_id) = arxiv_id_opt {
+            record_data.try_insert("arxiv".into(), arxiv_id)?;
         }
+
+        // author
+        record_data.try_insert(
+            "author".into(),
+            author.into_iter().map(|auth| auth.name).join(" and "),
+        )?;
+
+        // year
+        record_data.try_insert("year".into(), published.year().to_string())?;
+
+        Ok(record_data)
     }
 }
 
-pub fn get_record(id: &str, client: &HttpClient) -> Result<Option<Entry>, SourceError> {
+pub fn get_record(id: &str, client: &HttpClient) -> Result<Option<RecordData>, SourceError> {
     let response = client.get(format!(
         "https://export.arxiv.org/api/query?max_results=250&id_list={id}"
     ))?;
@@ -90,7 +126,7 @@ pub fn get_record(id: &str, client: &HttpClient) -> Result<Option<Entry>, Source
     match quick_xml::de::from_str::<ArxivXML>(&body) {
         Ok(parsed) => {
             let first_entry = parsed.entry.into_iter().next().unwrap();
-            Ok(Some(first_entry.into()))
+            Ok(Some(first_entry.try_into()?))
         }
         // This is somewhat suboptimal, but arxiv seems to constantly change their error format
         // which makes it hard to properly check if the error is spurious or not.

@@ -3,7 +3,7 @@ use regex::Regex;
 use reqwest::StatusCode;
 use serde_bibtex::de::Deserializer;
 
-use super::{Entry, HttpClient, SourceError};
+use super::{HttpClient, RecordData, SourceBibtex, SourceError};
 
 lazy_static! {
     static ref ZBMATH_IDENTIFIER_RE: Regex = Regex::new(r"^[0-9]{8}$").unwrap();
@@ -13,7 +13,7 @@ pub fn is_valid_id(id: &str) -> bool {
     ZBMATH_IDENTIFIER_RE.is_match(id)
 }
 
-pub fn get_record(id: &str, client: &HttpClient) -> Result<Option<Entry>, SourceError> {
+pub fn get_record(id: &str, client: &HttpClient) -> Result<Option<RecordData>, SourceError> {
     let response = client.get(format!("https://zbmath.org/bibtex/{id}.bib"))?;
 
     let body = match response.status() {
@@ -24,10 +24,10 @@ pub fn get_record(id: &str, client: &HttpClient) -> Result<Option<Entry>, Source
         code => return Err(SourceError::UnexpectedStatusCode(code)),
     };
 
-    let mut entry_iter = Deserializer::from_slice(&body).into_iter_entry::<Entry>();
+    let mut entry_iter = Deserializer::from_slice(&body).into_iter_regular_entry::<SourceBibtex>();
 
     match entry_iter.next() {
-        Some(Ok(entry)) => Ok(Some(entry)),
+        Some(Ok(entry)) => Ok(Some(entry.try_into()?)),
         _ => Err(SourceError::Unexpected(
             "zbMATH bibtex record is invalid bibtex!".into(),
         )),
