@@ -117,7 +117,7 @@ impl TryFrom<RecordId> for Alias {
 }
 
 /// A validated `source:sub_id`.
-#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct RemoteId {
     full_id: String,
     source_len: usize,

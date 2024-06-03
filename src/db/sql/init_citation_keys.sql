@@ -5,4 +5,4 @@ CREATE TABLE CitationKeys (
         FOREIGN KEY (record_key)
         REFERENCES Records(key)
         ON DELETE CASCADE
-) STRICT
+) STRICT, WITHOUT ROWID

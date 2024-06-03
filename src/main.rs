@@ -1,28 +1,28 @@
-mod citekey;
-pub mod database;
+pub mod citekey;
+pub mod db;
 mod entry;
 pub mod error;
 mod http;
 mod record;
 pub mod source;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 use std::fs::{create_dir_all, File};
 use std::io::Read;
 use std::path::PathBuf;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use clap::{Parser, Subcommand};
 use clap_verbosity_flag::{Verbosity, WarnLevel};
 use directories::ProjectDirs;
 use itertools::Itertools;
 use log::{error, info, warn};
 
-use citekey::{get_citekeys, guess_source_file_type, SourceFileType};
-pub use database::{CitationKey, RecordDatabase};
-use entry::KeyedEntry;
-pub use http::HttpClient;
-pub use record::{get_record, Alias, RecordId, RemoteId};
+use self::citekey::{get_citekeys, SourceFileType};
+use self::db::{CitationKey, Data, RawRecordData, RecordDatabase};
+pub use self::entry::Entry;
+pub use self::http::HttpClient;
+pub use self::record::{get_record, Alias, RecordId, RemoteId};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -65,10 +65,14 @@ enum Command {
     },
 }
 
+/// Manage aliases.
 #[derive(Subcommand)]
 enum AliasCommand {
+    /// Add a new alias.
     Add { alias: Alias, target: RecordId },
+    /// Delete an existing alias.
     Delete { alias: Alias },
+    /// Rename an existing alias.
     Rename { alias: Alias, new: Alias },
 }
 
@@ -90,12 +94,16 @@ fn main() {
     }
 }
 
+/// Run the CLI.
 fn run_cli(cli: Cli) -> Result<()> {
     // Initialize project directory.
     let proj_dirs = match ProjectDirs::from("com", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_NAME")) {
         Some(p) => p,
         None => return Err(anyhow!("Failed to get project working directory.")),
     };
+
+    info!("SQLite version: {}", rusqlite::version());
+    info!("Database format version: {}", db::version());
 
     // Open or create the database
     let mut record_db = if let Some(db_path) = cli.database {
@@ -150,14 +158,17 @@ fn run_cli(cli: Cli) -> Result<()> {
         }
         Command::Source { paths, file_type } => {
             let mut buffer = Vec::new();
-            let mut citation_keys = HashSet::new();
+
+            // The citation keys do not need to be sorted since sorting
+            // happens in the `validate_and_retrieve` function.
+            let mut container = HashSet::new();
 
             for path in paths {
                 match File::open(path.clone()).and_then(|mut f| f.read_to_end(&mut buffer)) {
-                    Ok(_) => match guess_source_file_type(&path) {
+                    Ok(_) => match SourceFileType::detect(&path) {
                         Ok(mode) => {
                             info!("Reading citation keys from `{}`", path.display());
-                            get_citekeys(file_type.unwrap_or(mode), &buffer, &mut citation_keys);
+                            get_citekeys(file_type.unwrap_or(mode), &buffer, &mut container);
                             buffer.clear();
                         }
                         Err(err) => error!(
@@ -172,11 +183,8 @@ fn run_cli(cli: Cli) -> Result<()> {
                 };
             }
 
-            let valid_entries = validate_and_retrieve(
-                citation_keys.iter().map(|s| s as &str),
-                &mut record_db,
-                &client,
-            );
+            let valid_entries =
+                validate_and_retrieve(container.iter().map(|s| s as &str), &mut record_db, &client);
 
             print_records(valid_entries)
         }
@@ -190,12 +198,15 @@ fn run_cli(cli: Cli) -> Result<()> {
 }
 
 /// Iterate over records, printing the entries and warning about duplicates.
-fn print_records(records: HashMap<RemoteId, Vec<KeyedEntry>>) {
+///
+/// TODO: replace this with a `write_records` method and an abstract writer.
+/// TODO: replace the `records` struct with a custom wrapper struct.
+fn print_records<D: Data>(records: BTreeMap<RemoteId, Vec<Entry<D>>>) {
     for (canonical, entry_vec) in records.iter() {
         if entry_vec.len() > 1 {
             warn!(
                 "Multiple keys for `{canonical}`: {}",
-                entry_vec.iter().map(|e| &e.key).join(", ")
+                entry_vec.iter().map(|e| e.key()).join(", ")
             );
         }
         for record in entry_vec {
@@ -209,8 +220,8 @@ fn validate_and_retrieve<'a, T: Iterator<Item = &'a str>>(
     citation_keys: T,
     record_db: &mut RecordDatabase,
     client: &HttpClient,
-) -> HashMap<RemoteId, Vec<KeyedEntry>> {
-    let mut records: HashMap<RemoteId, Vec<KeyedEntry>> = HashMap::new();
+) -> BTreeMap<RemoteId, Vec<Entry<RawRecordData>>> {
+    let mut records: BTreeMap<RemoteId, Vec<Entry<RawRecordData>>> = BTreeMap::new();
 
     for (record, canonical) in citation_keys
         .map(RecordId::from)

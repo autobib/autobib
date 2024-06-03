@@ -5,24 +5,24 @@ use log::info;
 
 pub use key::{Alias, RecordId, RemoteId};
 
-use crate::database::{NullRecordsResponse, RecordDatabase, RecordsResponse};
-use crate::entry::KeyedEntry;
+use crate::db::{NullRecordsResponse, RawRecordData, RecordDatabase, RecordsResponse};
+use crate::entry::Entry;
 use crate::error::Error;
 use crate::source::lookup_source;
 use crate::HttpClient;
 
 use private::Context;
 
-/// Get the [`KeyedEntry`] associated with a [`RecordId`], or `None` if the [`KeyedEntry`] does not exist.
+/// Get the [`Entry`] associated with a [`RecordId`], or [`None`] if the [`Entry`] does not exist.
 pub fn get_record(
     db: &mut RecordDatabase,
     record_id: RecordId,
     client: &HttpClient,
-) -> Result<(KeyedEntry, RemoteId), Error> {
+) -> Result<(Entry<RawRecordData>, RemoteId), Error> {
     match db.get_cached_data(&record_id)? {
-        RecordsResponse::Found(entry, canonical, _) => {
+        RecordsResponse::Found(raw_data, canonical, _) => {
             info!("Found cached record for `{record_id}`");
-            Ok((entry.add_key(record_id), canonical))
+            Ok((Entry::new(record_id, raw_data), canonical))
         }
         RecordsResponse::NotFound => match record_id.resolve()? {
             Either::Left(alias) => Err(Error::NullAlias(alias)),
@@ -36,7 +36,7 @@ fn remote_resolve(
     db: &mut RecordDatabase,
     mut context: Context,
     client: &HttpClient,
-) -> Result<(KeyedEntry, RemoteId), Error> {
+) -> Result<(Entry<RawRecordData>, RemoteId), Error> {
     loop {
         let top = context.peek();
 
@@ -50,10 +50,10 @@ fn remote_resolve(
                 info!("Resolving remote record for `{top}`");
                 match lookup_source(top.source()) {
                     Either::Left(resolver) => match resolver(top.sub_id(), client)? {
-                        Some(entry) => {
-                            db.set_cached_data(top, &entry, context.descend())?;
+                        Some(data) => {
+                            db.set_cached_data(top, &data, context.descend())?;
                             let (bottom, top) = context.into_ends();
-                            break Ok((entry.add_key(bottom), top));
+                            break Ok((Entry::new(bottom, RawRecordData::from(&data)), top));
                         }
                         None => {
                             db.set_cached_null(context.descend())?;
@@ -63,8 +63,8 @@ fn remote_resolve(
                     Either::Right(referrer) => match referrer(top.sub_id(), client)? {
                         Some(new_remote_id) => {
                             match db.get_cached_data_and_ref(&new_remote_id, context.descend())? {
-                                RecordsResponse::Found(entry, canonical, _) => {
-                                    break Ok((entry.add_key(new_remote_id), canonical))
+                                RecordsResponse::Found(raw_data, canonical, _) => {
+                                    break Ok((Entry::new(new_remote_id, raw_data), canonical))
                                 }
                                 RecordsResponse::NotFound => context.push(new_remote_id),
                             }
@@ -125,11 +125,12 @@ mod private {
         pub fn into_ends(mut self) -> (RemoteId, RemoteId) {
             unsafe {
                 if self.0.len() >= 2 {
+                    // SAFETY: we just checked that the length is at least 2
                     let top = self.0.pop().unwrap_unchecked();
                     let bottom = self.0.drain(..).next().unwrap_unchecked();
                     (bottom, top)
-                // SAFETY: the internal vec is always non-empty
                 } else {
+                    // SAFETY: the internal vec is always non-empty
                     let top = self.0.pop().unwrap_unchecked();
                     (top.clone(), top)
                 }

@@ -1,3 +1,5 @@
+//! # Error implementation
+//! The main error types which result from normal usage.
 mod database;
 mod record;
 mod source;
@@ -6,7 +8,7 @@ use thiserror::Error;
 
 use crate::record::{Alias, RemoteId};
 
-pub use database::DatabaseError;
+pub use database::{DatabaseError, RecordDataError};
 pub use record::{RecordError, RecordErrorKind};
 pub use source::SourceError;
 
