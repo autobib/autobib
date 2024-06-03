@@ -30,7 +30,7 @@ pub fn get_canonical(id: &str, client: &HttpClient) -> Result<Option<RemoteId>, 
         code => return Err(SourceError::UnexpectedStatusCode(code)),
     };
 
-    let mut entry_iter = Deserializer::from_slice(&body).into_iter_entry();
+    let mut entry_iter = Deserializer::from_slice(&body).into_iter_regular_entry();
 
     match entry_iter.next() {
         Some(Ok(OnlyEntryKey { entry_key })) => {

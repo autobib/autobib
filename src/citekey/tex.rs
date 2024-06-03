@@ -1,10 +1,10 @@
+use std::iter::Extend;
+
 use lazy_static::lazy_static;
-use regex::Regex;
-use std::collections::HashSet;
-
 use memchr::{memchr, memchr2, memchr3};
+use regex::Regex;
 
-// Move forward until all comments and whitespace are consumed.
+/// Move forward until all comments and whitespace are consumed.
 fn comment_and_ws(buffer: &[u8], mut pos: usize) -> usize {
     while pos < buffer.len() {
         match buffer[pos] {
@@ -107,8 +107,8 @@ fn macro_argument(buffer: &[u8], mut pos: usize) -> (Option<String>, usize) {
 }
 
 /// Parse the citation contents and append new keys to `keys`.
-fn parse_cite_contents(contents: &str, keys: &mut HashSet<String>) {
-    keys.extend(
+fn parse_cite_contents<T: Extend<String>>(contents: &str, container: &mut T) {
+    container.extend(
         contents
             .split(',')
             .map(|k| k.trim())
@@ -131,7 +131,7 @@ fn is_citation_macro_name(cmd: &str) -> bool {
 ///
 /// Citekeys essentially appear in the buffer in the form `\...cite{key1, key2}`, though there is a decent
 /// amount of extra work required to properly handle comments and other subtleties.
-pub fn get_citekeys(buffer: &[u8], keys: &mut HashSet<String>) {
+pub fn get_citekeys<T: Extend<String>>(buffer: &[u8], container: &mut T) {
     let mut pos: usize = 0;
 
     while let Some(next) = memchr2(b'%', b'\\', &buffer[pos..]) {
@@ -145,7 +145,7 @@ pub fn get_citekeys(buffer: &[u8], keys: &mut HashSet<String>) {
                         let (opt_contents, next) = macro_argument(buffer, pos);
                         pos = next;
                         if let Some(contents) = opt_contents {
-                            parse_cite_contents(&contents, keys);
+                            parse_cite_contents(&contents, container);
                         }
                     }
                 }

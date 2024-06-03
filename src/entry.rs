@@ -1,96 +1,49 @@
-use std::fmt::{Display, Formatter};
+use std::fmt;
 
-use serde::{Deserialize, Serialize};
+use delegate::delegate;
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct KeyedEntry {
-    pub key: String,
-    pub contents: Entry,
+use crate::db::Data;
+
+/// A single regular entry in a BibTex bibliography.
+#[derive(Debug)]
+pub struct Entry<D: Data> {
+    key: String,
+    record_data: D,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Entry {
-    pub entry_type: String,
-    pub fields: Fields,
-}
-
-impl Entry {
-    pub fn add_key<T: Into<String>>(self, key: T) -> KeyedEntry {
-        KeyedEntry {
+impl<D: Data> Entry<D> {
+    pub fn new<T: Into<String>>(key: T, record_data: D) -> Self {
+        Self {
             key: key.into(),
-            contents: self,
+            record_data,
         }
     }
-}
 
-/// A container for bibtex fields.
-///
-/// The aliases are required to handle zbmath.org bibtex field name formatting.
-/// This is a bit more robust if https://github.com/serde-rs/serde/pull/1902 or
-/// https://github.com/serde-rs/serde/pull/2161 is merged...
-///
-/// DO NOT USE `serde_aux::container_attributes::deserialize_struct_case_insensitive`.
-/// The problem is that `serde_aux` internally first deserializes to a map, and then deserializes
-/// into a struct. Since `serde_bibtex` uses skipped fields to ignore undefined macros,
-/// this can/will cause problems when deserializing.
-#[derive(Debug, Default, Deserialize, Serialize)]
-pub struct Fields {
-    #[serde(alias = "Title")]
-    pub title: Option<String>,
-    #[serde(alias = "Author")]
-    pub author: Option<String>,
-    #[serde(alias = "Journal")]
-    pub journal: Option<String>,
-    #[serde(alias = "Volume")]
-    pub volume: Option<String>,
-    #[serde(alias = "Pages")]
-    pub pages: Option<String>,
-    #[serde(alias = "Year")]
-    pub year: Option<String>,
-    #[serde(alias = "DOI")]
-    pub doi: Option<String>,
-    pub arxiv: Option<String>,
-    #[serde(alias = "Language")]
-    pub language: Option<String>,
-}
+    pub fn key(&self) -> &str {
+        &self.key
+    }
 
-// TODO: once serde_bibtex::serialize is implemented, this can be deleted
+    delegate! {
+        to self.record_data {
+            pub fn fields(&self) -> impl Iterator<Item = (&str, &str)>;
+            pub fn entry_type(&self) -> &str;
+        }
 
-impl Display for KeyedEntry {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "@{}{{{},",
-            self.contents.entry_type.to_lowercase(),
-            self.key
-        )?;
-        write!(f, "{}", self.contents.fields)?;
-        write!(f, "\n}}")
     }
 }
 
-fn write_biblatex_row(
-    f: &mut Formatter<'_>,
-    field_name: &str,
-    field_value: &Option<String>,
-) -> std::fmt::Result {
-    match field_value {
-        Some(field_value_string) => write!(f, "\n  {field_name} = {{{field_value_string}}},"),
-        None => Ok(()),
-    }
+fn write_biblatex_row(f: &mut fmt::Formatter<'_>, key: &str, value: &str) -> fmt::Result {
+    write!(f, "\n  {key} = {{{value}}},")
 }
 
-impl Display for Fields {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write_biblatex_row(f, "title", &self.title)?;
-        write_biblatex_row(f, "author", &self.author)?;
-        write_biblatex_row(f, "journal", &self.journal)?;
-        write_biblatex_row(f, "volume", &self.volume)?;
-        write_biblatex_row(f, "pages", &self.pages)?;
-        write_biblatex_row(f, "year", &self.year)?;
-        write_biblatex_row(f, "doi", &self.doi)?;
-        write_biblatex_row(f, "arxiv", &self.arxiv)?;
-        write_biblatex_row(f, "language", &self.language)?;
+impl<D: Data> fmt::Display for Entry<D> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "@{}{{{},", self.record_data.entry_type(), self.key)?;
+        for (key, value) in self.record_data.fields() {
+            write_biblatex_row(f, key, value)?;
+        }
+        write!(f, "\n}}")?;
+
         Ok(())
     }
 }
