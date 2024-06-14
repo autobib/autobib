@@ -136,11 +136,10 @@ impl RecordDatabase {
             db_file.as_ref().display()
         );
         let mut conn = Connection::open(db_file)?;
+        debug!("Enabling write-ahead log");
+        conn.prepare_cached(set_wal())?.query_row((), |_| Ok(()))?;
 
         let tx = conn.transaction()?;
-
-        debug!("Enabling foreign_keys");
-        tx.execute(set_foreign_keys(), ())?;
 
         Self::initialize_table(&tx, "Records", init_records())?;
         Self::initialize_table(&tx, "CitationKeys", init_citation_keys())?;

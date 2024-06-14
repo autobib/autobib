@@ -23,7 +23,7 @@ sql!(init_citation_keys, "Create the citation keys table");
 
 sql!(init_null_records, "Create the null records table");
 
-sql!(set_foreign_keys, "Set foreign keys");
+sql!(set_wal, "Set write-ahead log");
 
 sql!(optimize, "Optimize the database");
 
