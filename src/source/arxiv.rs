@@ -1,4 +1,4 @@
-use chrono::{DateTime, Datelike, Local};
+use chrono::NaiveDate;
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use regex::Regex;
@@ -30,81 +30,135 @@ pub fn is_valid_id(id: &str) -> bool {
 }
 
 #[derive(Deserialize, Debug)]
-struct ArxivXML {
-    entry: Vec<ArxivXMLEntry>,
+struct ArxivXMLDe {
+    #[serde(rename = "GetRecord")]
+    response: Option<ArxivResponse>,
+    error: Option<ArxivError>,
+}
+
+#[allow(dead_code)]
+#[derive(Debug)]
+enum ArxivXML {
+    Response(ArxivResponse),
+    Error(ArxivError),
+}
+
+impl TryInto<ArxivXML> for ArxivXMLDe {
+    type Error = SourceError;
+
+    fn try_into(self) -> Result<ArxivXML, Self::Error> {
+        match self {
+            Self {
+                response: Some(resp),
+                error: None,
+            } => Ok(ArxivXML::Response(resp)),
+            Self {
+                response: None,
+                error: Some(err),
+            } => Ok(ArxivXML::Error(err)),
+            _ => Err(Self::Error::Unexpected(
+                "Arxiv XML response had unexpected format!".into(),
+            )),
+        }
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Deserialize, Debug)]
+struct ArxivError {
+    #[serde(rename = "@code")]
+    code: ArxivErrorCode,
+    #[serde(rename = "$value")]
+    message: String,
 }
 
 #[derive(Deserialize, Debug)]
-struct ArxivXMLEntry {
-    title: String,
-    author: Vec<ArxivXMLAuthor>,
+enum ArxivErrorCode {
+    #[serde(rename = "idDoesNotExist")]
+    Missing,
+}
+
+#[derive(Deserialize, Debug)]
+struct ArxivResponse {
+    record: ArxivRecord,
+}
+
+#[allow(dead_code)]
+#[derive(Deserialize, Debug)]
+struct ArxivRecord {
+    header: ArxivHeader,
+    metadata: ArxivMetadata,
+}
+
+#[derive(Deserialize, Debug)]
+struct ArxivMetadata {
+    #[serde(rename = "arXiv")]
+    contents: ArxivEntry,
+}
+
+#[allow(dead_code)]
+#[derive(Deserialize, Debug)]
+struct ArxivHeader {
+    identifier: String,
+    #[serde(rename = "datestamp")]
+    datestamp: NaiveDate,
+    #[serde(rename = "setSpec")]
+    spec: String,
+}
+
+#[allow(dead_code)]
+#[derive(Deserialize, Debug)]
+struct ArxivEntry {
     id: String,
-    // updated: DateTime<Local>,
-    published: DateTime<Local>,
+    created: NaiveDate,
+    authors: ArxivAuthorList,
+    title: String,
+    #[serde(rename = "abstract")]
+    abs: String,
 }
 
 #[derive(Deserialize, Debug)]
-struct ArxivXMLAuthor {
-    name: String,
+struct ArxivAuthorList {
+    author: Vec<ArxivAuthor>,
 }
 
-impl TryFrom<ArxivXMLEntry> for RecordData {
+#[derive(Deserialize, Debug)]
+struct ArxivAuthor {
+    keyname: String,
+    forenames: String,
+}
+
+impl std::fmt::Display for ArxivAuthor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}, {}", self.keyname, self.forenames)
+    }
+}
+
+impl std::fmt::Display for ArxivAuthorList {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.author.iter().join(" and "))
+    }
+}
+
+impl TryFrom<ArxivResponse> for RecordData {
     type Error = RecordDataError;
 
-    // fn from(arxiv_xml: ArxivXMLEntry) -> RecordData {
-    //     let arxiv_id = arxiv_xml
-    //         .id
-    //         .strip_prefix("http://arxiv.org/abs/")
-    //         .and_then(|s| s.rfind('v').map(|idx| s[..idx].into()));
-
-    //     Entry {
-    //         entry_type: "preprint".into(),
-    //         fields: Fields {
-    //             title: Some(arxiv_xml.title),
-    //             author: Some(
-    //                 arxiv_xml
-    //                     .author
-    //                     .into_iter()
-    //                     .map(|auth| auth.name)
-    //                     .join(" and "),
-    //             ),
-    //             year: Some(arxiv_xml.published.year().to_string()),
-    //             arxiv: arxiv_id,
-    //             ..Fields::default()
-    //         },
-    //     }
-    // }
-
-    fn try_from(arxiv_xml: ArxivXMLEntry) -> Result<Self, Self::Error> {
-        // SAFETY: the 'preprint' satisfies the requirements of try_new
+    fn try_from(arxiv_response: ArxivResponse) -> Result<Self, Self::Error> {
         let mut record_data = RecordData::try_new("preprint".into()).unwrap();
 
-        let ArxivXMLEntry {
-            title,
-            author,
-            id,
-            published,
-        } = arxiv_xml;
+        let ArxivResponse {
+            record:
+                ArxivRecord {
+                    metadata:
+                        ArxivMetadata {
+                            contents: ArxivEntry { authors, title, .. },
+                        },
+                    ..
+                },
+        } = arxiv_response;
 
-        // arxiv id
-        let arxiv_id_opt = id
-            .strip_prefix("http://arxiv.org/abs/")
-            .and_then(|s| s.rfind('v').map(|idx| s[..idx].into()));
-
-        // title
+        record_data.try_insert("author".into(), authors.to_string())?;
         record_data.try_insert("title".into(), title)?;
-        if let Some(arxiv_id) = arxiv_id_opt {
-            record_data.try_insert("arxiv".into(), arxiv_id)?;
-        }
-
-        // author
-        record_data.try_insert(
-            "author".into(),
-            author.into_iter().map(|auth| auth.name).join(" and "),
-        )?;
-
-        // year
-        record_data.try_insert("year".into(), published.year().to_string())?;
 
         Ok(record_data)
     }
@@ -112,7 +166,7 @@ impl TryFrom<ArxivXMLEntry> for RecordData {
 
 pub fn get_record(id: &str, client: &HttpClient) -> Result<Option<RecordData>, SourceError> {
     let response = client.get(format!(
-        "https://export.arxiv.org/api/query?max_results=250&id_list={id}"
+        "https://export.arxiv.org/oai2?verb=GetRecord&identifier=oai:arXiv.org:{id}&metadataPrefix=arXiv"
     ))?;
 
     let body = match response.status() {
@@ -123,13 +177,14 @@ pub fn get_record(id: &str, client: &HttpClient) -> Result<Option<RecordData>, S
         code => return Err(SourceError::UnexpectedStatusCode(code)),
     };
 
-    match quick_xml::de::from_str::<ArxivXML>(&body) {
-        Ok(parsed) => {
-            let first_entry = parsed.entry.into_iter().next().unwrap();
-            Ok(Some(first_entry.try_into()?))
-        }
-        // This is somewhat suboptimal, but arxiv seems to constantly change their error format
-        // which makes it hard to properly check if the error is spurious or not.
-        Err(_) => Ok(None),
+    match quick_xml::de::from_str::<ArxivXMLDe>(&body) {
+        Ok(parsed) => match parsed.try_into()? {
+            ArxivXML::Response(response) => Ok(Some(response.try_into()?)),
+            ArxivXML::Error(_) => Ok(None),
+        },
+        Err(_) => Err(SourceError::Unexpected(format!(
+            "Arxiv XML response had unexpected format! Response body:\n{}\n",
+            body
+        ))),
     }
 }
