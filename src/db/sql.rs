@@ -7,7 +7,7 @@ macro_rules! sql {
     ($name:ident, $desc:expr) => {
         #[doc = concat!($desc, ".")]
         ///
-        /// The statement is the following:
+        /// Returns the following statement as a string:
         /// ```sql
         #[doc = include_str!(concat!("sql/", stringify!($name), ".sql"))]
         ///```
