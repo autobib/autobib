@@ -14,6 +14,9 @@ pub fn is_valid_id(id: &str) -> bool {
 }
 
 pub fn get_record(id: &str, client: &HttpClient) -> Result<Option<RecordData>, SourceError> {
+    // It might be tempting to use the zbMATH REST API (https://api.zbmath.org/v1/).
+    // However, sometimes this API endpoint will return incomplete data as a result of
+    // licensing issues. On the other hand, bibtex record always works.
     let response = client.get(format!("https://zbmath.org/bibtex/{id}.bib"))?;
 
     let body = match response.status() {
