@@ -52,7 +52,7 @@
 //! # record_data
 //! #     .try_insert("title".into(), "The Title".into())
 //! #     .unwrap();
-//! # let byte_repr = RawRecordData::from(&record_data).into_bytes_repr();
+//! # let byte_repr = RawRecordData::from(&record_data).into_byte_repr();
 //! let expected = vec![
 //!     0, 7, b'a', b'r', b't', b'i', b'c', b'l', b'e', 5, 9, 0, b't', b'i', b't', b'l', b'e',
 //!     b'T', b'h', b'e', b' ', b'T', b'i', b't', b'l', b'e', 4, 4, 0, b'y', b'e', b'a', b'r',
@@ -61,7 +61,7 @@
 //! # assert_eq!(expected_byte_repr, byte_repr);
 //! ```
 mod data;
-pub mod sql;
+mod sql;
 
 use std::path::Path;
 
@@ -69,7 +69,7 @@ use chrono::{DateTime, Local};
 use log::debug;
 use rusqlite::{Connection, OptionalExtension, Transaction};
 
-use self::data::BytesRepr;
+use self::data::ByteRepr;
 pub use self::data::{version, Data, RawRecordData, RecordData, DATA_MAX_BYTES};
 use self::sql::*;
 use crate::error::DatabaseError;
@@ -297,7 +297,7 @@ impl RecordDatabase {
 
         Ok((
             // SAFETY: we assume that the underlying database is correctly formatted
-            unsafe { RawRecordData::from_raw_unchecked(data_blob) },
+            unsafe { RawRecordData::from_byte_repr_unchecked(data_blob) },
             RemoteId::new_unchecked(record_id_str),
             modified,
         ))
@@ -307,7 +307,7 @@ impl RecordDatabase {
     ///
     /// Every record requires that it is associated with a canonical [`RemoteId`] with a
     /// corresponding entry. There may also be associated references.
-    pub fn set_cached_data<'a, R: Iterator<Item = &'a RemoteId>, D: BytesRepr>(
+    pub fn set_cached_data<'a, R: Iterator<Item = &'a RemoteId>, D: ByteRepr>(
         &mut self,
         canonical_id: &RemoteId,
         record_data: D,
@@ -320,7 +320,7 @@ impl RecordDatabase {
     }
 
     /// Helper function to wrap the insertion into Records and CitationKeys in a transaction.
-    fn set_cached_data_tx<'a, R: Iterator<Item = &'a RemoteId>, D: BytesRepr>(
+    fn set_cached_data_tx<'a, R: Iterator<Item = &'a RemoteId>, D: ByteRepr>(
         tx: &Transaction,
         canonical_id: &RemoteId,
         record_data: D,
@@ -329,7 +329,7 @@ impl RecordDatabase {
         let mut setter = tx.prepare_cached(set_cached_data())?;
         setter.execute((
             canonical_id.name(),
-            record_data.into_bytes_repr(),
+            record_data.into_byte_repr(),
             &Local::now(),
         ))?;
 

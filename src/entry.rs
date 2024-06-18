@@ -4,7 +4,7 @@ use delegate::delegate;
 
 use crate::db::Data;
 
-/// A single regular entry in a BibTex bibliography.
+/// A single regular entry in a BibTeX bibliography.
 #[derive(Debug)]
 pub struct Entry<D: Data> {
     key: String,

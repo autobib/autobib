@@ -1,6 +1,6 @@
-//! # Abstraction over BibTex data.
+//! # Abstraction over BibTeX data.
 //! This module implements the mutable [`RecordData`] and immutable [`RawRecordData`] types, which
-//! represent the data inherent in a BibTex entry.
+//! represent the data inherent in a BibTeX entry.
 //!
 //! The data consists of the entry type (e.g. `article`) as well as the field keys and values (e.g. `title =
 //! {Title}`).
@@ -18,16 +18,16 @@ pub const fn version() -> u8 {
     0
 }
 
-/// The size of the data header (in bytes).
+/// The size (in bytes) of the version header.
 const DATA_HEADER_SIZE: usize = 1;
 
-/// The maximum possible size of a data block (in bytes).
+/// The maximum possible size (in bytes) of a data block.
 const MAX_DATA_BLOCK_SIZE: usize = 1 + 2 + u8::MAX as usize + u16::MAX as usize;
 
-/// The maximum possible size of the type block (in bytes).
+/// The maximum possible size (in bytes) of the type block.
 const MAX_TYPE_BLOCK_SIZE: usize = 1 + u8::MAX as usize;
 
-/// The maximum possible size (in bytes) of the vector returned by [`BytesRepr::into_bytes_repr`].
+/// The maximum possible size (in bytes) of the vector returned by [`ByteRepr::into_byte_repr`].
 pub const DATA_MAX_BYTES: usize = 50_000_000;
 
 /// The maximum number of allowed record fields.
@@ -39,7 +39,7 @@ pub const DATA_MAX_BYTES: usize = 50_000_000;
 const RECORD_MAX_FIELDS: usize =
     (DATA_MAX_BYTES - DATA_HEADER_SIZE - MAX_TYPE_BLOCK_SIZE) / MAX_DATA_BLOCK_SIZE;
 
-/// This trait represents types which encapsulate the data content of a single BibTex entry.
+/// This trait represents types which encapsulate the data content of a single BibTeX entry.
 pub trait Data {
     /// Iterate over `(key, value)` pairs in order.
     fn fields(&self) -> impl Iterator<Item = (&str, &str)>;
@@ -52,12 +52,12 @@ pub trait Data {
 /// representation used inside [`super::RecordDatabase`]. The binary format is described in
 ///
 /// This trait is sealed and cannot be implemented by any types outside of this module.
-pub trait BytesRepr: Data + private::Sealed {
+pub trait ByteRepr: Data + sealed::Sealed {
     /// Convert to a compact binary representation.
-    fn into_bytes_repr(self) -> Vec<u8>;
+    fn into_byte_repr(self) -> Vec<u8>;
 }
 
-/// A raw binary representation of the field key and fields of a BibTex entry.
+/// A raw binary representation of the field key and fields of a BibTeX entry.
 ///
 /// This struct is immutable by design. For a mutable version which supports addition and deletion
 /// of fields, see [`RecordData`].
@@ -73,12 +73,12 @@ impl RawRecordData {
     ///
     /// # Safety
     /// The caller must ensure that underlying data upholds the requirements of the binary representation.
-    pub(super) unsafe fn from_raw_unchecked(data: Vec<u8>) -> Self {
+    pub(super) unsafe fn from_byte_repr_unchecked(data: Vec<u8>) -> Self {
         Self { data }
     }
 
     /// Construct a [`RawRecordData`] from raw bytes, checking that the underlying bytes are valid.
-    pub fn from_raw(_data: Vec<u8>) -> Self {
+    pub fn from_byte_repr(_data: Vec<u8>) -> Self {
         todo!()
     }
 
@@ -104,10 +104,10 @@ impl Data for RawRecordData {
     }
 }
 
-impl private::Sealed for RawRecordData {}
+impl sealed::Sealed for RawRecordData {}
 
-impl BytesRepr for RawRecordData {
-    fn into_bytes_repr(self) -> Vec<u8> {
+impl ByteRepr for RawRecordData {
+    fn into_byte_repr(self) -> Vec<u8> {
         self.data
     }
 }
@@ -134,7 +134,7 @@ impl From<&RecordData> for RawRecordData {
 
         // SAFETY: the invariants are upheld based on the
         // `RecordData::insert` implementation.
-        unsafe { Self::from_raw_unchecked(data) }
+        unsafe { Self::from_byte_repr_unchecked(data) }
     }
 }
 
@@ -293,16 +293,16 @@ impl Data for &RecordData {
     }
 }
 
-impl private::Sealed for &RecordData {}
+impl sealed::Sealed for &RecordData {}
 
-impl BytesRepr for &RecordData {
-    fn into_bytes_repr(self) -> Vec<u8> {
-        RawRecordData::from(self).into_bytes_repr()
+impl ByteRepr for &RecordData {
+    fn into_byte_repr(self) -> Vec<u8> {
+        RawRecordData::from(self).into_byte_repr()
     }
 }
 
-// Prevent implementaion of BytesRepr
-mod private {
+// Prevent implementaion of ByteRepr
+mod sealed {
     pub trait Sealed {}
 }
 
@@ -340,8 +340,8 @@ mod tests {
 
         assert_eq!(record_data, record_data_clone);
         assert_eq!(
-            raw_data.into_bytes_repr(),
-            record_data_clone.into_bytes_repr()
+            raw_data.into_byte_repr(),
+            record_data_clone.into_byte_repr()
         );
     }
 
@@ -377,7 +377,7 @@ mod tests {
             .try_insert("title".into(), "The Title".into())
             .unwrap();
 
-        let byte_repr = RawRecordData::from(&record_data).into_bytes_repr();
+        let byte_repr = RawRecordData::from(&record_data).into_byte_repr();
         let expected = vec![
             0, 7, b'a', b'r', b't', b'i', b'c', b'l', b'e', 5, 9, 0, b't', b'i', b't', b'l', b'e',
             b'T', b'h', b'e', b' ', b'T', b'i', b't', b'l', b'e', 4, 4, 0, b'y', b'e', b'a', b'r',
