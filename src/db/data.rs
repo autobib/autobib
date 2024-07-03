@@ -53,7 +53,7 @@ const RECORD_MAX_FIELDS: usize =
     (DATA_MAX_BYTES - DATA_HEADER_SIZE - MAX_TYPE_BLOCK_SIZE) / MAX_DATA_BLOCK_SIZE;
 
 /// This trait represents types which encapsulate the data content of a single BibTeX entry.
-pub trait Data {
+pub trait EntryData {
     /// Iterate over `(key, value)` pairs in order.
     fn fields(&self) -> impl Iterator<Item = (&str, &str)>;
 
@@ -65,7 +65,7 @@ pub trait Data {
 /// representation used inside [`super::RecordDatabase`]. The binary format is described in
 ///
 /// This trait is sealed and cannot be implemented by any types outside of this module.
-pub trait ByteRepr: Data + sealed::Sealed {
+pub trait ByteRepr: EntryData + sealed::Sealed {
     /// Convert to a compact binary representation.
     fn into_byte_repr(self) -> Vec<u8>;
 }
@@ -103,7 +103,7 @@ impl RawRecordData {
     }
 }
 
-impl Data for RawRecordData {
+impl EntryData for RawRecordData {
     fn fields(&self) -> impl Iterator<Item = (&str, &str)> {
         let (_, data_blocks) = self.split_blocks();
         RawRecordFieldsIter {
@@ -152,7 +152,7 @@ impl From<&RecordData> for RawRecordData {
 }
 
 /// The iterator type for the fields of a [`RawRecordData`]. This cannot be constructed directly;
-/// it is constructed implicitly by the [`Data::fields`] implementation of [`RawRecordData`].
+/// it is constructed implicitly by the [`EntryData::fields`] implementation of [`RawRecordData`].
 #[derive(Debug)]
 struct RawRecordFieldsIter<'a> {
     remaining: &'a [u8],
@@ -183,7 +183,7 @@ impl<'a> Iterator for RawRecordFieldsIter<'a> {
     }
 }
 
-/// An in-memory [`Data`] implementation which supports addition and deletion of fields.
+/// An in-memory [`EntryData`] implementation which supports addition and deletion of fields.
 ///
 /// This type is mutable, in that it supports addition via
 /// [`RecordData::try_insert`] and deletion via [`RecordData::remove`]. Insertion is
@@ -296,7 +296,7 @@ impl RecordData {
     }
 }
 
-impl Data for &RecordData {
+impl EntryData for &RecordData {
     fn fields(&self) -> impl Iterator<Item = (&str, &str)> {
         self.fields.iter().map(|(k, v)| (k.as_str(), v.as_str()))
     }
