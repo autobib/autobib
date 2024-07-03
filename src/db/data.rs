@@ -21,11 +21,24 @@ pub const fn version() -> u8 {
 /// The size (in bytes) of the version header.
 const DATA_HEADER_SIZE: usize = 1;
 
-/// The maximum possible size (in bytes) of a data block.
-const MAX_DATA_BLOCK_SIZE: usize = 1 + 2 + u8::MAX as usize + u16::MAX as usize;
+/// The type of integer used in the header for the BibTeX key.
+pub(crate) type KeyHeader = u8;
 
-/// The maximum possible size (in bytes) of the type block.
-const MAX_TYPE_BLOCK_SIZE: usize = 1 + u8::MAX as usize;
+/// The type of integer used in the header for the BibTeX value.
+pub(crate) type ValueHeader = u16;
+
+/// The type of integer used in the BibTeX entry type header.
+pub(crate) type EntryTypeHeader = u8;
+
+/// The maximum possible size (in bytes) of a data block.
+const MAX_DATA_BLOCK_SIZE: usize = KeyHeader::BITS as usize / 8
+    + ValueHeader::BITS as usize / 8
+    + KeyHeader::MAX as usize
+    + ValueHeader::MAX as usize;
+
+/// The maximum possible size (in bytes) of the BibTeX entry type block.
+const MAX_TYPE_BLOCK_SIZE: usize =
+    EntryTypeHeader::BITS as usize / 8 + EntryTypeHeader::MAX as usize;
 
 /// The maximum possible size (in bytes) of the vector returned by [`ByteRepr::into_byte_repr`].
 pub const DATA_MAX_BYTES: usize = 50_000_000;
@@ -118,13 +131,13 @@ impl From<&RecordData> for RawRecordData {
         let mut data = vec![version()];
 
         let entry_type = record_data.entry_type();
-        let entry_type_len = u8::try_from(entry_type.len()).unwrap();
+        let entry_type_len = EntryTypeHeader::try_from(entry_type.len()).unwrap();
         data.push(entry_type_len);
         data.extend(entry_type.as_bytes());
 
         for (key, value) in record_data.fields() {
-            let key_len = u8::try_from(key.len()).unwrap();
-            let value_len = u16::try_from(value.len()).unwrap().to_le_bytes();
+            let key_len = KeyHeader::try_from(key.len()).unwrap();
+            let value_len = ValueHeader::try_from(value.len()).unwrap().to_le_bytes();
 
             data.push(key_len);
             data.extend(value_len);
@@ -192,7 +205,7 @@ impl RecordData {
     /// 1. `entry_type` must have length at least `1` and at most [`u8::MAX`].
     /// 2. `entry_type` must be composed only of ASCII lowercase letters (from [`char::is_ascii_lowercase`]).
     pub fn try_new(entry_type: String) -> Result<Self, RecordDataError> {
-        if entry_type.is_empty() || entry_type.len() > u8::MAX as usize {
+        if entry_type.is_empty() || entry_type.len() > EntryTypeHeader::MAX as usize {
             return Err(RecordDataError::EntryTypeInvalidLength(entry_type.len()));
         }
 
@@ -212,8 +225,8 @@ impl RecordData {
     /// in the corresponding [`RecordDataError`].
     ///
     /// 1. RecordData can contain at most [`RECORD_MAX_FIELDS`] entries.
-    /// 2. `key` must have length at least `1` and at most [`u8::MAX`].
-    /// 3. `value` must have length at most [`u16::MAX`].
+    /// 2. `key` must have length at least `1` and at most [`KeyHeader::MAX`].
+    /// 3. `value` must have length at most [`ValueHeader::MAX`].
     /// 4. `key` must be composed only of ASCII lowercase letters (from [`char::is_ascii_lowercase`]).
     /// 5. `value` must satisfy the balanced `{}` rule (from [`serde_bibtex::validate::is_balanced`]).
     pub fn try_insert(
@@ -227,12 +240,12 @@ impl RecordData {
         }
 
         // Condition 2
-        if key.is_empty() || key.len() > u8::MAX as usize {
+        if key.is_empty() || key.len() > KeyHeader::MAX as usize {
             return Err(RecordDataError::KeyInvalidLength(key.len()));
         }
 
         // Condition 3
-        if value.len() > u16::MAX as usize {
+        if value.len() > ValueHeader::MAX as usize {
             return Err(RecordDataError::ValueInvalidLength(value.len()));
         }
 
