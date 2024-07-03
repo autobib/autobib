@@ -21,7 +21,7 @@ pub fn get_record(
 ) -> Result<(Entry<RawRecordData>, RemoteId), Error> {
     match db.get_cached_data(&record_id)? {
         RecordsResponse::Found(raw_data, canonical, _) => {
-            info!("Found cached record for `{record_id}`");
+            info!("Found cached record for '{record_id}'");
             Ok((Entry::new(record_id, raw_data), canonical))
         }
         RecordsResponse::NotFound => match record_id.resolve()? {
@@ -47,7 +47,7 @@ fn remote_resolve(
                 break Err(Error::NullRemoteId(context.into_top()));
             }
             NullRecordsResponse::NotFound => {
-                info!("Resolving remote record for `{top}`");
+                info!("Resolving remote record for '{top}'");
                 match lookup_source(top.source()) {
                     Either::Left(resolver) => match resolver(top.sub_id(), client)? {
                         Some(data) => {
