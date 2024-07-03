@@ -1,19 +1,33 @@
 use thiserror::Error;
 
+use crate::db::{EntryTypeHeader, KeyHeader, ValueHeader};
+
 #[derive(Error, Debug, PartialEq)]
 pub enum RecordDataError {
-    #[error("Key is not ASCII lowercase `[a-z]`.")]
+    #[error("Key is not ASCII lowercase `[a-z]`")]
     KeyNotAsciiLowercase,
-    #[error("Key has invalid size {0}; must be at least 1 and at most `u8::MAX`.")]
+
+    #[error(
+        "Key has invalid size {0}; must be at least 1 and at most {}",
+        KeyHeader::MAX
+    )]
     KeyInvalidLength(usize),
-    #[error("Entry type is not ASCII lowercase `[a-z]`.")]
+
+    #[error("Entry type is not ASCII lowercase `[a-z]`")]
     EntryTypeNotAsciiLowercase,
-    #[error("Entry type has invalid size {0}; must be at least 1 and at most `u8::MAX`.")]
+
+    #[error(
+        "Entry type has invalid size {0}; must be at least 1 and at most {}",
+        EntryTypeHeader::MAX
+    )]
     EntryTypeInvalidLength(usize),
-    #[error("Value has invalid size {0}; must be at most `u16::MAX`.")]
+
+    #[error("Value has invalid size {0}; must be at most {}", ValueHeader::MAX)]
     ValueInvalidLength(usize),
-    #[error("Value does not contain balanced `{{ }}` brackets.")]
+
+    #[error("Value does not contain balanced `{{ }}` brackets")]
     ValueNotBalanced,
-    #[error("Record data structure contains maximum number of entries.")]
+
+    #[error("Record data structure contains maximum number of entries")]
     RecordDataFull,
 }
