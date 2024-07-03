@@ -2,14 +2,16 @@
 //! The main error types which result from normal usage.
 mod database;
 mod record;
+mod record_data;
 mod source;
 
 use thiserror::Error;
 
 use crate::record::{Alias, RemoteId};
 
-pub use database::{DatabaseError, RecordDataError};
+pub use database::DatabaseError;
 pub use record::{RecordError, RecordErrorKind};
+pub use record_data::RecordDataError;
 pub use source::SourceError;
 
 #[derive(Error, Debug)]
