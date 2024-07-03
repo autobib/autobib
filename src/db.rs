@@ -133,7 +133,7 @@ impl RecordDatabase {
     /// Any tables other than the expected tables are ignored.
     pub fn open<P: AsRef<Path>>(db_file: P) -> Result<Self, DatabaseError> {
         debug!(
-            "Initializing new connection to `{}`",
+            "Initializing new connection to '{}'",
             db_file.as_ref().display()
         );
         let mut conn = Connection::open(db_file)?;
@@ -195,7 +195,7 @@ impl RecordDatabase {
         table_name: &str,
         schema: &str,
     ) -> Result<(), DatabaseError> {
-        debug!("Initializing new or validating existing table `{table_name}`");
+        debug!("Initializing new or validating existing table '{table_name}'");
         match Self::validate_table_schema(tx, table_name, schema) {
             Ok(()) => Ok(()),
             Err(DatabaseError::TableMissing(_)) => {
@@ -211,7 +211,7 @@ impl RecordDatabase {
         &mut self,
         citation_key: &K,
     ) -> Result<RecordsResponse, DatabaseError> {
-        debug!("Looking up cached data for `{}`", citation_key.name());
+        debug!("Looking up cached data for '{}'", citation_key.name());
         let tx = self.conn.transaction()?;
         let response = Self::get_cached_data_tx(&tx, citation_key)?;
         tx.commit()?;
@@ -246,7 +246,7 @@ impl RecordDatabase {
         citation_key: &K,
         refs: R,
     ) -> Result<RecordsResponse, DatabaseError> {
-        debug!("Getting cached data for `{}`", citation_key.name());
+        debug!("Getting cached data for '{}'", citation_key.name());
         let tx = self.conn.transaction()?;
         let response = Self::get_cached_data_and_ref_tx(&tx, citation_key, refs)?;
         tx.commit()?;
@@ -314,7 +314,7 @@ impl RecordDatabase {
         record_data: D,
         remote_id_iter: R,
     ) -> Result<(), DatabaseError> {
-        debug!("Setting cached data for `{canonical_id}`");
+        debug!("Setting cached data for '{canonical_id}'");
         let tx = self.conn.transaction()?;
         Self::set_cached_data_tx(&tx, canonical_id, record_data, remote_id_iter)?;
         Ok(tx.commit()?)
@@ -336,7 +336,7 @@ impl RecordDatabase {
 
         // get identifier
         let key = tx.last_insert_rowid();
-        debug!("Cached data assigned internal ID `{key}`");
+        debug!("Cached data assigned internal ID '{key}'");
 
         // add citation keys
         for remote_id in remote_id_iter {
@@ -351,7 +351,7 @@ impl RecordDatabase {
         &mut self,
         remote_id: &RemoteId,
     ) -> Result<NullRecordsResponse, DatabaseError> {
-        debug!("Looking up cached null for `{remote_id}`");
+        debug!("Looking up cached null for '{remote_id}'");
         let tx = self.conn.transaction()?;
         let response = Self::get_cached_null_tx(&tx, remote_id)?;
         tx.commit()?;
@@ -503,7 +503,7 @@ impl RecordDatabase {
         mode: CitationKeyInsertMode,
     ) -> Result<(), DatabaseError> {
         debug!(
-            "Creating CitationKey row `{}` for internal ID `{key}`",
+            "Creating CitationKey row '{}' for internal ID '{key}'",
             name.name()
         );
 
