@@ -71,6 +71,7 @@ use rusqlite::{Connection, OptionalExtension, Transaction};
 
 use self::data::ByteRepr;
 pub use self::data::{version, Data, RawRecordData, RecordData, DATA_MAX_BYTES};
+pub(crate) use self::data::{EntryTypeHeader, KeyHeader, ValueHeader};
 use self::sql::*;
 use crate::error::DatabaseError;
 use crate::record::{Alias, RemoteId};
