@@ -108,7 +108,7 @@ fn run_cli(cli: Cli) -> Result<()> {
     // Open or create the database
     let mut record_db = if let Some(db_path) = cli.database {
         // at a user-provided path
-        info!("Using user-provided database file `{}`", db_path.display());
+        info!("Using user-provided database file '{}'", db_path.display());
 
         RecordDatabase::open(db_path)?
     } else {
@@ -116,7 +116,7 @@ fn run_cli(cli: Cli) -> Result<()> {
         create_dir_all(proj_dirs.data_dir())?;
         let default_db_path = proj_dirs.data_dir().join("records.db");
         info!(
-            "Using default database file `{}`",
+            "Using default database file '{}'",
             default_db_path.display()
         );
 
@@ -130,18 +130,18 @@ fn run_cli(cli: Cli) -> Result<()> {
     match cli.command {
         Command::Alias { alias_command } => match alias_command {
             AliasCommand::Add { alias, target } => {
-                info!("Creating alias `{alias}` for `{target}`");
+                info!("Creating alias '{alias}' for '{target}'");
                 // first retrieve 'target', in case it does not yet exist in the database
                 get_record(&mut record_db, target.clone(), &client)?;
                 // then link to it
                 record_db.insert_alias(&alias, &target)?;
             }
             AliasCommand::Delete { alias } => {
-                info!("Deleting alias `{alias}`");
+                info!("Deleting alias '{alias}'");
                 record_db.delete_alias(&alias)?
             }
             AliasCommand::Rename { alias, new } => {
-                info!("Rename alias `{alias}` to `{new}`");
+                info!("Rename alias '{alias}' to '{new}'");
                 record_db.rename_alias(&alias, &new)?;
             }
         },
@@ -167,17 +167,17 @@ fn run_cli(cli: Cli) -> Result<()> {
                 match File::open(path.clone()).and_then(|mut f| f.read_to_end(&mut buffer)) {
                     Ok(_) => match SourceFileType::detect(&path) {
                         Ok(mode) => {
-                            info!("Reading citation keys from `{}`", path.display());
+                            info!("Reading citation keys from '{}'", path.display());
                             get_citekeys(file_type.unwrap_or(mode), &buffer, &mut container);
                             buffer.clear();
                         }
                         Err(err) => error!(
-                            "File `{}`: {err}. Force filetype with `--file-type`.",
+                            "File '{}': {err}. Force filetype with `--file-type`.",
                             path.display()
                         ),
                     },
                     Err(err) => error!(
-                        "Failed to read contents of path `{}`: {err}",
+                        "Failed to read contents of path '{}': {err}",
                         path.display()
                     ),
                 };
@@ -205,7 +205,7 @@ fn print_records<D: EntryData>(records: BTreeMap<RemoteId, Vec<Entry<D>>>) {
     for (canonical, entry_vec) in records.iter() {
         if entry_vec.len() > 1 {
             warn!(
-                "Multiple keys for `{canonical}`: {}",
+                "Multiple keys for '{canonical}': {}",
                 entry_vec.iter().map(|e| e.key()).join(", ")
             );
         }
