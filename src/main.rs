@@ -1,4 +1,4 @@
-pub mod citekey;
+pub mod cite_search;
 pub mod db;
 mod entry;
 pub mod error;
@@ -18,8 +18,8 @@ use directories::ProjectDirs;
 use itertools::Itertools;
 use log::{error, info, warn};
 
-use self::citekey::{get_citekeys, SourceFileType};
-use self::db::{CitationKey, Data, RawRecordData, RecordDatabase};
+use self::cite_search::{get_citekeys, SourceFileType};
+use self::db::{CitationKey, EntryData, RawRecordData, RecordDatabase};
 pub use self::entry::Entry;
 pub use self::http::HttpClient;
 pub use self::record::{get_record, Alias, RecordId, RemoteId};
@@ -201,7 +201,7 @@ fn run_cli(cli: Cli) -> Result<()> {
 ///
 /// TODO: replace this with a `write_records` method and an abstract writer.
 /// TODO: replace the `records` struct with a custom wrapper struct.
-fn print_records<D: Data>(records: BTreeMap<RemoteId, Vec<Entry<D>>>) {
+fn print_records<D: EntryData>(records: BTreeMap<RemoteId, Vec<Entry<D>>>) {
     for (canonical, entry_vec) in records.iter() {
         if entry_vec.len() > 1 {
             warn!(

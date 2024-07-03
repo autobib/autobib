@@ -3,7 +3,7 @@
 //! database in which all bibliographic data is stored.
 //!
 //! The core struct is the [`RecordDatabase`], as well as the data objects [`RecordData`],
-//! [`RawRecordData`], and the corresponding trait [`Data`].
+//! [`RawRecordData`], and the corresponding trait [`EntryData`].
 //!
 //! ## Description of the internal binary format
 //! We use a custom internal binary format to represent the data associated with each bibTex entry.
@@ -18,16 +18,16 @@
 //! ```
 //! The `HEADER` consists of
 //! ```txt
-//! version:u8,
+//! version: u8,
 //! ```
 //! and the `TYPE` consists of
 //! ```txt
-//! [entry_type_len:u8, entry_type: [u8..]]
+//! [entry_type_len: u8, entry_type: [u8..]]
 //! ```
 //! Here, `entry_type_len` is the length of `entry_type`, which has length at most [`u8::MAX`].
 //! Then, each block `DATA` is of the form
 //! ```txt
-//! [key_len:u8, value_len:u16, key: [u8..], value: [u8..]]
+//! [key_len: u8, value_len: u16, key: [u8..], value: [u8..]]
 //! ```
 //! where `key_len` is the length of the first `key` segment, and the `value_len` is
 //! the length of the `value` segment. Necessarily, `key` and `value` have lengths at
@@ -70,7 +70,7 @@ use log::debug;
 use rusqlite::{Connection, OptionalExtension, Transaction};
 
 use self::data::ByteRepr;
-pub use self::data::{version, Data, RawRecordData, RecordData, DATA_MAX_BYTES};
+pub use self::data::{version, EntryData, RawRecordData, RecordData, DATA_MAX_BYTES};
 pub(crate) use self::data::{EntryTypeHeader, KeyHeader, ValueHeader};
 use self::sql::*;
 use crate::error::DatabaseError;
