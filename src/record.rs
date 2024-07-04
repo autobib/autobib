@@ -8,7 +8,7 @@ pub use key::{Alias, RecordId, RemoteId};
 use crate::db::{NullRecordsResponse, RawRecordData, RecordDatabase, RecordsResponse};
 use crate::entry::Entry;
 use crate::error::Error;
-use crate::source::lookup_source;
+use crate::provider::lookup_provider;
 use crate::HttpClient;
 
 use private::Context;
@@ -48,7 +48,7 @@ fn remote_resolve(
             }
             NullRecordsResponse::NotFound => {
                 info!("Resolving remote record for '{top}'");
-                match lookup_source(top.source()) {
+                match lookup_provider(top.provider()) {
                     Either::Left(resolver) => match resolver(top.sub_id(), client)? {
                         Some(data) => {
                             db.set_cached_data(top, &data, context.descend())?;

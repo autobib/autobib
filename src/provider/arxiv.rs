@@ -5,7 +5,7 @@ use regex::Regex;
 use reqwest::StatusCode;
 use serde::Deserialize;
 
-use super::{HttpClient, RecordData, RecordDataError, SourceError};
+use super::{HttpClient, RecordData, RecordDataError, ProviderError};
 
 lazy_static! {
     static ref ARXIV_IDENTIFIER_RE: Regex = Regex::new(concat!(
@@ -44,7 +44,7 @@ enum ArxivXML {
 }
 
 impl TryInto<ArxivXML> for ArxivXMLDe {
-    type Error = SourceError;
+    type Error = ProviderError;
 
     fn try_into(self) -> Result<ArxivXML, Self::Error> {
         match self {
@@ -164,7 +164,7 @@ impl TryFrom<ArxivResponse> for RecordData {
     }
 }
 
-pub fn get_record(id: &str, client: &HttpClient) -> Result<Option<RecordData>, SourceError> {
+pub fn get_record(id: &str, client: &HttpClient) -> Result<Option<RecordData>, ProviderError> {
     let response = client.get(format!(
         "https://export.arxiv.org/oai2?verb=GetRecord&identifier=oai:arXiv.org:{id}&metadataPrefix=arXiv"
     ))?;
@@ -174,7 +174,7 @@ pub fn get_record(id: &str, client: &HttpClient) -> Result<Option<RecordData>, S
         StatusCode::NOT_FOUND => {
             return Ok(None);
         }
-        code => return Err(SourceError::UnexpectedStatusCode(code)),
+        code => return Err(ProviderError::UnexpectedStatusCode(code)),
     };
 
     match quick_xml::de::from_str::<ArxivXMLDe>(&body) {
@@ -182,7 +182,7 @@ pub fn get_record(id: &str, client: &HttpClient) -> Result<Option<RecordData>, S
             ArxivXML::Response(response) => Ok(Some(response.try_into()?)),
             ArxivXML::Error(_) => Ok(None),
         },
-        Err(_) => Err(SourceError::Unexpected(format!(
+        Err(_) => Err(ProviderError::Unexpected(format!(
             "Arxiv XML response had unexpected format! Response body:\n{}\n",
             body
         ))),

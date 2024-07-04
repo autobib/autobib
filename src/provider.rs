@@ -1,8 +1,8 @@
-//! # Abstractions over remote resources
+//! # Abstractions over providers
 //! This module implements remote resource resolution.
 //!
 //! The fundamental types are [`Resolver`], [`Referrer`], and [`Validator`], which abstract over
-//! resource acquisition and resolution from a remote resource.
+//! resource acquisition and resolution from a provider.
 pub mod arxiv;
 pub mod doi;
 pub mod jfm;
@@ -12,37 +12,37 @@ pub mod zbmath;
 use either::Either;
 use serde::Deserialize;
 
-// re-imports exposed to source implementations
+// re-imports exposed to provider implementations
 use crate::db::RecordData;
-use crate::error::{RecordDataError, SourceError};
+use crate::error::{ProviderError, RecordDataError};
 use crate::record::RemoteId;
 use crate::HttpClient;
 
 /// A resolver, which converts a `sub_id` into [`RecordData`].
-pub type Resolver = fn(&str, &HttpClient) -> Result<Option<RecordData>, SourceError>;
+pub type Resolver = fn(&str, &HttpClient) -> Result<Option<RecordData>, ProviderError>;
 
 /// A referrer, which converts a `sub_id` into [`RemoteId`].
-pub type Referrer = fn(&str, &HttpClient) -> Result<Option<RemoteId>, SourceError>;
+pub type Referrer = fn(&str, &HttpClient) -> Result<Option<RemoteId>, ProviderError>;
 
 /// A validator, which checks that a `sub_id` is valid.
 pub type Validator = fn(&str) -> bool;
 
-/// Map the `source` part of a [`RemoteId`] to a [`Resolver`] or [`Referrer`].
-pub(crate) fn lookup_source(source: &str) -> Either<Resolver, Referrer> {
-    match source {
+/// Map the `provider` part of a [`RemoteId`] to a [`Resolver`] or [`Referrer`].
+pub(crate) fn lookup_provider(provider: &str) -> Either<Resolver, Referrer> {
+    match provider {
         "arxiv" => Either::Left(arxiv::get_record),
         "doi" => Either::Left(doi::get_record),
         "jfm" => Either::Right(jfm::get_canonical),
         "zbmath" => Either::Left(zbmath::get_record),
         "zbl" => Either::Right(zbl::get_canonical),
-        // SAFETY: An invalid source should have been caught by a call to lookup_validator
-        _ => panic!("Invalid source '{source}'!"),
+        // SAFETY: An invalid provider should have been caught by a call to lookup_validator
+        _ => panic!("Invalid provider '{provider}'!"),
     }
 }
 
 /// Validate a [`RemoteId`].
-pub(crate) fn lookup_validator(source: &str) -> Option<Validator> {
-    match source {
+pub(crate) fn lookup_validator(provider: &str) -> Option<Validator> {
+    match provider {
         "arxiv" => Some(arxiv::is_valid_id),
         "doi" => Some(doi::is_valid_id),
         "jfm" => Some(jfm::is_valid_id),
@@ -52,16 +52,16 @@ pub(crate) fn lookup_validator(source: &str) -> Option<Validator> {
     }
 }
 
-/// A receiving struct type useful for deserializing bibtex from an external source.
+/// A receiving struct type useful for deserializing bibtex from a provider.
 ///
 /// This struct can be fallibly converted into a [`RecordData`].
 #[derive(Debug, Deserialize)]
-struct SourceBibtex {
+struct ProviderBibtex {
     entry_type: String,
-    fields: SourceBibtexFields,
+    fields: ProviderBibtexFields,
 }
 
-/// The fields of a [`SourceBibtex`] struct.
+/// The fields of a [`ProviderBibtex`] struct.
 ///
 /// The aliases are required to handle <https://zbmath.org> bibtex field name formatting.
 /// This can be written in a more robust way if
@@ -74,7 +74,7 @@ struct SourceBibtex {
 /// into a struct. Since `serde_bibtex` uses skipped fields to ignore undefined macros,
 /// this can/will cause problems when deserializing.
 #[derive(Debug, Default, Deserialize)]
-struct SourceBibtexFields {
+struct ProviderBibtexFields {
     #[serde(alias = "Title")]
     pub title: Option<String>,
     #[serde(alias = "Author")]
@@ -105,11 +105,11 @@ macro_rules! convert_field {
     };
 }
 
-impl TryFrom<SourceBibtex> for RecordData {
+impl TryFrom<ProviderBibtex> for RecordData {
     type Error = RecordDataError;
 
-    fn try_from(value: SourceBibtex) -> Result<Self, Self::Error> {
-        let SourceBibtex { entry_type, fields } = value;
+    fn try_from(value: ProviderBibtex) -> Result<Self, Self::Error> {
+        let ProviderBibtex { entry_type, fields } = value;
         let mut record_data = RecordData::try_new(entry_type.to_lowercase())?;
 
         convert_field!(

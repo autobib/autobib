@@ -5,24 +5,24 @@ use either::Either;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{RecordError, RecordErrorKind};
-use crate::source::lookup_validator;
+use crate::provider::lookup_validator;
 use crate::CitationKey;
 
-/// An unvalidated wrapper for user input representing either a `source:sub_id` or an `alias`.
+/// An unvalidated wrapper for user input representing either a `provider:sub_id` or an `alias`.
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
 pub struct RecordId {
     full_id: String,
-    source_len: Option<usize>,
+    provider_len: Option<usize>,
 }
 
 impl RecordId {
     /// Convert a [`RecordId`] into either an [`Alias`] or a [`RemoteId`].
     ///
     /// The [`Alias`] conversion is infallible (validation only requires checking that the
-    /// colon is not present) whereas the [`RemoteId`] conversion can fail if `source` is
-    /// invalid or if `sub_id` is invalid given the source.
+    /// colon is not present) whereas the [`RemoteId`] conversion can fail if `provider` is
+    /// invalid or if `sub_id` is invalid given the provider.
     pub fn resolve(self) -> Result<Either<Alias, RemoteId>, RecordError> {
-        match self.source_len {
+        match self.provider_len {
             Some(_) => self.try_into().map(Either::Right),
             None => self.try_into().map(Either::Left),
         }
@@ -52,10 +52,10 @@ impl From<RecordId> for String {
 impl From<&str> for RecordId {
     fn from(s: &str) -> Self {
         let full_id: String = s.trim().into();
-        let source_len = full_id.find(':');
+        let provider_len = full_id.find(':');
         Self {
             full_id,
-            source_len,
+            provider_len,
         }
     }
 }
@@ -96,7 +96,7 @@ impl TryFrom<RecordId> for Alias {
     fn try_from(record_id: RecordId) -> Result<Self, Self::Error> {
         if let RecordId {
             full_id: s,
-            source_len: None,
+            provider_len: None,
         } = record_id
         {
             if !s.is_empty() {
@@ -116,40 +116,40 @@ impl TryFrom<RecordId> for Alias {
     }
 }
 
-/// A validated `source:sub_id`.
+/// A validated `provider:sub_id`.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct RemoteId {
     full_id: String,
-    source_len: usize,
+    provider_len: usize,
 }
 
 impl RemoteId {
-    /// Get the `source` part of the remote id.
-    pub fn source(&self) -> &str {
-        &self.full_id[..self.source_len]
+    /// Get the `provider` part of the remote id.
+    pub fn provider(&self) -> &str {
+        &self.full_id[..self.provider_len]
     }
 
     /// Get the `sub_id` part of the remote id, after the separator.
     pub fn sub_id(&self) -> &str {
-        &self.full_id[self.source_len + 1..]
+        &self.full_id[self.provider_len + 1..]
     }
 
-    /// Construct a [`RemoteId`] from the source and sub_id components.
-    pub fn from_parts(source: &str, sub_id: &str) -> Self {
-        let mut full_id = source.to_string();
+    /// Construct a [`RemoteId`] from the provider and sub_id components.
+    pub fn from_parts(provider: &str, sub_id: &str) -> Self {
+        let mut full_id = provider.to_string();
         full_id.push(':');
         full_id.push_str(sub_id);
         Self {
             full_id,
-            source_len: source.len(),
+            provider_len: provider.len(),
         }
     }
 
     pub(crate) fn new_unchecked(full_id: String) -> Self {
-        let source_len = full_id.find(':').unwrap();
+        let provider_len = full_id.find(':').unwrap();
         Self {
             full_id,
-            source_len,
+            provider_len,
         }
     }
 }
@@ -176,17 +176,17 @@ impl TryFrom<RecordId> for RemoteId {
     type Error = RecordError;
 
     fn try_from(record_id: RecordId) -> Result<Self, Self::Error> {
-        match record_id.source_len {
-            Some(source_len) => {
+        match record_id.provider_len {
+            Some(provider_len) => {
                 let remote_id = Self {
                     full_id: record_id.full_id,
-                    source_len,
+                    provider_len,
                 };
 
                 if remote_id.sub_id().is_empty() {
                     Err(RecordError {
                         input: remote_id.name().into(),
-                        kind: RecordErrorKind::EmptySource,
+                        kind: RecordErrorKind::EmptyProvider,
                     })
                 } else if remote_id.sub_id().is_empty() {
                     Err(RecordError {
@@ -194,8 +194,8 @@ impl TryFrom<RecordId> for RemoteId {
                         kind: RecordErrorKind::EmptySubId,
                     })
                 } else {
-                    // perform cheap validation based on the source
-                    match lookup_validator(remote_id.source()) {
+                    // perform cheap validation based on the provider
+                    match lookup_validator(remote_id.provider()) {
                         Some(validator) if validator(remote_id.sub_id()) => Ok(remote_id),
                         Some(_) => Err(RecordError {
                             input: remote_id.full_id,
@@ -203,7 +203,7 @@ impl TryFrom<RecordId> for RemoteId {
                         }),
                         None => Err(RecordError {
                             input: remote_id.full_id,
-                            kind: RecordErrorKind::InvalidSource,
+                            kind: RecordErrorKind::InvalidProvider,
                         }),
                     }
                 }

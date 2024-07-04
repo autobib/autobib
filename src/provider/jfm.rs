@@ -3,7 +3,7 @@ use regex::{bytes::Regex as BytesRegex, Regex};
 use reqwest::StatusCode;
 use serde::Deserialize;
 
-use super::{HttpClient, RemoteId, SourceError};
+use super::{HttpClient, RemoteId, ProviderError};
 
 lazy_static! {
     static ref JFM_IDENTIFIER_RE: Regex = Regex::new(r"^[0-9]{2}\.[0-9]{4}\.[0-9]{2}$").unwrap();
@@ -19,7 +19,7 @@ struct OnlyEntryKey<'r> {
     entry_key: &'r str,
 }
 
-pub fn get_canonical(id: &str, client: &HttpClient) -> Result<Option<RemoteId>, SourceError> {
+pub fn get_canonical(id: &str, client: &HttpClient) -> Result<Option<RemoteId>, ProviderError> {
     let url = format!("https://zbmath.org/{id}");
     let response = client.get(&url)?;
 
@@ -28,7 +28,7 @@ pub fn get_canonical(id: &str, client: &HttpClient) -> Result<Option<RemoteId>, 
         StatusCode::NOT_FOUND => {
             return Ok(None);
         }
-        code => return Err(SourceError::UnexpectedStatusCode(code)),
+        code => return Err(ProviderError::UnexpectedStatusCode(code)),
     };
 
     let mut identifiers = Vec::new();
@@ -41,7 +41,7 @@ pub fn get_canonical(id: &str, client: &HttpClient) -> Result<Option<RemoteId>, 
     match &identifiers[..] {
         [] => Ok(None),
         [identifier] => Ok(Some(RemoteId::from_parts("zbmath", identifier))),
-        _ => Err(SourceError::Unexpected(format!(
+        _ => Err(ProviderError::Unexpected(format!(
             "Request to '{url}' returned multiple identifiers: {}",
             identifiers.join(", ")
         ))),
