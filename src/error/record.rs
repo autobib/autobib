@@ -10,9 +10,9 @@ pub struct RecordError {
 
 #[derive(Debug)]
 pub enum RecordErrorKind {
-    EmptySource,
+    EmptyProvider,
     EmptySubId,
-    InvalidSource,
+    InvalidProvider,
     InvalidSubId,
     RecordIdIsNotAlias,
     EmptyAlias,
@@ -22,12 +22,12 @@ impl fmt::Display for RecordError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Invalid citation key '{}': ", self.input)?;
         match self.kind {
-            RecordErrorKind::EmptySource => f.write_str("source must be non-empty"),
+            RecordErrorKind::EmptyProvider => f.write_str("provider must be non-empty"),
             RecordErrorKind::EmptySubId => f.write_str("sub-id must be non-empty"),
             RecordErrorKind::EmptyAlias => f.write_str("alias must be non-empty"),
-            RecordErrorKind::InvalidSource => f.write_str("source is invalid"),
+            RecordErrorKind::InvalidProvider => f.write_str("provider is invalid"),
             RecordErrorKind::InvalidSubId => {
-                f.write_str("sub-id is invalid for the provided source")
+                f.write_str("sub-id is invalid for the given provider")
             }
             RecordErrorKind::RecordIdIsNotAlias => f.write_str("alias must not contain a colon"),
         }
