@@ -1,18 +1,18 @@
 //! # Error implementation
 //! The main error types which result from normal usage.
 mod database;
+mod provider;
 mod record;
 mod record_data;
-mod source;
 
 use thiserror::Error;
 
 use crate::record::{Alias, RemoteId};
 
 pub use database::DatabaseError;
+pub use provider::ProviderError;
 pub use record::{RecordError, RecordErrorKind};
 pub use record_data::RecordDataError;
-pub use source::SourceError;
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -28,6 +28,6 @@ pub enum Error {
     MissingFileType,
     #[error("Database error: {0}")]
     DatabaseError(#[from] DatabaseError),
-    #[error("Source error: {0}")]
-    SourceError(#[from] SourceError),
+    #[error("Provider error: {0}")]
+    ProviderError(#[from] ProviderError),
 }

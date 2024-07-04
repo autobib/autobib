@@ -93,7 +93,7 @@ pub trait CitationKey {
 ///
 /// 1. `Records`. This is the primary table used to store records. The integer primary key
 ///    `key` is used as the internal unambiguous reference for each record and is used for
-///    resource de-duplication. The table schema is documented in [`init_records`].
+///    de-duplication. The table schema is documented in [`init_records`].
 /// 2. `CitationKeys`. This is the table used to store any citation key which is inserted into
 ///    a table. Since multiple citation keys may refer to the same underlying record, this is
 ///    simply a lookup table for the corresponding record, and the corresponding rows are
@@ -104,10 +104,10 @@ pub trait CitationKey {
 ///
 /// For a [`RemoteId`], there are two variants:
 ///
-/// - Canonical: if the corresponding source implementation is a
-///   [`Resolver`](`crate::source::Resolver`).
-/// - Reference: if the corresponding source implementation is a
-///   [`Referrer`](`crate::source::Referrer`).
+/// - Canonical: if the corresponding provider implementation is a
+///   [`Resolver`](`crate::provider::Resolver`).
+/// - Reference: if the corresponding provider implementation is a
+///   [`Referrer`](`crate::provider::Referrer`).
 ///
 /// This distinction is not currently enforced by types, but it may be in the future.
 ///

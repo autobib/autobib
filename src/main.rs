@@ -3,8 +3,8 @@ pub mod db;
 mod entry;
 pub mod error;
 mod http;
+pub mod provider;
 mod record;
-pub mod source;
 
 use std::collections::{BTreeMap, HashSet};
 use std::fs::{create_dir_all, File};

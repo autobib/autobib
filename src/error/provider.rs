@@ -4,7 +4,7 @@ use thiserror::Error;
 use super::RecordDataError;
 
 #[derive(Error, Debug)]
-pub enum SourceError {
+pub enum ProviderError {
     #[error("Network failure: {0}")]
     NetworkFailure(#[from] reqwest::Error),
     #[error("Unexpected status code: {0}")]
