@@ -91,6 +91,8 @@ struct ProviderBibtexFields {
     pub doi: Option<String>,
     #[serde(alias = "Language")]
     pub language: Option<String>,
+    #[serde(alias = "Zbl")]
+    pub zbl: Option<String>,
 }
 
 macro_rules! convert_field {
@@ -122,7 +124,8 @@ impl TryFrom<ProviderBibtex> for RecordData {
             pages,
             year,
             doi,
-            language
+            language,
+            zbl
         );
 
         Ok(record_data)
