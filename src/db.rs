@@ -145,6 +145,7 @@ impl RecordDatabase {
         Self::initialize_table(&tx, "Records", init_records())?;
         Self::initialize_table(&tx, "CitationKeys", init_citation_keys())?;
         Self::initialize_table(&tx, "NullRecords", init_null_records())?;
+        Self::initialize_table(&tx, "Changelog", init_changelog())?;
 
         tx.commit()?;
 
