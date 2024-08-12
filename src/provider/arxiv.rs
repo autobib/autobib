@@ -5,7 +5,7 @@ use regex::Regex;
 use reqwest::StatusCode;
 use serde::Deserialize;
 
-use super::{HttpClient, RecordData, RecordDataError, ProviderError};
+use super::{HttpClient, ProviderError, RecordData, RecordDataError};
 
 lazy_static! {
     static ref ARXIV_IDENTIFIER_RE: Regex = Regex::new(concat!(
