@@ -3,7 +3,7 @@ use regex::{bytes::Regex as BytesRegex, Regex};
 use reqwest::StatusCode;
 use serde::Deserialize;
 
-use super::{HttpClient, RemoteId, ProviderError};
+use super::{HttpClient, ProviderError, RemoteId};
 
 lazy_static! {
     static ref JFM_IDENTIFIER_RE: Regex = Regex::new(r"^[0-9]{2}\.[0-9]{4}\.[0-9]{2}$").unwrap();
