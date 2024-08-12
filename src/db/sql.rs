@@ -17,6 +17,8 @@ macro_rules! sql {
     };
 }
 
+sql!(init_changelog, "Create the changelog table");
+
 sql!(init_records, "Create the records table");
 
 sql!(init_citation_keys, "Create the citation keys table");
@@ -38,6 +40,8 @@ sql!(update_cached_data, "Update cached record data");
 sql!(get_cached_null, "Get cached null data");
 
 sql!(set_cached_null, "Set cached null data");
+
+sql!(copy_to_changelog, "Copy record data to changelog");
 
 sql!(rename_citation_key, "Rename a citation key");
 
