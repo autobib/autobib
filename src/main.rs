@@ -13,17 +13,21 @@ use std::collections::{
 use std::fs::{create_dir_all, File};
 use std::io::Read;
 use std::path::PathBuf;
+use std::str::FromStr;
 
 use anyhow::{anyhow, Result};
 use clap::{Parser, Subcommand};
 use clap_verbosity_flag::{Verbosity, WarnLevel};
+use dialoguer::{Confirm, Editor, FuzzySelect};
 use directories::ProjectDirs;
 use itertools::Itertools;
 use log::{error, info, warn};
 use nonempty::NonEmpty;
+use serde::Deserialize;
+use serde_bibtex::de::Deserializer;
 
 use self::cite_search::{get_citekeys, SourceFileType};
-use self::db::{CitationKey, EntryData, RawRecordData, RecordDatabase};
+use self::db::{CitationKey, EntryData, RawRecordData, RecordData, RecordDatabase};
 pub use self::entry::Entry;
 pub use self::http::HttpClient;
 pub use self::record::{get_record, Alias, RecordId, RemoteId};
@@ -48,6 +52,12 @@ enum Command {
     Alias {
         #[command(subcommand)]
         alias_command: AliasCommand,
+    },
+    /// Edit existing records.
+    #[command(alias = "e")]
+    Edit {
+        /// The citation key to edit.
+        citation_key: String,
     },
     /// Retrieve records given citation keys.
     #[command(alias = "g")]
@@ -96,6 +106,13 @@ fn main() {
     if let Err(err) = run_cli(cli) {
         error!("{err}")
     }
+}
+
+#[derive(Debug, PartialEq, Deserialize)]
+struct Contents {
+    entry_type: String,
+    entry_key: String,
+    fields: BTreeMap<String, String>,
 }
 
 /// Run the CLI.
@@ -149,6 +166,63 @@ fn run_cli(cli: Cli) -> Result<()> {
                 record_db.rename_alias(&alias, &new)?;
             }
         },
+        Command::Edit { citation_key } => {
+            let (entry, canonical) = get_record(
+                &mut record_db,
+                RecordId::from(citation_key.as_str()),
+                &client,
+            )?;
+
+            let mut editor = Editor::new();
+            editor.extension(".bib");
+
+            let mut response = entry.to_string();
+
+            while let Some(user_text) = editor.edit(&response)? {
+                if let Some(Ok(Contents {
+                    entry_type,
+                    entry_key,
+                    mut fields,
+                })) = Deserializer::from_str(&user_text)
+                    .into_iter_regular_entry()
+                    .next()
+                {
+                    let mut record_data = RecordData::try_new(entry_type)?;
+                    while let Some((key, val)) = fields.pop_first() {
+                        record_data.try_insert(key, val)?;
+                    }
+
+                    let raw_record_data: RawRecordData = (&record_data).into();
+
+                    let mut modified = false;
+
+                    if entry.data() != &raw_record_data {
+                        modified = true;
+                        record_db.update_cached_data(&canonical, raw_record_data)?;
+                    }
+
+                    if entry.key() != entry_key {
+                        modified = true;
+                        let alias = Alias::from_str(&entry_key)?;
+                        record_db.insert_alias(&alias, &canonical)?
+                    }
+
+                    if modified {
+                        break;
+                    } else {
+                        warn!("The data in the edited BibTeX was unchanged.");
+                    }
+                } else {
+                    warn!("Edited BibTeX could not be parsed.");
+                }
+
+                if !Confirm::new().with_prompt("Continue editing?").interact()? {
+                    break;
+                } else {
+                    response = user_text;
+                }
+            }
+        }
         Command::Get { citation_keys } => {
             // Collect all entries which are not null
             let valid_entries = validate_and_retrieve(
@@ -206,14 +280,14 @@ fn run_cli(cli: Cli) -> Result<()> {
 /// TODO: replace this with a `write_records` method and an abstract writer.
 /// TODO: replace the `records` struct with a custom wrapper struct.
 fn print_records<D: EntryData>(records: BTreeMap<RemoteId, NonEmpty<Entry<D>>>) {
-    for (canonical, entry_vec) in records.iter() {
-        if entry_vec.len() > 1 {
+    for (canonical, entries) in records.iter() {
+        if entries.len() > 1 {
             warn!(
                 "Multiple keys for '{canonical}': {}",
-                entry_vec.iter().map(|e| e.key()).join(", ")
+                entries.iter().map(|e| e.key()).join(", ")
             );
         }
-        for record in entry_vec {
+        for record in entries {
             println!("{record}");
         }
     }
