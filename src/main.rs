@@ -6,7 +6,10 @@ mod http;
 pub mod provider;
 mod record;
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{
+    btree_map::Entry::{Occupied, Vacant},
+    BTreeMap, HashSet,
+};
 use std::fs::{create_dir_all, File};
 use std::io::Read;
 use std::path::PathBuf;
@@ -17,6 +20,7 @@ use clap_verbosity_flag::{Verbosity, WarnLevel};
 use directories::ProjectDirs;
 use itertools::Itertools;
 use log::{error, info, warn};
+use nonempty::NonEmpty;
 
 use self::cite_search::{get_citekeys, SourceFileType};
 use self::db::{CitationKey, EntryData, RawRecordData, RecordDatabase};
@@ -201,7 +205,7 @@ fn run_cli(cli: Cli) -> Result<()> {
 ///
 /// TODO: replace this with a `write_records` method and an abstract writer.
 /// TODO: replace the `records` struct with a custom wrapper struct.
-fn print_records<D: EntryData>(records: BTreeMap<RemoteId, Vec<Entry<D>>>) {
+fn print_records<D: EntryData>(records: BTreeMap<RemoteId, NonEmpty<Entry<D>>>) {
     for (canonical, entry_vec) in records.iter() {
         if entry_vec.len() > 1 {
             warn!(
@@ -220,8 +224,8 @@ fn validate_and_retrieve<'a, T: Iterator<Item = &'a str>>(
     citation_keys: T,
     record_db: &mut RecordDatabase,
     client: &HttpClient,
-) -> BTreeMap<RemoteId, Vec<Entry<RawRecordData>>> {
-    let mut records: BTreeMap<RemoteId, Vec<Entry<RawRecordData>>> = BTreeMap::new();
+) -> BTreeMap<RemoteId, NonEmpty<Entry<RawRecordData>>> {
+    let mut records: BTreeMap<RemoteId, NonEmpty<Entry<RawRecordData>>> = BTreeMap::new();
 
     for (record, canonical) in citation_keys
         .map(RecordId::from)
@@ -235,7 +239,12 @@ fn validate_and_retrieve<'a, T: Iterator<Item = &'a str>>(
             )
         })
     {
-        records.entry(canonical).or_default().push(record)
+        match records.entry(canonical) {
+            Occupied(entry) => entry.into_mut().push(record),
+            Vacant(entry) => {
+                entry.insert(NonEmpty::singleton(record));
+            }
+        }
     }
     records
 }
