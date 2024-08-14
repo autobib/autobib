@@ -18,6 +18,7 @@ either = "1.13"
 itertools = "0.13"
 lazy_static = "1.5"
 memchr = "2.7"
+nonempty = "0.10"
 quick-xml = { version = "0.31", features = ["serialize"] }
 regex = "1.10"
 reqwest = { version = "0.12", features = ["rustls-tls", "blocking", "gzip"] }
