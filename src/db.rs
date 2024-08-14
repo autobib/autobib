@@ -231,7 +231,7 @@ impl RecordDatabase {
 
                 // SAFETY: key always corresponds to a valid row
                 //         because of ON DELETE CASCADE
-                let row = record_rows.next()?.expect("RowId does not exist!)");
+                let row = record_rows.next()?.expect("RowId does not exist!");
                 Self::cache_response_from_record_row(row).map(|(entry, canonical, modified)| {
                     RecordsResponse::Found(entry, canonical, modified)
                 })
@@ -344,6 +344,36 @@ impl RecordDatabase {
         }
 
         Ok(())
+    }
+
+    /// Update an existing record in the database.
+    pub fn update_cached_data<'a, K: CitationKey, D: ByteRepr>(
+        &mut self,
+        citation_key: &K,
+        new_record_data: D,
+    ) -> Result<(), DatabaseError> {
+        debug!("Updating cached data for '{}'", citation_key.name());
+        let tx = self.conn.transaction()?;
+        Self::update_cached_data_tx(&tx, citation_key, new_record_data)?;
+        Ok(tx.commit()?)
+    }
+
+    fn update_cached_data_tx<'a, K: CitationKey, D: ByteRepr>(
+        tx: &Transaction,
+        citation_key: &K,
+        new_record_data: D,
+    ) -> Result<(), DatabaseError> {
+        match Self::get_record_key(tx, citation_key)? {
+            // target exists
+            Some(key) => {
+                let mut updater = tx.prepare_cached(update_cached_data())?;
+                updater.execute((key, &Local::now(), new_record_data.into_byte_repr()))?;
+                Ok(())
+            }
+            None => Err(DatabaseError::CitationKeyMissing(
+                citation_key.name().into(),
+            )),
+        }
     }
 
     /// Check if the [`RemoteId`] is a cached null record.
