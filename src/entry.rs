@@ -23,6 +23,10 @@ impl<D: EntryData> Entry<D> {
         &self.key
     }
 
+    pub fn data(&self) -> &D {
+        &self.record_data
+    }
+
     delegate! {
         to self.record_data {
             pub fn fields(&self) -> impl Iterator<Item = (&str, &str)>;
