@@ -365,10 +365,15 @@ impl RecordDatabase {
         new_record_data: D,
     ) -> Result<(), DatabaseError> {
         match Self::get_record_key(tx, citation_key)? {
-            // target exists
             Some(key) => {
+                // First, copy the existing data to the changelog.
+                let mut logger = tx.prepare_cached(copy_to_changelog())?;
+                logger.execute((key,))?;
+
+                // Then update the data.
                 let mut updater = tx.prepare_cached(update_cached_data())?;
                 updater.execute((key, &Local::now(), new_record_data.into_byte_repr()))?;
+
                 Ok(())
             }
             None => Err(DatabaseError::CitationKeyMissing(
