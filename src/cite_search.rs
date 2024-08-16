@@ -90,7 +90,7 @@ mod test {
 
         get_citekeys(SourceFileType::Tex, contents, &mut container);
 
-        let expected = vec!["ref1", "ref2", "ref3"];
+        let expected = ["ref1", "ref2", "ref3"];
         for (exp, rec) in zip(expected.iter(), container.iter()) {
             assert_eq!(exp, rec);
         }

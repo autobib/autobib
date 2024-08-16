@@ -5,20 +5,23 @@ pub mod error;
 mod http;
 pub mod provider;
 mod record;
+pub mod term;
 
 use std::collections::{
     btree_map::Entry::{Occupied, Vacant},
     BTreeMap, HashSet,
 };
 use std::fs::{create_dir_all, File};
-use std::io::Read;
+use std::io::{self, Read};
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::thread;
 
 use anyhow::{anyhow, Result};
+use chrono::{DateTime, Local};
 use clap::{Parser, Subcommand};
 use clap_verbosity_flag::{Verbosity, WarnLevel};
-use dialoguer::{Confirm, Editor, FuzzySelect};
+use dialoguer::{Confirm, Editor};
 use directories::ProjectDirs;
 use itertools::Itertools;
 use log::{error, info, warn};
@@ -31,6 +34,7 @@ use self::db::{CitationKey, EntryData, RawRecordData, RecordData, RecordDatabase
 pub use self::entry::Entry;
 pub use self::http::HttpClient;
 pub use self::record::{get_record, Alias, RecordId, RemoteId};
+use self::term::Picker;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -58,6 +62,12 @@ enum Command {
     Edit {
         /// The citation key to edit.
         citation_key: String,
+    },
+    /// Search for a citation key.
+    #[command(alias = "f")]
+    Find {
+        #[clap(short, long)]
+        field: Vec<String>,
     },
     /// Retrieve records given citation keys.
     #[command(alias = "g")]
@@ -234,6 +244,15 @@ fn run_cli(cli: Cli) -> Result<()> {
             // print biblatex strings
             print_records(valid_entries)
         }
+        Command::Find { field } => {
+            let allowed_fields: HashSet<String> = field.iter().map(|f| f.to_lowercase()).collect();
+
+            if let Some(res) = choose_canonical_id(record_db, allowed_fields)? {
+                println!("{res}");
+            } else {
+                error!("No item selected.");
+            }
+        }
         Command::Source { paths, file_type } => {
             let mut buffer = Vec::new();
 
@@ -269,10 +288,41 @@ fn run_cli(cli: Cli) -> Result<()> {
         Command::Show => todo!(),
     };
 
-    // Clean up
-    record_db.optimize()?;
-
     Ok(())
+}
+
+/// Create a field filter renderer, which given a set of allowed fields renders those fields which
+/// are present in the data in alphabetical order, separated by the `separator`.
+fn field_filter_renderer(
+    allowed_fields: HashSet<String>,
+    separator: &'static str,
+) -> impl Fn(RawRecordData, &RemoteId, DateTime<Local>) -> String {
+    move |data, _, _| {
+        let field_string = data
+            .fields()
+            .filter(|(key, _)| allowed_fields.contains(*key))
+            .map(|(_, val)| val)
+            .join(separator);
+        format!("{}: {field_string}", data.entry_type())
+    }
+}
+
+/// Open an interactive prompt for the user to select a record.
+fn choose_canonical_id(
+    mut record_db: RecordDatabase,
+    allowed_fields: HashSet<String>,
+) -> Result<Option<RemoteId>, io::Error> {
+    // initialize matcher
+    let mut picker = Picker::new(1);
+
+    // populate the matcher from a separate thread
+    let injector = picker.injector();
+    thread::spawn(move || {
+        record_db.inject_all_records(field_filter_renderer(allowed_fields, " ~ "), injector)
+    });
+
+    // get the selection
+    picker.pick().map(|opt| opt.cloned())
 }
 
 /// Iterate over records, printing the entries and warning about duplicates.
