@@ -41,6 +41,8 @@ sql!(get_cached_null, "Get cached null data");
 
 sql!(set_cached_null, "Set cached null data");
 
+sql!(get_all_record_data, "Get all record data");
+
 sql!(copy_to_changelog, "Copy record data to changelog");
 
 sql!(rename_citation_key, "Rename a citation key");

@@ -429,6 +429,6 @@ mod tests {
             Err(RecordDataError::KeyInvalidLength(0))
         );
 
-        assert!(record_data.len() == 0);
+        assert!(record_data.is_empty());
     }
 }
