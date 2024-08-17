@@ -4,7 +4,7 @@ use std::str::FromStr;
 
 use crossterm::{
     event::{read, Event, KeyCode},
-    execute, style,
+    style, ExecutableCommand,
 };
 use edit::{edit_with_builder, Builder};
 
@@ -54,7 +54,7 @@ impl Editor {
                 }
             }
 
-            execute!(stdout(), style::Print("Continue editing? [Y]/n "))?;
+            stdout().execute(style::Print("Continue editing? [Y]/n "))?;
 
             match read()? {
                 Event::Key(key)

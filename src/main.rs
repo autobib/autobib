@@ -25,6 +25,7 @@ use directories::ProjectDirs;
 use itertools::Itertools;
 use log::{error, info, warn};
 use nonempty::NonEmpty;
+use nucleo_picker::Picker;
 use term::{Config, Editor};
 
 use self::cite_search::{get_citekeys, SourceFileType};
@@ -32,7 +33,6 @@ use self::db::{CitationKey, EntryData, RawRecordData, RecordDatabase};
 pub use self::entry::Entry;
 pub use self::http::HttpClient;
 pub use self::record::{get_record, Alias, RecordId, RemoteId};
-use self::term::Picker;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -268,10 +268,10 @@ fn choose_canonical_id(
     mut record_db: RecordDatabase,
     allowed_fields: HashSet<String>,
 ) -> Result<Option<RemoteId>, io::Error> {
-    // initialize matcher
-    let mut picker = Picker::new(1);
+    // initialize picker
+    let mut picker = Picker::default();
 
-    // populate the matcher from a separate thread
+    // populate the picker from a separate thread
     let injector = picker.injector();
     thread::spawn(move || {
         record_db.inject_all_records(field_filter_renderer(allowed_fields, " ~ "), injector)
