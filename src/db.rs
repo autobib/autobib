@@ -67,7 +67,7 @@ use std::path::Path;
 
 use chrono::{DateTime, Local};
 use log::debug;
-use nucleo::{Injector, Utf32String};
+use nucleo_picker::nucleo::{Injector, Utf32String};
 use rusqlite::{Connection, OptionalExtension, Transaction};
 
 use self::data::ByteRepr;
