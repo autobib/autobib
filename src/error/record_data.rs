@@ -30,4 +30,7 @@ pub enum RecordDataError {
 
     #[error("Record data structure contains maximum number of entries")]
     RecordDataFull,
+
+    #[error("Record data could not be parsed from bibtex string.")]
+    BibtexReadError,
 }

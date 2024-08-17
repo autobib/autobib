@@ -21,16 +21,14 @@ use anyhow::{anyhow, Result};
 use chrono::{DateTime, Local};
 use clap::{Parser, Subcommand};
 use clap_verbosity_flag::{Verbosity, WarnLevel};
-use dialoguer::{Confirm, Editor};
 use directories::ProjectDirs;
 use itertools::Itertools;
 use log::{error, info, warn};
 use nonempty::NonEmpty;
-use serde::Deserialize;
-use serde_bibtex::de::Deserializer;
+use term::{Config, Editor};
 
 use self::cite_search::{get_citekeys, SourceFileType};
-use self::db::{CitationKey, EntryData, RawRecordData, RecordData, RecordDatabase};
+use self::db::{CitationKey, EntryData, RawRecordData, RecordDatabase};
 pub use self::entry::Entry;
 pub use self::http::HttpClient;
 pub use self::record::{get_record, Alias, RecordId, RemoteId};
@@ -118,13 +116,6 @@ fn main() {
     }
 }
 
-#[derive(Debug, PartialEq, Deserialize)]
-struct Contents {
-    entry_type: String,
-    entry_key: String,
-    fields: BTreeMap<String, String>,
-}
-
 /// Run the CLI.
 fn run_cli(cli: Cli) -> Result<()> {
     // Initialize project directory.
@@ -183,53 +174,18 @@ fn run_cli(cli: Cli) -> Result<()> {
                 &client,
             )?;
 
-            let mut editor = Editor::new();
-            editor.extension(".bib");
+            let editor = Editor::new(Config { suffix: ".bib" });
 
-            let mut response = entry.to_string();
+            if let Some(new_entry) = editor.edit(&entry)? {
+                let (new_key, new_record_data) = new_entry.into_parts();
 
-            while let Some(user_text) = editor.edit(&response)? {
-                if let Some(Ok(Contents {
-                    entry_type,
-                    entry_key,
-                    mut fields,
-                })) = Deserializer::from_str(&user_text)
-                    .into_iter_regular_entry()
-                    .next()
-                {
-                    let mut record_data = RecordData::try_new(entry_type)?;
-                    while let Some((key, val)) = fields.pop_first() {
-                        record_data.try_insert(key, val)?;
-                    }
-
-                    let raw_record_data: RawRecordData = (&record_data).into();
-
-                    let mut modified = false;
-
-                    if entry.data() != &raw_record_data {
-                        modified = true;
-                        record_db.update_cached_data(&canonical, raw_record_data)?;
-                    }
-
-                    if entry.key() != entry_key {
-                        modified = true;
-                        let alias = Alias::from_str(&entry_key)?;
-                        record_db.insert_alias(&alias, &canonical)?
-                    }
-
-                    if modified {
-                        break;
-                    } else {
-                        warn!("The data in the edited BibTeX was unchanged.");
-                    }
-                } else {
-                    warn!("Edited BibTeX could not be parsed.");
+                if new_key != entry.key() {
+                    let alias = Alias::from_str(&new_key)?;
+                    record_db.insert_alias(&alias, &canonical)?
                 }
 
-                if !Confirm::new().with_prompt("Continue editing?").interact()? {
-                    break;
-                } else {
-                    response = user_text;
+                if new_record_data != *entry.data() {
+                    record_db.update_cached_data(&canonical, new_record_data)?;
                 }
             }
         }
