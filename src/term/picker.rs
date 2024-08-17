@@ -207,28 +207,34 @@ fn process_events(
     })
 }
 
+/// The core picker struct.
+///
+/// Internally, it holds a [`Nucleo`] instance which is created on initialization.
 pub struct Picker<T: Send + Sync + 'static> {
     matcher: Nucleo<T>,
 }
 
 impl<T: Send + Sync + 'static> Picker<T> {
+    /// Create a new [`Picker`] instance with the prescribed number of columns.
     pub fn new(columns: u32) -> Self {
         Self {
             matcher: Nucleo::new(Config::DEFAULT, std::sync::Arc::new(|| {}), None, columns),
         }
     }
 
+    /// Get an [`Injector`] from the internal [`Nucleo`] instance.
     pub fn injector(&self) -> Injector<T> {
         self.matcher.injector()
     }
 
+    /// Open the picker prompt and return the picked item, if any.
     pub fn pick(&mut self) -> Result<Option<&T>, io::Error> {
         // read keyboard events from a separate thread to avoid 'read()' polling
         // and allow handling multiple keyboard events per frame
         let (sender, receiver) = unbounded();
         thread::spawn(move || loop {
             if let Ok(event) = read() {
-                if let Err(_) = sender.send(event) {
+                if sender.send(event).is_err() {
                     break;
                 }
             }
