@@ -70,12 +70,13 @@ use log::debug;
 use nucleo_picker::nucleo::{Injector, Utf32String};
 use rusqlite::{Connection, OptionalExtension, Transaction};
 
-use self::data::ByteRepr;
 pub use self::data::{version, EntryData, RawRecordData, RecordData, DATA_MAX_BYTES};
 pub(crate) use self::data::{EntryTypeHeader, KeyHeader, ValueHeader};
-use self::sql::*;
-use crate::error::DatabaseError;
-use crate::record::{Alias, RemoteId};
+use self::{data::ByteRepr, sql::*};
+use crate::{
+    error::DatabaseError,
+    record::{Alias, RemoteId},
+};
 
 /// An alias for the internal row ID used by SQLite for the `Records` table. This is the `key`
 /// column in the table schema defined in [`init_records`].

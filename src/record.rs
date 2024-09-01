@@ -5,11 +5,13 @@ use log::info;
 
 pub use key::{Alias, RecordId, RemoteId};
 
-use crate::db::{NullRecordsResponse, RawRecordData, RecordDatabase, RecordsResponse};
-use crate::entry::Entry;
-use crate::error::Error;
-use crate::provider::lookup_provider;
-use crate::HttpClient;
+use crate::{
+    db::{NullRecordsResponse, RawRecordData, RecordDatabase, RecordsResponse},
+    entry::Entry,
+    error::Error,
+    provider::lookup_provider,
+    HttpClient,
+};
 
 use private::Context;
 
