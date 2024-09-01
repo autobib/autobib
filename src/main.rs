@@ -7,15 +7,17 @@ pub mod provider;
 mod record;
 pub mod term;
 
-use std::collections::{
-    btree_map::Entry::{Occupied, Vacant},
-    BTreeMap, HashSet,
+use std::{
+    collections::{
+        btree_map::Entry::{Occupied, Vacant},
+        BTreeMap, HashSet,
+    },
+    fs::{create_dir_all, File},
+    io::{self, Read},
+    path::PathBuf,
+    str::FromStr,
+    thread,
 };
-use std::fs::{create_dir_all, File};
-use std::io::{self, Read};
-use std::path::PathBuf;
-use std::str::FromStr;
-use std::thread;
 
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Local};
@@ -28,11 +30,15 @@ use nonempty::NonEmpty;
 use nucleo_picker::Picker;
 use term::{Config, Editor};
 
-use self::cite_search::{get_citekeys, SourceFileType};
-use self::db::{CitationKey, EntryData, RawRecordData, RecordDatabase};
-pub use self::entry::Entry;
-pub use self::http::HttpClient;
-pub use self::record::{get_record, Alias, RecordId, RemoteId};
+use self::{
+    cite_search::{get_citekeys, SourceFileType},
+    db::{CitationKey, EntryData, RawRecordData, RecordDatabase},
+};
+pub use self::{
+    entry::Entry,
+    http::HttpClient,
+    record::{get_record, Alias, RecordId, RemoteId},
+};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]

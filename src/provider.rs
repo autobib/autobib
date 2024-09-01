@@ -14,10 +14,12 @@ use either::Either;
 use serde::Deserialize;
 
 // re-imports exposed to provider implementations
-use crate::db::RecordData;
-use crate::error::{ProviderError, RecordDataError};
-use crate::record::RemoteId;
-use crate::HttpClient;
+use crate::{
+    db::RecordData,
+    error::{ProviderError, RecordDataError},
+    record::RemoteId,
+    HttpClient,
+};
 
 /// A resolver, which converts a `sub_id` into [`RecordData`].
 pub type Resolver = fn(&str, &HttpClient) -> Result<Option<RecordData>, ProviderError>;

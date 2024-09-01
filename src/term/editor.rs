@@ -1,6 +1,8 @@
-use std::cmp::PartialEq;
-use std::io::{stdout, Result};
-use std::str::FromStr;
+use std::{
+    cmp::PartialEq,
+    io::{stdout, Result},
+    str::FromStr,
+};
 
 use crossterm::{
     event::{read, Event, KeyCode},
