@@ -9,10 +9,12 @@ use thiserror::Error;
 
 use crate::record::{Alias, RemoteId};
 
-pub use database::DatabaseError;
-pub use provider::ProviderError;
-pub use record::{RecordError, RecordErrorKind};
-pub use record_data::RecordDataError;
+pub use self::{
+    database::DatabaseError,
+    provider::ProviderError,
+    record::{RecordError, RecordErrorKind},
+    record_data::RecordDataError,
+};
 
 #[derive(Error, Debug)]
 pub enum Error {

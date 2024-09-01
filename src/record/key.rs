@@ -1,12 +1,13 @@
-use std::fmt;
-use std::str::FromStr;
+use std::{fmt, str::FromStr};
 
 use either::Either;
 use serde::{Deserialize, Serialize};
 
-use crate::error::{RecordError, RecordErrorKind};
-use crate::provider::lookup_validator;
-use crate::CitationKey;
+use crate::{
+    error::{RecordError, RecordErrorKind},
+    provider::lookup_validator,
+    CitationKey,
+};
 
 /// An unvalidated wrapper for user input representing either a `provider:sub_id` or an `alias`.
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]

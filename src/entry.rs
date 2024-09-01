@@ -1,13 +1,13 @@
-use std::collections::BTreeMap;
-use std::fmt;
-use std::str::FromStr;
+use std::{collections::BTreeMap, fmt, str::FromStr};
 
 use delegate::delegate;
 use serde::Deserialize;
 use serde_bibtex::de::Deserializer;
 
-use crate::db::{EntryData, RawRecordData, RecordData};
-use crate::error::RecordDataError;
+use crate::{
+    db::{EntryData, RawRecordData, RecordData},
+    error::RecordDataError,
+};
 
 /// A single regular entry in a BibTeX bibliography.
 #[derive(Debug, PartialEq)]

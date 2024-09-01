@@ -24,10 +24,7 @@
 //! ```
 pub mod tex;
 
-use std::ffi::OsStr;
-use std::iter::Extend;
-use std::path::Path;
-use std::str::FromStr;
+use std::{ffi::OsStr, iter::Extend, path::Path, str::FromStr};
 
 use crate::error::Error;
 

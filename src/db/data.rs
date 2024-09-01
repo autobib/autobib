@@ -4,9 +4,7 @@
 //!
 //! The data consists of the entry type (e.g. `article`) as well as the field keys and values (e.g. `title =
 //! {Title}`).
-use std::collections::BTreeMap;
-use std::iter::Iterator;
-use std::str::from_utf8;
+use std::{collections::BTreeMap, iter::Iterator, str::from_utf8};
 
 use delegate::delegate;
 use serde_bibtex::validate::is_balanced;
