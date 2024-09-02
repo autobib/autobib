@@ -70,8 +70,9 @@ enum Command {
     /// Search for a citation key.
     #[command(alias = "f")]
     Find {
+        /// Fields to search (e.g. author, title).
         #[clap(short, long)]
-        field: Vec<String>,
+        fields: Vec<String>,
     },
     /// Retrieve records given citation keys.
     #[command(alias = "g")]
@@ -206,10 +207,11 @@ fn run_cli(cli: Cli) -> Result<()> {
             // print biblatex strings
             print_records(valid_entries)
         }
-        Command::Find { field } => {
-            let allowed_fields: HashSet<String> = field.iter().map(|f| f.to_lowercase()).collect();
+        Command::Find { fields: field } => {
+            let fields_to_search: HashSet<String> =
+                field.iter().map(|f| f.to_lowercase()).collect();
 
-            if let Some(res) = choose_canonical_id(record_db, allowed_fields)? {
+            if let Some(res) = choose_canonical_id(record_db, fields_to_search)? {
                 println!("{res}");
             } else {
                 error!("No item selected.");
@@ -256,13 +258,13 @@ fn run_cli(cli: Cli) -> Result<()> {
 /// Create a field filter renderer, which given a set of allowed fields renders those fields which
 /// are present in the data in alphabetical order, separated by the `separator`.
 fn field_filter_renderer(
-    allowed_fields: HashSet<String>,
+    fields_to_search: HashSet<String>,
     separator: &'static str,
 ) -> impl Fn(RawRecordData, &RemoteId, DateTime<Local>) -> String {
     move |data, _, _| {
         let field_string = data
             .fields()
-            .filter(|(key, _)| allowed_fields.contains(*key))
+            .filter(|(key, _)| fields_to_search.contains(*key))
             .map(|(_, val)| val)
             .join(separator);
         format!("{}: {field_string}", data.entry_type())
@@ -272,7 +274,7 @@ fn field_filter_renderer(
 /// Open an interactive prompt for the user to select a record.
 fn choose_canonical_id(
     mut record_db: RecordDatabase,
-    allowed_fields: HashSet<String>,
+    fields_to_search: HashSet<String>,
 ) -> Result<Option<RemoteId>, io::Error> {
     // initialize picker
     let mut picker = Picker::default();
@@ -280,7 +282,7 @@ fn choose_canonical_id(
     // populate the picker from a separate thread
     let injector = picker.injector();
     thread::spawn(move || {
-        record_db.inject_all_records(field_filter_renderer(allowed_fields, " ~ "), injector)
+        record_db.inject_all_records(field_filter_renderer(fields_to_search, " ~ "), injector)
     });
 
     // get the selection
