@@ -282,7 +282,7 @@ fn choose_canonical_id(
     // populate the picker from a separate thread
     let injector = picker.injector();
     thread::spawn(move || {
-        record_db.inject_all_records(field_filter_renderer(fields_to_search, " ~ "), injector)
+        record_db.inject_all_records(injector, field_filter_renderer(fields_to_search, " ~ "))
     });
 
     // get the selection
