@@ -207,9 +207,9 @@ fn run_cli(cli: Cli) -> Result<()> {
             // print biblatex strings
             print_records(valid_entries)
         }
-        Command::Find { fields: field } => {
+        Command::Find { fields } => {
             let fields_to_search: HashSet<String> =
-                field.iter().map(|f| f.to_lowercase()).collect();
+                fields.iter().map(|f| f.to_lowercase()).collect();
 
             if let Some(res) = choose_canonical_id(record_db, fields_to_search)? {
                 println!("{res}");
