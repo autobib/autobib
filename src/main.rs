@@ -184,7 +184,10 @@ fn run_cli(cli: Cli) -> Result<()> {
             let editor = Editor::new(Config { suffix: ".bib" });
 
             if let Some(new_entry) = editor.edit(&entry)? {
-                let (new_key, new_record_data) = new_entry.into_parts();
+                let Entry {
+                    key: new_key,
+                    record_data: new_record_data,
+                } = new_entry;
 
                 if new_key != entry.key() {
                     let alias = Alias::from_str(&new_key)?;
