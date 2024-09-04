@@ -12,8 +12,8 @@ use crate::{
 /// A single regular entry in a BibTeX bibliography.
 #[derive(Debug, PartialEq)]
 pub struct Entry<D: EntryData> {
-    key: String,
-    record_data: D,
+    pub key: String,
+    pub record_data: D,
 }
 
 impl<D: EntryData> Entry<D> {
@@ -30,10 +30,6 @@ impl<D: EntryData> Entry<D> {
 
     pub fn data(&self) -> &D {
         &self.record_data
-    }
-
-    pub fn into_parts(self) -> (String, D) {
-        (self.key, self.record_data)
     }
 
     delegate! {
