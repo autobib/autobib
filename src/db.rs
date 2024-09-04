@@ -389,13 +389,13 @@ impl RecordDatabase {
         }
     }
 
-    /// Send the contents of the `Records` table to a [`nucleo::Nucleo`] instance via its
+    /// Send the contents of the `Records` table to a [`Nucleo`](`nucleo_picker::nucleo::Nucleo`) instance via its
     /// [`Injector`].
     ///
     /// The `render_row` argument is a closure which accepts a row from the Records table, which
     /// consists of the [`RawRecordData`] along with a reference to the corresponding `CanonicalId`
     /// and the time it was last modified. The return type is used as the search string for the
-    /// corresponding [`nucleo::Nucleo`] instance.
+    /// corresponding [`Nucleo`](`nucleo_picker::nucleo::Nucleo`) instance.
     ///
     /// Note, for instance, that [`String`] implements [`Into<Utf32String>`].
     pub fn inject_all_records<T, R>(
