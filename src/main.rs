@@ -71,7 +71,7 @@ enum Command {
     #[command(alias = "f")]
     Find {
         /// Fields to search (e.g. author, title).
-        #[clap(short, long)]
+        #[clap(short, long, value_delimiter = ',')]
         fields: Vec<String>,
     },
     /// Retrieve records given citation keys.
