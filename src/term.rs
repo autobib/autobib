@@ -1,3 +1,3 @@
 mod editor;
 
-pub use editor::{Config, Editor};
+pub use editor::{Editor, EditorConfig};

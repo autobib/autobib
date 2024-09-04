@@ -6,24 +6,24 @@ use std::{
 
 use edit::{edit_with_builder, Builder};
 
-pub struct Config {
+pub struct EditorConfig {
     /// The suffix for the temporary file.
     pub suffix: &'static str,
 }
 
-impl Default for Config {
+impl Default for EditorConfig {
     fn default() -> Self {
         Self { suffix: ".txt" }
     }
 }
 
 pub struct Editor {
-    config: Config,
+    config: EditorConfig,
 }
 
 impl Editor {
-    /// Initialize a new editor using the [`Config`].
-    pub fn new(config: Config) -> Self {
+    /// Initialize a new editor using the [`EditorConfig`].
+    pub fn new(config: EditorConfig) -> Self {
         Self { config }
     }
 
