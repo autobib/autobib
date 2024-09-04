@@ -41,7 +41,7 @@ impl Editor {
             let user_text = edit_with_builder(&response, &editor)?;
 
             // the text was unchanged
-            if &user_text == &response {
+            if user_text == response {
                 eprintln!("Aborted!");
                 break Ok(None);
             }
