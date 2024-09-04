@@ -28,7 +28,7 @@ use itertools::Itertools;
 use log::{error, info, warn};
 use nonempty::NonEmpty;
 use nucleo_picker::Picker;
-use term::{Config, Editor};
+use term::{Editor, EditorConfig};
 
 use self::{
     cite_search::{get_citekeys, SourceFileType},
@@ -181,7 +181,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                 &client,
             )?;
 
-            let editor = Editor::new(Config { suffix: ".bib" });
+            let editor = Editor::new(EditorConfig { suffix: ".bib" });
 
             if let Some(new_entry) = editor.edit(&entry)? {
                 let Entry {
