@@ -19,11 +19,11 @@ use std::{
     thread,
 };
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use chrono::{DateTime, Local};
 use clap::{Parser, Subcommand};
 use clap_verbosity_flag::{Verbosity, WarnLevel};
-use directories::ProjectDirs;
+use etcetera::{choose_app_strategy, AppStrategy, AppStrategyArgs};
 use itertools::Itertools;
 use log::{error, info, warn};
 use nonempty::NonEmpty;
@@ -125,12 +125,6 @@ fn main() {
 
 /// Run the CLI.
 fn run_cli(cli: Cli) -> Result<()> {
-    // Initialize project directory.
-    let proj_dirs = match ProjectDirs::from("com", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_NAME")) {
-        Some(p) => p,
-        None => return Err(anyhow!("Failed to get project working directory.")),
-    };
-
     info!("SQLite version: {}", rusqlite::version());
     info!("Database format version: {}", db::version());
 
@@ -142,8 +136,16 @@ fn run_cli(cli: Cli) -> Result<()> {
         RecordDatabase::open(db_path)?
     } else {
         // at the default path
-        create_dir_all(proj_dirs.data_dir())?;
-        let default_db_path = proj_dirs.data_dir().join("records.db");
+        let strategy = choose_app_strategy(AppStrategyArgs {
+            top_level_domain: "org".to_owned(),
+            author: env!("CARGO_PKG_NAME").to_owned(),
+            app_name: env!("CARGO_PKG_NAME").to_owned(),
+        })?;
+
+        let data_dir = strategy.data_dir();
+
+        create_dir_all(&data_dir)?;
+        let default_db_path = data_dir.join("records.db");
         info!(
             "Using default database file '{}'",
             default_db_path.display()
