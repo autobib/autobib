@@ -1,1 +1,1 @@
-SELECT record_id, modified, data FROM Records
+SELECT record_id, data FROM Records

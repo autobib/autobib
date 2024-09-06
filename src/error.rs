@@ -13,7 +13,7 @@ pub use self::{
     database::DatabaseError,
     provider::ProviderError,
     record::{RecordError, RecordErrorKind},
-    record_data::RecordDataError,
+    record_data::{InvalidBytesError, RecordDataError},
 };
 
 #[derive(Error, Debug)]

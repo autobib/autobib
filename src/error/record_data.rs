@@ -3,6 +3,19 @@ use thiserror::Error;
 use crate::db::{EntryTypeHeader, KeyHeader, ValueHeader};
 
 #[derive(Error, Debug, PartialEq)]
+#[error("Invalid bytes: error at position `{position}`: {message}")]
+pub struct InvalidBytesError {
+    pub position: usize,
+    pub message: &'static str,
+}
+
+impl InvalidBytesError {
+    pub fn new(position: usize, message: &'static str) -> Self {
+        Self { position, message }
+    }
+}
+
+#[derive(Error, Debug, PartialEq)]
 pub enum RecordDataError {
     #[error("Key is not ASCII lowercase `[a-z]`")]
     KeyNotAsciiLowercase,
@@ -27,6 +40,9 @@ pub enum RecordDataError {
 
     #[error("Value does not contain balanced `{{ }}` brackets")]
     ValueNotBalanced,
+
+    #[error("Invalid bytes: `{0}`")]
+    InvalidBytes(#[from] InvalidBytesError),
 
     #[error("Record data structure contains maximum number of entries")]
     RecordDataFull,
