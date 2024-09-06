@@ -80,11 +80,12 @@ impl RawRecordData {
     }
 
     /// Construct a [`RawRecordData`] from raw bytes, checking that the underlying bytes are valid.
-    pub fn from_byte_repr(_data: Vec<u8>) -> Self {
+    pub fn from_byte_repr(_data: Vec<u8>) -> Result<Self, RecordDataError> {
         todo!()
     }
 
-    pub fn as_bytes(&self) -> &[u8] {
+    /// The representation as raw bytes.
+    pub fn to_byte_repr(&self) -> &[u8] {
         &self.data
     }
 
@@ -332,8 +333,8 @@ mod tests {
 
         assert_eq!(record_data, record_data_clone);
         assert_eq!(
-            raw_data.as_bytes(),
-            RawRecordData::from(&record_data_clone).as_bytes()
+            raw_data.to_byte_repr(),
+            RawRecordData::from(&record_data_clone).to_byte_repr()
         );
     }
 
@@ -376,7 +377,7 @@ mod tests {
             b'2', b'0', b'2', b'3',
         ];
 
-        assert_eq!(expected, data.as_bytes());
+        assert_eq!(expected, data.to_byte_repr());
     }
 
     #[test]

@@ -336,7 +336,7 @@ impl RecordDatabase {
         remote_id_iter: R,
     ) -> Result<(), DatabaseError> {
         let mut setter = tx.prepare_cached(set_cached_data())?;
-        setter.execute((canonical_id.name(), record_data.as_bytes(), &Local::now()))?;
+        setter.execute((canonical_id.name(), record_data.to_byte_repr(), &Local::now()))?;
 
         // get identifier
         let key = tx.last_insert_rowid();
@@ -375,7 +375,7 @@ impl RecordDatabase {
 
                 // Then update the data.
                 let mut updater = tx.prepare_cached(update_cached_data())?;
-                updater.execute((key, &Local::now(), new_record_data.as_bytes()))?;
+                updater.execute((key, &Local::now(), new_record_data.to_byte_repr()))?;
 
                 Ok(())
             }
