@@ -53,7 +53,8 @@ fn remote_resolve(
                 match lookup_provider(top.provider()) {
                     Either::Left(resolver) => match resolver(top.sub_id(), client)? {
                         Some(data) => {
-                            db.set_cached_data(top, &data, context.descend())?;
+                            let raw_record_data = (&data).into();
+                            db.set_cached_data(top, &raw_record_data, context.descend())?;
                             let (bottom, top) = context.into_ends();
                             break Ok((Entry::new(bottom, RawRecordData::from(&data)), top));
                         }

@@ -137,13 +137,18 @@ impl RemoteId {
 
     /// Construct a [`RemoteId`] from the provider and sub_id components.
     pub fn from_parts(provider: &str, sub_id: &str) -> Self {
-        let mut full_id = provider.to_string();
+        let mut full_id = provider.to_owned();
         full_id.push(':');
         full_id.push_str(sub_id);
         Self {
             full_id,
             provider_len: provider.len(),
         }
+    }
+
+    /// Create a new `local` [`RecordId`].
+    pub fn local(sub_id: &str) -> Self {
+        Self::from_parts("local", sub_id)
     }
 
     pub(crate) fn new_unchecked(full_id: String) -> Self {
