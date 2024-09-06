@@ -63,7 +63,7 @@
 mod data;
 mod sql;
 
-use std::path::Path;
+use std::{iter::once, path::Path};
 
 use chrono::{DateTime, Local};
 use log::debug;
@@ -382,6 +382,38 @@ impl RecordDatabase {
             None => Err(DatabaseError::CitationKeyMissing(
                 citation_key.name().into(),
             )),
+        }
+    }
+
+    /// Open the existing local record with handle `handle`, or create a new record by calling the
+    /// `default` method. This is essentially the same as using the [`Self::get_cached_data`]
+    /// and [`Self::set_cached_data`] methods, except that the record creation is wrapped in a
+    /// transaction to avoid race conditions.
+    ///
+    /// The `default` method is only called if the cached data does not exist.
+    pub fn get_cached_data_or_set_default<F: FnOnce() -> RawRecordData>(
+        &mut self,
+        remote_id: &RemoteId,
+        default: F,
+    ) -> Result<RawRecordData, DatabaseError> {
+        let tx = self.conn.transaction()?;
+        let res = Self::get_cached_data_or_set_default_tx(&tx, remote_id, default)?;
+        tx.commit()?;
+        Ok(res)
+    }
+
+    fn get_cached_data_or_set_default_tx<F: FnOnce() -> RawRecordData>(
+        tx: &Transaction,
+        remote_id: &RemoteId,
+        default: F,
+    ) -> Result<RawRecordData, DatabaseError> {
+        match Self::get_cached_data_tx(tx, remote_id)? {
+            RecordsResponse::Found(data, _, _) => Ok(data),
+            RecordsResponse::NotFound => {
+                let data = default();
+                Self::set_cached_data_tx(tx, remote_id, &data, once(remote_id))?;
+                Ok(data)
+            }
         }
     }
 
