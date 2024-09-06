@@ -32,7 +32,7 @@ use term::{Editor, EditorConfig};
 
 use self::{
     cite_search::{get_citekeys, SourceFileType},
-    db::{CitationKey, EntryData, RawRecordData, RecordDatabase},
+    db::{CitationKey, EntryData, RawRecordData, RecordData, RecordDatabase},
 };
 pub use self::{
     entry::Entry,
@@ -197,7 +197,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                 }
 
                 if new_record_data != *entry.data() {
-                    record_db.update_cached_data(&canonical, new_record_data)?;
+                    record_db.update_cached_data(&canonical, &new_record_data)?;
                 }
             }
         }
