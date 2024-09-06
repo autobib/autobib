@@ -80,6 +80,9 @@ enum Command {
         /// The citation keys to retrieve.
         citation_keys: Vec<String>,
     },
+    /// Create or edit a local record with the given handle.
+    #[command(alias = "l")]
+    Local { handle: String },
     /// Show metadata for citation key.
     #[command()]
     Show,
@@ -200,6 +203,12 @@ fn run_cli(cli: Cli) -> Result<()> {
                     record_db.update_cached_data(&canonical, &new_record_data)?;
                 }
             }
+        }
+        Command::Local { handle } => {
+            let remote_id = RemoteId::local(&handle);
+
+            record_db
+                .get_cached_data_or_set_default(&remote_id, || (&RecordData::default()).into())?;
         }
         Command::Get { citation_keys } => {
             // Collect all entries which are not null
