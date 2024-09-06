@@ -192,6 +192,32 @@ impl RecordDatabase {
         }
     }
 
+    /// Validate the binary data in the `Records` table.
+    pub fn validate_record_data(&mut self) -> Result<(), DatabaseError> {
+        let tx = self.conn.transaction()?;
+        Self::validate_record_data_tx(&tx)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Validate binary data inside a transaction.
+    fn validate_record_data_tx(tx: &Transaction) -> Result<(), DatabaseError> {
+        debug!("Validating binary record data");
+        let mut retriever = tx.prepare_cached(get_all_record_data())?;
+        let mut rows = retriever.query([])?;
+
+        // rows does not implement Iterator
+        while let Some(row) = rows.next()? {
+            if let Err(err) = RawRecordData::from_byte_repr(row.get("data")?) {
+                return Err(DatabaseError::MalformedRecordData(
+                    row.get("record_id")?,
+                    err,
+                ));
+            }
+        }
+        Ok(())
+    }
+
     /// Initialize a table inside a transaction.
     fn initialize_table(
         tx: &Transaction,
@@ -336,7 +362,11 @@ impl RecordDatabase {
         remote_id_iter: R,
     ) -> Result<(), DatabaseError> {
         let mut setter = tx.prepare_cached(set_cached_data())?;
-        setter.execute((canonical_id.name(), record_data.to_byte_repr(), &Local::now()))?;
+        setter.execute((
+            canonical_id.name(),
+            record_data.to_byte_repr(),
+            &Local::now(),
+        ))?;
 
         // get identifier
         let key = tx.last_insert_rowid();
@@ -436,7 +466,7 @@ impl RecordDatabase {
         R: Fn(RawRecordData, &RemoteId, DateTime<Local>) -> T,
     {
         debug!("Sending all database records to an injector.");
-        let mut retriever = self.conn.prepare_cached(get_all_record_data())?;
+        let mut retriever = self.conn.prepare_cached(get_all_records())?;
 
         for res in retriever.query_map([], Self::cache_response_from_record_row)? {
             let (data, canonical_id, modified) = res?;
