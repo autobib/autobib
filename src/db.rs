@@ -72,7 +72,7 @@ use rusqlite::{Connection, OptionalExtension, Transaction};
 
 pub use self::data::{version, EntryData, RawRecordData, RecordData, DATA_MAX_BYTES};
 pub(crate) use self::data::{EntryTypeHeader, KeyHeader, ValueHeader};
-use self::{data::ByteRepr, sql::*};
+use self::sql::*;
 use crate::{
     error::DatabaseError,
     record::{Alias, RemoteId},
@@ -316,10 +316,10 @@ impl RecordDatabase {
     ///
     /// Every record requires that it is associated with a canonical [`RemoteId`] with a
     /// corresponding entry. There may also be associated references.
-    pub fn set_cached_data<'a, R: Iterator<Item = &'a RemoteId>, D: ByteRepr>(
+    pub fn set_cached_data<'a, R: Iterator<Item = &'a RemoteId>>(
         &mut self,
         canonical_id: &RemoteId,
-        record_data: D,
+        record_data: &RawRecordData,
         remote_id_iter: R,
     ) -> Result<(), DatabaseError> {
         debug!("Setting cached data for '{canonical_id}'");
@@ -329,18 +329,14 @@ impl RecordDatabase {
     }
 
     /// Helper function to wrap the insertion into Records and CitationKeys in a transaction.
-    fn set_cached_data_tx<'a, R: Iterator<Item = &'a RemoteId>, D: ByteRepr>(
+    fn set_cached_data_tx<'a, R: Iterator<Item = &'a RemoteId>>(
         tx: &Transaction,
         canonical_id: &RemoteId,
-        record_data: D,
+        record_data: &RawRecordData,
         remote_id_iter: R,
     ) -> Result<(), DatabaseError> {
         let mut setter = tx.prepare_cached(set_cached_data())?;
-        setter.execute((
-            canonical_id.name(),
-            record_data.into_byte_repr(),
-            &Local::now(),
-        ))?;
+        setter.execute((canonical_id.name(), record_data.as_bytes(), &Local::now()))?;
 
         // get identifier
         let key = tx.last_insert_rowid();
@@ -355,10 +351,10 @@ impl RecordDatabase {
     }
 
     /// Update an existing record in the database.
-    pub fn update_cached_data<K: CitationKey, D: ByteRepr>(
+    pub fn update_cached_data<K: CitationKey>(
         &mut self,
         citation_key: &K,
-        new_record_data: D,
+        new_record_data: &RawRecordData,
     ) -> Result<(), DatabaseError> {
         debug!("Updating cached data for '{}'", citation_key.name());
         let tx = self.conn.transaction()?;
@@ -366,10 +362,10 @@ impl RecordDatabase {
         Ok(tx.commit()?)
     }
 
-    fn update_cached_data_tx<K: CitationKey, D: ByteRepr>(
+    fn update_cached_data_tx<K: CitationKey>(
         tx: &Transaction,
         citation_key: &K,
-        new_record_data: D,
+        new_record_data: &RawRecordData,
     ) -> Result<(), DatabaseError> {
         match Self::get_record_key(tx, citation_key)? {
             Some(key) => {
@@ -379,7 +375,7 @@ impl RecordDatabase {
 
                 // Then update the data.
                 let mut updater = tx.prepare_cached(update_cached_data())?;
-                updater.execute((key, &Local::now(), new_record_data.into_byte_repr()))?;
+                updater.execute((key, &Local::now(), new_record_data.as_bytes()))?;
 
                 Ok(())
             }

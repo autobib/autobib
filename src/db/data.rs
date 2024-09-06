@@ -38,7 +38,7 @@ const MAX_DATA_BLOCK_SIZE: usize = KeyHeader::BITS as usize / 8
 const MAX_TYPE_BLOCK_SIZE: usize =
     EntryTypeHeader::BITS as usize / 8 + EntryTypeHeader::MAX as usize;
 
-/// The maximum possible size (in bytes) of the vector returned by [`ByteRepr::into_byte_repr`].
+/// The maximum possible size (in bytes) of the vector returned by [`RawRecordData::as_bytes`].
 pub const DATA_MAX_BYTES: usize = 50_000_000;
 
 /// The maximum number of allowed record fields.
@@ -57,15 +57,6 @@ pub trait EntryData {
 
     /// Get the `entry_type` as a string slice.
     fn entry_type(&self) -> &str;
-}
-
-/// This trait represents types which can be effeciently converted into the underlying binary
-/// representation used inside [`super::RecordDatabase`]. The binary format is described in
-///
-/// This trait is sealed and cannot be implemented by any types outside of this module.
-pub trait ByteRepr: EntryData + sealed::Sealed {
-    /// Convert to a compact binary representation.
-    fn into_byte_repr(self) -> Vec<u8>;
 }
 
 /// A raw binary representation of the field key and fields of a BibTeX entry.
@@ -93,6 +84,10 @@ impl RawRecordData {
         todo!()
     }
 
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.data
+    }
+
     /// Split into the `TYPE` and `DATA` blocks, discarding the header.
     #[inline]
     fn split_blocks(&self) -> (&[u8], &[u8]) {
@@ -112,14 +107,6 @@ impl EntryData for RawRecordData {
     fn entry_type(&self) -> &str {
         let (type_block, _) = self.split_blocks();
         from_utf8(&type_block[1..]).unwrap()
-    }
-}
-
-impl sealed::Sealed for RawRecordData {}
-
-impl ByteRepr for RawRecordData {
-    fn into_byte_repr(self) -> Vec<u8> {
-        self.data
     }
 }
 
@@ -193,6 +180,13 @@ impl<'a> Iterator for RawRecordFieldsIter<'a> {
 pub struct RecordData {
     entry_type: String,
     fields: BTreeMap<String, String>,
+}
+
+impl Default for RecordData {
+    fn default() -> Self {
+        // SAFETY: cannot fail since "misc" satisfies the size requirements
+        Self::try_new("misc".to_owned()).unwrap()
+    }
 }
 
 impl RecordData {
@@ -304,19 +298,6 @@ impl EntryData for &RecordData {
     }
 }
 
-impl sealed::Sealed for &RecordData {}
-
-impl ByteRepr for &RecordData {
-    fn into_byte_repr(self) -> Vec<u8> {
-        RawRecordData::from(self).into_byte_repr()
-    }
-}
-
-// Prevent implementaion of ByteRepr
-mod sealed {
-    pub trait Sealed {}
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -351,8 +332,8 @@ mod tests {
 
         assert_eq!(record_data, record_data_clone);
         assert_eq!(
-            raw_data.into_byte_repr(),
-            record_data_clone.into_byte_repr()
+            raw_data.as_bytes(),
+            RawRecordData::from(&record_data_clone).as_bytes()
         );
     }
 
@@ -388,14 +369,14 @@ mod tests {
             .try_insert("title".into(), "The Title".into())
             .unwrap();
 
-        let byte_repr = RawRecordData::from(&record_data).into_byte_repr();
+        let data = RawRecordData::from(&record_data);
         let expected = vec![
             0, 7, b'a', b'r', b't', b'i', b'c', b'l', b'e', 5, 9, 0, b't', b'i', b't', b'l', b'e',
             b'T', b'h', b'e', b' ', b'T', b'i', b't', b'l', b'e', 4, 4, 0, b'y', b'e', b'a', b'r',
             b'2', b'0', b'2', b'3',
         ];
 
-        assert_eq!(expected, byte_repr);
+        assert_eq!(expected, data.as_bytes());
     }
 
     #[test]
