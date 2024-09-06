@@ -9,7 +9,7 @@ use std::{collections::BTreeMap, iter::Iterator, str::from_utf8};
 use delegate::delegate;
 use serde_bibtex::validate::is_balanced;
 
-use crate::error::RecordDataError;
+use crate::error::{InvalidBytesError, RecordDataError};
 
 /// The current version of the binary data format.
 pub const fn version() -> u8 {
@@ -38,7 +38,7 @@ const MAX_DATA_BLOCK_SIZE: usize = KeyHeader::BITS as usize / 8
 const MAX_TYPE_BLOCK_SIZE: usize =
     EntryTypeHeader::BITS as usize / 8 + EntryTypeHeader::MAX as usize;
 
-/// The maximum possible size (in bytes) of the vector returned by [`RawRecordData::as_bytes`].
+/// The maximum possible size (in bytes) of the vector returned by [`RawRecordData::to_byte_repr`].
 pub const DATA_MAX_BYTES: usize = 50_000_000;
 
 /// The maximum number of allowed record fields.
@@ -80,8 +80,127 @@ impl RawRecordData {
     }
 
     /// Construct a [`RawRecordData`] from raw bytes, checking that the underlying bytes are valid.
-    pub fn from_byte_repr(_data: Vec<u8>) -> Result<Self, RecordDataError> {
-        todo!()
+    pub fn from_byte_repr(data: Vec<u8>) -> Result<Self, InvalidBytesError> {
+        match data[..] {
+            [0, ..] => {
+                let mut cursor = Self::check_type(&data, 1)?;
+                let mut counter = 0;
+                loop {
+                    match Self::check_data_block(&data, cursor)? {
+                        Some(next_cursor) => {
+                            if counter >= RECORD_MAX_FIELDS {
+                                break Err(InvalidBytesError::new(cursor, "too many fields"));
+                            } else {
+                                cursor = next_cursor;
+                                counter += 1;
+                            }
+                        }
+                        None => break Ok(unsafe { Self::from_byte_repr_unchecked(data) }),
+                    }
+                }
+            }
+            [_, ..] => Err(InvalidBytesError::new(0, "invalid version")),
+            [] => Err(InvalidBytesError::new(0, "data was empty")),
+        }
+    }
+
+    /// Check that the `entry type` block is valid and return the updated cursor position.
+    fn check_type(data: &[u8], cursor: usize) -> Result<usize, InvalidBytesError> {
+        match data[cursor..] {
+            [0, ..] => Err(InvalidBytesError::new(
+                cursor,
+                "entry type cannot have length zero",
+            )),
+            [entry_type_len, ..] => {
+                let entry_type_start = cursor + 1;
+                let entry_type_end = entry_type_start + entry_type_len as usize;
+                let entry_type_bytes =
+                    data.get(entry_type_start..entry_type_end)
+                        .ok_or(InvalidBytesError::new(
+                            entry_type_start,
+                            "entry type shorter than header",
+                        ))?;
+
+                let entry_type = from_utf8(entry_type_bytes).map_err(|e| {
+                    InvalidBytesError::new(
+                        entry_type_start + e.valid_up_to(),
+                        "entry type has invalid utf-8 starting at position",
+                    )
+                })?;
+                if entry_type.chars().any(|ch| !ch.is_ascii_lowercase()) {
+                    return Err(InvalidBytesError::new(
+                        entry_type_start,
+                        "key contains non-ascii lowercase characters",
+                    ));
+                }
+                Ok(entry_type_end)
+            }
+            _ => Err(InvalidBytesError::new(cursor, "missing entry type")),
+        }
+    }
+
+    /// Check that a `data block` is valid. If there are no more blocks, return `Ok(None)`;
+    /// otherwise, return the updated cursor position.
+    fn check_data_block(data: &[u8], cursor: usize) -> Result<Option<usize>, InvalidBytesError> {
+        match data[cursor..] {
+            [0, _, _, ..] => Err(InvalidBytesError::new(
+                cursor,
+                "key cannot have length zero",
+            )),
+            [key_len, value_len_0, value_len_1, ..] => {
+                let value_len = u16::from_le_bytes([value_len_0, value_len_1]) as usize;
+
+                let key_block_start = cursor + 3;
+                let value_block_start = key_block_start + key_len as usize;
+                let value_block_end = value_block_start + value_len;
+
+                let key_bytes =
+                    data.get(key_block_start..value_block_start)
+                        .ok_or(InvalidBytesError::new(
+                            key_block_start,
+                            "key block shorter than header",
+                        ))?;
+                let value_bytes =
+                    data.get(value_block_start..value_block_end)
+                        .ok_or(InvalidBytesError::new(
+                            value_block_start,
+                            "value block shorter than header",
+                        ))?;
+
+                if !is_balanced(value_bytes) {
+                    return Err(InvalidBytesError::new(
+                        value_block_start,
+                        "value has unbalanced `{}`",
+                    ));
+                }
+
+                let key = from_utf8(key_bytes).map_err(|e| {
+                    InvalidBytesError::new(
+                        key_block_start + e.valid_up_to(),
+                        "key block has invalid utf-8 starting at position",
+                    )
+                })?;
+                if key.chars().any(|ch| !ch.is_ascii_lowercase()) {
+                    return Err(InvalidBytesError::new(
+                        key_block_start,
+                        "key contains non-ascii lowercase characters",
+                    ));
+                }
+                let _value = from_utf8(value_bytes).map_err(|e| {
+                    InvalidBytesError::new(
+                        value_block_start + e.valid_up_to(),
+                        "value block has invalid utf-8 starting at position",
+                    )
+                })?;
+
+                Ok(Some(value_block_end))
+            }
+            [] => Ok(None),
+            _ => Err(InvalidBytesError::new(
+                cursor,
+                "incomplete data block header",
+            )),
+        }
     }
 
     /// The representation as raw bytes.
@@ -378,6 +497,81 @@ mod tests {
         ];
 
         assert_eq!(expected, data.to_byte_repr());
+    }
+
+    #[test]
+    fn test_validate_data_ok() {
+        for data in [
+            // usual example
+            vec![
+                0, 7, b'a', b'r', b't', b'i', b'c', b'l', b'e', 5, 9, 0, b't', b'i', b't', b'l',
+                b'e', b'T', b'h', b'e', b' ', b'T', b'i', b't', b'l', b'e', 4, 4, 0, b'y', b'e',
+                b'a', b'r', b'2', b'0', b'2', b'3',
+            ],
+            // no keys is OK
+            vec![0, 7, b'a', b'r', b't', b'i', b'c', b'l', b'e'],
+            // field value can have length 0
+            vec![0, 1, b'a', 1, 0, 0, b'b'],
+        ] {
+            assert!(RawRecordData::from_byte_repr(data).is_ok());
+        }
+    }
+
+    #[test]
+    fn test_validate_data_err() {
+        // invalid version
+        let malformed_data = vec![
+            1, 7, b'a', b'r', b't', b'i', b'c', b'l', b'e', 5, 9, 0, b't', b'i', b't', b'l', b'e',
+            b'T', b'h', b'e', b' ', b'T', b'i', b't', b'l', b'e', 4, 4, 0, b'y', b'e', b'a', b'r',
+            b'2', b'0', b'2', b'3',
+        ];
+        let parsed = RawRecordData::from_byte_repr(malformed_data);
+        assert!(matches!(
+            parsed,
+            Err(InvalidBytesError {
+                position: 0,
+                message: "invalid version"
+            })
+        ));
+
+        // entry type is not valid utf-8
+        let malformed_data = vec![
+            0, 7, b'a', b'r', b't', 255, b'c', b'l', b'e', 5, 9, 0, b't', b'i', b't', b'l', b'e',
+            b'T', b'h', b'e', b' ', b'T', b'i', b't', b'l', b'e', 4, 4, 0, b'y', b'e', b'a', b'r',
+            b'2', b'0', b'2', b'3',
+        ];
+        let parsed = RawRecordData::from_byte_repr(malformed_data);
+        assert!(matches!(parsed, Err(InvalidBytesError { position: 5, .. })));
+
+        // bad length header
+        let malformed_data = vec![
+            0, 7, b'a', b'r', b't', b'i', b'c', b'l', b'e', 5, 100, 0, b't', b'i', b't', b'l',
+            b'e', b'T', b'h', b'e', b' ', b'T', b'i', b't', b'l', b'e', 4, 4, 0, b'y', b'e', b'a',
+            b'r', b'2', b'0', b'2', b'3',
+        ];
+        let parsed = RawRecordData::from_byte_repr(malformed_data);
+        assert!(matches!(
+            parsed,
+            Err(InvalidBytesError {
+                position: 17,
+                message: "value block shorter than header"
+            })
+        ));
+
+        // trailing bytes
+        let malformed_data = vec![0, 7, b'a', b'r', b't', b'i', b'c', b'l', b'e', 1];
+        let parsed = RawRecordData::from_byte_repr(malformed_data);
+        assert!(parsed.is_err());
+
+        // entry type cannot have length 0
+        let malformed_data = vec![0, 0];
+        let parsed = RawRecordData::from_byte_repr(malformed_data);
+        assert!(parsed.is_err());
+
+        // field key cannot have length 0
+        let malformed_data = vec![0, 1, b'a', 0, 0, 0];
+        let parsed = RawRecordData::from_byte_repr(malformed_data);
+        assert!(parsed.is_err());
     }
 
     #[test]
