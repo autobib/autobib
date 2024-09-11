@@ -290,6 +290,8 @@ fn run_cli(cli: Cli) -> Result<()> {
                 record_db.validate_record_data()?;
                 info!("Validating internal database consistency");
                 record_db.validate_consistency()?;
+                info!("Checking for dangling records");
+                record_db.validate_record_indexing()?;
             }
         },
     };

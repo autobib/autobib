@@ -75,7 +75,7 @@ pub(crate) use self::data::{EntryTypeHeader, KeyHeader, ValueHeader};
 use self::sql::*;
 use crate::{
     error::DatabaseError,
-    record::{Alias, RemoteId},
+    record::{Alias, RecordId, RemoteId},
 };
 
 /// An alias for the internal row ID used by SQLite for the `Records` table. This is the `key`
@@ -192,6 +192,40 @@ impl RecordDatabase {
         }
     }
 
+    /// Check if there are any "dangling records", i.e. records for which the corresponding row in
+    /// the `CitationKeys` table does not exist.
+    pub fn validate_record_indexing(&mut self) -> Result<(), DatabaseError> {
+        let tx = self.conn.transaction()?;
+        Self::validate_record_indexing_tx(&tx)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    fn validate_record_indexing_tx(tx: &Transaction) -> Result<(), DatabaseError> {
+        let mut retriever = tx.prepare_cached(get_all_record_data())?;
+        let mut rows = retriever.query([])?;
+
+        // rows does not implement Iterator
+        while let Some(row) = rows.next()? {
+            // first verify that we actually get a proper canonical id
+            let contents: String = row.get("record_id")?;
+            let canonical_id: RemoteId = match RecordId::from(contents.as_ref()).try_into() {
+                Ok(remote_id) => remote_id,
+                Err(_) => {
+                    return Err(DatabaseError::ConsistencyError(format!(
+                        "Record row contains record id '{contents}' which is not a valid canonical id"
+                    )));
+                }
+            };
+
+            // now, check that it is actually valid
+            if Self::get_record_key(tx, &canonical_id)?.is_none() {
+                return Err(DatabaseError::DanglingRecord(contents));
+            }
+        }
+        Ok(())
+    }
+
     /// Check that the databse is internally consistent and without errors.
     pub fn validate_consistency(&mut self) -> Result<(), DatabaseError> {
         let tx = self.conn.transaction()?;
@@ -205,7 +239,7 @@ impl RecordDatabase {
 
         debug!("Checking foreign key constraints");
         let mut checker = tx.prepare(foreign_key_check())?;
-        let mut rows = checker.query(())?;
+        let mut rows = checker.query([])?;
         while let Some(row) = rows.next()? {
             let msg: String = row.get(0)?;
             let error_msg = errors.get_or_insert_with(String::new);
@@ -215,7 +249,7 @@ impl RecordDatabase {
 
         debug!("Checking database integrity");
         let mut checker = tx.prepare(integrity_check())?;
-        let mut rows = checker.query(())?;
+        let mut rows = checker.query([])?;
         while let Some(row) = rows.next()? {
             if !matches!(row.get_ref(0)?, ValueRef::Text(b"ok")) {
                 let source_table: String = row.get(0)?;

@@ -24,4 +24,6 @@ pub enum DatabaseError {
     Data(#[from] RecordDataError),
     #[error("Internal consistency error(s):{0}")]
     ConsistencyError(String),
+    #[error("Record row '{0}' present in records table but not in citation keys table")]
+    DanglingRecord(String),
 }
