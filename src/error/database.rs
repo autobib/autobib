@@ -22,4 +22,6 @@ pub enum DatabaseError {
     CitationKeyNull(String),
     #[error(transparent)]
     Data(#[from] RecordDataError),
+    #[error("Internal consistency error(s):{0}")]
+    ConsistencyError(String),
 }

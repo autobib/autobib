@@ -68,7 +68,7 @@ use std::{iter::once, path::Path};
 use chrono::{DateTime, Local};
 use log::debug;
 use nucleo_picker::nucleo::{Injector, Utf32String};
-use rusqlite::{Connection, OptionalExtension, Transaction};
+use rusqlite::{types::ValueRef, Connection, OptionalExtension, Transaction};
 
 pub use self::data::{version, EntryData, RawRecordData, RecordData, DATA_MAX_BYTES};
 pub(crate) use self::data::{EntryTypeHeader, KeyHeader, ValueHeader};
@@ -189,6 +189,52 @@ impl RecordDatabase {
             }
             Ok(None) => Err(DatabaseError::TableMissing(table_name.into())),
             Err(why) => Err(why.into()),
+        }
+    }
+
+    /// Check that the databse is internally consistent and without errors.
+    pub fn validate_consistency(&mut self) -> Result<(), DatabaseError> {
+        let tx = self.conn.transaction()?;
+        Self::validate_consistency_tx(&tx)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    fn validate_consistency_tx(tx: &Transaction) -> Result<(), DatabaseError> {
+        let mut errors: Option<String> = None;
+
+        debug!("Checking foreign key constraints");
+        let mut checker = tx.prepare(foreign_key_check())?;
+        let mut rows = checker.query(())?;
+        while let Some(row) = rows.next()? {
+            let msg: String = row.get(0)?;
+            let error_msg = errors.get_or_insert_with(String::new);
+            error_msg.push_str("\nForeign key constraint error: ");
+            error_msg.push_str(&msg);
+        }
+
+        debug!("Checking database integrity");
+        let mut checker = tx.prepare(integrity_check())?;
+        let mut rows = checker.query(())?;
+        while let Some(row) = rows.next()? {
+            if !matches!(row.get_ref(0)?, ValueRef::Text(b"ok")) {
+                let source_table: String = row.get(0)?;
+                let source_row_id: String = row.get(1)?;
+                let target_table: String = row.get(2)?;
+                let target_row_id: String = row.get(3)?;
+
+                let contents = format!("Row '{source_row_id}' in table '{source_table}' has invalid reference to row '{target_row_id}' in '{target_table}'");
+
+                let error_msg = errors.get_or_insert_with(String::new);
+                error_msg.push_str("\nConsistency error: ");
+                error_msg.push_str(&contents);
+            }
+        }
+
+        if let Some(message) = errors {
+            Err(DatabaseError::ConsistencyError(message))
+        } else {
+            Ok(())
         }
     }
 

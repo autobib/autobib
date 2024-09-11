@@ -53,6 +53,10 @@ sql!(get_record_key, "Get a record key");
 
 sql!(delete_citation_key, "Delete a citation key");
 
+sql!(foreign_key_check, "Check foreign key constraints");
+
+sql!(integrity_check, "Check database integrity");
+
 sql!(
     set_citation_key_overwrite,
     "Set a citation key, replacing if one already exists"
