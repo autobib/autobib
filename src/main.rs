@@ -240,17 +240,24 @@ fn run_cli(cli: Cli) -> Result<()> {
 
             for path in paths {
                 match File::open(path.clone()).and_then(|mut f| f.read_to_end(&mut buffer)) {
-                    Ok(_) => match SourceFileType::detect(&path) {
-                        Ok(mode) => {
+                    Ok(_) => {
+                        if let Some(mode) = file_type.or_else(|| {
+                            SourceFileType::detect(&path).map_or_else(
+                                |err| {
+                                    error!(
+                                        "File '{}': {err}. Force filetype with `--file-type`.",
+                                        path.display()
+                                    );
+                                    None
+                                },
+                                Some,
+                            )
+                        }) {
                             info!("Reading citation keys from '{}'", path.display());
-                            get_citekeys(file_type.unwrap_or(mode), &buffer, &mut container);
+                            get_citekeys(mode, &buffer, &mut container);
                             buffer.clear();
                         }
-                        Err(err) => error!(
-                            "File '{}': {err}. Force filetype with `--file-type`.",
-                            path.display()
-                        ),
-                    },
+                    }
                     Err(err) => error!(
                         "Failed to read contents of path '{}': {err}",
                         path.display()
