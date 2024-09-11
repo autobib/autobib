@@ -286,7 +286,10 @@ fn run_cli(cli: Cli) -> Result<()> {
         Command::Show => todo!(),
         Command::Util { util_command } => match util_command {
             UtilCommand::Check => {
+                info!("Validating record binary data");
                 record_db.validate_record_data()?;
+                info!("Validating internal database consistency");
+                record_db.validate_consistency()?;
             }
         },
     };
