@@ -95,6 +95,12 @@ enum Command {
         #[arg(long)]
         file_type: Option<SourceFileType>,
     },
+    /// Edit existing records.
+    #[command(alias = "u")]
+    Util {
+        #[command(subcommand)]
+        util_command: UtilCommand,
+    },
 }
 
 /// Manage aliases.
@@ -106,6 +112,13 @@ enum AliasCommand {
     Delete { alias: Alias },
     /// Rename an existing alias.
     Rename { alias: Alias, new: Alias },
+}
+
+/// Manage aliases.
+#[derive(Subcommand)]
+enum UtilCommand {
+    /// Add a new alias.
+    Check,
 }
 
 fn main() {
@@ -264,6 +277,11 @@ fn run_cli(cli: Cli) -> Result<()> {
             print_records(valid_entries)
         }
         Command::Show => todo!(),
+        Command::Util { util_command } => match util_command {
+            UtilCommand::Check => {
+                record_db.validate_record_data()?;
+            }
+        },
     };
 
     Ok(())
