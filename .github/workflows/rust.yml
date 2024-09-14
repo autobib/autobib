@@ -22,4 +22,4 @@ jobs:
     - name: Build docs
       env:
         RUSTDOCFLAGS: -D warnings
-      run: cargo doc --verbose
+      run: cargo doc --verbose --no-deps
