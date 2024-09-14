@@ -7,6 +7,7 @@ pub mod arxiv;
 pub mod doi;
 pub mod jfm;
 pub mod local;
+pub mod mr;
 pub mod zbl;
 pub mod zbmath;
 
@@ -35,8 +36,9 @@ pub(crate) fn lookup_provider(provider: &str) -> Either<Resolver, Referrer> {
     match provider {
         "arxiv" => Either::Left(arxiv::get_record),
         "doi" => Either::Left(doi::get_record),
-        "local" => Either::Left(local::get_record),
         "jfm" => Either::Right(jfm::get_canonical),
+        "local" => Either::Left(local::get_record),
+        "mr" => Either::Left(mr::get_record),
         "zbmath" => Either::Left(zbmath::get_record),
         "zbl" => Either::Right(zbl::get_canonical),
         // SAFETY: An invalid provider should have been caught by a call to lookup_validator
@@ -49,8 +51,9 @@ pub(crate) fn lookup_validator(provider: &str) -> Option<Validator> {
     match provider {
         "arxiv" => Some(arxiv::is_valid_id),
         "doi" => Some(doi::is_valid_id),
-        "local" => Some(local::is_valid_id),
         "jfm" => Some(jfm::is_valid_id),
+        "local" => Some(local::is_valid_id),
+        "mr" => Some(mr::is_valid_id),
         "zbmath" => Some(zbmath::is_valid_id),
         "zbl" => Some(zbl::is_valid_id),
         _ => None,
@@ -80,21 +83,23 @@ struct ProviderBibtex {
 /// this can/will cause problems when deserializing.
 #[derive(Debug, Default, Deserialize)]
 struct ProviderBibtexFields {
-    #[serde(alias = "Title")]
+    #[serde(alias = "Title", alias = "TITLE")]
     pub title: Option<String>,
-    #[serde(alias = "Author")]
+    #[serde(alias = "Author", alias = "AUTHOR")]
     pub author: Option<String>,
-    #[serde(alias = "Journal")]
+    #[serde(alias = "Journal", alias = "JOURNAL")]
     pub journal: Option<String>,
-    #[serde(alias = "Volume")]
+    #[serde(alias = "Volume", alias = "VOLUME")]
     pub volume: Option<String>,
-    #[serde(alias = "Pages")]
+    #[serde(alias = "Pages", alias = "PAGES")]
     pub pages: Option<String>,
-    #[serde(alias = "Year")]
+    #[serde(alias = "Year", alias = "YEAR")]
     pub year: Option<String>,
+    #[serde(alias = "MRNUMBER")]
+    pub mrnumber: Option<String>,
     #[serde(alias = "DOI")]
     pub doi: Option<String>,
-    #[serde(alias = "Language")]
+    #[serde(alias = "Language", alias = "LANGUAGE")]
     pub language: Option<String>,
     #[serde(alias = "Zbl")]
     pub zbl: Option<String>,
@@ -128,6 +133,7 @@ impl TryFrom<ProviderBibtex> for RecordData {
             volume,
             pages,
             year,
+            mrnumber,
             doi,
             language,
             zbl
