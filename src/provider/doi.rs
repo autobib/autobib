@@ -33,7 +33,7 @@ pub fn get_record(id: &str, client: &HttpClient) -> Result<Option<RecordData>, P
     match entry_iter.next() {
         Some(Ok(entry)) => Ok(Some(entry.try_into()?)),
         _ => Err(ProviderError::Unexpected(
-            "CrossRef bibtex record is invalid bibtex!".into(),
+            "CrossRef bibtex record is invalid!".into(),
         )),
     }
 }

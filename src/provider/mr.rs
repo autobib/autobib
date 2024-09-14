@@ -40,7 +40,7 @@ pub fn get_record(id: &str, client: &HttpClient) -> Result<Option<RecordData>, P
     match entry_iter.next() {
         Some(Ok(entry)) => Ok(Some(entry.try_into()?)),
         _ => Err(ProviderError::Unexpected(
-            "MathSciNet bibtex record is invalid bibtex!".into(),
+            "MathSciNet bibtex record is invalid!".into(),
         )),
     }
 }
