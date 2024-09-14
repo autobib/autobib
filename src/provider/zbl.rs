@@ -43,7 +43,7 @@ pub fn get_canonical(id: &str, client: &HttpClient) -> Result<Option<RemoteId>, 
             }
         }
         _ => Err(ProviderError::Unexpected(
-            "zbMATH bibtex record is invalid bibtex!".into(),
+            "zbMATH bibtex record is invalid!".into(),
         )),
     }
 }
