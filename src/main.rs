@@ -43,7 +43,7 @@ pub use self::{
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
-    #[arg(long)]
+    #[arg(short, long)]
     database: Option<PathBuf>,
 
     #[command(flatten)]
@@ -56,38 +56,31 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     /// Manage aliases.
-    #[command(alias = "a")]
     Alias {
         #[command(subcommand)]
         alias_command: AliasCommand,
     },
     /// Edit existing records.
-    #[command(alias = "e")]
     Edit {
         /// The citation key to edit.
         citation_key: String,
     },
     /// Search for a citation key.
-    #[command(alias = "f")]
     Find {
         /// Fields to search (e.g. author, title).
         #[clap(short, long, value_delimiter = ',')]
         fields: Vec<String>,
     },
     /// Retrieve records given citation keys.
-    #[command(alias = "g")]
     Get {
         /// The citation keys to retrieve.
         citation_keys: Vec<String>,
     },
     /// Create or edit a local record with the given handle.
-    #[command(alias = "l")]
     Local { handle: String },
     /// Show metadata for citation key.
-    #[command()]
     Show,
     /// Generate records by searching for citation keys inside files.
-    #[command(alias = "s")]
     Source {
         /// The files in which to search.
         paths: Vec<PathBuf>,
@@ -95,8 +88,7 @@ enum Command {
         #[arg(long)]
         file_type: Option<SourceFileType>,
     },
-    /// Edit existing records.
-    #[command(alias = "u")]
+    /// Utilities to manage database.
     Util {
         #[command(subcommand)]
         util_command: UtilCommand,
@@ -109,15 +101,17 @@ enum AliasCommand {
     /// Add a new alias.
     Add { alias: Alias, target: RecordId },
     /// Delete an existing alias.
+    #[command(alias = "rm")]
     Delete { alias: Alias },
     /// Rename an existing alias.
+    #[command(alias = "mv")]
     Rename { alias: Alias, new: Alias },
 }
 
 /// Manage aliases.
 #[derive(Subcommand)]
 enum UtilCommand {
-    /// Add a new alias.
+    /// Check database for errors.
     Check,
 }
 
