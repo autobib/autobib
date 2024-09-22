@@ -13,7 +13,7 @@ struct MathscinetRecord {
 }
 
 pub fn is_valid_id(id: &str) -> bool {
-    id.len() == 7 && id.as_bytes().iter().all(|d| d.is_ascii_digit())
+    id.len() == 7 && id.as_bytes().iter().all(u8::is_ascii_digit)
 }
 
 pub fn get_record(id: &str, client: &HttpClient) -> Result<Option<RecordData>, ProviderError> {
