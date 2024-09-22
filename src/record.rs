@@ -103,7 +103,7 @@ mod private {
 
         /// Push a new element.
         pub fn push(&mut self, remote_id: RemoteId) {
-            self.0.push(remote_id)
+            self.0.push(remote_id);
         }
 
         /// Get the top element.

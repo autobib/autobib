@@ -135,7 +135,7 @@ fn main() {
 
     // run the cli
     if let Err(err) = run_cli(cli) {
-        error!("{err}")
+        error!("{err}");
     }
 }
 
@@ -185,7 +185,7 @@ fn run_cli(cli: Cli) -> Result<()> {
             }
             AliasCommand::Delete { alias } => {
                 info!("Deleting alias '{alias}'");
-                record_db.delete_alias(&alias)?
+                record_db.delete_alias(&alias)?;
             }
             AliasCommand::Rename { alias, new } => {
                 info!("Rename alias '{alias}' to '{new}'");
@@ -209,7 +209,7 @@ fn run_cli(cli: Cli) -> Result<()> {
 
                 if new_key != entry.key() {
                     let alias = Alias::from_str(&new_key)?;
-                    record_db.insert_alias(&alias, &canonical)?
+                    record_db.insert_alias(&alias, &canonical)?;
                 }
 
                 if new_record_data != *entry.data() {
@@ -232,7 +232,7 @@ fn run_cli(cli: Cli) -> Result<()> {
             );
 
             // print biblatex strings
-            print_records(valid_entries)
+            print_records(valid_entries);
         }
         Command::Find { fields } => {
             let fields_to_search: HashSet<String> =
@@ -281,7 +281,7 @@ fn run_cli(cli: Cli) -> Result<()> {
             let valid_entries =
                 validate_and_retrieve(container.iter().map(|s| s as &str), &mut record_db, &client);
 
-            print_records(valid_entries)
+            print_records(valid_entries);
         }
         Command::Show => todo!(),
         Command::Util { util_command } => match util_command {
