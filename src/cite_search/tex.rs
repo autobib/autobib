@@ -111,9 +111,9 @@ fn parse_cite_contents<T: Extend<String>>(contents: &str, container: &mut T) {
     container.extend(
         contents
             .split(',')
-            .map(|k| k.trim())
+            .map(str::trim)
             .filter(|k| *k != "*")
-            .map(|k| k.into()),
+            .map(Into::into),
     )
 }
 

@@ -330,7 +330,7 @@ fn choose_canonical_id(
     });
 
     // get the selection
-    picker.pick().map(|opt| opt.cloned())
+    picker.pick().map(Option::<&_>::cloned)
 }
 
 /// Iterate over records, printing the entries and warning about duplicates.
@@ -342,7 +342,7 @@ fn print_records<D: EntryData>(records: BTreeMap<RemoteId, NonEmpty<Entry<D>>>) 
         if entries.len() > 1 {
             warn!(
                 "Multiple keys for '{canonical}': {}",
-                entries.iter().map(|e| e.key()).join(", ")
+                entries.iter().map(Entry::key).join(", ")
             );
         }
         for record in entries {

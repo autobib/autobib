@@ -379,7 +379,7 @@ impl RecordData {
         String: std::borrow::Borrow<Q>,
         Q: Ord,
     {
-        self.fields.get(key).map(|s| s.as_str())
+        self.fields.get(key).map(String::as_str)
     }
 
     pub fn contains_key<Q>(&self, key: &Q) -> bool
