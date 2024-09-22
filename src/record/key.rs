@@ -189,7 +189,7 @@ impl TryFrom<RecordId> for RemoteId {
                     provider_len,
                 };
 
-                if remote_id.sub_id().is_empty() {
+                if remote_id.provider().is_empty() {
                     Err(RecordError {
                         input: remote_id.name().into(),
                         kind: RecordErrorKind::EmptyProvider,

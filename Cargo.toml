@@ -30,3 +30,10 @@ serde_bibtex = "0.3.1"
 serde_json = "1.0"
 stderrlog = "0.6"
 thiserror = "1.0"
+
+
+[lints.clippy]
+redundant_closure_for_method_calls = "warn"
+same_functions_in_if_condition = "warn"
+semicolon_if_nothing_returned = "warn"
+uninlined_format_args = "warn"

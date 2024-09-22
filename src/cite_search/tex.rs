@@ -24,7 +24,7 @@ fn comment_and_ws(buffer: &[u8], mut pos: usize) -> usize {
 fn ascii_macro(buffer: &[u8], mut pos: usize) -> (Option<&str>, usize) {
     // check the first char
     if buffer[pos] == b'\\' {
-        pos += 1
+        pos += 1;
     } else {
         return (None, pos);
     }
@@ -111,10 +111,10 @@ fn parse_cite_contents<T: Extend<String>>(contents: &str, container: &mut T) {
     container.extend(
         contents
             .split(',')
-            .map(|k| k.trim())
+            .map(str::trim)
             .filter(|k| *k != "*")
-            .map(|k| k.into()),
-    )
+            .map(Into::into),
+    );
 }
 
 lazy_static! {
