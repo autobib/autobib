@@ -128,14 +128,6 @@ enum UtilCommand {
 fn main() {
     let cli = Cli::parse();
 
-    // generate completions upon request and exit
-    if let Command::Completions { shell } = cli.command {
-        let mut clap_command = Cli::command();
-        let bin_name = clap_command.get_name().to_owned();
-        generate(shell, &mut clap_command, bin_name, &mut io::stdout());
-        return;
-    }
-
     // initialize warnings
     if let Some(level) = cli.verbose.log_level() {
         stderrlog::new()
@@ -143,6 +135,14 @@ fn main() {
             .verbosity(level)
             .init()
             .unwrap();
+    }
+
+    // generate completions upon request and exit
+    if let Command::Completions { shell } = cli.command {
+        let mut clap_command = Cli::command();
+        let bin_name = clap_command.get_name().to_owned();
+        generate(shell, &mut clap_command, bin_name, &mut io::stdout());
+        return;
     }
 
     // run the cli
