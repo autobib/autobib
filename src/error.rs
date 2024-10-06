@@ -1,5 +1,6 @@
 //! # Error implementation
 //! The main error types which result from normal usage.
+mod bibtex;
 mod database;
 mod provider;
 mod record;
@@ -10,6 +11,7 @@ use thiserror::Error;
 use crate::record::{Alias, RemoteId};
 
 pub use self::{
+    bibtex::BibTeXError,
     database::DatabaseError,
     provider::ProviderError,
     record::{RecordError, RecordErrorKind},

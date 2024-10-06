@@ -34,6 +34,7 @@ use term::{Editor, EditorConfig};
 use self::{
     cite_search::{get_citekeys, SourceFileType},
     db::{CitationKey, EntryData, RawRecordData, RecordData, RecordDatabase},
+    record::Record,
 };
 pub use self::{
     entry::Entry,
@@ -204,11 +205,17 @@ fn run_cli(cli: Cli) -> Result<()> {
             unreachable!("Request for completions script should have been handled earlier and the program should have exited then.");
         }
         Command::Edit { citation_key } => {
-            let (entry, canonical) = get_record(
+            let Record {
+                key,
+                data,
+                canonical,
+            } = get_record(
                 &mut record_db,
                 RecordId::from(citation_key.as_str()),
                 &client,
             )?;
+
+            let entry = Entry::try_new(key, data)?;
 
             let editor = Editor::new(EditorConfig { suffix: ".bib" });
 
@@ -370,7 +377,7 @@ fn validate_and_retrieve<'a, T: Iterator<Item = &'a str>>(
 ) -> BTreeMap<RemoteId, NonEmpty<Entry<RawRecordData>>> {
     let mut records: BTreeMap<RemoteId, NonEmpty<Entry<RawRecordData>>> = BTreeMap::new();
 
-    for (record, canonical) in citation_keys
+    for (bibtex_entry, canonical) in citation_keys
         .map(RecordId::from)
         .filter_map(|citation_key| {
             get_record(record_db, citation_key, client).map_or_else(
@@ -381,11 +388,25 @@ fn validate_and_retrieve<'a, T: Iterator<Item = &'a str>>(
                 Some,
             )
         })
+        .filter_map(|record| {
+            let Record {
+                key,
+                data,
+                canonical,
+            } = record;
+            Entry::try_new(key, data).map_or_else(
+                |err| {
+                    error!("{err}\n  Suggested fix: use an alias which does not contain disallowed characters: {{}}(),=\\#%\"");
+                    None
+                },
+                |entry| Some((entry, canonical)),
+            )
+        })
     {
         match records.entry(canonical) {
-            Occupied(entry) => entry.into_mut().push(record),
-            Vacant(entry) => {
-                entry.insert(NonEmpty::singleton(record));
+            Occupied(e) => e.into_mut().push(bibtex_entry),
+            Vacant(e) => {
+                e.insert(NonEmpty::singleton(bibtex_entry));
             }
         }
     }
