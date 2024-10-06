@@ -7,7 +7,6 @@ pub use key::{Alias, RecordId, RemoteId};
 
 use crate::{
     db::{NullRecordsResponse, RawRecordData, RecordDatabase, RecordsResponse},
-    entry::Entry,
     error::Error,
     provider::lookup_provider,
     HttpClient,
@@ -15,16 +14,27 @@ use crate::{
 
 use private::Context;
 
-/// Get the [`Entry`] associated with a [`RecordId`], or [`None`] if the [`Entry`] does not exist.
+#[derive(Debug)]
+pub struct Record {
+    pub key: String,
+    pub data: RawRecordData,
+    pub canonical: RemoteId,
+}
+
+/// Get the [`Record`] associated with a [`RecordId`], or [`None`] if the [`Record`] does not exist.
 pub fn get_record(
     db: &mut RecordDatabase,
     record_id: RecordId,
     client: &HttpClient,
-) -> Result<(Entry<RawRecordData>, RemoteId), Error> {
+) -> Result<Record, Error> {
     match db.get_cached_data(&record_id)? {
         RecordsResponse::Found(raw_data, canonical, _) => {
             info!("Found cached record for '{record_id}'");
-            Ok((Entry::new(record_id, raw_data), canonical))
+            Ok(Record {
+                key: record_id.into(),
+                data: raw_data,
+                canonical,
+            })
         }
         RecordsResponse::NotFound => match record_id.resolve()? {
             Either::Left(alias) => Err(Error::NullAlias(alias)),
@@ -38,7 +48,7 @@ fn remote_resolve(
     db: &mut RecordDatabase,
     mut context: Context,
     client: &HttpClient,
-) -> Result<(Entry<RawRecordData>, RemoteId), Error> {
+) -> Result<Record, Error> {
     loop {
         let top = context.peek();
 
@@ -56,7 +66,11 @@ fn remote_resolve(
                             let raw_record_data = (&data).into();
                             db.set_cached_data(top, &raw_record_data, context.descend())?;
                             let (bottom, top) = context.into_ends();
-                            break Ok((Entry::new(bottom, RawRecordData::from(&data)), top));
+                            break Ok(Record {
+                                key: bottom.into(),
+                                data: RawRecordData::from(&data),
+                                canonical: top,
+                            });
                         }
                         None => {
                             db.set_cached_null(context.descend())?;
@@ -67,7 +81,11 @@ fn remote_resolve(
                         Some(new_remote_id) => {
                             match db.get_cached_data_and_ref(&new_remote_id, context.descend())? {
                                 RecordsResponse::Found(raw_data, canonical, _) => {
-                                    break Ok((Entry::new(new_remote_id, raw_data), canonical))
+                                    break Ok(Record {
+                                        key: context.into_bottom().into(),
+                                        data: raw_data,
+                                        canonical,
+                                    })
                                 }
                                 RecordsResponse::NotFound => context.push(new_remote_id),
                             }
