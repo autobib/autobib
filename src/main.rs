@@ -29,6 +29,8 @@ use itertools::Itertools;
 use log::{error, info, warn};
 use nonempty::NonEmpty;
 use nucleo_picker::Picker;
+use serde::Serializer as _;
+use serde_bibtex::ser::Serializer;
 use term::{Editor, EditorConfig};
 
 use self::{
@@ -250,7 +252,8 @@ fn run_cli(cli: Cli) -> Result<()> {
             );
 
             // print biblatex strings
-            print_records(valid_entries);
+            let stdout = io::BufWriter::new(io::stdout());
+            write_records(stdout, valid_entries)?;
         }
         Command::Find { fields } => {
             let fields_to_search: HashSet<String> =
@@ -299,7 +302,8 @@ fn run_cli(cli: Cli) -> Result<()> {
             let valid_entries =
                 validate_and_retrieve(container.iter().map(|s| s as &str), &mut record_db, &client);
 
-            print_records(valid_entries);
+            let stdout = io::BufWriter::new(io::stdout());
+            write_records(stdout, valid_entries)?;
         }
         Command::Show => todo!(),
         Command::Util { util_command } => match util_command {
@@ -351,22 +355,22 @@ fn choose_canonical_id(
     picker.pick().map(Option::<&_>::cloned)
 }
 
-/// Iterate over records, printing the entries and warning about duplicates.
-///
-/// TODO: replace this with a `write_records` method and an abstract writer.
-/// TODO: replace the `records` struct with a custom wrapper struct.
-fn print_records<D: EntryData>(records: BTreeMap<RemoteId, NonEmpty<Entry<D>>>) {
-    for (canonical, entries) in records.iter() {
+/// Iterate over records, writing the entries and warning about duplicates.
+fn write_records<W: io::Write, D: EntryData>(
+    writer: W,
+    records: BTreeMap<RemoteId, NonEmpty<Entry<D>>>,
+) -> Result<(), serde_bibtex::Error> {
+    let mut serializer = Serializer::unchecked(writer);
+
+    serializer.collect_seq(records.iter().flat_map(|(canonical, entries)| {
         if entries.len() > 1 {
             warn!(
                 "Multiple keys for '{canonical}': {}",
                 entries.iter().map(Entry::key).join(", ")
             );
-        }
-        for record in entries {
-            println!("{record}");
-        }
-    }
+        };
+        entries
+    }))
 }
 
 /// Validate and retrieve records.
