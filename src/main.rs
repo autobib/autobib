@@ -14,7 +14,7 @@ use std::{
     },
     fs::{create_dir_all, File},
     io::{self, Read},
-    path::PathBuf,
+    path::{Path, PathBuf},
     str::FromStr,
     thread,
 };
@@ -24,6 +24,7 @@ use chrono::{DateTime, Local};
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::aot::{generate, Shell};
 use clap_verbosity_flag::{Verbosity, WarnLevel};
+use crossterm::tty::IsTty;
 use etcetera::{choose_app_strategy, AppStrategy, AppStrategyArgs};
 use itertools::Itertools;
 use log::{error, info, warn};
@@ -84,6 +85,9 @@ enum Command {
     Get {
         /// The citation keys to retrieve.
         citation_keys: Vec<String>,
+        /// Write output to file.
+        #[arg(short, long)]
+        out: Option<PathBuf>,
     },
     /// Create or edit a local record with the given handle.
     Local { handle: String },
@@ -96,6 +100,9 @@ enum Command {
         /// Override file type detection.
         #[arg(long)]
         file_type: Option<SourceFileType>,
+        /// Write output to file.
+        #[arg(short, long)]
+        out: Option<PathBuf>,
     },
     /// Utilities to manage database.
     Util {
@@ -243,7 +250,7 @@ fn run_cli(cli: Cli) -> Result<()> {
             record_db
                 .get_cached_data_or_set_default(&remote_id, || (&RecordData::default()).into())?;
         }
-        Command::Get { citation_keys } => {
+        Command::Get { citation_keys, out } => {
             // Collect all entries which are not null
             let valid_entries = validate_and_retrieve(
                 citation_keys.iter().map(|s| s as &str),
@@ -251,9 +258,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                 &client,
             );
 
-            // print biblatex strings
-            let stdout = io::BufWriter::new(io::stdout());
-            write_records(stdout, valid_entries)?;
+            output_records(out.as_ref(), valid_entries)?;
         }
         Command::Find { fields } => {
             let fields_to_search: HashSet<String> =
@@ -265,7 +270,11 @@ fn run_cli(cli: Cli) -> Result<()> {
                 error!("No item selected.");
             }
         }
-        Command::Source { paths, file_type } => {
+        Command::Source {
+            paths,
+            file_type,
+            out,
+        } => {
             let mut buffer = Vec::new();
 
             // The citation keys do not need to be sorted since sorting
@@ -302,8 +311,7 @@ fn run_cli(cli: Cli) -> Result<()> {
             let valid_entries =
                 validate_and_retrieve(container.iter().map(|s| s as &str), &mut record_db, &client);
 
-            let stdout = io::BufWriter::new(io::stdout());
-            write_records(stdout, valid_entries)?;
+            output_records(out.as_ref(), valid_entries)?;
         }
         Command::Show => todo!(),
         Command::Util { util_command } => match util_command {
@@ -353,6 +361,27 @@ fn choose_canonical_id(
 
     // get the selection
     picker.pick().map(Option::<&_>::cloned)
+}
+
+/// Either write records to stdout, or to a provided file.
+fn output_records<D: EntryData, P: AsRef<Path>>(
+    out: Option<P>,
+    records: BTreeMap<RemoteId, NonEmpty<Entry<D>>>,
+) -> Result<(), serde_bibtex::Error> {
+    if let Some(path) = out {
+        let writer = io::BufWriter::new(std::fs::File::create(path)?);
+        write_records(writer, records)?;
+    } else {
+        let stdout = io::stdout();
+        if stdout.is_tty() {
+            write_records(stdout, records)?;
+        } else {
+            let writer = io::BufWriter::new(stdout);
+            write_records(writer, records)?;
+        }
+    };
+
+    Ok(())
 }
 
 /// Iterate over records, writing the entries and warning about duplicates.
