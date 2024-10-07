@@ -21,7 +21,8 @@ use std::{
 
 use anyhow::Result;
 use chrono::{DateTime, Local};
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
+use clap_complete::aot::{generate, Shell};
 use clap_verbosity_flag::{Verbosity, WarnLevel};
 use etcetera::{choose_app_strategy, AppStrategy, AppStrategyArgs};
 use itertools::Itertools;
@@ -59,6 +60,11 @@ enum Command {
     Alias {
         #[command(subcommand)]
         alias_command: AliasCommand,
+    },
+    /// Generate a shell completions script.
+    Completions {
+        /// The shell for which to generate the script.
+        shell: Shell,
     },
     /// Edit existing records.
     Edit {
@@ -127,6 +133,14 @@ fn main() {
             .unwrap();
     }
 
+    // generate completions upon request and exit
+    if let Command::Completions { shell } = cli.command {
+        let mut clap_command = Cli::command();
+        let bin_name = clap_command.get_name().to_owned();
+        generate(shell, &mut clap_command, bin_name, &mut io::stdout());
+        return;
+    }
+
     // run the cli
     if let Err(err) = run_cli(cli) {
         error!("{err}");
@@ -186,6 +200,9 @@ fn run_cli(cli: Cli) -> Result<()> {
                 record_db.rename_alias(&alias, &new)?;
             }
         },
+        Command::Completions { shell: _ } => {
+            unreachable!("Request for completions script should have been handled earlier and the program should have exited then.");
+        }
         Command::Edit { citation_key } => {
             let (entry, canonical) = get_record(
                 &mut record_db,
