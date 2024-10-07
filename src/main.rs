@@ -62,8 +62,10 @@ enum Command {
         alias_command: AliasCommand,
     },
     /// Generate a shell completions script.
-    #[command()]
-    Completions { shell: Shell },
+    Completions {
+        /// The shell for which to generate the script.
+        shell: Shell,
+    },
     /// Edit existing records.
     Edit {
         /// The citation key to edit.
