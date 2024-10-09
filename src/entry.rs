@@ -79,9 +79,9 @@ impl<D: EntryData> Serialize for Entry<D> {
     where
         S: Serializer,
     {
-        let mut state = serializer.serialize_struct("Color", 3)?;
-        state.serialize_field("entry_type", &self.key)?;
-        state.serialize_field("entry_key", &self.entry_type())?;
+        let mut state = serializer.serialize_struct("Entry", 3)?;
+        state.serialize_field("entry_type", &self.entry_type())?;
+        state.serialize_field("entry_key", &self.key)?;
         state.serialize_field("fields", &RecordDataWrapper(&self.record_data))?;
         state.end()
     }
