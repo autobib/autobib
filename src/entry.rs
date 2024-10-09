@@ -125,7 +125,7 @@ impl<D: EntryData> fmt::Display for Entry<D> {
         // SAFETY: the RecordData::try_new and RecordData::try_insert methods only accept
         //         entry types and field keys which satisfy stricter requirements than the
         //         serde_bibtex syntax
-        let buffer = to_string_unchecked(&self).expect("serialization should not fail");
+        let buffer = to_string_unchecked(&[self]).expect("serialization should not fail");
         f.write_str(&buffer)
     }
 }
