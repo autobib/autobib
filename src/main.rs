@@ -66,6 +66,7 @@ enum Command {
         alias_command: AliasCommand,
     },
     /// Generate a shell completions script.
+    #[clap(hide = true)]
     Completions {
         /// The shell for which to generate the script.
         shell: Shell,
