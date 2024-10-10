@@ -17,11 +17,16 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - uses: dtolnay/rust-toolchain@stable
+    - name: Initialize mitmproxy
+      run: |
+        pipx install mitmproxy
+        mitmdump --server-replay mitmproxy/flows --server-replay-reuse --set connection_strategy=lazy &
     - uses: Swatinem/rust-cache@v2
     - name: Build test binaries
       run: cargo test --no-run --locked
     - name: Run tests
       run: cargo test --no-fail-fast --locked
+
 
   checks:
     runs-on: ubuntu-latest

@@ -1,0 +1,17 @@
+@article{doi:10.4007/annals.2014.180.2.7,
+  author = {Hochman, Michael},
+  doi = {10.4007/annals.2014.180.2.7},
+  journal = {Annals of Mathematics},
+  pages = {773–822},
+  title = {On self-similar sets with overlaps and inverse theorems for entropy},
+  volume = {180},
+  year = {2014},
+}
+
+@book{jfm:60.0017.02,
+  author = {Hilbert, D. and Bernays, P.},
+  language = {German},
+  title = {Grundlagen der {Mathematik}. {I}.},
+  volume = {40},
+  year = {1934},
+}

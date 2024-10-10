@@ -1,5 +1,5 @@
 use reqwest::{
-    blocking::{Client, Response},
+    blocking::{Client, ClientBuilder, Response},
     Error, IntoUrl,
 };
 
@@ -14,18 +14,23 @@ static APP_USER_AGENT: &str = concat!(
     ")",
 );
 
-/// A wrapper around a [`reqwest::blocking::Client`].
+/// A thin wrapper around a [`reqwest::blocking::Client`].
 pub struct HttpClient {
     client: Client,
 }
 
 impl HttpClient {
-    /// Initialize a new client.
-    pub fn new() -> Result<Self, Error> {
-        let client = Client::builder().user_agent(APP_USER_AGENT).build()?;
-        Ok(HttpClient { client })
+    /// Initialize a default builder.
+    pub fn default_builder() -> ClientBuilder {
+        Client::builder().user_agent(APP_USER_AGENT)
     }
 
+    /// Create a new client from the builder.
+    pub fn new(builder: ClientBuilder) -> Result<Self, Error> {
+        Ok(Self {
+            client: builder.build()?,
+        })
+    }
     /// Make a request to a given url.
     pub fn get<U: IntoUrl>(&self, url: U) -> Result<Response, Error> {
         self.client.get(url).send()
