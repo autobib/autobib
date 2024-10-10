@@ -1,0 +1,4 @@
+@book{my_alias,
+  author = {Doe, John},
+  title = {My favourite book},
+}

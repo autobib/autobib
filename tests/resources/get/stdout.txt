@@ -1,0 +1,28 @@
+@preprint{arxiv:1212.1873,
+  author = {Hochman, Michael},
+  title = {On self-similar sets with overlaps and inverse theorems for entropy},
+}
+
+@article{mr:3224722,
+  author = {Hochman, Michael},
+  doi = {10.4007/annals.2014.180.2.7},
+  journal = {Ann. of Math. (2)},
+  mrnumber = {3224722},
+  pages = {773--822},
+  title = {On self-similar sets with overlaps and inverse theorems for
+              entropy},
+  volume = {180},
+  year = {2014},
+}
+
+@article{zbl:1337.28015,
+  author = {Hochman, Michael},
+  doi = {10.4007/annals.2014.180.2.7},
+  journal = {Ann. Math. (2)},
+  language = {English},
+  pages = {773--822},
+  title = {On self-similar sets with overlaps and inverse theorems for entropy},
+  volume = {180},
+  year = {2014},
+  zbl = {1337.28015},
+}
