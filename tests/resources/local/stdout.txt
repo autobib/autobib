@@ -1,0 +1,4 @@
+@book{local:first,
+  author = {Doe, John},
+  title = {My favourite book},
+}

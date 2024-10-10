@@ -32,6 +32,7 @@ use itertools::Itertools;
 use log::{error, info, warn};
 use nonempty::NonEmpty;
 use nucleo_picker::Picker;
+use reqwest::Certificate;
 use serde::Serializer as _;
 use serde_bibtex::ser::Serializer;
 use term::{Editor, EditorConfig};
@@ -53,8 +54,13 @@ pub use self::{
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
-    #[arg(short, long)]
+    /// Use record database.
+    #[arg(short, long, value_name = "PATH")]
     database: Option<PathBuf>,
+
+    /// Use .pem certificate for network connections.
+    #[arg(long, value_name = "PATH", hide = true)]
+    cert: Option<PathBuf>,
 
     #[command(flatten)]
     verbose: Verbosity<WarnLevel>,
@@ -130,13 +136,26 @@ enum Command {
 #[derive(Subcommand)]
 enum AliasCommand {
     /// Add a new alias.
-    Add { alias: Alias, target: RecordId },
+    Add {
+        /// The new alias to create.
+        alias: Alias,
+        /// What the alias points to.
+        target: RecordId,
+    },
     /// Delete an existing alias.
     #[command(alias = "rm")]
-    Delete { alias: Alias },
+    Delete {
+        /// The new alias to delete.
+        alias: Alias,
+    },
     /// Rename an existing alias.
     #[command(alias = "mv")]
-    Rename { alias: Alias, new: Alias },
+    Rename {
+        /// The name of the existing alias.
+        alias: Alias,
+        /// The name of the new alias.
+        new: Alias,
+    },
 }
 
 /// Manage aliases.
@@ -206,7 +225,27 @@ fn run_cli(cli: Cli) -> Result<()> {
     };
 
     // Initialize the reqwest Client
-    let client = HttpClient::new()?;
+    let builder = HttpClient::default_builder();
+
+    let builder = if let Some(path) = cli.cert {
+        info!("Applying certificate from file '{}'", &path.display());
+        let mut buffer = Vec::new();
+        File::open(&path)?.read_to_end(&mut buffer)?;
+        let cert = match Certificate::from_pem(&buffer) {
+            Ok(cert) => cert,
+            Err(_) => {
+                bail!(
+                    "Could not read .pem certificate from file '{}'",
+                    &path.display(),
+                )
+            }
+        };
+        builder.add_root_certificate(cert)
+    } else {
+        builder
+    };
+
+    let client = HttpClient::new(builder)?;
 
     // Run the cli
     match cli.command {
