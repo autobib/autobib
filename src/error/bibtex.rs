@@ -10,4 +10,6 @@ pub enum BibTeXError {
     InvalidKey(String),
     #[error("Entry could not be parsed from bibtex string.")]
     BibtexParseError,
+    #[error("Bibtex string contained multiple entries.")]
+    BibtexMultipleEntries,
 }
