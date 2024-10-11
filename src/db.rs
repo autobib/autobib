@@ -501,29 +501,33 @@ impl RecordDatabase {
     /// transaction to avoid race conditions.
     ///
     /// The `default` method is only called if the cached data does not exist.
-    pub fn get_cached_data_or_set_default<F: FnOnce() -> RawRecordData>(
+    pub fn get_cached_data_or_set_default<E, F: FnOnce() -> Result<RawRecordData, E>>(
         &mut self,
         remote_id: &RemoteId,
         default: F,
-    ) -> Result<RawRecordData, DatabaseError> {
+    ) -> Result<RecordsDefaultResponse<E>, DatabaseError> {
         let tx = self.conn.transaction()?;
         let res = Self::get_cached_data_or_set_default_tx(&tx, remote_id, default)?;
         tx.commit()?;
         Ok(res)
     }
 
-    fn get_cached_data_or_set_default_tx<F: FnOnce() -> RawRecordData>(
+    fn get_cached_data_or_set_default_tx<E, F: FnOnce() -> Result<RawRecordData, E>>(
         tx: &Transaction,
         remote_id: &RemoteId,
         default: F,
-    ) -> Result<RawRecordData, DatabaseError> {
+    ) -> Result<RecordsDefaultResponse<E>, DatabaseError> {
         match Self::get_cached_data_tx(tx, remote_id)? {
-            RecordsResponse::Found(data, _, _) => Ok(data),
-            RecordsResponse::NotFound => {
-                let data = default();
-                Self::set_cached_data_tx(tx, remote_id, &data, once(remote_id))?;
-                Ok(data)
+            RecordsResponse::Found(data, remote_id, modified) => {
+                Ok(RecordsDefaultResponse::Found(data, remote_id, modified))
             }
+            RecordsResponse::NotFound => match default() {
+                Ok(data) => {
+                    Self::set_cached_data_tx(tx, remote_id, &data, once(remote_id))?;
+                    Ok(RecordsDefaultResponse::New(data))
+                }
+                Err(err) => Ok(RecordsDefaultResponse::Failed(err)),
+            },
         }
     }
 
@@ -753,6 +757,17 @@ impl Drop for RecordDatabase {
             eprintln!("Failed to optimize database on close: {err}");
         }
     }
+}
+
+/// Response type from the `Records` table as returned by
+/// [`RecordDatabase::get_cached_data_or_set_default`]
+pub enum RecordsDefaultResponse<E> {
+    /// Data was found; canonical; last modified.
+    Found(RawRecordData, RemoteId, DateTime<Local>),
+    /// Data was not found, created new record.
+    New(RawRecordData),
+    /// Default could not be created.
+    Failed(E),
 }
 
 /// Response type from the `Records` table as returned by [`RecordDatabase::get_cached_data`].
