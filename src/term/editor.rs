@@ -42,7 +42,6 @@ impl Editor {
 
             // the text was unchanged
             if user_text == response {
-                eprintln!("Aborted!");
                 break Ok(None);
             }
 
