@@ -25,7 +25,14 @@ In order to see all of the commands available to AutoBib, run
 autobib help
 autobib help <subcommand>
 ```
-We give an overview of the main commands.
+Jump to:
+
+- [Get records](#get-records)
+- [Sourcing from files](#sourcing-from-files)
+- [Edit records](#edit-records)
+- [Assigning aliases](#assigning-aliases)
+- [Creating local records](#creating-local-records)
+- [Searching for records](#searching-for-records)
 
 ### Get records
 At its most basic, AutoBib converts *identifiers* into *records*.
