@@ -12,14 +12,14 @@ use std::{
         btree_map::Entry::{Occupied, Vacant},
         BTreeMap, HashSet,
     },
-    fs::{create_dir_all, File},
+    fs::{create_dir_all, read_to_string, File},
     io::{self, Read},
     path::{Path, PathBuf},
     str::FromStr,
     thread,
 };
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use chrono::{DateTime, Local};
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::aot::{generate, Shell};
@@ -36,7 +36,9 @@ use term::{Editor, EditorConfig};
 
 use self::{
     cite_search::{get_citekeys, SourceFileType},
-    db::{CitationKey, EntryData, RawRecordData, RecordData, RecordDatabase},
+    db::{
+        CitationKey, EntryData, RawRecordData, RecordData, RecordDatabase, RecordsDefaultResponse,
+    },
     record::Record,
 };
 pub use self::{
@@ -91,7 +93,16 @@ enum Command {
         out: Option<PathBuf>,
     },
     /// Create or edit a local record with the given handle.
-    Local { handle: String },
+    Local {
+        /// The name for the record.
+        id: String,
+        /// Edit record.
+        #[arg(long, action)]
+        edit: bool,
+        /// Create local record from bibtex file.
+        #[arg(short, long, value_name = "PATH")]
+        from: Option<PathBuf>,
+    },
     /// Show metadata for citation key.
     Show,
     /// Generate records by searching for citation keys inside files.
@@ -215,41 +226,41 @@ fn run_cli(cli: Cli) -> Result<()> {
             unreachable!("Request for completions script should have been handled earlier and the program should have exited then.");
         }
         Command::Edit { citation_key } => {
-            let Record {
-                key,
-                data,
-                canonical,
-            } = get_record(
+            let record = get_record(
                 &mut record_db,
                 RecordId::from(citation_key.as_str()),
                 &client,
             )?;
 
-            let entry = Entry::try_new(key, data)?;
-
-            let editor = Editor::new(EditorConfig { suffix: ".bib" });
-
-            if let Some(new_entry) = editor.edit(&entry)? {
-                let Entry {
-                    key: new_key,
-                    record_data: new_record_data,
-                } = new_entry;
-
-                if new_key != entry.key() {
-                    let alias = Alias::from_str(&new_key)?;
-                    record_db.insert_alias(&alias, &canonical)?;
-                }
-
-                if new_record_data != *entry.data() {
-                    record_db.update_cached_data(&canonical, &new_record_data)?;
-                }
-            }
+            edit_record_and_update_database(&mut record_db, record)?;
         }
-        Command::Local { handle } => {
-            let remote_id = RemoteId::local(&handle);
+        Command::Local { id, edit, from } => {
+            let remote_id = RemoteId::local(&id);
 
-            record_db
-                .get_cached_data_or_set_default(&remote_id, || (&RecordData::default()).into())?;
+            let data = match record_db
+                .get_cached_data_or_set_default(&remote_id, create_default_record(from.as_ref()))?
+            {
+                RecordsDefaultResponse::Found(raw_record_data, _, _) => {
+                    if from.is_some() {
+                        bail!("Local record '{id}' already exists")
+                    } else {
+                        raw_record_data
+                    }
+                }
+                RecordsDefaultResponse::New(raw_record_data) => raw_record_data,
+                RecordsDefaultResponse::Failed(err) => bail!(err),
+            };
+
+            if edit {
+                edit_record_and_update_database(
+                    &mut record_db,
+                    Record {
+                        key: remote_id.to_string(),
+                        data,
+                        canonical: remote_id,
+                    },
+                )?;
+            }
         }
         Command::Get { citation_keys, out } => {
             // Collect all entries which are not null
@@ -328,6 +339,57 @@ fn run_cli(cli: Cli) -> Result<()> {
     };
 
     Ok(())
+}
+
+fn create_default_record<P: AsRef<Path>>(
+    from: Option<P>,
+) -> impl FnOnce() -> Result<RawRecordData, anyhow::Error> {
+    || {
+        Ok(if let Some(path) = from {
+            let bibtex = read_to_string(path)?;
+            let entry = Entry::<RawRecordData>::from_str(&bibtex)?;
+            entry.record_data
+        } else {
+            (&RecordData::default()).into()
+        })
+    }
+}
+
+fn edit_record_and_update_database(
+    record_db: &mut RecordDatabase,
+    record: Record,
+) -> Result<Entry<RawRecordData>, anyhow::Error> {
+    let Record {
+        key,
+        data,
+        canonical,
+    } = record;
+
+    let mut entry = Entry::try_new(key, data)?;
+
+    let editor = Editor::new(EditorConfig { suffix: ".bib" });
+
+    if let Some(new_entry) = editor.edit(&entry)? {
+        let Entry {
+            key: ref new_key,
+            record_data: ref new_record_data,
+        } = new_entry;
+
+        if new_key != entry.key() {
+            let alias = Alias::from_str(new_key)?;
+            info!("Creating new alias '{alias}' for '{canonical}'");
+            record_db.insert_alias(&alias, &canonical)?;
+        }
+
+        if new_record_data != entry.data() {
+            info!("Updating cached data for '{canonical}'");
+            record_db.update_cached_data(&canonical, new_record_data)?;
+        }
+
+        entry = new_entry;
+    }
+
+    Ok(entry)
 }
 
 /// Create a field filter renderer, which given a set of allowed fields renders those fields which
