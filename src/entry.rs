@@ -100,20 +100,28 @@ impl FromStr for Entry<RawRecordData> {
     type Err = BibTeXError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut de_iter = Deserializer::from_str(s).into_iter_regular_entry();
+
         if let Some(Ok(Contents {
-            entry_type,
+            mut entry_type,
             entry_key,
             mut fields,
-        })) = Deserializer::from_str(s).into_iter_regular_entry().next()
+        })) = de_iter.next()
         {
-            let mut record_data = RecordData::try_new(entry_type)?;
-            while let Some((key, val)) = fields.pop_first() {
-                record_data.try_insert(key, val)?;
-            }
+            if de_iter.next().is_none() {
+                entry_type.make_ascii_lowercase();
+                let mut record_data = RecordData::try_new(entry_type)?;
+                while let Some((mut key, val)) = fields.pop_first() {
+                    key.make_ascii_lowercase();
+                    record_data.try_insert(key, val)?;
+                }
 
-            // SAFETY: the Deserializer implementation only accepts the entry if the entry key is
-            //         valid.
-            Ok(Entry::new_unchecked(entry_key, (&record_data).into()))
+                // SAFETY: the Deserializer implementation only accepts the entry if the entry key is
+                //         valid.
+                Ok(Entry::new_unchecked(entry_key, (&record_data).into()))
+            } else {
+                Err(Self::Err::BibtexMultipleEntries)
+            }
         } else {
             Err(Self::Err::BibtexParseError)
         }
