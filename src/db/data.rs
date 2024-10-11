@@ -130,7 +130,7 @@ impl RawRecordData {
                 if entry_type.chars().any(|ch| !ch.is_ascii_lowercase()) {
                     return Err(InvalidBytesError::new(
                         entry_type_start,
-                        "key contains non-ascii lowercase characters",
+                        "entry type contains chars which are not ascii lowercase",
                     ));
                 }
                 Ok(entry_type_end)
@@ -183,7 +183,7 @@ impl RawRecordData {
                 if key.chars().any(|ch| !ch.is_ascii_lowercase()) {
                     return Err(InvalidBytesError::new(
                         key_block_start,
-                        "key contains non-ascii lowercase characters",
+                        "key contains chars which are not ascii lowercase",
                     ));
                 }
                 let _value = from_utf8(value_bytes).map_err(|e| {
