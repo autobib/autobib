@@ -4,6 +4,9 @@ on:
   workflow_call:
   workflow_dispatch:
 
+env:
+  FLOWS_FILE: mitmproxy/flows
+
 jobs:
   lookup:
     name: Look up cached mitmproxy flows
@@ -13,11 +16,14 @@ jobs:
       cache-primary-key: ${{ steps.cache-flows-restore.outputs.cache-primary-key }}
     steps:
     - uses: actions/checkout@v4
+      with:
+        sparse-checkout: |
+          ${{ env.FLOWS_FILE }}
     - name: Restore flows cache
       uses: actions/cache/restore@v4
       id: cache-flows-restore
       with:
-        path: mitmproxy/flows
+        path: ${{ env.FLOWS_FILE }}
         key: ${{ runner.os }}-mitmproxy-${{ hashFiles('tests/remotes.txt') }}
         lookup-only: true
 
@@ -33,7 +39,7 @@ jobs:
     - name: Initialize mitmdump
       run: |
         pipx install mitmproxy
-        mitmdump -w mitmproxy/flows &
+        mitmdump -w ${{ env.FLOWS_FILE }} &
     - run: cargo build
     - name: Generate flows
       continue-on-error: true
@@ -43,5 +49,5 @@ jobs:
     - name: Save flows cache
       uses: actions/cache/save@v4
       with:
-        path: mitmproxy/flows
+        path: ${{ env.FLOWS_FILE }}
         key: ${{ needs.lookup.outputs.cache-primary-key }}
