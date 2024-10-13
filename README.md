@@ -95,15 +95,16 @@ You can view and update the internally stored record with
 ```bash
 autobib edit zbl:1337.28015
 ```
+If the record does not yet exist in your local record database, it will be retrieved before editing.
 
 ### Assigning aliases
 
 It is also possible to assign *aliases* to records, using the `autobib alias` sub-command.
-For instance, run
+To create an alias for the record with identifier `zbl:1337.28015`, run
 ```bash
 autobib alias add hochman-entropy zbl:1337.28015
 ```
-and then running `autobib get hochman-entropy` returns
+Then running `autobib get hochman-entropy` returns
 ```bib
 @article{hochman-entropy,
   author = {Hochman, Michael},
@@ -117,11 +118,11 @@ and then running `autobib get hochman-entropy` returns
   zbl = {1337.28015},
 }
 ```
-Note that the record is identical to the record `zbl:1337.28015`
+The record is identical to the record `zbl:1337.28015`, except that the citation key is the name of the alias.
 In order to distinguish from usual identifiers, an alias cannot contain the `:` colon symbol.
 
-Note that some characters are not permitted in BibTeX, more precisely the characters `{}(),=\#%"`.
-You can add aliases using these characters: for instance, `autobib alias add % zbl:1337.28015`.
+Note that the characters `{}(),=\#%"` are not permitted in a BibTeX entry key.
+You can still create aliases using these characters: for instance, `autobib alias add % zbl:1337.28015` works.
 However, attempting to retrieve the BibTeX entry associated with this alias will result in an error.
 ```
 $ autobib get %
@@ -130,16 +131,28 @@ ERROR Invalid bibtex entry key: %
 ```
 Run `autobib help alias` for more options for managing aliases.
 
+Aliases can be used in most locations that the usual identifiers are used.
+For instance, you can run `autobib edit hochman-entropy`, to edit the corresponding record data.
+Note, however, that these edits will apply to the original underlying record.
+
 ### Creating local records
 
 Sometimes, it is necessary to create a local record which may not otherwise exist on a remote database.
 In order to do this, the command `autobib local` can be used to generate a special `local:` record, which only exists locally database.
-To modify the contents, run `autobib edit`.
-For example:
+To modify the contents, use `autobib edit`:
 ```bash
 autobib local my-entry
 autobib edit local:my-entry
 ```
+These two steps can be combined:
+```bash
+autobib local my-entry --edit
+```
+It is also possible to create the local record from a BibTeX file:
+```bash
+autobib local my-entry --from source.bib
+```
+Note that the BibTeX file should contain exactly one entry, or this command will fail.
 
 ### Searching for records
 
