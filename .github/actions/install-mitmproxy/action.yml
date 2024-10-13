@@ -1,0 +1,8 @@
+name: Install mitmproxy
+description: Install mitmproxy
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: pipx install mitmproxy
