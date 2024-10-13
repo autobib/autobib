@@ -4,6 +4,7 @@ authors = ["Alex Rutar <alex@rutar.org>", "Peiran Wu"]
 description = "An automatic bibliography generation tool."
 repository = "https://github.com/autobib/autobib"
 homepage = "https://github.com/autobib/autobib"
+license = "AGPL-3.0-or-later"
 readme = "https://github.com/autobib/autobib/blob/main/README.md"
 keywords = ["cli", "bibtex", "biblatex", "bibliography"]
 categories = ["command-line-utilities"]
