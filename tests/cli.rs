@@ -19,7 +19,6 @@ impl TestState {
 
     fn cmd(&self) -> Result<Command> {
         let mut cmd = Command::cargo_bin("autobib").unwrap();
-        cmd.env("ALL_PROXY", "http://127.0.0.1:8080");
         cmd.arg("--database").arg(self.database.as_ref());
         Ok(cmd)
     }
