@@ -20,7 +20,7 @@ Moreover, Autobib is designed with first-class support for [BibTeX](https://en.w
 
 Currently, the best way to install Autobib is to have the [rust toolchain](https://www.rust-lang.org/tools/install) installed on your device and run
 ```bash
-cargo install --git https://github.com/autobib/autobib.git
+cargo install autobib
 ```
 
 ## Basic usage
