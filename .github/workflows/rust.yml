@@ -11,8 +11,12 @@ env:
   RUSTFLAGS: -D warnings
   RUSTDOCFLAGS: -D warnings
 
+  REMOTES_FILE: tests/remotes.txt
+  FLOWS_FILE: mitmproxy/flows
+
 jobs:
   mitmproxy-flows:
+    name: Prepare mitmproxy flows
     uses: ./.github/workflows/mitmdump.yml
 
   tests:
@@ -22,20 +26,19 @@ jobs:
     - uses: actions/checkout@v4
     - uses: dtolnay/rust-toolchain@stable
     - uses: Swatinem/rust-cache@v2
-    - name: Get mitmproxy flows cache
+    - name: Get cached mitmproxy flows
       uses: actions/cache/restore@v4
       with:
-        path: mitmproxy/flows
-        key: ${{ runner.os }}-mitmproxy-${{ hashFiles('mitmproxy/flows') }}
+        path: ${{ env.FLOWS_FILE }}
+        key: ${{ runner.os }}-mitmproxy-${{ hashFiles(env.REMOTES_FILE) }}
     - name: Initialize mitmproxy
       run: |
         pipx install mitmproxy
-        mitmdump --server-replay mitmproxy/flows --server-replay-reuse --set connection_strategy=lazy &
+        mitmdump --server-replay ${{ env.FLOWS_FILE }} --server-replay-reuse --set connection_strategy=lazy &
     - name: Build test binaries
       run: cargo test --no-run --locked
     - name: Run tests
       run: cargo test --no-fail-fast --locked
-
 
   checks:
     runs-on: ubuntu-latest
