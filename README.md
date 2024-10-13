@@ -5,7 +5,8 @@ AutoBib is **alpha software**.
 - All of your data might be deleted.
 - The interface may change without warning in unexpected ways.
 
-AutoBib is currently usable, and you are welcome to try it out with these caveats in mind.
+On the other hand, AutoBib is currently usable, and you are welcome to try it out with these caveats in mind.
+Please report any issues in the [issue page](https://github.com/autobib/autobib/issues).
 
 # AutoBib
 AutoBib is a command-line tool for managing bibliographic records.
@@ -14,9 +15,9 @@ Unlike other bibliography management tools such as [Zotero](https://www.zotero.o
 Moreover, AutoBib is designed with first-class support for [BibTeX](https://en.wikipedia.org/wiki/BibTeX).
 
 ## Installation
-Currently, the best way to install AutoBib is to have the [rust toolchain](https://www.rust-lang.org/tools/install) installed on your device, clone this repository, and from the root of the directory run
+Currently, the best way to install AutoBib is to have the [rust toolchain](https://www.rust-lang.org/tools/install) installed on your device and run
 ```bash
-cargo install --path .
+cargo install --git https://github.com/autobib/autobib.git
 ```
 
 ## Basic usage
