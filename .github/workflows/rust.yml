@@ -31,10 +31,10 @@ jobs:
       with:
         path: ${{ env.FLOWS_FILE }}
         key: ${{ runner.os }}-mitmproxy-${{ hashFiles(env.REMOTES_FILE) }}
-    - name: Initialize mitmproxy
-      run: |
-        pipx install mitmproxy
-        mitmdump --server-replay ${{ env.FLOWS_FILE }} --server-replay-reuse --set connection_strategy=lazy &
+    - name: Install mitmproxy
+      uses: ./.github/actions/install-mitmproxy
+    - name: Start mitmdump
+      run: mitmdump --server-replay ${{ env.FLOWS_FILE }} --server-replay-reuse --set connection_strategy=lazy &
     - name: Build test binaries
       run: cargo test --no-run --locked
     - name: Run tests
