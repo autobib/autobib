@@ -3,6 +3,7 @@ pub mod db;
 mod entry;
 pub mod error;
 mod http;
+mod logger;
 pub mod provider;
 mod record;
 pub mod term;
@@ -15,6 +16,7 @@ use std::{
     fs::{create_dir_all, read_to_string, File},
     io::{self, Read},
     path::{Path, PathBuf},
+    process::exit,
     str::FromStr,
     thread,
 };
@@ -39,6 +41,7 @@ use self::{
     db::{
         CitationKey, EntryData, RawRecordData, RecordData, RecordDatabase, RecordsDefaultResponse,
     },
+    logger::Logger,
     record::Record,
 };
 pub use self::{
@@ -143,17 +146,15 @@ enum UtilCommand {
     Check,
 }
 
+static LOGGER: Logger = Logger {};
+
 fn main() {
     let cli = Cli::parse();
 
-    // initialize warnings
-    if let Some(level) = cli.verbose.log_level() {
-        stderrlog::new()
-            .module(module_path!())
-            .verbosity(level)
-            .init()
-            .unwrap();
-    }
+    // initialize logger
+    log::set_logger(&LOGGER)
+        .map(|()| log::set_max_level(cli.verbose.log_level_filter()))
+        .unwrap();
 
     // generate completions upon request and exit
     if let Command::Completions { shell } = cli.command {
@@ -166,6 +167,10 @@ fn main() {
     // run the cli
     if let Err(err) = run_cli(cli) {
         error!("{err}");
+    }
+
+    if Logger::has_error() {
+        exit(1)
     }
 }
 
@@ -437,7 +442,10 @@ fn output_records<D: EntryData, P: AsRef<Path>>(
     } else {
         let stdout = io::stdout();
         if stdout.is_tty() {
-            write_records(stdout, records)?;
+            // do not write an extra newline if interactive
+            if !records.is_empty() {
+                write_records(stdout, records)?;
+            }
         } else {
             let writer = io::BufWriter::new(stdout);
             write_records(writer, records)?;
