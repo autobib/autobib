@@ -4,25 +4,31 @@ on:
   workflow_call:
   workflow_dispatch:
 
+env:
+  REMOTES_FILE: tests/remotes.txt
+  FLOWS_FILE: mitmproxy/flows
+
 jobs:
   lookup:
-    name: Look up cached mitmproxy flows
+    name: Look up cache
     runs-on: ubuntu-latest
     outputs:
       cache-hit: ${{ steps.cache-flows-restore.outputs.cache-hit }}
       cache-primary-key: ${{ steps.cache-flows-restore.outputs.cache-primary-key }}
     steps:
     - uses: actions/checkout@v4
-    - name: Restore flows cache
-      uses: actions/cache/restore@v4
+      with:
+        sparse-checkout: |
+          ${{ env.REMOTES_FILE }}
+    - uses: actions/cache/restore@v4
       id: cache-flows-restore
       with:
-        path: mitmproxy/flows
-        key: ${{ runner.os }}-mitmproxy-${{ hashFiles('tests/remotes.txt') }}
+        path: ${{ env.FLOWS_FILE }}
+        key: ${{ runner.os }}-mitmproxy-${{ hashFiles(env.REMOTES_FILE) }}
         lookup-only: true
 
   generate:
-    name: Generate mitmproxy flows
+    name: Generate
     runs-on: ubuntu-latest
     needs: lookup
     if: needs.lookup.outputs.cache-hit != 'true'
@@ -33,15 +39,15 @@ jobs:
     - name: Initialize mitmdump
       run: |
         pipx install mitmproxy
-        mitmdump -w mitmproxy/flows &
+        mitmdump -w ${{ env.FLOWS_FILE }} &
     - run: cargo build
     - name: Generate flows
       continue-on-error: true
       env:
         ALL_PROXY: http://127.0.0.1:8080
-      run: cargo run -- --cert "$HOME/.mitmproxy/mitmproxy-ca-cert.pem" get $(cat 'tests/remotes.txt' | tr '\n' ' ')
+      run: cargo run -- --cert "$HOME/.mitmproxy/mitmproxy-ca-cert.pem" get $(cat '${{ env.REMOTES_FILE }}' | tr '\n' ' ')
     - name: Save flows cache
       uses: actions/cache/save@v4
       with:
-        path: mitmproxy/flows
+        path: ${{ env.FLOWS_FILE }}
         key: ${{ needs.lookup.outputs.cache-primary-key }}
