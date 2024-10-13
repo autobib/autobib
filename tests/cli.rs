@@ -21,10 +21,6 @@ impl TestState {
         let mut cmd = Command::cargo_bin("autobib").unwrap();
         cmd.env("ALL_PROXY", "http://127.0.0.1:8080");
         cmd.arg("--database").arg(self.database.as_ref());
-        cmd.args([
-            "--cert",
-            concat!(env!("HOME"), "/", ".mitmproxy/mitmproxy-ca-cert.pem"),
-        ]);
         Ok(cmd)
     }
 
