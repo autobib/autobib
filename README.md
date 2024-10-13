@@ -1,27 +1,27 @@
 # WARNING
-AutoBib is **alpha software**.
+Autobib is **alpha software**.
 
 - Things might be broken.
 - All of your data might be deleted.
 - The interface may change without warning in unexpected ways.
 
-On the other hand, AutoBib is currently usable, and you are welcome to try it out with these caveats in mind.
+On the other hand, Autobib is currently usable, and you are welcome to try it out with these caveats in mind.
 Please report any issues in the [issue page](https://github.com/autobib/autobib/issues).
 
-# AutoBib
-AutoBib is a command-line tool for managing bibliographic records.
-Unlike other bibliography management tools such as [Zotero](https://www.zotero.org/) or [JabRef](https://www.jabref.org/), AutoBib aims to be a lower-level tool for providing an interface between *local records*, *remote records*, and *bibliographic records associated with a project*.
+# Autobib
+Autobib is a command-line tool for managing bibliographic records.
+Unlike other bibliography management tools such as [Zotero](https://www.zotero.org/) or [JabRef](https://www.jabref.org/), Autobib aims to be a lower-level tool for providing an interface between *local records*, *remote records*, and *bibliographic records associated with a project*.
 
-Moreover, AutoBib is designed with first-class support for [BibTeX](https://en.wikipedia.org/wiki/BibTeX).
+Moreover, Autobib is designed with first-class support for [BibTeX](https://en.wikipedia.org/wiki/BibTeX).
 
 ## Installation
-Currently, the best way to install AutoBib is to have the [rust toolchain](https://www.rust-lang.org/tools/install) installed on your device and run
+Currently, the best way to install Autobib is to have the [rust toolchain](https://www.rust-lang.org/tools/install) installed on your device and run
 ```bash
 cargo install --git https://github.com/autobib/autobib.git
 ```
 
 ## Basic usage
-In order to see all of the commands available to AutoBib, run
+In order to see all of the commands available to Autobib, run
 ```bash
 autobib help
 autobib help <subcommand>
@@ -36,7 +36,7 @@ Jump to:
 - [Searching for records](#searching-for-records)
 
 ### Get records
-At its most basic, AutoBib converts *identifiers* into *records*.
+At its most basic, Autobib converts *identifiers* into *records*.
 To obtain the data associated with the zbMath record [`Zbl 1337.28015`](https://zbmath.org/1528.14024), running
 ```bash
 autobib get zbl:1337.28015
@@ -81,7 +81,7 @@ autobib source main.tex --out main.bib
 will search through the document for valid citation keys and output the bibliography into the file `main.bib`.
 
 ### Edit records
-On the first run, AutoBib retrieves the data directly from a remote provider.
+On the first run, Autobib retrieves the data directly from a remote provider.
 The data is stored locally in a [SQLite](https://www.sqlite.org/) database, which defaults to `~/.local/share/autobib/records.db`, so that subsequent runs are substantially faster.
 You can view and update the internally stored record with
 ```bash
@@ -140,3 +140,9 @@ For example,
 autobib find -f author,title
 ```
 will list all of your local records with the `author` and `title` fields available to search against.
+
+## License
+
+The source code of Autobib is distributed under the terms of the [GNU Affero General Public License, version 3](https://www.gnu.org/licenses/agpl-3.0.en.html).
+
+See [LICENSE](LICENSE) and [COPYRIGHT](COPYRIGHT) for details.
