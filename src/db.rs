@@ -315,6 +315,39 @@ impl RecordDatabase {
         }
     }
 
+    /// Update an existing record in the database.
+    pub fn delete_cached_data<K: CitationKey>(
+        &mut self,
+        citation_key: &K,
+    ) -> Result<(), DatabaseError> {
+        debug!("Deleting cached data for '{}'", citation_key.name());
+        let tx = self.conn.transaction()?;
+        Self::delete_cached_data_tx(&tx, citation_key)?;
+        Ok(tx.commit()?)
+    }
+
+    fn delete_cached_data_tx<K: CitationKey>(
+        tx: &Transaction,
+        citation_key: &K,
+    ) -> Result<(), DatabaseError> {
+        match Self::get_record_key(tx, citation_key)? {
+            Some(key) => {
+                // First, copy the existing data to the changelog.
+                let mut logger = tx.prepare_cached(copy_to_changelog())?;
+                logger.execute((key,))?;
+
+                // Then delete the data.
+                let mut updater = tx.prepare_cached(delete_cached_data())?;
+                updater.execute((key,))?;
+
+                Ok(())
+            }
+            None => Err(DatabaseError::CitationKeyMissing(
+                citation_key.name().into(),
+            )),
+        }
+    }
+
     /// Get the cached data corresponding to a [`CitationKey`].
     pub fn get_cached_data<K: CitationKey>(
         &mut self,

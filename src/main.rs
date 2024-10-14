@@ -77,6 +77,10 @@ enum Command {
         /// The shell for which to generate the script.
         shell: Shell,
     },
+    Delete {
+        /// The citation key to delete.
+        citation_key: String,
+    },
     /// Edit existing records.
     Edit {
         /// The citation key to edit.
@@ -256,6 +260,9 @@ fn run_cli(cli: Cli) -> Result<()> {
         },
         Command::Completions { shell: _ } => {
             unreachable!("Request for completions script should have been handled earlier and the program should have exited then.");
+        }
+        Command::Delete { citation_key } => {
+            record_db.delete_cached_data(&RecordId::from(citation_key.as_str()))?;
         }
         Command::Edit { citation_key } => {
             match get_record(
