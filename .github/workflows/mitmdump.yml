@@ -36,16 +36,16 @@ jobs:
     - uses: actions/checkout@v4
     - uses: dtolnay/rust-toolchain@stable
     - uses: Swatinem/rust-cache@v2
-    - name: Initialize mitmdump
-      run: |
-        pipx install mitmproxy
-        mitmdump -w ${{ env.FLOWS_FILE }} &
     - run: cargo build
+    - name: Install mitmproxy
+      uses: ./.github/actions/install-mitmproxy
+    - name: Start mitmdump
+      run: mitmdump -w ${{ env.FLOWS_FILE }} &
     - name: Generate flows
       continue-on-error: true
       env:
         ALL_PROXY: http://127.0.0.1:8080
-      run: cargo run -- --cert "$HOME/.mitmproxy/mitmproxy-ca-cert.pem" get $(cat '${{ env.REMOTES_FILE }}' | tr '\n' ' ')
+      run: xargs -a '${{ env.REMOTES_FILE }}' -d '\n' -- cargo run -- -vv get
     - name: Save flows cache
       uses: actions/cache/save@v4
       with:

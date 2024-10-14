@@ -32,7 +32,6 @@ use itertools::Itertools;
 use log::{error, info, warn};
 use nonempty::NonEmpty;
 use nucleo_picker::Picker;
-use reqwest::Certificate;
 use serde::Serializer as _;
 use serde_bibtex::ser::Serializer;
 use term::{Editor, EditorConfig};
@@ -43,7 +42,7 @@ use self::{
         CitationKey, EntryData, RawRecordData, RecordData, RecordDatabase, RecordsDefaultResponse,
     },
     logger::Logger,
-    record::Record,
+    record::{GetRecordResponse, Record},
 };
 pub use self::{
     entry::Entry,
@@ -57,10 +56,6 @@ struct Cli {
     /// Use record database.
     #[arg(short, long, value_name = "PATH")]
     database: Option<PathBuf>,
-
-    /// Use .pem certificate for network connections.
-    #[arg(long, value_name = "PATH", hide = true)]
-    cert: Option<PathBuf>,
 
     #[command(flatten)]
     verbose: Verbosity<WarnLevel>,
@@ -226,25 +221,6 @@ fn run_cli(cli: Cli) -> Result<()> {
 
     // Initialize the reqwest Client
     let builder = HttpClient::default_builder();
-
-    let builder = if let Some(path) = cli.cert {
-        info!("Applying certificate from file '{}'", &path.display());
-        let mut buffer = Vec::new();
-        File::open(&path)?.read_to_end(&mut buffer)?;
-        let cert = match Certificate::from_pem(&buffer) {
-            Ok(cert) => cert,
-            Err(_) => {
-                bail!(
-                    "Could not read .pem certificate from file '{}'",
-                    &path.display(),
-                )
-            }
-        };
-        builder.add_root_certificate(cert)
-    } else {
-        builder
-    };
-
     let client = HttpClient::new(builder)?;
 
     // Run the cli
@@ -253,7 +229,12 @@ fn run_cli(cli: Cli) -> Result<()> {
             AliasCommand::Add { alias, target } => {
                 info!("Creating alias '{alias}' for '{target}'");
                 // first retrieve 'target', in case it does not yet exist in the database
-                get_record(&mut record_db, target.clone(), &client)?;
+                if get_record(&mut record_db, target.clone(), &client)?
+                    .ok()
+                    .is_none()
+                {
+                    bail!("Cannot create alias for null record '{target}'")
+                }
                 // then link to it
                 record_db.insert_alias(&alias, &target)?;
             }
@@ -270,11 +251,16 @@ fn run_cli(cli: Cli) -> Result<()> {
             unreachable!("Request for completions script should have been handled earlier and the program should have exited then.");
         }
         Command::Edit { citation_key } => {
-            let record = get_record(
+            let record = match get_record(
                 &mut record_db,
                 RecordId::from(citation_key.as_str()),
                 &client,
-            )?;
+            )?
+            .ok()
+            {
+                Some(record) => record,
+                None => bail!("Cannot edit null record '{citation_key}'"),
+            };
 
             edit_record_and_update_database(&mut record_db, record)?;
         }
@@ -523,13 +509,21 @@ fn validate_and_retrieve<'a, T: Iterator<Item = &'a str>>(
     for (bibtex_entry, canonical) in citation_keys
         .map(RecordId::from)
         .filter_map(|citation_key| {
-            get_record(record_db, citation_key, client).map_or_else(
-                |err| {
+            match get_record(record_db, citation_key, client) {
+                Err(err) => {
                     error!("{err}");
                     None
-                },
-                Some,
-            )
+                }
+                Ok(GetRecordResponse::Exists(record)) => Some(record),
+                Ok(GetRecordResponse::NullRemoteId(remote_id)) => {
+                    error!("Null record: {remote_id}");
+                    None
+                }
+                Ok(GetRecordResponse::NullAlias(alias)) => {
+                    error!("Undefined alias: {alias}");
+                    None
+                }
+            }
         })
         .filter_map(|record| {
             let Record {

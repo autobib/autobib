@@ -19,12 +19,7 @@ impl TestState {
 
     fn cmd(&self) -> Result<Command> {
         let mut cmd = Command::cargo_bin("autobib").unwrap();
-        cmd.env("ALL_PROXY", "http://127.0.0.1:8080");
         cmd.arg("--database").arg(self.database.as_ref());
-        cmd.args([
-            "--cert",
-            concat!(env!("HOME"), "/", ".mitmproxy/mitmproxy-ca-cert.pem"),
-        ]);
         Ok(cmd)
     }
 
@@ -165,13 +160,13 @@ fn alias() -> Result<()> {
     cmd.args(["get", "my_alias"]);
     cmd.assert()
         .failure()
-        .stderr(predicate::str::contains("Null alias"));
+        .stderr(predicate::str::contains("Undefined alias"));
 
     let mut cmd = ab.cmd()?;
     cmd.args(["get", "new_alias"]);
     cmd.assert()
         .failure()
-        .stderr(predicate::str::contains("Null alias"));
+        .stderr(predicate::str::contains("Undefined alias"));
 
     let mut cmd = ab.cmd()?;
     cmd.args(["alias", "delete", "my_alias"]);
@@ -201,15 +196,15 @@ fn alias_remote() -> Result<()> {
 
     let mut cmd = ab.cmd()?;
     cmd.args(["alias", "add", "a2", "zbmath:96346461"]);
-    cmd.assert()
-        .failure()
-        .stderr(predicate::str::contains("Null record"));
+    cmd.assert().failure().stderr(predicate::str::contains(
+        "Cannot create alias for null record",
+    ));
 
     let mut cmd = ab.cmd()?;
     cmd.args(["get", "a2"]);
     cmd.assert()
         .failure()
-        .stderr(predicate::str::contains("Null alias"));
+        .stderr(predicate::str::contains("Undefined alias"));
 
     ab.close()
 }
