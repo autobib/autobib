@@ -45,7 +45,7 @@ jobs:
       continue-on-error: true
       env:
         ALL_PROXY: http://127.0.0.1:8080
-      run: cargo run -- get $(cat '${{ env.REMOTES_FILE }}' | tr '\n' ' ')
+      run: xargs -a '${{ env.REMOTES_FILE }}' -d '\n' -- cargo run -- -vv get
     - name: Save flows cache
       uses: actions/cache/save@v4
       with:
