@@ -369,19 +369,64 @@ impl RecordDatabase {
         match Self::get_record_key(tx, citation_key)? {
             // target exists
             Some(key) => {
-                let mut record_selector = tx.prepare_cached(get_cached_data())?;
-                let mut record_rows = record_selector.query([key])?;
-
-                // SAFETY: key always corresponds to a valid row
-                //         because of ON DELETE CASCADE
-                let row = record_rows.next()?.expect("RowId does not exist!");
-                Ok(Self::cache_response_from_record_row(row).map(
-                    |(entry, canonical, modified)| {
-                        RecordsResponse::Found(entry, canonical, modified)
-                    },
-                )?)
+                let (entry, canonical, modified) = Self::get_record_data_from_row_id(tx, key)?;
+                Ok(RecordsResponse::Found(entry, canonical, modified))
             }
             None => Ok(RecordsResponse::NotFound),
+        }
+    }
+
+    /// Get the record data from a database row id
+    ///
+    /// # Safety
+    /// The caller is required to guarantee that the `key` exists within the database. The best way
+    /// to do this is to obtain the key using the [`get_record_key`] function within the same
+    /// transaction.
+    fn get_record_data_from_row_id(
+        tx: &Transaction,
+        key: DatabaseEntryId,
+    ) -> Result<(RawRecordData, RemoteId, DateTime<Local>), rusqlite::Error> {
+        let mut record_selector = tx.prepare_cached(get_cached_data())?;
+        let mut record_rows = record_selector.query([key])?;
+        // SAFETY: key always corresponds to a valid row
+        //         because of ON DELETE CASCADE
+        let row = record_rows.next()?.expect("RowId does not exist!");
+        Self::cache_response_from_record_row(row)
+    }
+
+    /// Given a [`CitationKey`], return a vector of all other keys which point to the same
+    /// underlying reord.
+    pub fn get_equivalent_citation_keys<K: CitationKey>(
+        &mut self,
+        citation_key: &K,
+    ) -> Result<Option<(RemoteId, Vec<String>)>, DatabaseError> {
+        debug!("Retrieving citation keys for '{}'", citation_key.name());
+        let tx = self.conn.transaction()?;
+        let res = Self::get_equivalent_citation_keys_tx(&tx, citation_key)?;
+        tx.commit()?;
+        Ok(res)
+    }
+
+    fn get_equivalent_citation_keys_tx<K: CitationKey>(
+        tx: &Transaction,
+        citation_key: &K,
+    ) -> Result<Option<(RemoteId, Vec<String>)>, DatabaseError> {
+        match Self::get_record_key(tx, citation_key)? {
+            Some(key) => {
+                // get the canonical id
+                let (_, canonical, _) = Self::get_record_data_from_row_id(tx, key)?;
+
+                // get the rows in CitationKeys which reference the id
+                let mut selector = tx.prepare_cached(get_all_referencing_citation_keys())?;
+                let rows = selector.query_map([key], |row| row.get(0))?;
+                let mut referencing = Vec::new();
+                for name_result in rows {
+                    referencing.push(name_result?);
+                }
+
+                Ok(Some((canonical, referencing)))
+            }
+            None => Ok(None),
         }
     }
 
@@ -407,9 +452,6 @@ impl RecordDatabase {
         match Self::get_record_key(tx, citation_key)? {
             // target exists
             Some(key) => {
-                let mut record_selector = tx.prepare_cached(get_cached_data())?;
-                let mut record_rows = record_selector.query([key])?;
-
                 // insert refs
                 for remote_id in refs {
                     Self::set_citation_key_row_tx(
@@ -420,14 +462,8 @@ impl RecordDatabase {
                     )?;
                 }
 
-                // SAFETY: key always corresponds to a valid row
-                //         because of ON DELETE CASCADE
-                let row = record_rows.next()?.expect("RowId does not exist!)");
-                Ok(Self::cache_response_from_record_row(row).map(
-                    |(entry, canonical, modified)| {
-                        RecordsResponse::Found(entry, canonical, modified)
-                    },
-                )?)
+                let (entry, canonical, modified) = Self::get_record_data_from_row_id(tx, key)?;
+                Ok(RecordsResponse::Found(entry, canonical, modified))
             }
             None => Ok(RecordsResponse::NotFound),
         }
