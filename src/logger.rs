@@ -12,6 +12,10 @@ static HAS_ERROR: AtomicBool = AtomicBool::new(false);
 
 pub struct Logger {}
 
+pub fn set_failed() {
+    HAS_ERROR.store(true, Ordering::Relaxed);
+}
+
 #[inline]
 fn level_as_str(level: Level) -> &'static str {
     match level {
@@ -49,8 +53,8 @@ impl Log for Logger {
     #[inline]
     fn log(&self, record: &Record) {
         if record.level() == Level::Error {
-            HAS_ERROR.store(true, Ordering::Relaxed);
-        }
+            set_failed();
+        };
 
         let level = record.level();
 

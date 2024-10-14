@@ -23,7 +23,7 @@ use std::{
 
 use anyhow::{bail, Result};
 use chrono::{DateTime, Local};
-use clap::{CommandFactory, Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 use clap_complete::aot::{generate, Shell};
 use clap_verbosity_flag::{Verbosity, WarnLevel};
 use crossterm::tty::IsTty;
@@ -33,21 +33,25 @@ use log::{error, info, warn};
 use nonempty::NonEmpty;
 use nucleo_picker::Picker;
 use serde::Serializer as _;
-use serde_bibtex::ser::Serializer;
-use term::{Editor, EditorConfig};
+use serde_bibtex::{ser::Serializer, validate::is_entry_key};
+use term::{Confirm, Editor, EditorConfig};
 
 use self::{
     cite_search::{get_citekeys, SourceFileType},
     db::{
-        CitationKey, EntryData, RawRecordData, RecordData, RecordDatabase, RecordsDefaultResponse,
+        row::{self, DatabaseEntry, Row},
+        CitationKey, EntryData, RawRecordData, RecordData, RecordDatabase, RowData,
     },
     logger::Logger,
-    record::{GetRecordResponse, Record},
+    record::{
+        get_remote_record, GetRecordEntryResponse, GetRecordResponse, GetRemoteRecordResponse,
+        Record,
+    },
 };
 pub use self::{
     entry::Entry,
     http::HttpClient,
-    record::{get_record, Alias, RecordId, RemoteId},
+    record::{get_record, get_record_entry, Alias, RecordId, RemoteId},
 };
 
 #[derive(Parser)]
@@ -64,6 +68,15 @@ struct Cli {
     command: Command,
 }
 
+#[derive(Debug, Copy, Clone, ValueEnum, Default)]
+enum InfoReportType {
+    #[default]
+    All,
+    Canonical,
+    Valid,
+    Equivalent,
+}
+
 #[derive(Subcommand)]
 enum Command {
     /// Manage aliases.
@@ -77,10 +90,17 @@ enum Command {
         /// The shell for which to generate the script.
         shell: Shell,
     },
+    Delete {
+        /// The citation key to delete.
+        citation_key: RecordId,
+        /// Delete without prompting.
+        #[arg(short, long)]
+        force: bool,
+    },
     /// Edit existing records.
     Edit {
         /// The citation key to edit.
-        citation_key: String,
+        citation_key: RecordId,
     },
     /// Search for a citation key.
     Find {
@@ -91,13 +111,21 @@ enum Command {
     /// Retrieve records given citation keys.
     Get {
         /// The citation keys to retrieve.
-        citation_keys: Vec<String>,
+        citation_keys: Vec<RecordId>,
         /// Write output to file.
         #[arg(short, long)]
         out: Option<PathBuf>,
         /// Ignore null records and aliases.
         #[arg(long)]
         ignore_null: bool,
+    },
+    /// Show metadata for citation key.
+    Info {
+        /// The citation key to show info.
+        citation_key: RecordId,
+        /// The type of information to display.
+        #[arg(value_enum, default_value_t = InfoReportType::default())]
+        report: InfoReportType,
     },
     /// Create or edit a local record with the given handle.
     Local {
@@ -110,8 +138,6 @@ enum Command {
         #[arg(short, long, value_name = "PATH")]
         from: Option<PathBuf>,
     },
-    /// Show metadata for citation key.
-    Show,
     /// Generate records by searching for citation keys inside files.
     Source {
         /// The files in which to search.
@@ -125,6 +151,11 @@ enum Command {
         /// Ignore null records and aliases.
         #[arg(long)]
         ignore_null: bool,
+    },
+    /// Update the data associated with an existing citation key.
+    Update {
+        /// The citation key to update.
+        citation_key: RecordId,
     },
     /// Utilities to manage database.
     Util {
@@ -164,6 +195,11 @@ enum AliasCommand {
 enum UtilCommand {
     /// Check database for errors.
     Check,
+    /// List all valid keys.
+    List {
+        #[arg(short, long)]
+        canonical: bool,
+    },
 }
 
 static LOGGER: Logger = Logger {};
@@ -234,79 +270,140 @@ fn run_cli(cli: Cli) -> Result<()> {
         Command::Alias { alias_command } => match alias_command {
             AliasCommand::Add { alias, target } => {
                 info!("Creating alias '{alias}' for '{target}'");
-                // first retrieve 'target', in case it does not yet exist in the database
-                if get_record(&mut record_db, target.clone(), &client)?
-                    .ok()
-                    .is_some()
-                {
-                    // then link to it
-                    record_db.insert_alias(&alias, &target)?;
-                } else {
-                    error!("Cannot create alias for null record '{target}'");
+                let entry = record_db.entry(&target)?;
+                match get_record_entry(entry, target, &client)? {
+                    GetRecordEntryResponse::Exists(_, row) => {
+                        if !row.apply(row::add_alias(&alias))? {
+                            bail!("Alias already exists: '{alias}'")
+                        }
+                        row.commit()?;
+                    }
+                    GetRecordEntryResponse::NullRemoteId(remote_id, missing) => {
+                        missing.commit()?;
+                        error!("Cannot create alias for null record '{remote_id}'");
+                    }
+                    GetRecordEntryResponse::NullAlias(alias, missing) => {
+                        missing.commit()?;
+                        error!("Cannot create alias for missing alias '{alias}'");
+                    }
                 }
             }
             AliasCommand::Delete { alias } => {
                 info!("Deleting alias '{alias}'");
-                record_db.delete_alias(&alias)?;
+                match record_db.delete_alias(&alias)? {
+                    db::DeleteAliasResult::Deleted => {}
+                    db::DeleteAliasResult::Missing => {
+                        bail!("Could not delete alias which does not exist: '{alias}'")
+                    }
+                }
             }
             AliasCommand::Rename { alias, new } => {
                 info!("Rename alias '{alias}' to '{new}'");
-                record_db.rename_alias(&alias, &new)?;
+                match record_db.rename_alias(&alias, &new)? {
+                    db::RenameAliasResult::Renamed => {}
+                    db::RenameAliasResult::TargetExists => {
+                        bail!("Citation key already exists: '{new}'");
+                    }
+                }
             }
         },
         Command::Completions { shell: _ } => {
             unreachable!("Request for completions script should have been handled earlier and the program should have exited then.");
         }
-        Command::Edit { citation_key } => {
-            match get_record(
-                &mut record_db,
-                RecordId::from(citation_key.as_str()),
-                &client,
-            )?
-            .ok()
-            {
-                Some(record) => {
-                    edit_record_and_update_database(&mut record_db, record)?;
+        Command::Delete {
+            citation_key,
+            force,
+        } => {
+            match record_db.entry(&citation_key)? {
+                DatabaseEntry::Exists(row) => {
+                    if !force {
+                        let referencing = row.apply(row::get_referencing_keys)?;
+
+                        // there are multiple associated keys, prompt before deletion
+                        if referencing.len() > 1 {
+                            warn!("Deleting this record will delete associated keys:");
+                            for key in referencing.iter() {
+                                eprintln!("  {key}");
+                            }
+                            let prompt = Confirm::new("Delete anyway?", false);
+                            if !prompt.confirm()? {
+                                bail!("Aborted deletion");
+                            }
+                        }
+                    }
+
+                    row.delete()?.commit()?;
                 }
-                None => error!("Cannot edit null record '{citation_key}'"),
-            };
+                DatabaseEntry::Missing(missing) => {
+                    missing.commit()?;
+                    bail!("Citation key '{citation_key}' does not exist.");
+                }
+            }
+        }
+        Command::Edit { citation_key } => {
+            let entry = record_db.entry(&citation_key)?;
+            match get_record_entry(entry, citation_key, &client)? {
+                record::GetRecordEntryResponse::Exists(record, row) => {
+                    edit_record_and_update(row, record)?;
+                }
+                record::GetRecordEntryResponse::NullRemoteId(remote_id, missing) => {
+                    missing.commit()?;
+                    error!("Cannot edit null record '{remote_id}'");
+                }
+                record::GetRecordEntryResponse::NullAlias(alias, missing) => {
+                    missing.commit()?;
+                    error!("Cannot edit undefined alias '{alias}'");
+                }
+            }
         }
         Command::Local { id, edit, from } => {
             let remote_id = RemoteId::local(&id);
 
-            let data = match record_db
-                .get_cached_data_or_set_default(&remote_id, create_default_record(from.as_ref()))?
-            {
-                RecordsDefaultResponse::Found(raw_record_data, _, _) => {
+            let (row, data) = match record_db.entry(&remote_id)? {
+                DatabaseEntry::Exists(row) => {
                     if from.is_some() {
+                        row.commit()?;
                         bail!("Local record '{id}' already exists")
                     } else {
-                        raw_record_data
+                        let raw_record_data = row.apply(row::get_row_data)?.data;
+                        (row, raw_record_data)
                     }
                 }
-                RecordsDefaultResponse::New(raw_record_data) => raw_record_data,
-                RecordsDefaultResponse::Failed(err) => bail!(err),
+                DatabaseEntry::Missing(missing) => {
+                    let data = if let Some(path) = from {
+                        let bibtex = read_to_string(path)?;
+                        let entry = Entry::<RawRecordData>::from_str(&bibtex)?;
+                        entry.record_data
+                    } else {
+                        (&RecordData::default()).into()
+                    };
+
+                    let row = missing.insert_and_ref(&data, &remote_id)?;
+                    (row, data)
+                }
             };
 
             if edit {
-                edit_record_and_update_database(
-                    &mut record_db,
+                edit_record_and_update(
+                    row,
                     Record {
                         key: remote_id.to_string(),
                         data,
                         canonical: remote_id,
                     },
                 )?;
+            } else {
+                row.commit()?;
             }
         }
         Command::Get {
-            citation_keys,
+            mut citation_keys,
             out,
             ignore_null,
         } => {
             // Collect all entries which are not null
             let valid_entries = validate_and_retrieve(
-                citation_keys.iter().map(|s| s as &str),
+                citation_keys.drain(..),
                 &mut record_db,
                 &client,
                 ignore_null,
@@ -334,7 +431,7 @@ fn run_cli(cli: Cli) -> Result<()> {
 
             // The citation keys do not need to be sorted since sorting
             // happens in the `validate_and_retrieve` function.
-            let mut container = HashSet::new();
+            let mut container: HashSet<RecordId> = HashSet::new();
 
             for path in paths {
                 match File::open(path.clone()).and_then(|mut f| f.read_to_end(&mut buffer)) {
@@ -363,24 +460,85 @@ fn run_cli(cli: Cli) -> Result<()> {
                 };
             }
 
-            let valid_entries = validate_and_retrieve(
-                container.iter().map(|s| s as &str),
-                &mut record_db,
-                &client,
-                ignore_null,
-            );
+            let valid_entries =
+                validate_and_retrieve(container.drain(), &mut record_db, &client, ignore_null);
 
             output_records(out.as_ref(), valid_entries)?;
         }
-        Command::Show => todo!(),
+        Command::Info {
+            citation_key,
+            report,
+        } => match record_db.entry(&citation_key)? {
+            DatabaseEntry::Exists(row) => {
+                let canonical = row.apply(row::get_canonical)?;
+                let referencing = row.apply(row::get_referencing_keys)?;
+                match report {
+                    InfoReportType::All => {
+                        println!("Canonical: {canonical}");
+                        println!("Equivalent references: {}", referencing.iter().join(", "));
+                        println!(
+                            "Valid bibtex? {}",
+                            if is_entry_key(citation_key.name()) {
+                                "yes"
+                            } else {
+                                "no"
+                            }
+                        );
+                    }
+                    InfoReportType::Canonical => {
+                        println!("{canonical}");
+                    }
+
+                    InfoReportType::Valid => {
+                        if !is_entry_key(citation_key.name()) {
+                            bail!("Invalid bibtex: {}", citation_key.name());
+                        }
+                    }
+                    InfoReportType::Equivalent => {
+                        for re in referencing {
+                            println!("{re}");
+                        }
+                    }
+                }
+            }
+            DatabaseEntry::Missing(missing) => {
+                missing.commit()?;
+                bail!("Citation key '{citation_key}' does not exist.");
+            }
+        },
+        Command::Update { citation_key } => match record_db.entry(&citation_key)? {
+            DatabaseEntry::Exists(row) => {
+                let RowData {
+                    data: existing_raw_data,
+                    canonical,
+                    ..
+                } = row.apply(row::get_row_data)?;
+                match get_remote_record(canonical, &client)? {
+                    GetRemoteRecordResponse::Exists(new_raw_data) => {
+                        let mut new_record = RecordData::from(new_raw_data);
+                        new_record.try_merge(existing_raw_data)?;
+                        row.apply(row::update_row_data(&(&new_record).into()))?;
+                        row.commit()?;
+                    }
+                    GetRemoteRecordResponse::Null(remote_id) => {
+                        bail!("Remote data for canonical id '{remote_id}' is null")
+                    }
+                }
+            }
+            DatabaseEntry::Missing(missing) => {
+                missing.commit()?;
+                bail!("Citation key not present in database: '{citation_key}'");
+            }
+        },
         Command::Util { util_command } => match util_command {
             UtilCommand::Check => {
-                info!("Validating record binary data");
-                record_db.validate_record_data()?;
-                info!("Validating internal database consistency");
-                record_db.validate_consistency()?;
-                info!("Checking for dangling records");
-                record_db.validate_record_indexing()?;
+                info!("Validating record binary data and consistency, and checking for dangling records.");
+                record_db.validate()?;
+            }
+            UtilCommand::List { canonical } => {
+                record_db.map_citation_keys(canonical, |key_str| {
+                    println!("{key_str}");
+                })?;
             }
         },
     };
@@ -388,24 +546,7 @@ fn run_cli(cli: Cli) -> Result<()> {
     Ok(())
 }
 
-fn create_default_record<P: AsRef<Path>>(
-    from: Option<P>,
-) -> impl FnOnce() -> Result<RawRecordData, anyhow::Error> {
-    || {
-        Ok(if let Some(path) = from {
-            let bibtex = read_to_string(path)?;
-            let entry = Entry::<RawRecordData>::from_str(&bibtex)?;
-            entry.record_data
-        } else {
-            (&RecordData::default()).into()
-        })
-    }
-}
-
-fn edit_record_and_update_database(
-    record_db: &mut RecordDatabase,
-    record: Record,
-) -> Result<Entry<RawRecordData>, anyhow::Error> {
+fn edit_record_and_update(row: Row, record: Record) -> Result<Entry<RawRecordData>, anyhow::Error> {
     let Record {
         key,
         data,
@@ -425,17 +566,18 @@ fn edit_record_and_update_database(
         if new_key != entry.key() {
             let alias = Alias::from_str(new_key)?;
             info!("Creating new alias '{alias}' for '{canonical}'");
-            record_db.insert_alias(&alias, &canonical)?;
+            row.apply(row::add_alias(&alias))?;
         }
 
         if new_record_data != entry.data() {
             info!("Updating cached data for '{canonical}'");
-            record_db.update_cached_data(&canonical, new_record_data)?;
+            row.apply(row::update_row_data(new_record_data))?;
         }
 
         entry = new_entry;
     }
 
+    row.commit()?;
     Ok(entry)
 }
 
@@ -516,7 +658,7 @@ fn write_records<W: io::Write, D: EntryData>(
 }
 
 /// Validate and retrieve records.
-fn validate_and_retrieve<'a, T: Iterator<Item = &'a str>>(
+fn validate_and_retrieve<T: Iterator<Item = RecordId>>(
     citation_keys: T,
     record_db: &mut RecordDatabase,
     client: &HttpClient,
@@ -525,7 +667,6 @@ fn validate_and_retrieve<'a, T: Iterator<Item = &'a str>>(
     let mut records: BTreeMap<RemoteId, NonEmpty<Entry<RawRecordData>>> = BTreeMap::new();
 
     for (bibtex_entry, canonical) in citation_keys
-        .map(RecordId::from)
         .filter_map(|citation_key| {
             match get_record(record_db, citation_key, client) {
                 Err(err) => {
