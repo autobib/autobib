@@ -231,12 +231,13 @@ fn run_cli(cli: Cli) -> Result<()> {
                 // first retrieve 'target', in case it does not yet exist in the database
                 if get_record(&mut record_db, target.clone(), &client)?
                     .ok()
-                    .is_none()
+                    .is_some()
                 {
-                    bail!("Cannot create alias for null record '{target}'")
+                    // then link to it
+                    record_db.insert_alias(&alias, &target)?;
+                } else {
+                    error!("Cannot create alias for null record '{target}'");
                 }
-                // then link to it
-                record_db.insert_alias(&alias, &target)?;
             }
             AliasCommand::Delete { alias } => {
                 info!("Deleting alias '{alias}'");
@@ -251,18 +252,18 @@ fn run_cli(cli: Cli) -> Result<()> {
             unreachable!("Request for completions script should have been handled earlier and the program should have exited then.");
         }
         Command::Edit { citation_key } => {
-            let record = match get_record(
+            match get_record(
                 &mut record_db,
                 RecordId::from(citation_key.as_str()),
                 &client,
             )?
             .ok()
             {
-                Some(record) => record,
-                None => bail!("Cannot edit null record '{citation_key}'"),
+                Some(record) => {
+                    edit_record_and_update_database(&mut record_db, record)?;
+                }
+                None => error!("Cannot edit null record '{citation_key}'"),
             };
-
-            edit_record_and_update_database(&mut record_db, record)?;
         }
         Command::Local { id, edit, from } => {
             let remote_id = RemoteId::local(&id);
