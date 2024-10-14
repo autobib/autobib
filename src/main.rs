@@ -15,6 +15,7 @@ use std::{
     },
     fs::{create_dir_all, read_to_string, File},
     io::{self, Read},
+    iter::once,
     path::{Path, PathBuf},
     process::exit,
     str::FromStr,
@@ -437,7 +438,11 @@ fn edit_record_and_update_database(
 
         if new_record_data != entry.data() {
             info!("Updating cached data for '{canonical}'");
-            record_db.update_cached_data(&canonical, new_record_data)?;
+            if !record_db.update_cached_data(&canonical, new_record_data)? {
+                // the data was deleted while the user was editing
+                warn!("The underlying record was deleted while editing. Saving data for record '{canonical}'.");
+                record_db.set_cached_data(&canonical, new_record_data, once(&canonical))?;
+            }
         }
 
         entry = new_entry;

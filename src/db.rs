@@ -315,21 +315,24 @@ impl RecordDatabase {
         }
     }
 
-    /// Update an existing record in the database.
+    /// Delete a record in the database.
+    ///
+    /// Returns `Ok(true)`, and `Ok(false)` if the record does not exist in the database.
     pub fn delete_cached_data<K: CitationKey>(
         &mut self,
         citation_key: &K,
-    ) -> Result<(), DatabaseError> {
+    ) -> Result<bool, DatabaseError> {
         debug!("Deleting cached data for '{}'", citation_key.name());
         let tx = self.conn.transaction()?;
-        Self::delete_cached_data_tx(&tx, citation_key)?;
-        Ok(tx.commit()?)
+        let res = Self::delete_cached_data_tx(&tx, citation_key)?;
+        tx.commit()?;
+        Ok(res)
     }
 
     fn delete_cached_data_tx<K: CitationKey>(
         tx: &Transaction,
         citation_key: &K,
-    ) -> Result<(), DatabaseError> {
+    ) -> Result<bool, DatabaseError> {
         match Self::get_record_key(tx, citation_key)? {
             Some(key) => {
                 // First, copy the existing data to the changelog.
@@ -340,11 +343,9 @@ impl RecordDatabase {
                 let mut updater = tx.prepare_cached(delete_cached_data())?;
                 updater.execute((key,))?;
 
-                Ok(())
+                Ok(true)
             }
-            None => Err(DatabaseError::CitationKeyMissing(
-                citation_key.name().into(),
-            )),
+            None => Ok(false),
         }
     }
 
@@ -493,23 +494,26 @@ impl RecordDatabase {
         Ok(())
     }
 
-    /// Update an existing record in the database.
+    /// Update an existing record in the database
+    ///
+    /// Returns `Ok(true)`, and `Ok(false)` if the record does not exist in the database.
     pub fn update_cached_data<K: CitationKey>(
         &mut self,
         citation_key: &K,
         new_record_data: &RawRecordData,
-    ) -> Result<(), DatabaseError> {
+    ) -> Result<bool, DatabaseError> {
         debug!("Updating cached data for '{}'", citation_key.name());
         let tx = self.conn.transaction()?;
-        Self::update_cached_data_tx(&tx, citation_key, new_record_data)?;
-        Ok(tx.commit()?)
+        let res = Self::update_cached_data_tx(&tx, citation_key, new_record_data)?;
+        tx.commit()?;
+        Ok(res)
     }
 
     fn update_cached_data_tx<K: CitationKey>(
         tx: &Transaction,
         citation_key: &K,
         new_record_data: &RawRecordData,
-    ) -> Result<(), DatabaseError> {
+    ) -> Result<bool, DatabaseError> {
         match Self::get_record_key(tx, citation_key)? {
             Some(key) => {
                 // First, copy the existing data to the changelog.
@@ -520,11 +524,9 @@ impl RecordDatabase {
                 let mut updater = tx.prepare_cached(update_cached_data())?;
                 updater.execute((key, &Local::now(), new_record_data.to_byte_repr()))?;
 
-                Ok(())
+                Ok(true)
             }
-            None => Err(DatabaseError::CitationKeyMissing(
-                citation_key.name().into(),
-            )),
+            None => Ok(false),
         }
     }
 
