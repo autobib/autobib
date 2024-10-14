@@ -38,6 +38,7 @@ Jump to:
 - [Assigning aliases](#assigning-aliases)
 - [Creating local records](#creating-local-records)
 - [Searching for records](#searching-for-records)
+- [Shell completions](#shell-completions)
 
 ### Getting records
 
@@ -150,6 +151,38 @@ For example,
 autobib find -f author,title
 ```
 will list all of your local records with the `author` and `title` fields available to search against.
+
+### Shell completions
+
+Autobib supports shell completion of commands and options in shells like Bash and Zsh.
+See [supported shells](https://docs.rs/clap_complete/latest/clap_complete/aot/enum.Shell.html).
+
+A shell completions script can be generated as follows:
+```sh
+autobib completions <shell>
+```
+Run this on interactive shell start-up and redirect the output to your preferred directory of completions scripts.
+
+For example, in Zsh, add the following lines to `~/.zshrc`:
+```sh
+if type autobib &> /dev/null
+then
+  autobib completions zsh > ~/.local/share/zsh/site-functions/_autobib
+fi
+```
+and make sure `~/.local/share/zsh/site-functions` (or another directory of your choice) is added to the `FPATH` environment variable.
+
+In Bash, add the following lines to `~/.profile`:
+```sh
+if type autobib &> /dev/null
+then
+  autobib completions bash > ~/.local/share/bash-completion/completions/autobib
+fi
+```
+
+For this to take effect, remember to restart your shell or source the relevant file.
+Then you can try typing `autobib f` and pressing the tab key.
+You should see `autobib find `.
 
 ## License
 
