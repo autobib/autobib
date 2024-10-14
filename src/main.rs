@@ -32,7 +32,6 @@ use itertools::Itertools;
 use log::{error, info, warn};
 use nonempty::NonEmpty;
 use nucleo_picker::Picker;
-use reqwest::Certificate;
 use serde::Serializer as _;
 use serde_bibtex::ser::Serializer;
 use term::{Editor, EditorConfig};
@@ -57,10 +56,6 @@ struct Cli {
     /// Use record database.
     #[arg(short, long, value_name = "PATH")]
     database: Option<PathBuf>,
-
-    /// Use .pem certificate for network connections.
-    #[arg(long, value_name = "PATH", hide = true)]
-    cert: Option<PathBuf>,
 
     #[command(flatten)]
     verbose: Verbosity<WarnLevel>,
@@ -226,25 +221,6 @@ fn run_cli(cli: Cli) -> Result<()> {
 
     // Initialize the reqwest Client
     let builder = HttpClient::default_builder();
-
-    let builder = if let Some(path) = cli.cert {
-        info!("Applying certificate from file '{}'", &path.display());
-        let mut buffer = Vec::new();
-        File::open(&path)?.read_to_end(&mut buffer)?;
-        let cert = match Certificate::from_pem(&buffer) {
-            Ok(cert) => cert,
-            Err(_) => {
-                bail!(
-                    "Could not read .pem certificate from file '{}'",
-                    &path.display(),
-                )
-            }
-        };
-        builder.add_root_certificate(cert)
-    } else {
-        builder
-    };
-
     let client = HttpClient::new(builder)?;
 
     // Run the cli
