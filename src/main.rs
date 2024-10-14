@@ -95,6 +95,9 @@ enum Command {
         /// Write output to file.
         #[arg(short, long)]
         out: Option<PathBuf>,
+        /// Ignore null records and aliases.
+        #[arg(long)]
+        ignore_null: bool,
     },
     /// Create or edit a local record with the given handle.
     Local {
@@ -119,6 +122,9 @@ enum Command {
         /// Write output to file.
         #[arg(short, long)]
         out: Option<PathBuf>,
+        /// Ignore null records and aliases.
+        #[arg(long)]
+        ignore_null: bool,
     },
     /// Utilities to manage database.
     Util {
@@ -293,12 +299,17 @@ fn run_cli(cli: Cli) -> Result<()> {
                 )?;
             }
         }
-        Command::Get { citation_keys, out } => {
+        Command::Get {
+            citation_keys,
+            out,
+            ignore_null,
+        } => {
             // Collect all entries which are not null
             let valid_entries = validate_and_retrieve(
                 citation_keys.iter().map(|s| s as &str),
                 &mut record_db,
                 &client,
+                ignore_null,
             );
 
             output_records(out.as_ref(), valid_entries)?;
@@ -317,6 +328,7 @@ fn run_cli(cli: Cli) -> Result<()> {
             paths,
             file_type,
             out,
+            ignore_null,
         } => {
             let mut buffer = Vec::new();
 
@@ -351,8 +363,12 @@ fn run_cli(cli: Cli) -> Result<()> {
                 };
             }
 
-            let valid_entries =
-                validate_and_retrieve(container.iter().map(|s| s as &str), &mut record_db, &client);
+            let valid_entries = validate_and_retrieve(
+                container.iter().map(|s| s as &str),
+                &mut record_db,
+                &client,
+                ignore_null,
+            );
 
             output_records(out.as_ref(), valid_entries)?;
         }
@@ -504,6 +520,7 @@ fn validate_and_retrieve<'a, T: Iterator<Item = &'a str>>(
     citation_keys: T,
     record_db: &mut RecordDatabase,
     client: &HttpClient,
+    ignore_null: bool,
 ) -> BTreeMap<RemoteId, NonEmpty<Entry<RawRecordData>>> {
     let mut records: BTreeMap<RemoteId, NonEmpty<Entry<RawRecordData>>> = BTreeMap::new();
 
@@ -517,11 +534,15 @@ fn validate_and_retrieve<'a, T: Iterator<Item = &'a str>>(
                 }
                 Ok(GetRecordResponse::Exists(record)) => Some(record),
                 Ok(GetRecordResponse::NullRemoteId(remote_id)) => {
-                    error!("Null record: {remote_id}");
+                    if !ignore_null {
+                        error!("Null record: {remote_id}");
+                    }
                     None
                 }
                 Ok(GetRecordResponse::NullAlias(alias)) => {
-                    error!("Undefined alias: {alias}");
+                    if !ignore_null {
+                        error!("Undefined alias: {alias}");
+                    }
                     None
                 }
             }
