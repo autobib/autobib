@@ -45,6 +45,10 @@ sql!(set_cached_null, "Set cached null data");
 
 sql!(get_all_records, "Get all record data");
 
+sql!(get_all_citation_keys, "Get all citation keys");
+
+sql!(get_all_referencing_citation_keys, "Get all citation keys referencing a row id");
+
 sql!(get_all_record_data, "Get all record data");
 
 sql!(copy_to_changelog, "Copy record data to changelog");
