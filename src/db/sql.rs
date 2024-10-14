@@ -37,6 +37,8 @@ sql!(set_cached_data, "Set cached record data");
 
 sql!(update_cached_data, "Update cached record data");
 
+sql!(delete_cached_data, "Delete cached record data");
+
 sql!(get_cached_null, "Get cached null data");
 
 sql!(set_cached_null, "Set cached null data");
