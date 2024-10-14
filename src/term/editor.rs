@@ -1,10 +1,9 @@
-use std::{
-    cmp::PartialEq,
-    io::{stdin, stdout, Result, Write},
-    str::FromStr,
-};
+use std::{cmp::PartialEq, io::Result, str::FromStr};
 
 use edit::{edit_with_builder, Builder};
+
+use super::Confirm;
+use crate::logger::set_failed;
 
 pub struct EditorConfig {
     /// The suffix for the temporary file.
@@ -33,6 +32,8 @@ impl Editor {
     /// the edit.
     pub fn edit<T: ToString + FromStr + PartialEq>(&self, object: &T) -> Result<Option<T>> {
         let mut editor = Builder::new();
+        let prompter = Confirm::new("Continue editing?", true);
+
         editor.suffix(self.config.suffix);
 
         let mut response = object.to_string();
@@ -42,6 +43,7 @@ impl Editor {
 
             // the text was unchanged
             if user_text == response {
+                set_failed();
                 break Ok(None);
             }
 
@@ -58,15 +60,10 @@ impl Editor {
                 }
             }
 
-            eprint!("Continue editing? [Y]/n ");
-            stdout().flush()?;
-
-            let mut input = String::new();
-            stdin().read_line(&mut input)?;
-
-            match input.trim() {
-                "" | "y" | "Y" => response = user_text,
-                _ => break Ok(None),
+            if prompter.confirm()? {
+                response = user_text;
+            } else {
+                break Ok(None);
             }
         }
     }

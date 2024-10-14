@@ -37,11 +37,25 @@ sql!(set_cached_data, "Set cached record data");
 
 sql!(update_cached_data, "Update cached record data");
 
+sql!(delete_cached_data, "Delete cached record data");
+
 sql!(get_cached_null, "Get cached null data");
 
 sql!(set_cached_null, "Set cached null data");
 
 sql!(get_all_records, "Get all record data");
+
+sql!(get_all_citation_keys, "Get all citation keys");
+
+sql!(
+    get_all_canonical_citation_keys,
+    "Get all canonical citation keys"
+);
+
+sql!(
+    get_all_referencing_citation_keys,
+    "Get all citation keys referencing a row id"
+);
 
 sql!(get_all_record_data, "Get all record data");
 

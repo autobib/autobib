@@ -10,7 +10,7 @@ use thiserror::Error;
 
 pub use self::{
     bibtex::BibTeXError,
-    database::DatabaseError,
+    database::{DatabaseError, ValidationError},
     provider::ProviderError,
     record::{RecordError, RecordErrorKind},
     record_data::{InvalidBytesError, RecordDataError},
@@ -28,4 +28,10 @@ pub enum Error {
     DatabaseError(#[from] DatabaseError),
     #[error("Provider error: {0}")]
     ProviderError(#[from] ProviderError),
+}
+
+impl From<rusqlite::Error> for Error {
+    fn from(value: rusqlite::Error) -> Self {
+        Self::DatabaseError(value.into())
+    }
 }

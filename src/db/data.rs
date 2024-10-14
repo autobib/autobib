@@ -309,6 +309,16 @@ impl Default for RecordData {
     }
 }
 
+impl<D: EntryData> From<D> for RecordData {
+    fn from(value: D) -> Self {
+        let mut new = Self::new_unchecked(value.entry_type().to_owned());
+        for (key, value) in value.fields() {
+            new.fields.insert(key.to_owned(), value.to_owned());
+        }
+        new
+    }
+}
+
 impl RecordData {
     /// Initialize a new [`RecordData`] instance.
     ///
@@ -325,10 +335,22 @@ impl RecordData {
             return Err(RecordDataError::EntryTypeNotAsciiLowercase);
         }
 
-        Ok(Self {
+        Ok(Self::new_unchecked(entry_type))
+    }
+
+    fn new_unchecked(entry_type: String) -> Self {
+        Self {
             entry_type,
             fields: BTreeMap::new(),
-        })
+        }
+    }
+
+    /// Merge data from `other`, overwriting existing data with new data from the other.
+    pub fn try_merge<D: EntryData>(&mut self, other: D) -> Result<(), RecordDataError> {
+        for (key, value) in other.fields() {
+            self.try_insert(key.to_owned(), value.to_owned())?;
+        }
+        Ok(())
     }
 
     /// Attempt to insert a new `(key, value)` pair.
@@ -347,7 +369,7 @@ impl RecordData {
         value: String,
     ) -> Result<Option<String>, RecordDataError> {
         // Condition 1
-        if self.fields.len() >= RECORD_MAX_FIELDS {
+        if self.fields.len() >= RECORD_MAX_FIELDS && !self.fields.contains_key(&key) {
             return Err(RecordDataError::RecordDataFull);
         }
 
