@@ -143,6 +143,6 @@ will list all of your local records with the `author` and `title` fields availab
 
 ## License
 
-Autobib is distributed under the terms of the [GNU Affero General Public License, version 3](https://www.gnu.org/licenses/agpl-3.0.en.html).
+The source code of Autobib is distributed under the terms of the [GNU Affero General Public License, version 3](https://www.gnu.org/licenses/agpl-3.0.en.html).
 
 See [LICENSE](LICENSE) and [COPYRIGHT](COPYRIGHT) for details.
