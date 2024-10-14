@@ -8,8 +8,6 @@ mod record_data;
 
 use thiserror::Error;
 
-use crate::record::{Alias, RemoteId};
-
 pub use self::{
     bibtex::BibTeXError,
     database::DatabaseError,
@@ -22,10 +20,6 @@ pub use self::{
 pub enum Error {
     #[error(transparent)]
     BadRemoteId(#[from] RecordError),
-    #[error("Null alias '{0}'")]
-    NullAlias(Alias),
-    #[error("Null record '{0}'")]
-    NullRemoteId(RemoteId),
     #[error("File type '{0}' not supported")]
     UnsupportedFileType(String),
     #[error("File type required")]

@@ -21,23 +21,43 @@ pub struct Record {
     pub canonical: RemoteId,
 }
 
+#[derive(Debug)]
+pub enum GetRecordResponse {
+    /// The record exists.
+    Exists(Record),
+    /// The remote id corresponding to the record does not exist.
+    NullRemoteId(RemoteId),
+    /// The alias does not exist in the database.
+    NullAlias(Alias),
+}
+
+impl GetRecordResponse {
+    /// Return `Some(Record)` if the record exists, and otherwise `None`.
+    pub fn ok(self) -> Option<Record> {
+        match self {
+            Self::Exists(record) => Some(record),
+            _ => None,
+        }
+    }
+}
+
 /// Get the [`Record`] associated with a [`RecordId`], or [`None`] if the [`Record`] does not exist.
 pub fn get_record(
     db: &mut RecordDatabase,
     record_id: RecordId,
     client: &HttpClient,
-) -> Result<Record, Error> {
+) -> Result<GetRecordResponse, Error> {
     match db.get_cached_data(&record_id)? {
         RecordsResponse::Found(raw_data, canonical, _) => {
             info!("Found cached record for '{record_id}'");
-            Ok(Record {
+            Ok(GetRecordResponse::Exists(Record {
                 key: record_id.into(),
                 data: raw_data,
                 canonical,
-            })
+            }))
         }
         RecordsResponse::NotFound => match record_id.resolve()? {
-            Either::Left(alias) => Err(Error::NullAlias(alias)),
+            Either::Left(alias) => Ok(GetRecordResponse::NullAlias(alias)),
             Either::Right(remote_id) => remote_resolve(db, Context::new(remote_id), client),
         },
     }
@@ -48,7 +68,7 @@ fn remote_resolve(
     db: &mut RecordDatabase,
     mut context: Context,
     client: &HttpClient,
-) -> Result<Record, Error> {
+) -> Result<GetRecordResponse, Error> {
     loop {
         let top = context.peek();
 
@@ -56,7 +76,7 @@ fn remote_resolve(
             NullRecordsResponse::Found(_when) => {
                 // skip top element of Context since it is already cached
                 db.set_cached_null(context.descend().skip(1))?;
-                break Err(Error::NullRemoteId(context.into_top()));
+                break Ok(GetRecordResponse::NullRemoteId(context.into_top()));
             }
             NullRecordsResponse::NotFound => {
                 info!("Resolving remote record for '{top}'");
@@ -66,33 +86,33 @@ fn remote_resolve(
                             let raw_record_data = (&data).into();
                             db.set_cached_data(top, &raw_record_data, context.descend())?;
                             let (bottom, top) = context.into_ends();
-                            break Ok(Record {
+                            break Ok(GetRecordResponse::Exists(Record {
                                 key: bottom.into(),
                                 data: RawRecordData::from(&data),
                                 canonical: top,
-                            });
+                            }));
                         }
                         None => {
                             db.set_cached_null(context.descend())?;
-                            break Err(Error::NullRemoteId(context.into_bottom()));
+                            break Ok(GetRecordResponse::NullRemoteId(context.into_bottom()));
                         }
                     },
                     Either::Right(referrer) => match referrer(top.sub_id(), client)? {
                         Some(new_remote_id) => {
                             match db.get_cached_data_and_ref(&new_remote_id, context.descend())? {
                                 RecordsResponse::Found(raw_data, canonical, _) => {
-                                    break Ok(Record {
+                                    break Ok(GetRecordResponse::Exists(Record {
                                         key: context.into_bottom().into(),
                                         data: raw_data,
                                         canonical,
-                                    })
+                                    }))
                                 }
                                 RecordsResponse::NotFound => context.push(new_remote_id),
                             }
                         }
                         None => {
                             db.set_cached_null(context.descend())?;
-                            break Err(Error::NullRemoteId(context.into_bottom()));
+                            break Ok(GetRecordResponse::NullRemoteId(context.into_bottom()));
                         }
                     },
                 }
