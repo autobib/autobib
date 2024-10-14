@@ -86,6 +86,10 @@ fn get_null() -> Result<()> {
         .failure()
         .stderr(predicate::str::contains("Null record"));
 
+    let mut cmd = ab.cmd()?;
+    cmd.args(["get", "--ignore-null", "zbl:9999.28015"]);
+    cmd.assert().success().stderr(predicate::str::is_empty());
+
     ab.close()
 }
 
@@ -167,6 +171,10 @@ fn alias() -> Result<()> {
     cmd.assert()
         .failure()
         .stderr(predicate::str::contains("Undefined alias"));
+
+    let mut cmd = ab.cmd()?;
+    cmd.args(["get", "--ignore-null", "new_alias"]);
+    cmd.assert().success().stderr(predicate::str::is_empty());
 
     let mut cmd = ab.cmd()?;
     cmd.args(["alias", "delete", "my_alias"]);
