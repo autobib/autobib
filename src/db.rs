@@ -140,7 +140,7 @@ impl RecordDatabase {
         );
         let mut conn = Connection::open(db_file)?;
         debug!("Enabling write-ahead log");
-        conn.prepare_cached(set_wal())?.query_row((), |_| Ok(()))?;
+        conn.prepare(set_wal())?.query_row((), |_| Ok(()))?;
 
         let tx = conn.transaction()?;
 
@@ -173,7 +173,7 @@ impl RecordDatabase {
         table_name: &str,
         expected_schema: &str,
     ) -> Result<(), DatabaseError> {
-        let mut table_selector = tx.prepare_cached(get_table_schema())?;
+        let mut table_selector = tx.prepare(get_table_schema())?;
         let mut record_rows = table_selector.query([table_name])?;
         match record_rows.next() {
             Ok(Some(row)) => {
@@ -202,7 +202,7 @@ impl RecordDatabase {
     }
 
     fn validate_record_indexing_tx(tx: &Transaction) -> Result<(), DatabaseError> {
-        let mut retriever = tx.prepare_cached(get_all_record_data())?;
+        let mut retriever = tx.prepare(get_all_record_data())?;
         let mut rows = retriever.query([])?;
 
         // rows does not implement Iterator
@@ -283,7 +283,7 @@ impl RecordDatabase {
     /// Validate binary data inside a transaction.
     fn validate_record_data_tx(tx: &Transaction) -> Result<(), DatabaseError> {
         debug!("Validating binary record data");
-        let mut retriever = tx.prepare_cached(get_all_record_data())?;
+        let mut retriever = tx.prepare(get_all_record_data())?;
         let mut rows = retriever.query([])?;
 
         // rows does not implement Iterator
@@ -340,7 +340,7 @@ impl RecordDatabase {
                 logger.execute((key,))?;
 
                 // Then delete the data.
-                let mut updater = tx.prepare_cached(delete_cached_data())?;
+                let mut updater = tx.prepare(delete_cached_data())?;
                 updater.execute((key,))?;
 
                 Ok(true)
@@ -417,7 +417,7 @@ impl RecordDatabase {
                 let (_, canonical, _) = Self::get_record_data_from_row_id(tx, key)?;
 
                 // get the rows in CitationKeys which reference the id
-                let mut selector = tx.prepare_cached(get_all_referencing_citation_keys())?;
+                let mut selector = tx.prepare(get_all_referencing_citation_keys())?;
                 let rows = selector.query_map([key], |row| row.get(0))?;
                 let mut referencing = Vec::new();
                 for name_result in rows {
@@ -557,7 +557,7 @@ impl RecordDatabase {
                 logger.execute((key,))?;
 
                 // Then update the data.
-                let mut updater = tx.prepare_cached(update_cached_data())?;
+                let mut updater = tx.prepare(update_cached_data())?;
                 updater.execute((key, &Local::now(), new_record_data.to_byte_repr()))?;
 
                 Ok(true)
@@ -645,9 +645,9 @@ impl RecordDatabase {
         mut apply: F,
     ) -> Result<(), DatabaseError> {
         let mut selector = if canonical {
-            self.conn.prepare_cached(get_all_canonical_citation_keys())
+            self.conn.prepare(get_all_canonical_citation_keys())
         } else {
-            self.conn.prepare_cached(get_all_citation_keys())
+            self.conn.prepare(get_all_citation_keys())
         }?;
 
         selector
@@ -732,7 +732,7 @@ impl RecordDatabase {
 
     /// Rename an alias within a transaction.
     fn rename_alias_tx(tx: &Transaction, old: &Alias, new: &Alias) -> Result<(), DatabaseError> {
-        let mut updater = tx.prepare_cached(rename_citation_key())?;
+        let mut updater = tx.prepare(rename_citation_key())?;
         Self::map_citation_key_result(updater.execute((new.name(), old.name())), old)
     }
 
@@ -766,7 +766,7 @@ impl RecordDatabase {
         tx: &Transaction,
         citation_key: &K,
     ) -> Result<(), DatabaseError> {
-        let mut deleter = tx.prepare_cached(delete_citation_key())?;
+        let mut deleter = tx.prepare(delete_citation_key())?;
         if deleter.execute((citation_key.name(),))? == 0 {
             Err(DatabaseError::AliasDeleteMissing(
                 citation_key.name().into(),
@@ -829,7 +829,7 @@ impl RecordDatabase {
             CitationKeyInsertMode::FailIfExists => set_citation_key_fail(),
             CitationKeyInsertMode::IgnoreIfExists => set_citation_key_ignore(),
         };
-        let mut key_writer = tx.prepare_cached(stmt)?;
+        let mut key_writer = tx.prepare(stmt)?;
         Self::map_citation_key_result(key_writer.execute((name.name(), key)), name)
     }
 
