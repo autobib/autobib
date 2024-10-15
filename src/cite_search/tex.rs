@@ -4,6 +4,8 @@ use lazy_static::lazy_static;
 use memchr::{memchr, memchr2, memchr3};
 use regex::Regex;
 
+use crate::RecordId;
+
 /// Move forward until all comments and whitespace are consumed.
 fn comment_and_ws(buffer: &[u8], mut pos: usize) -> usize {
     while pos < buffer.len() {
@@ -107,12 +109,12 @@ fn macro_argument(buffer: &[u8], mut pos: usize) -> (Option<String>, usize) {
 }
 
 /// Parse the citation contents and append new keys to `keys`.
-fn parse_cite_contents<T: Extend<String>>(contents: &str, container: &mut T) {
+fn parse_cite_contents<T: Extend<RecordId>>(contents: &str, container: &mut T) {
     container.extend(
         contents
             .split(',')
             .map(str::trim)
-            .filter(|k| *k != "*")
+            .filter(|k| *k != "*" && !k.is_empty())
             .map(Into::into),
     );
 }
@@ -131,7 +133,7 @@ fn is_citation_macro_name(cmd: &str) -> bool {
 ///
 /// Citekeys essentially appear in the buffer in the form `\...cite{key1, key2}`, though there is a decent
 /// amount of extra work required to properly handle comments and other subtleties.
-pub fn get_citekeys<T: Extend<String>>(buffer: &[u8], container: &mut T) {
+pub fn get_citekeys<T: Extend<RecordId>>(buffer: &[u8], container: &mut T) {
     let mut pos: usize = 0;
 
     while let Some(next) = memchr2(b'%', b'\\', &buffer[pos..]) {

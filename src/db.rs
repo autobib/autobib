@@ -395,7 +395,7 @@ impl RecordDatabase {
     }
 
     /// Given a [`CitationKey`], return a vector of all other keys which point to the same
-    /// underlying reord.
+    /// underlying record.
     pub fn get_equivalent_citation_keys<K: CitationKey>(
         &mut self,
         citation_key: &K,
@@ -631,6 +631,34 @@ impl RecordDatabase {
                 cols[0] = search_display;
             });
         }
+
+        Ok(())
+    }
+
+    /// Iterate over all names in the CitationKeys table and apply the infallible function
+    /// `apply` to each key.
+    ///
+    /// If `canonical` is true, only iterate over those entries which co
+    pub fn apply_citation_keys<F: FnMut(&str)>(
+        &mut self,
+        canonical: bool,
+        mut apply: F,
+    ) -> Result<(), DatabaseError> {
+        let mut selector = if canonical {
+            self.conn.prepare_cached(get_all_canonical_citation_keys())
+        } else {
+            self.conn.prepare_cached(get_all_citation_keys())
+        }?;
+
+        selector
+            .query_map([], |row| {
+                if let ValueRef::Text(bytes) = row.get_ref_unwrap(0) {
+                    // SAFETY: the underlying data is always valid utf-8
+                    apply(unsafe { std::str::from_utf8_unchecked(bytes) });
+                }
+                Ok(())
+            })?
+            .for_each(drop);
 
         Ok(())
     }

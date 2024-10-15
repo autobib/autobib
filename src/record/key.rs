@@ -10,7 +10,7 @@ use crate::{
 };
 
 /// An unvalidated wrapper for user input representing either a `provider:sub_id` or an `alias`.
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize, PartialOrd, Ord)]
 pub struct RecordId {
     full_id: String,
     provider_len: Option<usize>,

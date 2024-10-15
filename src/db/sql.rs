@@ -48,6 +48,11 @@ sql!(get_all_records, "Get all record data");
 sql!(get_all_citation_keys, "Get all citation keys");
 
 sql!(
+    get_all_canonical_citation_keys,
+    "Get all canonical citation keys"
+);
+
+sql!(
     get_all_referencing_citation_keys,
     "Get all citation keys referencing a row id"
 );
