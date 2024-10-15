@@ -35,14 +35,15 @@ use nonempty::NonEmpty;
 use nucleo_picker::Picker;
 use serde::Serializer as _;
 use serde_bibtex::{ser::Serializer, validate::is_entry_key};
-use term::{Editor, EditorConfig};
+use term::{Confirm, Editor, EditorConfig};
 
 use self::{
     cite_search::{get_citekeys, SourceFileType},
     db::{
         CitationKey, EntryData, RawRecordData, RecordData, RecordDatabase, RecordsDefaultResponse,
+        RecordsDeletionResponse,
     },
-    logger::Logger,
+    logger::{set_failed, Logger},
     record::{GetRecordResponse, Record},
 };
 pub use self::{
@@ -90,6 +91,9 @@ enum Command {
     Delete {
         /// The citation key to delete.
         citation_key: RecordId,
+        /// Delete without prompting.
+        #[arg(short, long)]
+        force: bool,
     },
     /// Edit existing records.
     Edit {
@@ -282,8 +286,32 @@ fn run_cli(cli: Cli) -> Result<()> {
         Command::Completions { shell: _ } => {
             unreachable!("Request for completions script should have been handled earlier and the program should have exited then.");
         }
-        Command::Delete { citation_key } => {
-            record_db.delete_cached_data(&citation_key)?;
+        Command::Delete {
+            citation_key,
+            force,
+        } => {
+            let confirm = if force {
+                |_| Ok(true)
+            } else {
+                |referencing: Vec<String>| {
+                    warn!("Deleting this record will delete associated keys:");
+                    for key in referencing.iter() {
+                        eprintln!("  {key}");
+                    }
+                    let prompt = Confirm::new("Delete anyway?", false);
+                    prompt.confirm()
+                }
+            };
+            match record_db.delete_cached_data_with_prompt(&citation_key, confirm)? {
+                RecordsDeletionResponse::NotDeleted => {
+                    set_failed();
+                }
+                RecordsDeletionResponse::NotFound => {
+                    bail!("Citation key '{citation_key}' does not exist.")
+                }
+                RecordsDeletionResponse::Failed(err) => bail!(err),
+                RecordsDeletionResponse::Deleted => {}
+            }
         }
         Command::Edit { citation_key } => {
             match get_record(&mut record_db, citation_key, &client)? {

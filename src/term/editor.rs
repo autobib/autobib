@@ -3,6 +3,7 @@ use std::{cmp::PartialEq, io::Result, str::FromStr};
 use edit::{edit_with_builder, Builder};
 
 use super::Confirm;
+use crate::logger::set_failed;
 
 pub struct EditorConfig {
     /// The suffix for the temporary file.
@@ -42,6 +43,7 @@ impl Editor {
 
             // the text was unchanged
             if user_text == response {
+                set_failed();
                 break Ok(None);
             }
 

@@ -315,37 +315,73 @@ impl RecordDatabase {
         }
     }
 
-    /// Delete a record in the database.
+    /// Delete a record in the database, prompting the user if there are multiple referencing keys.
     ///
-    /// Returns `Ok(true)`, and `Ok(false)` if the record does not exist in the database.
-    pub fn delete_cached_data<K: CitationKey>(
+    /// If the citation key is a canonical id and there are no other referencing keys, delete the
+    /// record. Otherwise, collect all referencing citation keys into a `Vec<String>` and pass to
+    /// the `confirm` prompt, and only delete if confirmation is successful.
+    pub fn delete_cached_data_with_prompt<
+        E,
+        K: CitationKey,
+        F: FnOnce(Vec<String>) -> Result<bool, E>,
+    >(
         &mut self,
-        citation_key: &K,
-    ) -> Result<bool, DatabaseError> {
-        debug!("Deleting cached data for '{}'", citation_key.name());
+        canonical: &K,
+        confirm: F,
+    ) -> Result<RecordsDeletionResponse<E>, DatabaseError> {
         let tx = self.conn.transaction()?;
-        let res = Self::delete_cached_data_tx(&tx, citation_key)?;
+        let res = Self::delete_cached_data_with_prompt_tx(&tx, canonical, confirm)?;
         tx.commit()?;
         Ok(res)
     }
 
-    fn delete_cached_data_tx<K: CitationKey>(
+    fn delete_cached_data_with_prompt_tx<
+        K: CitationKey,
+        E,
+        F: FnOnce(Vec<String>) -> Result<bool, E>,
+    >(
         tx: &Transaction,
-        citation_key: &K,
-    ) -> Result<bool, DatabaseError> {
-        match Self::get_record_key(tx, citation_key)? {
+        canonical: &K,
+        confirm: F,
+    ) -> Result<RecordsDeletionResponse<E>, DatabaseError> {
+        match Self::get_record_key(tx, canonical)? {
             Some(key) => {
-                // First, copy the existing data to the changelog.
-                let mut logger = tx.prepare_cached(copy_to_changelog())?;
-                logger.execute((key,))?;
+                // get the rows in CitationKeys which reference the id
+                let mut selector = tx.prepare(get_all_referencing_citation_keys())?;
+                let mut rows = selector.query_map([key], |row| row.get(0))?;
 
-                // Then delete the data.
-                let mut updater = tx.prepare(delete_cached_data())?;
-                updater.execute((key,))?;
+                // SAFETY: guaranteed to have at least one hit, since
+                // we just looked up the key within the same transaction
+                let first = rows.next().unwrap();
 
-                Ok(true)
+                if match rows.next() {
+                    Some(second) => {
+                        // there are still more keys, so we shoud prompt for confirmation
+                        let mut referencing = vec![first?, second?];
+                        for name_res in rows {
+                            referencing.push(name_res?);
+                        }
+                        match confirm(referencing) {
+                            Ok(b) => b,
+                            Err(err) => return Ok(RecordsDeletionResponse::Failed(err)),
+                        }
+                    }
+                    // no other keys, so we delete without prompting
+                    None => true,
+                } {
+                    // First, copy the existing data to the changelog.
+                    let mut logger = tx.prepare_cached(copy_to_changelog())?;
+                    logger.execute((key,))?;
+
+                    // Then delete the data.
+                    let mut updater = tx.prepare(delete_cached_data())?;
+                    updater.execute((key,))?;
+                    Ok(RecordsDeletionResponse::Deleted)
+                } else {
+                    Ok(RecordsDeletionResponse::NotDeleted)
+                }
             }
-            None => Ok(false),
+            None => Ok(RecordsDeletionResponse::NotFound),
         }
     }
 
@@ -856,6 +892,19 @@ impl Drop for RecordDatabase {
             eprintln!("Failed to optimize database on close: {err}");
         }
     }
+}
+
+/// Response type from the `Records` table as returned by
+/// [`RecordDatabase::delete_cached_data_with_prompt`].
+pub enum RecordsDeletionResponse<E> {
+    /// The record was deleted.
+    Deleted,
+    /// The record was not deleted.
+    NotDeleted,
+    /// The record could not be deleted since it did not exist.
+    NotFound,
+    /// The confirmation prompt failed.
+    Failed(E),
 }
 
 /// Response type from the `Records` table as returned by
