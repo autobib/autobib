@@ -650,11 +650,11 @@ impl RecordDatabase {
     pub fn inject_all_records<T, R>(
         &mut self,
         injector: Injector<RemoteId>,
-        render_row: R,
+        mut render_row: R,
     ) -> Result<(), DatabaseError>
     where
         T: Into<Utf32String>,
-        R: Fn(RawRecordData, &RemoteId, DateTime<Local>) -> T,
+        R: FnMut(RawRecordData, &RemoteId, DateTime<Local>) -> T,
     {
         debug!("Sending all database records to an injector.");
         let mut retriever = self.conn.prepare_cached(get_all_records())?;
