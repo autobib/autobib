@@ -41,10 +41,10 @@ use self::{
     cite_search::{get_citekeys, SourceFileType},
     db::{
         CitationKey, EntryData, RawRecordData, RecordData, RecordDatabase, RecordsDefaultResponse,
-        RecordsDeletionResponse,
+        RecordsDeletionResponse, RecordsUpdateResponse, UpdateMode,
     },
     logger::{set_failed, Logger},
-    record::{GetRecordResponse, Record},
+    record::{get_remote_record, GetRecordResponse, GetRemoteRecordResponse, Record},
 };
 pub use self::{
     entry::Entry,
@@ -149,6 +149,11 @@ enum Command {
         /// Ignore null records and aliases.
         #[arg(long)]
         ignore_null: bool,
+    },
+    /// Update the data associated with an existing citation key.
+    Update {
+        /// The citation key to update.
+        citation_key: RecordId,
     },
     /// Utilities to manage database.
     Util {
@@ -461,6 +466,24 @@ fn run_cli(cli: Cli) -> Result<()> {
                 }
             }
         }
+        Command::Update { citation_key } => {
+            match record_db.update_cached_data_from_closure(
+                &citation_key,
+                |_, remote_id| match get_remote_record(remote_id, &client)? {
+                    GetRemoteRecordResponse::Exists(data) => Ok(data),
+                    GetRemoteRecordResponse::Null(remote_id) => {
+                        bail!("Remote data for canonical id '{remote_id}' is null")
+                    }
+                },
+                UpdateMode::PreferExisting,
+            )? {
+                RecordsUpdateResponse::Updated => {}
+                RecordsUpdateResponse::NotFound => bail!("Null citation key '{citation_key}'"),
+                RecordsUpdateResponse::Failed(err) => {
+                    bail!("Failed to retrieve remote data: {err}")
+                }
+            }
+        }
         Command::Util { util_command } => match util_command {
             UtilCommand::Check => {
                 info!("Validating record binary data");
@@ -523,9 +546,9 @@ fn edit_record_and_update_database(
 
         if new_record_data != entry.data() {
             info!("Updating cached data for '{canonical}'");
-            if !record_db.update_cached_data(&canonical, new_record_data)? {
+            if !record_db.update_cached_data(&canonical, new_record_data, UpdateMode::Replace)? {
                 // the data was deleted while the user was editing
-                warn!("The underlying record was deleted while editing. Saving data for record '{canonical}'.");
+                error!("The underlying record was deleted while editing. Saving data for record '{canonical}'.");
                 record_db.set_cached_data(&canonical, new_record_data, once(&canonical))?;
             }
         }

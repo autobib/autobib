@@ -121,6 +121,40 @@ fn remote_resolve(
     }
 }
 
+pub enum GetRemoteRecordResponse {
+    Exists(RawRecordData),
+    Null(RemoteId),
+}
+
+/// Get the [`Record`] associated with a [`RemoteId`], or [`None`] if the [`Record`] does not exist.
+pub fn get_remote_record(
+    remote_id: RemoteId,
+    client: &HttpClient,
+) -> Result<GetRemoteRecordResponse, Error> {
+    let mut context = Context::new(remote_id);
+    loop {
+        let top = context.peek();
+
+        info!("Resolving remote record for '{top}'");
+        match lookup_provider(top.provider()) {
+            Either::Left(resolver) => match resolver(top.sub_id(), client)? {
+                Some(data) => {
+                    break Ok(GetRemoteRecordResponse::Exists(RawRecordData::from(&data)));
+                }
+                None => {
+                    break Ok(GetRemoteRecordResponse::Null(context.into_bottom()));
+                }
+            },
+            Either::Right(referrer) => match referrer(top.sub_id(), client)? {
+                Some(new_remote_id) => context.push(new_remote_id),
+                None => {
+                    break Ok(GetRemoteRecordResponse::Null(context.into_bottom()));
+                }
+            },
+        }
+    }
+}
+
 mod private {
     use super::RemoteId;
 
@@ -130,39 +164,53 @@ mod private {
 
     impl Context {
         /// Construct a new [`Context`] with an initial element.
+        #[inline]
         pub fn new(first: RemoteId) -> Self {
             Self(vec![first])
         }
 
         /// Iterate from top to bottom
+        #[inline]
         pub fn descend(&self) -> impl Iterator<Item = &RemoteId> {
             self.0.iter().rev()
         }
 
         /// Push a new element.
+        #[inline]
         pub fn push(&mut self, remote_id: RemoteId) {
             self.0.push(remote_id);
         }
 
         /// Get the top element.
+        #[inline]
         pub fn peek(&self) -> &RemoteId {
             // SAFETY: the internal vec is always non-empty
             unsafe { self.0.last().unwrap_unchecked() }
         }
 
         /// Drop the context, extracting the bottom element.
+        #[inline]
         pub fn into_bottom(mut self) -> RemoteId {
             // SAFETY: the internal vec is always non-empty
             unsafe { self.0.drain(..).next().unwrap_unchecked() }
         }
 
         /// Drop the context, extracting the top element.
-        pub fn into_top(mut self) -> RemoteId {
+        #[inline]
+        pub fn into_top(self) -> RemoteId {
+            self.split_top().1
+        }
+
+        /// Drop the context, extracting the top element.
+        #[inline]
+        pub fn split_top(mut self) -> (Vec<RemoteId>, RemoteId) {
             // SAFETY: the internal vec is always non-empty
-            unsafe { self.0.pop().unwrap_unchecked() }
+            let top = unsafe { self.0.pop().unwrap_unchecked() };
+            (self.0, top)
         }
 
         /// Drop the context, extracting the top and bottom elements.
+        #[inline]
         pub fn into_ends(mut self) -> (RemoteId, RemoteId) {
             unsafe {
                 if self.0.len() >= 2 {

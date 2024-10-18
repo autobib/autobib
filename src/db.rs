@@ -524,7 +524,9 @@ impl RecordDatabase {
         ))
     }
 
-    /// Insert a new record into the database.
+    /// Insert a new record into the database and create links in the CitationKeys table
+    /// corresponding to `remote_id_iter`. Note that the `canonical_id` is **not** automatically
+    /// added as row in CitationKeys.
     ///
     /// Every record requires that it is associated with a canonical [`RemoteId`] with a
     /// corresponding entry. There may also be associated references.
@@ -569,14 +571,93 @@ impl RecordDatabase {
     /// Update an existing record in the database
     ///
     /// Returns `Ok(true)`, and `Ok(false)` if the record does not exist in the database.
+    pub fn update_cached_data_from_closure<
+        E,
+        K: CitationKey,
+        F: FnOnce(&RawRecordData, RemoteId) -> Result<RawRecordData, E>,
+    >(
+        &mut self,
+        citation_key: &K,
+        new_record_data: F,
+        update_mode: UpdateMode,
+    ) -> Result<RecordsUpdateResponse<E>, DatabaseError> {
+        debug!("Updating cached data for '{}'", citation_key.name());
+        let tx = self.conn.transaction()?;
+        let res = Self::update_cached_data_from_closure_tx(
+            &tx,
+            citation_key,
+            new_record_data,
+            update_mode,
+        )?;
+        tx.commit()?;
+        Ok(res)
+    }
+
+    fn update_cached_data_from_closure_tx<
+        E,
+        K: CitationKey,
+        F: FnOnce(&RawRecordData, RemoteId) -> Result<RawRecordData, E>,
+    >(
+        tx: &Transaction,
+        citation_key: &K,
+        new_record_data: F,
+        update_mode: UpdateMode,
+    ) -> Result<RecordsUpdateResponse<E>, DatabaseError> {
+        match Self::get_record_key(tx, citation_key)? {
+            Some(key) => {
+                // First, copy the existing data to the changelog.
+                let mut logger = tx.prepare_cached(copy_to_changelog())?;
+                logger.execute((key,))?;
+
+                // Then update the data.
+                let mut updater = tx.prepare(update_cached_data())?;
+                let (existing_data, canonical, _) = Self::get_record_data_from_row_id(tx, key)?;
+                let new_record_data = match new_record_data(&existing_data, canonical) {
+                    Ok(data) => data,
+                    Err(err) => return Ok(RecordsUpdateResponse::Failed(err)),
+                };
+                match update_mode {
+                    UpdateMode::Replace => {
+                        updater.execute((key, &Local::now(), new_record_data.to_byte_repr()))?;
+                    }
+                    UpdateMode::PreferNew => {
+                        let mut record_data: RecordData = (&existing_data).into();
+                        record_data.try_merge(new_record_data)?;
+                        updater.execute((
+                            key,
+                            &Local::now(),
+                            RawRecordData::from(&record_data).to_byte_repr(),
+                        ))?;
+                    }
+                    UpdateMode::PreferExisting => {
+                        let mut record_data: RecordData = new_record_data.into();
+                        record_data.try_merge(&existing_data)?;
+                        updater.execute((
+                            key,
+                            &Local::now(),
+                            RawRecordData::from(&record_data).to_byte_repr(),
+                        ))?;
+                    }
+                };
+
+                Ok(RecordsUpdateResponse::Updated)
+            }
+            None => Ok(RecordsUpdateResponse::NotFound),
+        }
+    }
+
+    /// Update an existing record in the database
+    ///
+    /// Returns `Ok(true)`, and `Ok(false)` if the record does not exist in the database.
     pub fn update_cached_data<K: CitationKey>(
         &mut self,
         citation_key: &K,
         new_record_data: &RawRecordData,
+        update_mode: UpdateMode,
     ) -> Result<bool, DatabaseError> {
         debug!("Updating cached data for '{}'", citation_key.name());
         let tx = self.conn.transaction()?;
-        let res = Self::update_cached_data_tx(&tx, citation_key, new_record_data)?;
+        let res = Self::update_cached_data_tx(&tx, citation_key, new_record_data, update_mode)?;
         tx.commit()?;
         Ok(res)
     }
@@ -585,6 +666,7 @@ impl RecordDatabase {
         tx: &Transaction,
         citation_key: &K,
         new_record_data: &RawRecordData,
+        update_mode: UpdateMode,
     ) -> Result<bool, DatabaseError> {
         match Self::get_record_key(tx, citation_key)? {
             Some(key) => {
@@ -594,7 +676,31 @@ impl RecordDatabase {
 
                 // Then update the data.
                 let mut updater = tx.prepare(update_cached_data())?;
-                updater.execute((key, &Local::now(), new_record_data.to_byte_repr()))?;
+                match update_mode {
+                    UpdateMode::Replace => {
+                        updater.execute((key, &Local::now(), new_record_data.to_byte_repr()))?;
+                    }
+                    UpdateMode::PreferNew => {
+                        let (existing_data, _, _) = Self::get_record_data_from_row_id(tx, key)?;
+                        let mut record_data: RecordData = (&existing_data).into();
+                        record_data.try_merge(new_record_data)?;
+                        updater.execute((
+                            key,
+                            &Local::now(),
+                            RawRecordData::from(&record_data).to_byte_repr(),
+                        ))?;
+                    }
+                    UpdateMode::PreferExisting => {
+                        let (existing_data, _, _) = Self::get_record_data_from_row_id(tx, key)?;
+                        let mut record_data: RecordData = new_record_data.into();
+                        record_data.try_merge(&existing_data)?;
+                        updater.execute((
+                            key,
+                            &Local::now(),
+                            RawRecordData::from(&record_data).to_byte_repr(),
+                        ))?;
+                    }
+                };
 
                 Ok(true)
             }
@@ -894,6 +1000,12 @@ impl Drop for RecordDatabase {
     }
 }
 
+pub enum UpdateMode {
+    Replace,
+    PreferNew,
+    PreferExisting,
+}
+
 /// Response type from the `Records` table as returned by
 /// [`RecordDatabase::delete_cached_data_with_prompt`].
 pub enum RecordsDeletionResponse<E> {
@@ -901,6 +1013,17 @@ pub enum RecordsDeletionResponse<E> {
     Deleted,
     /// The record was not deleted.
     NotDeleted,
+    /// The record could not be deleted since it did not exist.
+    NotFound,
+    /// The confirmation prompt failed.
+    Failed(E),
+}
+
+/// Response type from the `Records` table as returned by
+/// [`RecordDatabase::update_cached_data_from_closure`].
+pub enum RecordsUpdateResponse<E> {
+    /// The record was deleted.
+    Updated,
     /// The record could not be deleted since it did not exist.
     NotFound,
     /// The confirmation prompt failed.
