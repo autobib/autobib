@@ -140,7 +140,7 @@ impl RecordDatabase {
         );
         let mut conn = Connection::open(db_file)?;
         debug!("Enabling write-ahead log");
-        conn.prepare_cached(set_wal())?.query_row((), |_| Ok(()))?;
+        conn.prepare(set_wal())?.query_row((), |_| Ok(()))?;
 
         let tx = conn.transaction()?;
 
@@ -173,7 +173,7 @@ impl RecordDatabase {
         table_name: &str,
         expected_schema: &str,
     ) -> Result<(), DatabaseError> {
-        let mut table_selector = tx.prepare_cached(get_table_schema())?;
+        let mut table_selector = tx.prepare(get_table_schema())?;
         let mut record_rows = table_selector.query([table_name])?;
         match record_rows.next() {
             Ok(Some(row)) => {
@@ -202,7 +202,7 @@ impl RecordDatabase {
     }
 
     fn validate_record_indexing_tx(tx: &Transaction) -> Result<(), DatabaseError> {
-        let mut retriever = tx.prepare_cached(get_all_record_data())?;
+        let mut retriever = tx.prepare(get_all_record_data())?;
         let mut rows = retriever.query([])?;
 
         // rows does not implement Iterator
@@ -283,7 +283,7 @@ impl RecordDatabase {
     /// Validate binary data inside a transaction.
     fn validate_record_data_tx(tx: &Transaction) -> Result<(), DatabaseError> {
         debug!("Validating binary record data");
-        let mut retriever = tx.prepare_cached(get_all_record_data())?;
+        let mut retriever = tx.prepare(get_all_record_data())?;
         let mut rows = retriever.query([])?;
 
         // rows does not implement Iterator
@@ -315,6 +315,76 @@ impl RecordDatabase {
         }
     }
 
+    /// Delete a record in the database, prompting the user if there are multiple referencing keys.
+    ///
+    /// If the citation key is a canonical id and there are no other referencing keys, delete the
+    /// record. Otherwise, collect all referencing citation keys into a `Vec<String>` and pass to
+    /// the `confirm` prompt, and only delete if confirmation is successful.
+    pub fn delete_cached_data_with_prompt<
+        E,
+        K: CitationKey,
+        F: FnOnce(Vec<String>) -> Result<bool, E>,
+    >(
+        &mut self,
+        canonical: &K,
+        confirm: F,
+    ) -> Result<RecordsDeletionResponse<E>, DatabaseError> {
+        let tx = self.conn.transaction()?;
+        let res = Self::delete_cached_data_with_prompt_tx(&tx, canonical, confirm)?;
+        tx.commit()?;
+        Ok(res)
+    }
+
+    fn delete_cached_data_with_prompt_tx<
+        K: CitationKey,
+        E,
+        F: FnOnce(Vec<String>) -> Result<bool, E>,
+    >(
+        tx: &Transaction,
+        canonical: &K,
+        confirm: F,
+    ) -> Result<RecordsDeletionResponse<E>, DatabaseError> {
+        match Self::get_record_key(tx, canonical)? {
+            Some(key) => {
+                // get the rows in CitationKeys which reference the id
+                let mut selector = tx.prepare(get_all_referencing_citation_keys())?;
+                let mut rows = selector.query_map([key], |row| row.get(0))?;
+
+                // SAFETY: guaranteed to have at least one hit, since
+                // we just looked up the key within the same transaction
+                let first = rows.next().unwrap();
+
+                if match rows.next() {
+                    Some(second) => {
+                        // there are still more keys, so we shoud prompt for confirmation
+                        let mut referencing = vec![first?, second?];
+                        for name_res in rows {
+                            referencing.push(name_res?);
+                        }
+                        match confirm(referencing) {
+                            Ok(b) => b,
+                            Err(err) => return Ok(RecordsDeletionResponse::Failed(err)),
+                        }
+                    }
+                    // no other keys, so we delete without prompting
+                    None => true,
+                } {
+                    // First, copy the existing data to the changelog.
+                    let mut logger = tx.prepare_cached(copy_to_changelog())?;
+                    logger.execute((key,))?;
+
+                    // Then delete the data.
+                    let mut updater = tx.prepare(delete_cached_data())?;
+                    updater.execute((key,))?;
+                    Ok(RecordsDeletionResponse::Deleted)
+                } else {
+                    Ok(RecordsDeletionResponse::NotDeleted)
+                }
+            }
+            None => Ok(RecordsDeletionResponse::NotFound),
+        }
+    }
+
     /// Get the cached data corresponding to a [`CitationKey`].
     pub fn get_cached_data<K: CitationKey>(
         &mut self,
@@ -335,19 +405,64 @@ impl RecordDatabase {
         match Self::get_record_key(tx, citation_key)? {
             // target exists
             Some(key) => {
-                let mut record_selector = tx.prepare_cached(get_cached_data())?;
-                let mut record_rows = record_selector.query([key])?;
-
-                // SAFETY: key always corresponds to a valid row
-                //         because of ON DELETE CASCADE
-                let row = record_rows.next()?.expect("RowId does not exist!");
-                Ok(Self::cache_response_from_record_row(row).map(
-                    |(entry, canonical, modified)| {
-                        RecordsResponse::Found(entry, canonical, modified)
-                    },
-                )?)
+                let (entry, canonical, modified) = Self::get_record_data_from_row_id(tx, key)?;
+                Ok(RecordsResponse::Found(entry, canonical, modified))
             }
             None => Ok(RecordsResponse::NotFound),
+        }
+    }
+
+    /// Get the record data from a database row id
+    ///
+    /// # Safety
+    /// The caller is required to guarantee that the `key` exists within the database. The best way
+    /// to do this is to obtain the key using the [`get_record_key`] function within the same
+    /// transaction.
+    fn get_record_data_from_row_id(
+        tx: &Transaction,
+        key: DatabaseEntryId,
+    ) -> Result<(RawRecordData, RemoteId, DateTime<Local>), rusqlite::Error> {
+        let mut record_selector = tx.prepare_cached(get_cached_data())?;
+        let mut record_rows = record_selector.query([key])?;
+        // SAFETY: key always corresponds to a valid row
+        //         because of ON DELETE CASCADE
+        let row = record_rows.next()?.expect("RowId does not exist!");
+        Self::cache_response_from_record_row(row)
+    }
+
+    /// Given a [`CitationKey`], return a vector of all other keys which point to the same
+    /// underlying record.
+    pub fn get_equivalent_citation_keys<K: CitationKey>(
+        &mut self,
+        citation_key: &K,
+    ) -> Result<Option<(RemoteId, Vec<String>)>, DatabaseError> {
+        debug!("Retrieving citation keys for '{}'", citation_key.name());
+        let tx = self.conn.transaction()?;
+        let res = Self::get_equivalent_citation_keys_tx(&tx, citation_key)?;
+        tx.commit()?;
+        Ok(res)
+    }
+
+    fn get_equivalent_citation_keys_tx<K: CitationKey>(
+        tx: &Transaction,
+        citation_key: &K,
+    ) -> Result<Option<(RemoteId, Vec<String>)>, DatabaseError> {
+        match Self::get_record_key(tx, citation_key)? {
+            Some(key) => {
+                // get the canonical id
+                let (_, canonical, _) = Self::get_record_data_from_row_id(tx, key)?;
+
+                // get the rows in CitationKeys which reference the id
+                let mut selector = tx.prepare(get_all_referencing_citation_keys())?;
+                let rows = selector.query_map([key], |row| row.get(0))?;
+                let mut referencing = Vec::new();
+                for name_result in rows {
+                    referencing.push(name_result?);
+                }
+
+                Ok(Some((canonical, referencing)))
+            }
+            None => Ok(None),
         }
     }
 
@@ -373,9 +488,6 @@ impl RecordDatabase {
         match Self::get_record_key(tx, citation_key)? {
             // target exists
             Some(key) => {
-                let mut record_selector = tx.prepare_cached(get_cached_data())?;
-                let mut record_rows = record_selector.query([key])?;
-
                 // insert refs
                 for remote_id in refs {
                     Self::set_citation_key_row_tx(
@@ -386,14 +498,8 @@ impl RecordDatabase {
                     )?;
                 }
 
-                // SAFETY: key always corresponds to a valid row
-                //         because of ON DELETE CASCADE
-                let row = record_rows.next()?.expect("RowId does not exist!)");
-                Ok(Self::cache_response_from_record_row(row).map(
-                    |(entry, canonical, modified)| {
-                        RecordsResponse::Found(entry, canonical, modified)
-                    },
-                )?)
+                let (entry, canonical, modified) = Self::get_record_data_from_row_id(tx, key)?;
+                Ok(RecordsResponse::Found(entry, canonical, modified))
             }
             None => Ok(RecordsResponse::NotFound),
         }
@@ -418,7 +524,9 @@ impl RecordDatabase {
         ))
     }
 
-    /// Insert a new record into the database.
+    /// Insert a new record into the database and create links in the CitationKeys table
+    /// corresponding to `remote_id_iter`. Note that the `canonical_id` is **not** automatically
+    /// added as row in CitationKeys.
     ///
     /// Every record requires that it is associated with a canonical [`RemoteId`] with a
     /// corresponding entry. There may also be associated references.
@@ -460,23 +568,41 @@ impl RecordDatabase {
         Ok(())
     }
 
-    /// Update an existing record in the database.
-    pub fn update_cached_data<K: CitationKey>(
+    /// Update an existing record in the database
+    ///
+    /// Returns `Ok(true)`, and `Ok(false)` if the record does not exist in the database.
+    pub fn update_cached_data_from_closure<
+        E,
+        K: CitationKey,
+        F: FnOnce(&RawRecordData, RemoteId) -> Result<RawRecordData, E>,
+    >(
         &mut self,
         citation_key: &K,
-        new_record_data: &RawRecordData,
-    ) -> Result<(), DatabaseError> {
+        new_record_data: F,
+        update_mode: UpdateMode,
+    ) -> Result<RecordsUpdateResponse<E>, DatabaseError> {
         debug!("Updating cached data for '{}'", citation_key.name());
         let tx = self.conn.transaction()?;
-        Self::update_cached_data_tx(&tx, citation_key, new_record_data)?;
-        Ok(tx.commit()?)
+        let res = Self::update_cached_data_from_closure_tx(
+            &tx,
+            citation_key,
+            new_record_data,
+            update_mode,
+        )?;
+        tx.commit()?;
+        Ok(res)
     }
 
-    fn update_cached_data_tx<K: CitationKey>(
+    fn update_cached_data_from_closure_tx<
+        E,
+        K: CitationKey,
+        F: FnOnce(&RawRecordData, RemoteId) -> Result<RawRecordData, E>,
+    >(
         tx: &Transaction,
         citation_key: &K,
-        new_record_data: &RawRecordData,
-    ) -> Result<(), DatabaseError> {
+        new_record_data: F,
+        update_mode: UpdateMode,
+    ) -> Result<RecordsUpdateResponse<E>, DatabaseError> {
         match Self::get_record_key(tx, citation_key)? {
             Some(key) => {
                 // First, copy the existing data to the changelog.
@@ -484,14 +610,101 @@ impl RecordDatabase {
                 logger.execute((key,))?;
 
                 // Then update the data.
-                let mut updater = tx.prepare_cached(update_cached_data())?;
-                updater.execute((key, &Local::now(), new_record_data.to_byte_repr()))?;
+                let mut updater = tx.prepare(update_cached_data())?;
+                let (existing_data, canonical, _) = Self::get_record_data_from_row_id(tx, key)?;
+                let new_record_data = match new_record_data(&existing_data, canonical) {
+                    Ok(data) => data,
+                    Err(err) => return Ok(RecordsUpdateResponse::Failed(err)),
+                };
+                match update_mode {
+                    UpdateMode::Replace => {
+                        updater.execute((key, &Local::now(), new_record_data.to_byte_repr()))?;
+                    }
+                    UpdateMode::PreferNew => {
+                        let mut record_data: RecordData = (&existing_data).into();
+                        record_data.try_merge(new_record_data)?;
+                        updater.execute((
+                            key,
+                            &Local::now(),
+                            RawRecordData::from(&record_data).to_byte_repr(),
+                        ))?;
+                    }
+                    UpdateMode::PreferExisting => {
+                        let mut record_data: RecordData = new_record_data.into();
+                        record_data.try_merge(&existing_data)?;
+                        updater.execute((
+                            key,
+                            &Local::now(),
+                            RawRecordData::from(&record_data).to_byte_repr(),
+                        ))?;
+                    }
+                };
 
-                Ok(())
+                Ok(RecordsUpdateResponse::Updated)
             }
-            None => Err(DatabaseError::CitationKeyMissing(
-                citation_key.name().into(),
-            )),
+            None => Ok(RecordsUpdateResponse::NotFound),
+        }
+    }
+
+    /// Update an existing record in the database
+    ///
+    /// Returns `Ok(true)`, and `Ok(false)` if the record does not exist in the database.
+    pub fn update_cached_data<K: CitationKey>(
+        &mut self,
+        citation_key: &K,
+        new_record_data: &RawRecordData,
+        update_mode: UpdateMode,
+    ) -> Result<bool, DatabaseError> {
+        debug!("Updating cached data for '{}'", citation_key.name());
+        let tx = self.conn.transaction()?;
+        let res = Self::update_cached_data_tx(&tx, citation_key, new_record_data, update_mode)?;
+        tx.commit()?;
+        Ok(res)
+    }
+
+    fn update_cached_data_tx<K: CitationKey>(
+        tx: &Transaction,
+        citation_key: &K,
+        new_record_data: &RawRecordData,
+        update_mode: UpdateMode,
+    ) -> Result<bool, DatabaseError> {
+        match Self::get_record_key(tx, citation_key)? {
+            Some(key) => {
+                // First, copy the existing data to the changelog.
+                let mut logger = tx.prepare_cached(copy_to_changelog())?;
+                logger.execute((key,))?;
+
+                // Then update the data.
+                let mut updater = tx.prepare(update_cached_data())?;
+                match update_mode {
+                    UpdateMode::Replace => {
+                        updater.execute((key, &Local::now(), new_record_data.to_byte_repr()))?;
+                    }
+                    UpdateMode::PreferNew => {
+                        let (existing_data, _, _) = Self::get_record_data_from_row_id(tx, key)?;
+                        let mut record_data: RecordData = (&existing_data).into();
+                        record_data.try_merge(new_record_data)?;
+                        updater.execute((
+                            key,
+                            &Local::now(),
+                            RawRecordData::from(&record_data).to_byte_repr(),
+                        ))?;
+                    }
+                    UpdateMode::PreferExisting => {
+                        let (existing_data, _, _) = Self::get_record_data_from_row_id(tx, key)?;
+                        let mut record_data: RecordData = new_record_data.into();
+                        record_data.try_merge(&existing_data)?;
+                        updater.execute((
+                            key,
+                            &Local::now(),
+                            RawRecordData::from(&record_data).to_byte_repr(),
+                        ))?;
+                    }
+                };
+
+                Ok(true)
+            }
+            None => Ok(false),
         }
     }
 
@@ -543,11 +756,11 @@ impl RecordDatabase {
     pub fn inject_all_records<T, R>(
         &mut self,
         injector: Injector<RemoteId>,
-        render_row: R,
+        mut render_row: R,
     ) -> Result<(), DatabaseError>
     where
         T: Into<Utf32String>,
-        R: Fn(RawRecordData, &RemoteId, DateTime<Local>) -> T,
+        R: FnMut(RawRecordData, &RemoteId, DateTime<Local>) -> T,
     {
         debug!("Sending all database records to an injector.");
         let mut retriever = self.conn.prepare_cached(get_all_records())?;
@@ -560,6 +773,34 @@ impl RecordDatabase {
                 cols[0] = search_display;
             });
         }
+
+        Ok(())
+    }
+
+    /// Iterate over all names in the CitationKeys table and apply the infallible function
+    /// `apply` to each key.
+    ///
+    /// If `canonical` is true, only iterate over those entries which co
+    pub fn apply_citation_keys<F: FnMut(&str)>(
+        &mut self,
+        canonical: bool,
+        mut apply: F,
+    ) -> Result<(), DatabaseError> {
+        let mut selector = if canonical {
+            self.conn.prepare(get_all_canonical_citation_keys())
+        } else {
+            self.conn.prepare(get_all_citation_keys())
+        }?;
+
+        selector
+            .query_map([], |row| {
+                if let ValueRef::Text(bytes) = row.get_ref_unwrap(0) {
+                    // SAFETY: the underlying data is always valid utf-8
+                    apply(unsafe { std::str::from_utf8_unchecked(bytes) });
+                }
+                Ok(())
+            })?
+            .for_each(drop);
 
         Ok(())
     }
@@ -633,7 +874,7 @@ impl RecordDatabase {
 
     /// Rename an alias within a transaction.
     fn rename_alias_tx(tx: &Transaction, old: &Alias, new: &Alias) -> Result<(), DatabaseError> {
-        let mut updater = tx.prepare_cached(rename_citation_key())?;
+        let mut updater = tx.prepare(rename_citation_key())?;
         Self::map_citation_key_result(updater.execute((new.name(), old.name())), old)
     }
 
@@ -667,7 +908,7 @@ impl RecordDatabase {
         tx: &Transaction,
         citation_key: &K,
     ) -> Result<(), DatabaseError> {
-        let mut deleter = tx.prepare_cached(delete_citation_key())?;
+        let mut deleter = tx.prepare(delete_citation_key())?;
         if deleter.execute((citation_key.name(),))? == 0 {
             Err(DatabaseError::AliasDeleteMissing(
                 citation_key.name().into(),
@@ -730,7 +971,7 @@ impl RecordDatabase {
             CitationKeyInsertMode::FailIfExists => set_citation_key_fail(),
             CitationKeyInsertMode::IgnoreIfExists => set_citation_key_ignore(),
         };
-        let mut key_writer = tx.prepare_cached(stmt)?;
+        let mut key_writer = tx.prepare(stmt)?;
         Self::map_citation_key_result(key_writer.execute((name.name(), key)), name)
     }
 
@@ -757,6 +998,36 @@ impl Drop for RecordDatabase {
             eprintln!("Failed to optimize database on close: {err}");
         }
     }
+}
+
+pub enum UpdateMode {
+    Replace,
+    PreferNew,
+    PreferExisting,
+}
+
+/// Response type from the `Records` table as returned by
+/// [`RecordDatabase::delete_cached_data_with_prompt`].
+pub enum RecordsDeletionResponse<E> {
+    /// The record was deleted.
+    Deleted,
+    /// The record was not deleted.
+    NotDeleted,
+    /// The record could not be deleted since it did not exist.
+    NotFound,
+    /// The confirmation prompt failed.
+    Failed(E),
+}
+
+/// Response type from the `Records` table as returned by
+/// [`RecordDatabase::update_cached_data_from_closure`].
+pub enum RecordsUpdateResponse<E> {
+    /// The record was deleted.
+    Updated,
+    /// The record could not be deleted since it did not exist.
+    NotFound,
+    /// The confirmation prompt failed.
+    Failed(E),
 }
 
 /// Response type from the `Records` table as returned by

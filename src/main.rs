@@ -15,6 +15,7 @@ use std::{
     },
     fs::{create_dir_all, read_to_string, File},
     io::{self, Read},
+    iter::once,
     path::{Path, PathBuf},
     process::exit,
     str::FromStr,
@@ -23,7 +24,7 @@ use std::{
 
 use anyhow::{bail, Result};
 use chrono::{DateTime, Local};
-use clap::{CommandFactory, Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 use clap_complete::aot::{generate, Shell};
 use clap_verbosity_flag::{Verbosity, WarnLevel};
 use crossterm::tty::IsTty;
@@ -33,16 +34,17 @@ use log::{error, info, warn};
 use nonempty::NonEmpty;
 use nucleo_picker::Picker;
 use serde::Serializer as _;
-use serde_bibtex::ser::Serializer;
-use term::{Editor, EditorConfig};
+use serde_bibtex::{ser::Serializer, validate::is_entry_key};
+use term::{Confirm, Editor, EditorConfig};
 
 use self::{
     cite_search::{get_citekeys, SourceFileType},
     db::{
         CitationKey, EntryData, RawRecordData, RecordData, RecordDatabase, RecordsDefaultResponse,
+        RecordsDeletionResponse, RecordsUpdateResponse, UpdateMode,
     },
-    logger::Logger,
-    record::{GetRecordResponse, Record},
+    logger::{set_failed, Logger},
+    record::{get_remote_record, GetRecordResponse, GetRemoteRecordResponse, Record},
 };
 pub use self::{
     entry::Entry,
@@ -64,6 +66,15 @@ struct Cli {
     command: Command,
 }
 
+#[derive(Debug, Copy, Clone, ValueEnum, Default)]
+enum InfoReportType {
+    #[default]
+    All,
+    Canonical,
+    Valid,
+    Equivalent,
+}
+
 #[derive(Subcommand)]
 enum Command {
     /// Manage aliases.
@@ -77,10 +88,17 @@ enum Command {
         /// The shell for which to generate the script.
         shell: Shell,
     },
+    Delete {
+        /// The citation key to delete.
+        citation_key: RecordId,
+        /// Delete without prompting.
+        #[arg(short, long)]
+        force: bool,
+    },
     /// Edit existing records.
     Edit {
         /// The citation key to edit.
-        citation_key: String,
+        citation_key: RecordId,
     },
     /// Search for a citation key.
     Find {
@@ -91,13 +109,21 @@ enum Command {
     /// Retrieve records given citation keys.
     Get {
         /// The citation keys to retrieve.
-        citation_keys: Vec<String>,
+        citation_keys: Vec<RecordId>,
         /// Write output to file.
         #[arg(short, long)]
         out: Option<PathBuf>,
         /// Ignore null records and aliases.
         #[arg(long)]
         ignore_null: bool,
+    },
+    /// Show metadata for citation key.
+    Info {
+        /// The citation key to show info.
+        citation_key: RecordId,
+        /// The type of information to display.
+        #[arg(value_enum, default_value_t = InfoReportType::default())]
+        report: InfoReportType,
     },
     /// Create or edit a local record with the given handle.
     Local {
@@ -110,8 +136,6 @@ enum Command {
         #[arg(short, long, value_name = "PATH")]
         from: Option<PathBuf>,
     },
-    /// Show metadata for citation key.
-    Show,
     /// Generate records by searching for citation keys inside files.
     Source {
         /// The files in which to search.
@@ -125,6 +149,11 @@ enum Command {
         /// Ignore null records and aliases.
         #[arg(long)]
         ignore_null: bool,
+    },
+    /// Update the data associated with an existing citation key.
+    Update {
+        /// The citation key to update.
+        citation_key: RecordId,
     },
     /// Utilities to manage database.
     Util {
@@ -164,6 +193,11 @@ enum AliasCommand {
 enum UtilCommand {
     /// Check database for errors.
     Check,
+    /// List all valid keys.
+    List {
+        #[arg(short, long)]
+        canonical: bool,
+    },
 }
 
 static LOGGER: Logger = Logger {};
@@ -257,18 +291,44 @@ fn run_cli(cli: Cli) -> Result<()> {
         Command::Completions { shell: _ } => {
             unreachable!("Request for completions script should have been handled earlier and the program should have exited then.");
         }
+        Command::Delete {
+            citation_key,
+            force,
+        } => {
+            let confirm = if force {
+                |_| Ok(true)
+            } else {
+                |referencing: Vec<String>| {
+                    warn!("Deleting this record will delete associated keys:");
+                    for key in referencing.iter() {
+                        eprintln!("  {key}");
+                    }
+                    let prompt = Confirm::new("Delete anyway?", false);
+                    prompt.confirm()
+                }
+            };
+            match record_db.delete_cached_data_with_prompt(&citation_key, confirm)? {
+                RecordsDeletionResponse::NotDeleted => {
+                    set_failed();
+                }
+                RecordsDeletionResponse::NotFound => {
+                    bail!("Citation key '{citation_key}' does not exist.")
+                }
+                RecordsDeletionResponse::Failed(err) => bail!(err),
+                RecordsDeletionResponse::Deleted => {}
+            }
+        }
         Command::Edit { citation_key } => {
-            match get_record(
-                &mut record_db,
-                RecordId::from(citation_key.as_str()),
-                &client,
-            )?
-            .ok()
-            {
-                Some(record) => {
+            match get_record(&mut record_db, citation_key, &client)? {
+                GetRecordResponse::Exists(record) => {
                     edit_record_and_update_database(&mut record_db, record)?;
                 }
-                None => error!("Cannot edit null record '{citation_key}'"),
+                GetRecordResponse::NullRemoteId(remote_id) => {
+                    error!("Cannot edit null record '{remote_id}'");
+                }
+                GetRecordResponse::NullAlias(alias) => {
+                    error!("Cannot edit undefined alias '{alias}'");
+                }
             };
         }
         Command::Local { id, edit, from } => {
@@ -300,13 +360,13 @@ fn run_cli(cli: Cli) -> Result<()> {
             }
         }
         Command::Get {
-            citation_keys,
+            mut citation_keys,
             out,
             ignore_null,
         } => {
             // Collect all entries which are not null
             let valid_entries = validate_and_retrieve(
-                citation_keys.iter().map(|s| s as &str),
+                citation_keys.drain(..),
                 &mut record_db,
                 &client,
                 ignore_null,
@@ -334,7 +394,7 @@ fn run_cli(cli: Cli) -> Result<()> {
 
             // The citation keys do not need to be sorted since sorting
             // happens in the `validate_and_retrieve` function.
-            let mut container = HashSet::new();
+            let mut container: HashSet<RecordId> = HashSet::new();
 
             for path in paths {
                 match File::open(path.clone()).and_then(|mut f| f.read_to_end(&mut buffer)) {
@@ -363,16 +423,67 @@ fn run_cli(cli: Cli) -> Result<()> {
                 };
             }
 
-            let valid_entries = validate_and_retrieve(
-                container.iter().map(|s| s as &str),
-                &mut record_db,
-                &client,
-                ignore_null,
-            );
+            let valid_entries =
+                validate_and_retrieve(container.drain(), &mut record_db, &client, ignore_null);
 
             output_records(out.as_ref(), valid_entries)?;
         }
-        Command::Show => todo!(),
+        Command::Info {
+            citation_key,
+            report,
+        } => {
+            let (canonical, related) =
+                match record_db.get_equivalent_citation_keys(&citation_key)? {
+                    Some(res) => res,
+                    None => bail!("Citation key '{citation_key}' does not exist."),
+                };
+            match report {
+                InfoReportType::All => {
+                    println!("Canonical: {canonical}");
+                    println!("Equivalent references: {}", related.iter().join(", "));
+                    println!(
+                        "Valid bibtex? {}",
+                        if is_entry_key(citation_key.name()) {
+                            "yes"
+                        } else {
+                            "no"
+                        }
+                    );
+                }
+                InfoReportType::Canonical => {
+                    println!("{canonical}");
+                }
+
+                InfoReportType::Valid => {
+                    if !is_entry_key(citation_key.name()) {
+                        bail!("Invalid bibtex: {}", citation_key.name());
+                    }
+                }
+                InfoReportType::Equivalent => {
+                    for re in related {
+                        println!("{re}");
+                    }
+                }
+            }
+        }
+        Command::Update { citation_key } => {
+            match record_db.update_cached_data_from_closure(
+                &citation_key,
+                |_, remote_id| match get_remote_record(remote_id, &client)? {
+                    GetRemoteRecordResponse::Exists(data) => Ok(data),
+                    GetRemoteRecordResponse::Null(remote_id) => {
+                        bail!("Remote data for canonical id '{remote_id}' is null")
+                    }
+                },
+                UpdateMode::PreferExisting,
+            )? {
+                RecordsUpdateResponse::Updated => {}
+                RecordsUpdateResponse::NotFound => bail!("Null citation key '{citation_key}'"),
+                RecordsUpdateResponse::Failed(err) => {
+                    bail!("Failed to retrieve remote data: {err}")
+                }
+            }
+        }
         Command::Util { util_command } => match util_command {
             UtilCommand::Check => {
                 info!("Validating record binary data");
@@ -381,6 +492,11 @@ fn run_cli(cli: Cli) -> Result<()> {
                 record_db.validate_consistency()?;
                 info!("Checking for dangling records");
                 record_db.validate_record_indexing()?;
+            }
+            UtilCommand::List { canonical } => {
+                record_db.apply_citation_keys(canonical, |key_str| {
+                    println!("{key_str}");
+                })?;
             }
         },
     };
@@ -430,7 +546,11 @@ fn edit_record_and_update_database(
 
         if new_record_data != entry.data() {
             info!("Updating cached data for '{canonical}'");
-            record_db.update_cached_data(&canonical, new_record_data)?;
+            if !record_db.update_cached_data(&canonical, new_record_data, UpdateMode::Replace)? {
+                // the data was deleted while the user was editing
+                error!("The underlying record was deleted while editing. Saving data for record '{canonical}'.");
+                record_db.set_cached_data(&canonical, new_record_data, once(&canonical))?;
+            }
         }
 
         entry = new_entry;
@@ -516,7 +636,7 @@ fn write_records<W: io::Write, D: EntryData>(
 }
 
 /// Validate and retrieve records.
-fn validate_and_retrieve<'a, T: Iterator<Item = &'a str>>(
+fn validate_and_retrieve<T: Iterator<Item = RecordId>>(
     citation_keys: T,
     record_db: &mut RecordDatabase,
     client: &HttpClient,
@@ -525,7 +645,6 @@ fn validate_and_retrieve<'a, T: Iterator<Item = &'a str>>(
     let mut records: BTreeMap<RemoteId, NonEmpty<Entry<RawRecordData>>> = BTreeMap::new();
 
     for (bibtex_entry, canonical) in citation_keys
-        .map(RecordId::from)
         .filter_map(|citation_key| {
             match get_record(record_db, citation_key, client) {
                 Err(err) => {

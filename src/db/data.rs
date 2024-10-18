@@ -216,19 +216,26 @@ impl RawRecordData {
     }
 }
 
-impl EntryData for RawRecordData {
-    fn fields(&self) -> impl Iterator<Item = (&str, &str)> {
-        let (_, data_blocks) = self.split_blocks();
-        RawRecordFieldsIter {
-            remaining: data_blocks,
-        }
-    }
+macro_rules! entry_data_impl {
+    ($($raw:tt)*) => {
+        impl EntryData for $($raw)* {
+            fn fields(&self) -> impl Iterator<Item = (&str, &str)> {
+                let (_, data_blocks) = self.split_blocks();
+                RawRecordFieldsIter {
+                    remaining: data_blocks,
+                }
+            }
 
-    fn entry_type(&self) -> &str {
-        let (type_block, _) = self.split_blocks();
-        from_utf8(&type_block[1..]).unwrap()
-    }
+            fn entry_type(&self) -> &str {
+                let (type_block, _) = self.split_blocks();
+                from_utf8(&type_block[1..]).unwrap()
+            }
+        }
+    };
 }
+
+entry_data_impl!(RawRecordData);
+entry_data_impl!(&RawRecordData);
 
 impl From<&RecordData> for RawRecordData {
     /// Convert a [`RecordData`] into a [`RawRecordData`] for insertion into the database.
@@ -309,6 +316,16 @@ impl Default for RecordData {
     }
 }
 
+impl<D: EntryData> From<D> for RecordData {
+    fn from(value: D) -> Self {
+        let mut new = Self::new_unchecked(value.entry_type().to_owned());
+        for (key, value) in value.fields() {
+            new.fields.insert(key.to_owned(), value.to_owned());
+        }
+        new
+    }
+}
+
 impl RecordData {
     /// Initialize a new [`RecordData`] instance.
     ///
@@ -325,10 +342,21 @@ impl RecordData {
             return Err(RecordDataError::EntryTypeNotAsciiLowercase);
         }
 
-        Ok(Self {
+        Ok(Self::new_unchecked(entry_type))
+    }
+
+    fn new_unchecked(entry_type: String) -> Self {
+        Self {
             entry_type,
             fields: BTreeMap::new(),
-        })
+        }
+    }
+
+    pub fn try_merge<D: EntryData>(&mut self, other: D) -> Result<(), RecordDataError> {
+        for (key, value) in other.fields() {
+            self.try_insert(key.to_owned(), value.to_owned())?;
+        }
+        Ok(())
     }
 
     /// Attempt to insert a new `(key, value)` pair.
@@ -347,7 +375,7 @@ impl RecordData {
         value: String,
     ) -> Result<Option<String>, RecordDataError> {
         // Condition 1
-        if self.fields.len() >= RECORD_MAX_FIELDS {
+        if self.fields.len() >= RECORD_MAX_FIELDS && !self.fields.contains_key(&key) {
             return Err(RecordDataError::RecordDataFull);
         }
 

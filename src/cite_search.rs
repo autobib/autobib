@@ -26,7 +26,7 @@ pub mod tex;
 
 use std::{ffi::OsStr, iter::Extend, path::Path, str::FromStr};
 
-use crate::error::Error;
+use crate::{error::Error, RecordId};
 
 /// The file type of a source from which citation keys can be read.
 #[derive(Debug, Clone, Copy)]
@@ -63,7 +63,7 @@ impl SourceFileType {
 /// The byte buffer is assumed to have file type specified by `ft`.
 /// The citekeys are inserted into the container using the container's [`Extend`] implementation.
 /// The order is is not necessarily the same as the order of the keys in the buffer.
-pub fn get_citekeys<T: Extend<String>>(ft: SourceFileType, buffer: &[u8], container: &mut T) {
+pub fn get_citekeys<T: Extend<RecordId>>(ft: SourceFileType, buffer: &[u8], container: &mut T) {
     match ft {
         SourceFileType::Tex => tex::get_citekeys(buffer, container),
     }
@@ -75,6 +75,7 @@ mod test {
     use std::iter::zip;
 
     use super::*;
+    use crate::CitationKey;
 
     #[test]
     fn test_get_citekeys_tex() {
@@ -89,7 +90,7 @@ mod test {
 
         let expected = ["ref1", "ref2", "ref3"];
         for (exp, rec) in zip(expected.iter(), container.iter()) {
-            assert_eq!(exp, rec);
+            assert_eq!(*exp, rec.name());
         }
     }
 }
