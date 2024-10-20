@@ -358,44 +358,14 @@ fn run_cli(cli: Cli) -> Result<()> {
                 }
             }
         }
-        Command::Local { id, edit, from } => {
-            let remote_id = RemoteId::local(&id);
+        Command::Find { fields } => {
+            let fields_to_search: HashSet<String> =
+                fields.iter().map(|f| f.to_lowercase()).collect();
 
-            let (row, data) = match record_db.entry(&remote_id)? {
-                DatabaseEntry::Exists(row) => {
-                    if from.is_some() {
-                        row.commit()?;
-                        bail!("Local record '{id}' already exists")
-                    } else {
-                        let raw_record_data = row.apply(row::get_row_data)?.data;
-                        (row, raw_record_data)
-                    }
-                }
-                DatabaseEntry::Missing(missing) => {
-                    let data = if let Some(path) = from {
-                        let bibtex = read_to_string(path)?;
-                        let entry = Entry::<RawRecordData>::from_str(&bibtex)?;
-                        entry.record_data
-                    } else {
-                        (&RecordData::default()).into()
-                    };
-
-                    let row = missing.insert_and_ref(&data, &remote_id)?;
-                    (row, data)
-                }
-            };
-
-            if edit {
-                edit_record_and_update(
-                    row,
-                    Record {
-                        key: remote_id.to_string(),
-                        data,
-                        canonical: remote_id,
-                    },
-                )?;
+            if let Some(res) = choose_canonical_id(record_db, fields_to_search)? {
+                println!("{res}");
             } else {
-                row.commit()?;
+                error!("No item selected.");
             }
         }
         Command::Get {
@@ -410,60 +380,6 @@ fn run_cli(cli: Cli) -> Result<()> {
                 &client,
                 ignore_null,
             );
-
-            output_records(out.as_ref(), valid_entries)?;
-        }
-        Command::Find { fields } => {
-            let fields_to_search: HashSet<String> =
-                fields.iter().map(|f| f.to_lowercase()).collect();
-
-            if let Some(res) = choose_canonical_id(record_db, fields_to_search)? {
-                println!("{res}");
-            } else {
-                error!("No item selected.");
-            }
-        }
-        Command::Source {
-            paths,
-            file_type,
-            out,
-            ignore_null,
-        } => {
-            let mut buffer = Vec::new();
-
-            // The citation keys do not need to be sorted since sorting
-            // happens in the `validate_and_retrieve` function.
-            let mut container: HashSet<RecordId> = HashSet::new();
-
-            for path in paths {
-                match File::open(path.clone()).and_then(|mut f| f.read_to_end(&mut buffer)) {
-                    Ok(_) => {
-                        if let Some(mode) = file_type.or_else(|| {
-                            SourceFileType::detect(&path).map_or_else(
-                                |err| {
-                                    error!(
-                                        "File '{}': {err}. Force filetype with `--file-type`.",
-                                        path.display()
-                                    );
-                                    None
-                                },
-                                Some,
-                            )
-                        }) {
-                            info!("Reading citation keys from '{}'", path.display());
-                            get_citekeys(mode, &buffer, &mut container);
-                            buffer.clear();
-                        }
-                    }
-                    Err(err) => error!(
-                        "Failed to read contents of path '{}': {err}",
-                        path.display()
-                    ),
-                };
-            }
-
-            let valid_entries =
-                validate_and_retrieve(container.drain(), &mut record_db, &client, ignore_null);
 
             output_records(out.as_ref(), valid_entries)?;
         }
@@ -515,6 +431,90 @@ fn run_cli(cli: Cli) -> Result<()> {
                 error!("Citation key '{citation_key}' does not exist.");
             }
         },
+        Command::Local { id, edit, from } => {
+            let remote_id = RemoteId::local(&id);
+
+            let (row, data) = match record_db.entry(&remote_id)? {
+                DatabaseEntry::Exists(row) => {
+                    if from.is_some() {
+                        row.commit()?;
+                        bail!("Local record '{id}' already exists")
+                    } else {
+                        let raw_record_data = row.apply(row::get_row_data)?.data;
+                        (row, raw_record_data)
+                    }
+                }
+                DatabaseEntry::Missing(missing) => {
+                    let data = if let Some(path) = from {
+                        let bibtex = read_to_string(path)?;
+                        let entry = Entry::<RawRecordData>::from_str(&bibtex)?;
+                        entry.record_data
+                    } else {
+                        (&RecordData::default()).into()
+                    };
+
+                    let row = missing.insert_and_ref(&data, &remote_id)?;
+                    (row, data)
+                }
+            };
+
+            if edit {
+                edit_record_and_update(
+                    row,
+                    Record {
+                        key: remote_id.to_string(),
+                        data,
+                        canonical: remote_id,
+                    },
+                )?;
+            } else {
+                row.commit()?;
+            }
+        }
+        Command::Source {
+            paths,
+            file_type,
+            out,
+            ignore_null,
+        } => {
+            let mut buffer = Vec::new();
+
+            // The citation keys do not need to be sorted since sorting
+            // happens in the `validate_and_retrieve` function.
+            let mut container: HashSet<RecordId> = HashSet::new();
+
+            for path in paths {
+                match File::open(path.clone()).and_then(|mut f| f.read_to_end(&mut buffer)) {
+                    Ok(_) => {
+                        if let Some(mode) = file_type.or_else(|| {
+                            SourceFileType::detect(&path).map_or_else(
+                                |err| {
+                                    error!(
+                                        "File '{}': {err}. Force filetype with `--file-type`.",
+                                        path.display()
+                                    );
+                                    None
+                                },
+                                Some,
+                            )
+                        }) {
+                            info!("Reading citation keys from '{}'", path.display());
+                            get_citekeys(mode, &buffer, &mut container);
+                            buffer.clear();
+                        }
+                    }
+                    Err(err) => error!(
+                        "Failed to read contents of path '{}': {err}",
+                        path.display()
+                    ),
+                };
+            }
+
+            let valid_entries =
+                validate_and_retrieve(container.drain(), &mut record_db, &client, ignore_null);
+
+            output_records(out.as_ref(), valid_entries)?;
+        }
         Command::Update { citation_key } => match record_db.entry(&citation_key)? {
             DatabaseEntry::Exists(row) => {
                 let RowData {
