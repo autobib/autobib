@@ -4,6 +4,6 @@ pub fn is_valid_id(_id: &str) -> bool {
     true
 }
 
-pub fn get_record(id: &str, _client: &HttpClient) -> Result<Option<RecordData>, ProviderError> {
-    Err(ProviderError::UndefinedLocal(id.into()))
+pub fn get_record(_id: &str, _client: &HttpClient) -> Result<Option<RecordData>, ProviderError> {
+    Ok(None)
 }

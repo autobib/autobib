@@ -275,7 +275,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                 match get_record_entry(entry, target, &client)? {
                     GetRecordEntryResponse::Exists(_, row) => {
                         if !row.apply(row::add_alias(&alias))? {
-                            bail!("Alias already exists: '{alias}'")
+                            error!("Alias already exists: '{alias}'");
                         }
                         row.commit()?;
                     }
@@ -328,6 +328,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                             }
                             let prompt = Confirm::new("Delete anyway?", false);
                             if !prompt.confirm()? {
+                                row.commit()?;
                                 bail!("Aborted deletion");
                             }
                         }
@@ -470,45 +471,48 @@ fn run_cli(cli: Cli) -> Result<()> {
             citation_key,
             report,
         } => match record_db.entry(&citation_key)? {
-            DatabaseEntry::Exists(row) => match report {
-                InfoReportType::All => {
-                    let row_data = row.apply(row::get_row_data)?;
-                    println!("Canonical: {}", row_data.canonical);
-                    println!(
-                        "Equivalent references: {}",
-                        row.apply(row::get_referencing_keys)?.iter().join(", ")
-                    );
-                    println!(
-                        "Valid bibtex? {}",
-                        if is_entry_key(citation_key.name()) {
-                            "yes"
-                        } else {
-                            "no"
-                        }
-                    );
-                    println!("Data last modified: {}", row_data.modified);
-                }
-                InfoReportType::Canonical => {
-                    println!("{}", row.apply(row::get_canonical)?);
-                }
+            DatabaseEntry::Exists(row) => {
+                match report {
+                    InfoReportType::All => {
+                        let row_data = row.apply(row::get_row_data)?;
+                        println!("Canonical: {}", row_data.canonical);
+                        println!(
+                            "Equivalent references: {}",
+                            row.apply(row::get_referencing_keys)?.iter().join(", ")
+                        );
+                        println!(
+                            "Valid bibtex? {}",
+                            if is_entry_key(citation_key.name()) {
+                                "yes"
+                            } else {
+                                "no"
+                            }
+                        );
+                        println!("Data last modified: {}", row_data.modified);
+                    }
+                    InfoReportType::Canonical => {
+                        println!("{}", row.apply(row::get_canonical)?);
+                    }
 
-                InfoReportType::Valid => {
-                    if !is_entry_key(citation_key.name()) {
-                        bail!("Invalid bibtex: {}", citation_key.name());
+                    InfoReportType::Valid => {
+                        if !is_entry_key(citation_key.name()) {
+                            error!("Invalid bibtex: {}", citation_key.name());
+                        }
                     }
-                }
-                InfoReportType::Equivalent => {
-                    for re in row.apply(row::get_referencing_keys)? {
-                        println!("{re}");
+                    InfoReportType::Equivalent => {
+                        for re in row.apply(row::get_referencing_keys)? {
+                            println!("{re}");
+                        }
                     }
-                }
-                InfoReportType::Modified => {
-                    println!("{}", row.apply(row::last_modified)?);
-                }
-            },
+                    InfoReportType::Modified => {
+                        println!("{}", row.apply(row::last_modified)?);
+                    }
+                };
+                row.commit()?;
+            }
             DatabaseEntry::Missing(missing) => {
                 missing.commit()?;
-                bail!("Citation key '{citation_key}' does not exist.");
+                error!("Citation key '{citation_key}' does not exist.");
             }
         },
         Command::Update { citation_key } => match record_db.entry(&citation_key)? {
@@ -526,7 +530,8 @@ fn run_cli(cli: Cli) -> Result<()> {
                         row.commit()?;
                     }
                     GetRemoteRecordResponse::Null(remote_id) => {
-                        bail!("Remote data for canonical id '{remote_id}' is null")
+                        row.commit()?;
+                        error!("Remote data for canonical id '{remote_id}' is null");
                     }
                 }
             }

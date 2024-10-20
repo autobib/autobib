@@ -250,7 +250,13 @@ impl RecordDatabase {
     /// Get the [`DatabaseEntry`] associated with a [`CitationKey`].
     #[inline]
     pub fn entry<K: CitationKey>(&mut self, key: &K) -> Result<DatabaseEntry, rusqlite::Error> {
-        DatabaseEntry::from_tx(self.conn.transaction()?, key)
+        #[allow(unused_mut)]
+        let mut tx = self.conn.transaction()?;
+
+        #[cfg(debug_assertions)]
+        tx.set_drop_behavior(rusqlite::DropBehavior::Panic);
+
+        DatabaseEntry::from_tx(tx, key)
     }
 
     /// Optimize the database.
