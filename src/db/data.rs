@@ -12,7 +12,7 @@ use serde_bibtex::validate::is_balanced;
 use crate::error::{InvalidBytesError, RecordDataError};
 
 /// The current version of the binary data format.
-pub const fn version() -> u8 {
+pub const fn binary_format_version() -> u8 {
     0
 }
 
@@ -233,7 +233,7 @@ impl EntryData for RawRecordData {
 impl From<&RecordData> for RawRecordData {
     /// Convert a [`RecordData`] into a [`RawRecordData`] for insertion into the database.
     fn from(record_data: &RecordData) -> Self {
-        let mut data = vec![version()];
+        let mut data = vec![binary_format_version()];
 
         let entry_type = record_data.entry_type();
         let entry_type_len = EntryTypeHeader::try_from(entry_type.len()).unwrap();

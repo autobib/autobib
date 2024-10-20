@@ -75,13 +75,18 @@ use rusqlite::{types::ValueRef, Connection, OptionalExtension, Transaction};
 pub(crate) use self::data::{EntryTypeHeader, KeyHeader, ValueHeader};
 use self::validate::DatabaseValidator;
 pub use self::{
-    data::{version, EntryData, RawRecordData, RecordData, DATA_MAX_BYTES},
+    data::{binary_format_version, EntryData, RawRecordData, RecordData, DATA_MAX_BYTES},
     row::{DatabaseEntry, MissingRecordRow, RecordRow},
 };
 use crate::{
     error::{DatabaseError, ValidationError},
     record::{Alias, RemoteId},
 };
+
+/// The current version of the database table schema.
+pub const fn schema_version() -> u8 {
+    0
+}
 
 /// An alias for the internal row ID used by SQLite for the `Records` table. This is the `key`
 /// column in the table schema defined in [`init_records`](sql::init_records).
@@ -194,15 +199,35 @@ impl RecordDatabase {
         conn.prepare(sql::set_wal())?.query_row((), |_| Ok(()))?;
 
         let tx = conn.transaction()?;
-
-        Self::initialize_table(&tx, "Records", sql::init_records())?;
-        Self::initialize_table(&tx, "CitationKeys", sql::init_citation_keys())?;
-        Self::initialize_table(&tx, "NullRecords", sql::init_null_records())?;
-        Self::initialize_table(&tx, "Changelog", sql::init_changelog())?;
-
+        Self::initialize(&tx)?;
         tx.commit()?;
 
         Ok(RecordDatabase { conn })
+    }
+
+    /// Check the current schema version.
+    pub fn schema_version(tx: &Transaction) -> Result<i64, rusqlite::Error> {
+        tx.pragma_query_value(None, "user_version", |row| row.get(0))
+    }
+
+    /// Initialize the relevant tables, or migrate from an older schema if necessary.
+    fn initialize(tx: &Transaction) -> Result<(), DatabaseError> {
+        debug!("Checking schema version");
+        let db_schema_version = Self::schema_version(tx)?;
+
+        if db_schema_version == schema_version() as i64 {
+            Self::initialize_table(tx, "Records", sql::init_records())?;
+            Self::initialize_table(tx, "CitationKeys", sql::init_citation_keys())?;
+            Self::initialize_table(tx, "NullRecords", sql::init_null_records())?;
+            Self::initialize_table(tx, "Changelog", sql::init_changelog())?;
+            Ok(())
+        } else {
+            #[allow(clippy::match_single_binding)]
+            match db_schema_version {
+                // call a migration function here, if there are more valid versions
+                _ => Err(DatabaseError::InvalidSchemaVersion(db_schema_version)),
+            }
+        }
     }
 
     /// Initialize a table inside a transaction.
