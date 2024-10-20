@@ -168,6 +168,14 @@ pub fn get_canonical(tx: &Transaction, row_id: RowId) -> Result<RemoteId, rusqli
 
 /// Get the [`RowData`] corresponding to a [`Row`].
 #[inline]
+pub fn last_modified(tx: &Transaction, row_id: RowId) -> Result<DateTime<Local>, rusqlite::Error> {
+    debug!("Getting data for row '{row_id}'.");
+    let RowData { modified, .. } = get_row_data(tx, row_id)?;
+    Ok(modified)
+}
+
+/// Get the [`RowData`] corresponding to a [`Row`].
+#[inline]
 pub fn get_row_data(tx: &Transaction, row_id: RowId) -> Result<RowData, rusqlite::Error> {
     debug!("Getting data for row '{row_id}'.");
     let mut record_selector = tx.prepare_cached(sql::get_cached_data())?;

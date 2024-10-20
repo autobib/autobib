@@ -75,6 +75,7 @@ enum InfoReportType {
     Canonical,
     Valid,
     Equivalent,
+    Modified,
 }
 
 #[derive(Subcommand)]
@@ -469,38 +470,42 @@ fn run_cli(cli: Cli) -> Result<()> {
             citation_key,
             report,
         } => match record_db.entry(&citation_key)? {
-            DatabaseEntry::Exists(row) => {
-                let canonical = row.apply(row::get_canonical)?;
-                let referencing = row.apply(row::get_referencing_keys)?;
-                match report {
-                    InfoReportType::All => {
-                        println!("Canonical: {canonical}");
-                        println!("Equivalent references: {}", referencing.iter().join(", "));
-                        println!(
-                            "Valid bibtex? {}",
-                            if is_entry_key(citation_key.name()) {
-                                "yes"
-                            } else {
-                                "no"
-                            }
-                        );
-                    }
-                    InfoReportType::Canonical => {
-                        println!("{canonical}");
-                    }
+            DatabaseEntry::Exists(row) => match report {
+                InfoReportType::All => {
+                    let row_data = row.apply(row::get_row_data)?;
+                    println!("Canonical: {}", row_data.canonical);
+                    println!(
+                        "Equivalent references: {}",
+                        row.apply(row::get_referencing_keys)?.iter().join(", ")
+                    );
+                    println!(
+                        "Valid bibtex? {}",
+                        if is_entry_key(citation_key.name()) {
+                            "yes"
+                        } else {
+                            "no"
+                        }
+                    );
+                    println!("Data last modified: {}", row_data.modified);
+                }
+                InfoReportType::Canonical => {
+                    println!("{}", row.apply(row::get_canonical)?);
+                }
 
-                    InfoReportType::Valid => {
-                        if !is_entry_key(citation_key.name()) {
-                            bail!("Invalid bibtex: {}", citation_key.name());
-                        }
-                    }
-                    InfoReportType::Equivalent => {
-                        for re in referencing {
-                            println!("{re}");
-                        }
+                InfoReportType::Valid => {
+                    if !is_entry_key(citation_key.name()) {
+                        bail!("Invalid bibtex: {}", citation_key.name());
                     }
                 }
-            }
+                InfoReportType::Equivalent => {
+                    for re in row.apply(row::get_referencing_keys)? {
+                        println!("{re}");
+                    }
+                }
+                InfoReportType::Modified => {
+                    println!("{}", row.apply(row::last_modified)?);
+                }
+            },
             DatabaseEntry::Missing(missing) => {
                 missing.commit()?;
                 bail!("Citation key '{citation_key}' does not exist.");
