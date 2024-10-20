@@ -281,7 +281,7 @@ fn delete() -> Result<()> {
     cmd.args(["get", "local:first"]);
     cmd.assert()
         .failure()
-        .stderr(predicate::str::contains("Undefined local record"));
+        .stderr(predicate::str::contains("Null record"));
 
     s.close()
 }
