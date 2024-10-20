@@ -8,8 +8,8 @@ pub use key::{Alias, RecordId, RemoteId};
 use crate::{
     db::{
         row::{
-            add_refs, check_null, get_row_data, set_null, DatabaseEntry, Missing,
-            NullRecordsResponse, Row,
+            add_refs, check_null, get_row_data, set_null, DatabaseEntry, MissingRecordRow,
+            NullRecordsResponse, RecordRow,
         },
         RawRecordData, RecordDatabase, RowData,
     },
@@ -50,11 +50,11 @@ impl GetRecordResponse {
 #[derive(Debug)]
 pub enum GetRecordEntryResponse<'conn> {
     /// The record exists.
-    Exists(Record, Row<'conn>),
+    Exists(Record, RecordRow<'conn>),
     /// The remote id corresponding to the record does not exist.
-    NullRemoteId(RemoteId, Missing<'conn>),
+    NullRemoteId(RemoteId, MissingRecordRow<'conn>),
     /// The alias does not exist in the database.
-    NullAlias(Alias, Missing<'conn>),
+    NullAlias(Alias, MissingRecordRow<'conn>),
 }
 
 impl TryFrom<GetRecordEntryResponse<'_>> for GetRecordResponse {
@@ -119,7 +119,7 @@ pub fn get_record_entry<'conn>(
 
 /// Loop to resolve remote records.
 fn remote_resolve<'conn>(
-    mut missing: Missing<'conn>,
+    mut missing: MissingRecordRow<'conn>,
     mut context: Context,
     client: &HttpClient,
 ) -> Result<GetRecordEntryResponse<'conn>, Error> {
