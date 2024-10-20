@@ -134,16 +134,6 @@ impl<'conn> Row<'conn> {
     }
 }
 
-/// Delete the row (and therefore all referencing keys in `CitationKeys`) corresponding to the
-/// [`Row`].
-pub fn delete_row_data(tx: &Transaction, row_id: RowId) -> Result<(), rusqlite::Error> {
-    debug!("Deleting row data for '{row_id}'.");
-    save_row_to_changelog(tx, row_id)?;
-    let mut updater = tx.prepare(sql::delete_cached_data())?;
-    updater.execute((row_id,))?;
-    Ok(())
-}
-
 /// Get every key in the `CitationKeys` table which references the [`Row`].
 pub fn get_referencing_keys(
     tx: &Transaction,
