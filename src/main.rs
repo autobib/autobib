@@ -91,6 +91,14 @@ enum Command {
         /// The shell for which to generate the script.
         shell: Shell,
     },
+    /// Delete records and associated keys.
+    ///
+    /// Delete a record, and all referencing keys (such as aliases) which are associated with the
+    /// record. If there are multiple referencing keys, they will be listed so that you can confirm
+    /// deletion. This can be ignored with the `--force` option.
+    ///
+    /// To delete an alias without deleting the underlying data, use the `autobib alias delete`
+    /// command.
     Delete {
         /// The citation key to delete.
         citation_key: RecordId,
@@ -99,11 +107,18 @@ enum Command {
         force: bool,
     },
     /// Edit existing records.
+    ///
+    /// Edit an existing record using your default $EDITOR. This will open up a BibTeX file with
+    /// the contents of the record. Updating the fields or the entry type will change the underlying
+    /// data, and updating the entry key will create a new alias for the record.
     Edit {
         /// The citation key to edit.
         citation_key: RecordId,
     },
     /// Search for a citation key.
+    ///
+    /// Open an interactive picker to search for a given citation key. In order to choose the
+    /// fields against which to search, use the `--fields` option.
     Find {
         /// Fields to search (e.g. author, title).
         #[clap(short, long, value_delimiter = ',')]
@@ -140,6 +155,10 @@ enum Command {
         from: Option<PathBuf>,
     },
     /// Generate records by searching for citation keys inside files.
+    ///
+    /// This is essentially a call to `autobib get`, except with a custom search which attempts
+    /// to find citation keys inside the provided file type. The search method depends on the file
+    /// type, which is determined purely based on the extension.
     Source {
         /// The files in which to search.
         paths: Vec<PathBuf>,
@@ -153,7 +172,10 @@ enum Command {
         #[arg(long)]
         ignore_null: bool,
     },
-    /// Update the data associated with an existing citation key.
+    /// Update data associated with an existing citation key.
+    ///
+    /// This adds any new fields that do not exist in the current data, but will not overwrite any
+    /// existing fields.
     Update {
         /// The citation key to update.
         citation_key: RecordId,
@@ -198,6 +220,7 @@ enum UtilCommand {
     Check,
     /// List all valid keys.
     List {
+        /// Only list the canonical keys.
         #[arg(short, long)]
         canonical: bool,
     },
@@ -226,6 +249,7 @@ fn main() {
         error!("{err}");
     }
 
+    // check if there was a non-fatal error during execution
     if Logger::has_error() {
         exit(1)
     }
@@ -234,7 +258,7 @@ fn main() {
 /// Run the CLI.
 fn run_cli(cli: Cli) -> Result<()> {
     info!("SQLite version: {}", rusqlite::version());
-    info!("Database format version: {}", db::version());
+    info!("Database binary data version: {}", db::version());
 
     // Open or create the database
     let mut record_db = if let Some(db_path) = cli.database {
