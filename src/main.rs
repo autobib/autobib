@@ -258,7 +258,12 @@ fn main() {
 /// Run the CLI.
 fn run_cli(cli: Cli) -> Result<()> {
     info!("SQLite version: {}", rusqlite::version());
-    info!("Database binary data version: {}", db::version());
+    info!("Autobib version: {}", env!("CARGO_PKG_VERSION"));
+    info!(
+        "Database binary data version: {}",
+        db::binary_format_version()
+    );
+    info!("Database schema version: {}", db::schema_version());
 
     // Open or create the database
     let mut record_db = if let Some(db_path) = cli.database {

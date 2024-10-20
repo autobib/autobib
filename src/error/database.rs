@@ -10,6 +10,8 @@ pub enum DatabaseError {
     TableMissing(String),
     #[error("Table '{0}' has unexpected schema:\n{1}")]
     TableIncorrectSchema(String, String),
+    #[error("Database has invalid schema version: {0}")]
+    InvalidSchemaVersion(i64),
 }
 
 #[derive(Error, Debug)]
