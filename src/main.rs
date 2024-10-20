@@ -39,7 +39,7 @@ use term::{Confirm, Editor, EditorConfig};
 use self::{
     cite_search::{get_citekeys, SourceFileType},
     db::{
-        row::{self, DatabaseEntry, Row},
+        row::{self, DatabaseEntry, RecordRow},
         CitationKey, EntryData, RawRecordData, RecordData, RecordDatabase, RowData,
     },
     logger::Logger,
@@ -551,7 +551,10 @@ fn run_cli(cli: Cli) -> Result<()> {
     Ok(())
 }
 
-fn edit_record_and_update(row: Row, record: Record) -> Result<Entry<RawRecordData>, anyhow::Error> {
+fn edit_record_and_update(
+    row: RecordRow,
+    record: Record,
+) -> Result<Entry<RawRecordData>, anyhow::Error> {
     let Record {
         key,
         data,

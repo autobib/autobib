@@ -76,7 +76,7 @@ pub(crate) use self::data::{EntryTypeHeader, KeyHeader, ValueHeader};
 use self::validate::DatabaseValidator;
 pub use self::{
     data::{version, EntryData, RawRecordData, RecordData, DATA_MAX_BYTES},
-    row::{DatabaseEntry, Missing, Row},
+    row::{DatabaseEntry, MissingRecordRow, RecordRow},
 };
 use crate::{
     error::{DatabaseError, ValidationError},
