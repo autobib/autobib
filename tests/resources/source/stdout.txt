@@ -14,4 +14,5 @@
   title = {Grundlagen der {Mathematik}. {I}.},
   volume = {40},
   year = {1934},
+  zbmath = {02537022},
 }

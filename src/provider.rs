@@ -103,6 +103,8 @@ struct ProviderBibtexFields {
     pub language: Option<String>,
     #[serde(alias = "Zbl")]
     pub zbl: Option<String>,
+    #[serde(alias = "zbMATH")]
+    pub zbmath: Option<String>,
 }
 
 macro_rules! convert_field {
@@ -123,7 +125,6 @@ impl TryFrom<ProviderBibtex> for RecordData {
     fn try_from(value: ProviderBibtex) -> Result<Self, Self::Error> {
         let ProviderBibtex { entry_type, fields } = value;
         let mut record_data = RecordData::try_new(entry_type.to_lowercase())?;
-
         convert_field!(
             fields,
             record_data,
@@ -138,6 +139,11 @@ impl TryFrom<ProviderBibtex> for RecordData {
             language,
             zbl
         );
+
+        // pad zeros for zbmath
+        if let Some(field) = fields.zbmath {
+            record_data.try_insert("zbmath".to_owned(), format!("{field:0>8}"))?;
+        };
 
         Ok(record_data)
     }
