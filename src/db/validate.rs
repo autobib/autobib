@@ -42,19 +42,16 @@ impl<'conn> DatabaseValidator<'conn> {
         let mut errors: Option<String> = None;
 
         debug!("Checking foreign key constraints");
-        let mut checker = self.tx.prepare(sql::foreign_key_check())?;
-        let mut rows = checker.query([])?;
-        while let Some(row) = rows.next()? {
+        self.tx.pragma_query(None, "foreign_key_check", |row| {
             let msg: String = row.get(0)?;
             let error_msg = errors.get_or_insert_with(String::new);
             error_msg.push_str("\nForeign key constraint error: ");
             error_msg.push_str(&msg);
-        }
+            Ok(())
+        })?;
 
         debug!("Checking database integrity");
-        let mut checker = self.tx.prepare(sql::integrity_check())?;
-        let mut rows = checker.query([])?;
-        while let Some(row) = rows.next()? {
+        self.tx.pragma_query(None, "integrity_check", |row| {
             if !matches!(row.get_ref(0)?, ValueRef::Text(b"ok")) {
                 let source_table: String = row.get(0)?;
                 let source_row_id: String = row.get(1)?;
@@ -67,7 +64,8 @@ impl<'conn> DatabaseValidator<'conn> {
                 error_msg.push_str("\nConsistency error: ");
                 error_msg.push_str(&contents);
             }
-        }
+            Ok(())
+        })?;
 
         if let Some(message) = errors {
             Err(ValidationError::ConsistencyError(message))
