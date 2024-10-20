@@ -196,7 +196,7 @@ impl RecordDatabase {
         );
         let mut conn = Connection::open(db_path)?;
         debug!("Enabling write-ahead log");
-        conn.prepare(sql::set_wal())?.query_row((), |_| Ok(()))?;
+        conn.pragma_update(None, "journal_mode", "WAL")?;
 
         let tx = conn.transaction()?;
         Self::initialize(&tx)?;

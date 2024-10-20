@@ -25,8 +25,6 @@ sql!(init_citation_keys, "Create the citation keys table");
 
 sql!(init_null_records, "Create the null records table");
 
-sql!(set_wal, "Set write-ahead log");
-
 sql!(optimize, "Optimize the database");
 
 sql!(get_table_schema, "Get the table schema");
@@ -66,10 +64,6 @@ sql!(rename_citation_key, "Rename a citation key");
 sql!(get_record_key, "Get a record key");
 
 sql!(delete_citation_key, "Delete a citation key");
-
-sql!(foreign_key_check, "Check foreign key constraints");
-
-sql!(integrity_check, "Check database integrity");
 
 sql!(
     set_citation_key_overwrite,
