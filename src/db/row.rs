@@ -118,7 +118,7 @@ impl DatabaseTransaction for MissingRecordRow<'_> {
     }
 }
 
-/// A representation of a row in the `Records` table which is exists.
+/// A representation of a row in the `Records` table which exists.
 #[derive(Debug)]
 pub struct RecordRow<'conn> {
     tx: Transaction<'conn>,
