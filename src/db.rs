@@ -76,7 +76,7 @@ pub(crate) use self::data::{EntryTypeHeader, KeyHeader, ValueHeader};
 use self::validate::DatabaseValidator;
 pub use self::{
     data::{binary_format_version, EntryData, RawRecordData, RecordData, DATA_MAX_BYTES},
-    row::{DatabaseEntry, MissingRecordRow, RecordRow},
+    row::{MissingRecordRow, RecordRow, RecordsTableRow},
 };
 use crate::{
     error::{DatabaseError, ValidationError},
@@ -272,16 +272,19 @@ impl RecordDatabase {
         }
     }
 
-    /// Get the [`DatabaseEntry`] associated with a [`CitationKey`].
+    /// Get the [`RecordsTableRow`] associated with a [`CitationKey`].
     #[inline]
-    pub fn entry<K: CitationKey>(&mut self, key: &K) -> Result<DatabaseEntry, rusqlite::Error> {
+    pub fn initialize_row<K: CitationKey>(
+        &mut self,
+        key: &K,
+    ) -> Result<RecordsTableRow, rusqlite::Error> {
         #[allow(unused_mut)]
         let mut tx = self.conn.transaction()?;
 
         #[cfg(debug_assertions)]
         tx.set_drop_behavior(rusqlite::DropBehavior::Panic);
 
-        DatabaseEntry::from_tx(tx, key)
+        RecordsTableRow::from_tx(tx, key)
     }
 
     /// Optimize the database.

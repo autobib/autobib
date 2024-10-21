@@ -60,7 +60,7 @@ pub(crate) fn lookup_validator(provider: &str) -> Option<Validator> {
     }
 }
 
-/// A receiving struct type useful for deserializing bibtex from a provider.
+/// A receiving struct type useful for deserializing BibTeX from a provider.
 ///
 /// This struct can be fallibly converted into a [`RecordData`].
 #[derive(Debug, Deserialize)]
@@ -71,7 +71,7 @@ struct ProviderBibtex {
 
 /// The fields of a [`ProviderBibtex`] struct.
 ///
-/// The aliases are required to handle <https://zbmath.org> bibtex field name formatting.
+/// The aliases are required to handle <https://zbmath.org> BibTeX field name formatting.
 /// This can be written in a more robust way if
 /// <https://github.com/serde-rs/serde/pull/1902> or
 /// <https://github.com/serde-rs/serde/pull/2161> are merged.

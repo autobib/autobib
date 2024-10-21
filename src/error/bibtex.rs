@@ -6,10 +6,10 @@ use super::RecordDataError;
 pub enum BibTeXError {
     #[error("Invalid record data: {0}")]
     InvalidData(#[from] RecordDataError),
-    #[error("Invalid bibtex entry key: {0}")]
+    #[error("Invalid BibTeX entry key: {0}")]
     InvalidKey(String),
-    #[error("Entry could not be parsed from bibtex string.")]
+    #[error("Entry could not be parsed from BibTeX string.")]
     BibtexParseError,
-    #[error("Bibtex string contained multiple entries.")]
+    #[error("BibTeX string contained multiple entries.")]
     BibtexMultipleEntries,
 }

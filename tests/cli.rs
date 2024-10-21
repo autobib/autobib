@@ -359,7 +359,7 @@ fn info() -> Result<()> {
     cmd.args(["info", "%", "valid"]);
     cmd.assert()
         .failure()
-        .stderr(predicate::str::contains("Invalid bibtex"));
+        .stderr(predicate::str::contains("Invalid BibTeX"));
 
     let mut cmd = s.cmd()?;
     cmd.args(["info", "%"]);
@@ -367,7 +367,7 @@ fn info() -> Result<()> {
         predicate::str::contains("Data last modified:")
             .and(predicate::str::contains("Equivalent references:"))
             .and(predicate::str::contains("Canonical: zbmath:06346461\n"))
-            .and(predicate::str::contains("Valid bibtex? no")),
+            .and(predicate::str::contains("Valid BibTeX? no")),
     );
 
     s.close()

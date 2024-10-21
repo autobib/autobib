@@ -38,12 +38,12 @@ pub fn get_canonical(id: &str, client: &HttpClient) -> Result<Option<RemoteId>, 
                 Ok(Some(RemoteId::from_parts("zbmath", identifier)))
             } else {
                 Err(ProviderError::Unexpected(
-                    "zbMATH bibtex record has unexpected citation key format!".to_string(),
+                    "zbMATH BibTeX record has unexpected citation key format!".to_string(),
                 ))
             }
         }
         _ => Err(ProviderError::Unexpected(
-            "zbMATH bibtex record is invalid!".into(),
+            "zbMATH BibTeX record is invalid!".into(),
         )),
     }
 }

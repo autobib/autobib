@@ -55,7 +55,6 @@ impl<D: EntryData> Entry<D> {
             pub fn fields(&self) -> impl Iterator<Item = (&str, &str)>;
             pub fn entry_type(&self) -> &str;
         }
-
     }
 }
 

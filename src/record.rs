@@ -8,8 +8,8 @@ pub use key::{Alias, RecordId, RemoteId};
 use crate::{
     db::{
         row::{
-            add_refs, check_null, get_row_data, set_null, DatabaseEntry, MissingRecordRow,
-            NullRecordsResponse, RecordRow,
+            add_refs, check_null, get_row_data, set_null, MissingRecordRow, NullRecordsResponse,
+            RecordRow, RecordsTableRow,
         },
         RawRecordData, RecordDatabase, RowData,
     },
@@ -20,7 +20,7 @@ use crate::{
 
 use private::NonEmptyStack;
 
-/// The funamdental record type.
+/// The fundamental record type.
 #[derive(Debug)]
 pub struct Record {
     /// The original key.
@@ -33,7 +33,7 @@ pub struct Record {
 
 /// The response type of [`get_record`].
 #[derive(Debug)]
-pub enum GetRecordResponse {
+pub enum RecordResponse {
     /// The record exists.
     Exists(Record),
     /// The remote id corresponding to the record does not exist.
@@ -42,21 +42,21 @@ pub enum GetRecordResponse {
     NullAlias(Alias),
 }
 
-/// The response type of [`get_record_entry`].
+/// The response type of [`get_record_row`].
 ///
 /// If the record exists, the resulting [`RecordRow`] is guaranteed to be valid for the row corresponding
 /// to the [`Record`].
 ///
 /// If the record does not exist, then the corresponding row is guaranteed to not exist.
 ///
-/// The initial [`DatabaseEntry`] is passed back to the caller inside the enum. Note that this
+/// The initial [`RecordsTableRow`] is passed back to the caller inside the enum. Note that this
 /// transaction *must* be committed in order for database changes to be in effect, regardless if
 /// the record exists or is null, since the null records are also cached inside the database.
 ///
-/// This type can be converted to a usual [`GetRecordResponse`], at which point the internal
+/// This type can be converted to a usual [`RecordResponse`], at which point the internal
 /// transaction is automatically committed.
 #[derive(Debug)]
-pub enum GetRecordEntryResponse<'conn> {
+pub enum RecordRowResponse<'conn> {
     /// The record exists.
     Exists(Record, RecordRow<'conn>),
     /// The remote id corresponding to the record does not exist.
@@ -65,22 +65,22 @@ pub enum GetRecordEntryResponse<'conn> {
     NullAlias(Alias, MissingRecordRow<'conn>),
 }
 
-impl TryFrom<GetRecordEntryResponse<'_>> for GetRecordResponse {
+impl TryFrom<RecordRowResponse<'_>> for RecordResponse {
     type Error = rusqlite::Error;
 
-    fn try_from(res: GetRecordEntryResponse<'_>) -> Result<Self, Self::Error> {
+    fn try_from(res: RecordRowResponse<'_>) -> Result<Self, Self::Error> {
         match res {
-            GetRecordEntryResponse::Exists(record, row) => {
+            RecordRowResponse::Exists(record, row) => {
                 row.commit()?;
-                Ok(GetRecordResponse::Exists(record))
+                Ok(RecordResponse::Exists(record))
             }
-            GetRecordEntryResponse::NullRemoteId(remote_id, missing) => {
+            RecordRowResponse::NullRemoteId(remote_id, missing) => {
                 missing.commit()?;
-                Ok(GetRecordResponse::NullRemoteId(remote_id))
+                Ok(RecordResponse::NullRemoteId(remote_id))
             }
-            GetRecordEntryResponse::NullAlias(alias, missing) => {
+            RecordRowResponse::NullAlias(alias, missing) => {
                 missing.commit()?;
-                Ok(GetRecordResponse::NullAlias(alias))
+                Ok(RecordResponse::NullAlias(alias))
             }
         }
     }
@@ -88,31 +88,31 @@ impl TryFrom<GetRecordEntryResponse<'_>> for GetRecordResponse {
 
 /// Get the [`Record`] associated with a [`RecordId`], or [`None`] if the [`Record`] does not exist.
 ///
-/// This is essentially a convenience method for the [`get_record_entry`] function, except the
+/// This is essentially a convenience method for the [`get_record_row`] function, except the
 /// transaction is created and committed internally.
 pub fn get_record(
     db: &mut RecordDatabase,
     record_id: RecordId,
     client: &HttpClient,
-) -> Result<GetRecordResponse, Error> {
-    Ok(get_record_entry(db.entry(&record_id)?, record_id, client)?.try_into()?)
+) -> Result<RecordResponse, Error> {
+    Ok(get_record_row(db.initialize_row(&record_id)?, record_id, client)?.try_into()?)
 }
 
-/// Get the [`Record`] associated with a [`RecordId`], except within a [`DatabaseEntry`].
+/// Get the [`Record`] associated with a [`RecordId`], except within a [`RecordsTableRow`].
 ///
-/// The [`DatabaseEntry`] is passed back to the caller and must be commited for the record to be
+/// The [`RecordsTableRow`] is passed back to the caller and must be commited for the record to be
 /// recorded in the database.
-pub fn get_record_entry<'conn>(
-    entry: DatabaseEntry<'conn>,
+pub fn get_record_row<'conn>(
+    row: RecordsTableRow<'conn>,
     record_id: RecordId,
     client: &HttpClient,
-) -> Result<GetRecordEntryResponse<'conn>, Error> {
-    match entry {
-        DatabaseEntry::Exists(row) => {
+) -> Result<RecordRowResponse<'conn>, Error> {
+    match row {
+        RecordsTableRow::Exists(row) => {
             let RowData {
                 data, canonical, ..
             } = row.apply(get_row_data)?;
-            Ok(GetRecordEntryResponse::Exists(
+            Ok(RecordRowResponse::Exists(
                 Record {
                     key: record_id.into(),
                     data,
@@ -121,9 +121,9 @@ pub fn get_record_entry<'conn>(
                 row,
             ))
         }
-        DatabaseEntry::Missing(missing) => match record_id.resolve()? {
-            Either::Left(alias) => Ok(GetRecordEntryResponse::NullAlias(alias, missing)),
-            Either::Right(remote_id) => get_record_entry_remote_resolve(missing, remote_id, client),
+        RecordsTableRow::Missing(missing) => match record_id.resolve()? {
+            Either::Left(alias) => Ok(RecordRowResponse::NullAlias(alias, missing)),
+            Either::Right(remote_id) => get_record_row_remote_resolve(missing, remote_id, client),
         },
     }
 }
@@ -133,11 +133,11 @@ pub fn get_record_entry<'conn>(
 /// At each intermediate stage, attempt to read any data possible from the database
 /// inside the transaction implicit in the [`MissingRecordRow`], and write any new data to the
 /// database.
-fn get_record_entry_remote_resolve<'conn>(
+fn get_record_row_remote_resolve<'conn>(
     mut missing: MissingRecordRow<'conn>,
     remote_id: RemoteId,
     client: &HttpClient,
-) -> Result<GetRecordEntryResponse<'conn>, Error> {
+) -> Result<RecordRowResponse<'conn>, Error> {
     let mut history = NonEmptyStack::new(remote_id);
     loop {
         let top = history.peek();
@@ -146,10 +146,7 @@ fn get_record_entry_remote_resolve<'conn>(
             NullRecordsResponse::Found(_when) => {
                 // skip top element of the stack since it is already cached
                 missing.apply(set_null(history.descend().skip(1)))?;
-                break Ok(GetRecordEntryResponse::NullRemoteId(
-                    history.into_top(),
-                    missing,
-                ));
+                break Ok(RecordRowResponse::NullRemoteId(history.into_top(), missing));
             }
             NullRecordsResponse::NotFound => {
                 info!("Resolving remote record for '{top}'");
@@ -160,7 +157,7 @@ fn get_record_entry_remote_resolve<'conn>(
                             let row = missing.insert(&raw_record_data, top)?;
                             row.apply(add_refs(history.descend()))?;
                             let (bottom, top) = history.into_ends();
-                            break Ok(GetRecordEntryResponse::Exists(
+                            break Ok(RecordRowResponse::Exists(
                                 Record {
                                     key: bottom.into(),
                                     data: RawRecordData::from(&data),
@@ -171,7 +168,7 @@ fn get_record_entry_remote_resolve<'conn>(
                         }
                         None => {
                             missing.apply(set_null(history.descend()))?;
-                            break Ok(GetRecordEntryResponse::NullRemoteId(
+                            break Ok(RecordRowResponse::NullRemoteId(
                                 history.into_bottom(),
                                 missing,
                             ));
@@ -179,12 +176,12 @@ fn get_record_entry_remote_resolve<'conn>(
                     },
                     Either::Right(referrer) => match referrer(top.sub_id(), client)? {
                         Some(new_remote_id) => match missing.reset(&new_remote_id)? {
-                            DatabaseEntry::Exists(row) => {
+                            RecordsTableRow::Exists(row) => {
                                 row.apply(add_refs(history.descend()))?;
                                 let RowData {
                                     data, canonical, ..
                                 } = row.apply(get_row_data)?;
-                                break Ok(GetRecordEntryResponse::Exists(
+                                break Ok(RecordRowResponse::Exists(
                                     Record {
                                         key: history.into_bottom().into(),
                                         data,
@@ -193,14 +190,14 @@ fn get_record_entry_remote_resolve<'conn>(
                                     row,
                                 ));
                             }
-                            DatabaseEntry::Missing(missing) => {
+                            RecordsTableRow::Missing(missing) => {
                                 history.push(new_remote_id);
                                 missing
                             }
                         },
                         None => {
                             missing.apply(set_null(history.descend()))?;
-                            break Ok(GetRecordEntryResponse::NullRemoteId(
+                            break Ok(RecordRowResponse::NullRemoteId(
                                 history.into_bottom(),
                                 missing,
                             ));

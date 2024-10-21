@@ -8,18 +8,18 @@ use super::{get_row_id, sql, CitationKey, RowData, RowId};
 use crate::{RawRecordData, RemoteId};
 pub use operations::*;
 
-/// A Wrapper type to represent a row in the `Records` table which either exists
+/// A wrapper type to represent a row in the `Records` table which either exists
 /// or is missing.
 #[derive(Debug)]
-pub enum DatabaseEntry<'conn> {
+pub enum RecordsTableRow<'conn> {
     /// The row exists.
     Exists(RecordRow<'conn>),
     /// The row is missing.
     Missing(MissingRecordRow<'conn>),
 }
 
-impl<'conn> DatabaseEntry<'conn> {
-    /// Initialize a new [`DatabaseEntry`] given a transaction and the [`CitationKey`]
+impl<'conn> RecordsTableRow<'conn> {
+    /// Initialize a new [`RecordsTableRow`] given a transaction and the [`CitationKey`]
     /// corresponding to the row which either exists or is missing from the `Records` table.
     #[inline]
     pub(super) fn from_tx<K: CitationKey>(
@@ -29,11 +29,11 @@ impl<'conn> DatabaseEntry<'conn> {
         match get_row_id(&tx, key)? {
             Some(row_id) => {
                 debug!("Beginning new transaction for row '{row_id}'.");
-                Ok(DatabaseEntry::Exists(RecordRow::new(tx, row_id)))
+                Ok(RecordsTableRow::Exists(RecordRow::new(tx, row_id)))
             }
             None => {
                 debug!("Beginning new generic transaction.");
-                Ok(DatabaseEntry::Missing(MissingRecordRow::new(tx)))
+                Ok(RecordsTableRow::Missing(MissingRecordRow::new(tx)))
             }
         }
     }
@@ -101,8 +101,8 @@ impl<'conn> MissingRecordRow<'conn> {
     }
 
     /// Reset the row, clearing any internal data but preserving the transaction.
-    pub fn reset<K: CitationKey>(self, key: &K) -> Result<DatabaseEntry<'conn>, rusqlite::Error> {
-        DatabaseEntry::from_tx(self.tx, key)
+    pub fn reset<K: CitationKey>(self, key: &K) -> Result<RecordsTableRow<'conn>, rusqlite::Error> {
+        RecordsTableRow::from_tx(self.tx, key)
     }
 }
 
