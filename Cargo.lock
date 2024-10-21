@@ -1595,9 +1595,9 @@ dependencies = [
 
 [[package]]
 name = "serde_bibtex"
-version = "0.4.2"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5729eae797cc104bf6c74169c43e99cb94028211fa97410291c1e4d078273c6a"
+checksum = "5a494738e24c4c4f21c34c64c1f15ba74c879fb05c30111b64ef6c7ff32a9747"
 dependencies = [
  "memchr",
  "serde",

@@ -33,7 +33,10 @@ use log::{error, info, warn};
 use nonempty::NonEmpty;
 use nucleo_picker::Picker;
 use serde::Serializer as _;
-use serde_bibtex::{ser::Serializer, validate::is_entry_key};
+use serde_bibtex::{
+    ser::Serializer,
+    token::{is_entry_key, EntryKey},
+};
 use term::{Confirm, Editor, EditorConfig};
 
 use self::{
@@ -608,7 +611,7 @@ fn edit_record_and_update(
         canonical,
     } = record;
 
-    let mut entry = Entry::try_new(key, data)?;
+    let mut entry = Entry::new(EntryKey::new(key).map_err(|res| res.error)?, data);
 
     let editor = Editor::new(EditorConfig { suffix: ".bib" });
 
@@ -619,7 +622,7 @@ fn edit_record_and_update(
         } = new_entry;
 
         if new_key != entry.key() {
-            let alias = Alias::from_str(new_key)?;
+            let alias = Alias::from_str(new_key.as_ref())?;
             info!("Creating new alias '{alias}' for '{canonical}'");
             row.apply(row::add_alias(&alias))?;
         }
@@ -705,7 +708,7 @@ fn write_entries<W: io::Write, D: EntryData>(
         if entry_group.len() > 1 {
             warn!(
                 "Multiple keys for '{canonical}': {}",
-                entry_group.iter().map(Entry::key).join(", ")
+                entry_group.iter().map(|e| e.key().as_ref()).join(", ")
             );
         };
         entry_group
@@ -765,7 +768,8 @@ fn retrieve_and_validate_single_entry(
                     data,
                     canonical,
                 } = record;
-                let entry = validate_bibtex_entry(key, data, &row).map(|entry| (entry, canonical));
+                let entry =
+                    validate_bibtex_key(key, &row).map(|key| (Entry::new(key, data), canonical));
                 row.commit()?;
                 Ok(entry)
             }
@@ -787,36 +791,30 @@ fn retrieve_and_validate_single_entry(
     }
 }
 
-/// Validate a BibTeX key and return the entry, logging errors and suggesting fixes.
-fn validate_bibtex_entry(
-    key: String,
-    data: RawRecordData,
-    row: &RecordRow,
-) -> Option<Entry<RawRecordData>> {
-    match Entry::try_new(key, data) {
-        Ok(entry) => Some(entry),
-        Err(error) => {
-            if let error::BibTeXError::InvalidKey(_) = &error {
-                match get_valid_referencing_keys(row) {
-                    Ok(alternative_keys) => {
-                        if !alternative_keys.is_empty() {
-                            error!(
-                                    "{error}\n  Suggested fix: use one of the following equivalent keys: {}",
-                                    alternative_keys.join(", ")
-                                );
-                        } else {
-                            error!("{error}\n  Suggested fix: create an alias which does not contain disallowed characters: {{}}(),=\\#%\"");
-                        }
-                    }
-                    Err(error2) => {
+/// Validate a BibTeX key, logging errors and suggesting fixes.
+fn validate_bibtex_key(key: String, row: &RecordRow) -> Option<EntryKey<String>> {
+    match EntryKey::new(key) {
+        Ok(bibtex_key) => Some(bibtex_key),
+        Err(parse_result) => {
+            match get_valid_referencing_keys(row) {
+                Ok(alternative_keys) => {
+                    if !alternative_keys.is_empty() {
                         error!(
-                            "{error}\n  Another error occurred while retrieving equivalent keys:"
+                            "{}\n  Suggested fix: use one of the following equivalent keys: {}",
+                            parse_result.error,
+                            alternative_keys.join(", ")
                         );
-                        error!("{error2}");
+                    } else {
+                        error!("{}\n  Suggested fix: create an alias which does not contain disallowed characters: {{}}(),=\\#%\"", parse_result.error);
                     }
                 }
-            } else {
-                error!("{error}");
+                Err(error2) => {
+                    error!(
+                        "{}\n  Another error occurred while retrieving equivalent keys:",
+                        parse_result.error
+                    );
+                    error!("{error2}");
+                }
             }
             None
         }

@@ -5,44 +5,27 @@ use serde::{
     ser::{Serialize, SerializeSeq, SerializeStruct, Serializer},
     Deserialize,
 };
-use serde_bibtex::{de::Deserializer, to_string_unchecked, validate::is_entry_key};
+use serde_bibtex::{de::Deserializer, to_string_unchecked, token::EntryKey};
 
 use crate::{
     db::{EntryData, RawRecordData, RecordData},
-    error::BibTeXError,
+    error::BibtexDataError,
 };
 
 /// A single regular entry in a BibTeX bibliography.
 #[derive(Debug, PartialEq)]
 pub struct Entry<D: EntryData> {
-    pub key: String,
+    pub key: EntryKey<String>,
     pub record_data: D,
 }
 
 impl<D: EntryData> Entry<D> {
-    /// Create a new entry data with the provided key.
-    ///
-    /// # Errors
-    /// This method will fail if the key contains characters which are invalid BibTeX entry key
-    /// characters, as accepted by the [`serde_bibtex::validate::is_entry_key`] method.
-    pub fn try_new(key: String, record_data: D) -> Result<Self, BibTeXError> {
-        if is_entry_key(&key) {
-            Ok(Self::new_unchecked(key, record_data))
-        } else {
-            Err(BibTeXError::InvalidKey(key))
-        }
-    }
-
-    /// Create a new entry data with the provided key.
-    ///
-    /// # Safety
-    /// The caller is required to guarantee that the key does not contain any characters which are
-    /// invalid BibTeX entry key characters, as accepted by the [`serde_bibtex::validate::is_entry_key`] method.
-    pub(crate) fn new_unchecked(key: String, record_data: D) -> Self {
+    /// Create a new entry with the provided key and record data.
+    pub fn new(key: EntryKey<String>, record_data: D) -> Self {
         Self { key, record_data }
     }
 
-    pub fn key(&self) -> &str {
+    pub fn key(&self) -> &EntryKey<String> {
         &self.key
     }
 
@@ -80,7 +63,7 @@ impl<D: EntryData> Serialize for Entry<D> {
     {
         let mut state = serializer.serialize_struct("Entry", 3)?;
         state.serialize_field("entry_type", &self.entry_type())?;
-        state.serialize_field("entry_key", &self.key)?;
+        state.serialize_field("entry_key", &self.key.as_ref())?;
         state.serialize_field("fields", &RecordDataWrapper(&self.record_data))?;
         state.end()
     }
@@ -96,7 +79,7 @@ struct Contents {
 }
 
 impl FromStr for Entry<RawRecordData> {
-    type Err = BibTeXError;
+    type Err = BibtexDataError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut de_iter = Deserializer::from_str(s).into_iter_regular_entry();
@@ -117,7 +100,10 @@ impl FromStr for Entry<RawRecordData> {
 
                 // SAFETY: the Deserializer implementation only accepts the entry if the entry key is
                 //         valid.
-                Ok(Entry::new_unchecked(entry_key, (&record_data).into()))
+                Ok(Entry::new(
+                    EntryKey::new(entry_key).unwrap(),
+                    (&record_data).into(),
+                ))
             } else {
                 Err(Self::Err::BibtexMultipleEntries)
             }

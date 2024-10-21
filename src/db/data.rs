@@ -7,7 +7,7 @@
 use std::{collections::BTreeMap, iter::Iterator, str::from_utf8};
 
 use delegate::delegate;
-use serde_bibtex::validate::is_balanced;
+use serde_bibtex::token::is_balanced;
 
 use crate::error::{InvalidBytesError, RecordDataError};
 
@@ -362,7 +362,7 @@ impl RecordData {
     /// 2. `key` must have length at least `1` and at most [`KeyHeader::MAX`].
     /// 3. `value` must have length at most [`ValueHeader::MAX`].
     /// 4. `key` must be composed only of ASCII lowercase letters (from [`char::is_ascii_lowercase`]).
-    /// 5. `value` must satisfy the balanced `{}` rule (from [`serde_bibtex::validate::is_balanced`]).
+    /// 5. `value` must satisfy the balanced `{}` rule (from [`serde_bibtex::token::is_balanced`]).
     pub fn try_insert(
         &mut self,
         key: String,

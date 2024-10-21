@@ -9,7 +9,7 @@ mod record_data;
 use thiserror::Error;
 
 pub use self::{
-    bibtex::BibTeXError,
+    bibtex::BibtexDataError,
     database::{DatabaseError, ValidationError},
     provider::ProviderError,
     record::{RecordError, RecordErrorKind},
