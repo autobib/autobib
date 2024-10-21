@@ -262,7 +262,7 @@ fn bibtex_key_validation() -> Result<()> {
     let mut cmd = s.cmd()?;
     cmd.args(["get", "doi:10.1016/0021-8693(89)90256-1"]);
     cmd.assert().failure().stderr(
-        predicate::str::contains("Invalid BibTeX entry key")
+        predicate::str::contains("identifier contains invalid character")
             .and(predicate::str::contains("cst1989")),
     );
 
