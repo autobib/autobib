@@ -44,7 +44,7 @@ jobs:
     - name: Generate flows
       env:
         ALL_PROXY: http://127.0.0.1:8080
-      run: xargs -a '${{ env.REMOTES_FILE }}' -d '\n' -- cargo run -- -vv get --ignore-null
+      run: xargs -a '${{ env.REMOTES_FILE }}' -d '\n' -- cargo run -- -vv get --retrieve-only --ignore-null
     - name: Save flows cache
       uses: actions/cache/save@v4
       with:
