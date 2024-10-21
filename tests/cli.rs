@@ -245,6 +245,46 @@ fn alias_remote() -> Result<()> {
     s.close()
 }
 
+/// Check that `autobib get` validates BibTeX citation keys and suggests alternatives on failure.
+#[test]
+fn bibtex_key_validation() -> Result<()> {
+    let s = TestState::init()?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args([
+        "alias",
+        "add",
+        "cst1989",
+        "doi:10.1016/0021-8693(89)90256-1",
+    ]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["get", "doi:10.1016/0021-8693(89)90256-1"]);
+    cmd.assert().failure().stderr(
+        predicate::str::contains("Invalid BibTeX entry key")
+            .and(predicate::str::contains("cst1989")),
+    );
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["get", "cst1989"]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args([
+        "get",
+        "--retrieve-only",
+        "doi:10.1016/0021-8693(89)90256-1",
+        "cst1989",
+    ]);
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::is_empty());
+
+    s.close()
+}
+
 /// Test deletion, including of aliases.
 #[test]
 fn delete() -> Result<()> {
