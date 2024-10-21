@@ -126,8 +126,11 @@ enum Command {
         /// The citation keys to retrieve.
         citation_keys: Vec<RecordId>,
         /// Write output to file.
-        #[arg(short, long)]
+        #[arg(short, long, group = "output")]
         out: Option<PathBuf>,
+        /// Retrieve records but do not output BibTeX or check the validity of citation keys.
+        #[arg(long, group = "output")]
+        retrieve_only: bool,
         /// Ignore null records and aliases.
         #[arg(long)]
         ignore_null: bool,
@@ -163,8 +166,11 @@ enum Command {
         #[arg(long)]
         file_type: Option<SourceFileType>,
         /// Write output to file.
-        #[arg(short, long)]
+        #[arg(short, long, group = "output")]
         out: Option<PathBuf>,
+        /// Retrieve records but do not output BibTeX or check the validity of citation keys.
+        #[arg(long, group = "output")]
+        retrieve_only: bool,
         /// Ignore null records and aliases.
         #[arg(long)]
         ignore_null: bool,
@@ -395,6 +401,7 @@ fn run_cli(cli: Cli) -> Result<()> {
         Command::Get {
             mut citation_keys,
             out,
+            retrieve_only,
             ignore_null,
         } => {
             // Collect all entries which are not null
@@ -402,10 +409,13 @@ fn run_cli(cli: Cli) -> Result<()> {
                 citation_keys.drain(..),
                 &mut record_db,
                 &client,
+                retrieve_only,
                 ignore_null,
             );
 
-            output_entries(out.as_ref(), valid_entries)?;
+            if !retrieve_only {
+                output_entries(out.as_ref(), valid_entries)?;
+            }
         }
         Command::Info {
             citation_key,
@@ -499,6 +509,7 @@ fn run_cli(cli: Cli) -> Result<()> {
             paths,
             file_type,
             out,
+            retrieve_only,
             ignore_null,
         } => {
             let mut buffer = Vec::new();
@@ -538,10 +549,13 @@ fn run_cli(cli: Cli) -> Result<()> {
                 container.drain(),
                 &mut record_db,
                 &client,
+                retrieve_only,
                 ignore_null,
             );
 
-            output_entries(out.as_ref(), valid_entries)?;
+            if !retrieve_only {
+                output_entries(out.as_ref(), valid_entries)?;
+            }
         }
         Command::Update { citation_key } => match record_db.initialize_row(&citation_key)? {
             RecordsTableRow::Exists(row) => {
@@ -703,14 +717,21 @@ fn retrieve_and_validate_entries<T: Iterator<Item = RecordId>>(
     citation_keys: T,
     record_db: &mut RecordDatabase,
     client: &HttpClient,
+    retrieve_only: bool,
     ignore_null: bool,
 ) -> BTreeMap<RemoteId, NonEmpty<Entry<RawRecordData>>> {
     let valid_entries = citation_keys.filter_map(|citation_key| {
-        retrieve_and_validate_single_entry(record_db, citation_key, client, ignore_null)
-            .unwrap_or_else(|error| {
-                error!("{error}");
-                None
-            })
+        retrieve_and_validate_single_entry(
+            record_db,
+            citation_key,
+            client,
+            retrieve_only,
+            ignore_null,
+        )
+        .unwrap_or_else(|error| {
+            error!("{error}");
+            None
+        })
     });
 
     let mut grouped_entries: BTreeMap<RemoteId, NonEmpty<Entry<RawRecordData>>> = BTreeMap::new();
@@ -730,18 +751,24 @@ fn retrieve_and_validate_single_entry(
     record_db: &mut RecordDatabase,
     citation_key: RecordId,
     client: &HttpClient,
+    retrieve_only: bool,
     ignore_null: bool,
 ) -> Result<Option<(Entry<RawRecordData>, RemoteId)>, error::Error> {
     match get_record_row(record_db, citation_key, client)? {
         RecordRowResponse::Exists(record, row) => {
-            let Record {
-                key,
-                data,
-                canonical,
-            } = record;
-            let entry = validate_bibtex_entry(key, data, &row).map(|entry| (entry, canonical));
-            row.commit()?;
-            Ok(entry)
+            if retrieve_only {
+                row.commit()?;
+                Ok(None)
+            } else {
+                let Record {
+                    key,
+                    data,
+                    canonical,
+                } = record;
+                let entry = validate_bibtex_entry(key, data, &row).map(|entry| (entry, canonical));
+                row.commit()?;
+                Ok(entry)
+            }
         }
         RecordRowResponse::NullRemoteId(remote_id, missing) => {
             if !ignore_null {
@@ -760,7 +787,7 @@ fn retrieve_and_validate_single_entry(
     }
 }
 
-/// Validate a BibTeX entry, logging errors and suggesting fixes.
+/// Validate a BibTeX key and return the entry, logging errors and suggesting fixes.
 fn validate_bibtex_entry(
     key: String,
     data: RawRecordData,
