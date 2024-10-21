@@ -80,7 +80,7 @@ pub fn check_null(
     remote_id: &RemoteId,
 ) -> impl FnOnce(&MissingRecordRow) -> Result<NullRecordsResponse, rusqlite::Error> + '_ {
     move |missing| {
-        debug!("Checking null entry for '{remote_id}'");
+        debug!("Checking null row for '{remote_id}'");
         let mut null_selector = missing.prepare_cached(sql::get_cached_null())?;
         let mut null_rows = null_selector.query([remote_id.name()])?;
 
@@ -99,7 +99,7 @@ pub fn set_null<'a, R: Iterator<Item = &'a RemoteId>>(
         let mut setter = missing.prepare_cached(sql::set_cached_null())?;
         let cache_time = Local::now();
         for remote_id in remote_id_iter {
-            debug!("Setting null entry for '{remote_id}'");
+            debug!("Setting null row for '{remote_id}'");
             setter.execute((remote_id.name(), cache_time))?;
         }
 
