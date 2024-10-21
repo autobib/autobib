@@ -18,7 +18,7 @@ pub struct BibtexKey {
 }
 
 impl BibtexKey {
-    /// Create a new entry data with the provided key.
+    /// Create a new BibTeX citation key with the provided string.
     ///
     /// # Safety
     /// The caller is required to guarantee that the key does not contain any characters which are
@@ -44,23 +44,47 @@ impl TryFrom<String> for BibtexKey {
     }
 }
 
+impl From<BibtexKey> for String {
+    fn from(key: BibtexKey) -> Self {
+        key.key
+    }
+}
+
+impl AsRef<str> for BibtexKey {
+    fn as_ref(&self) -> &str {
+        &self.key
+    }
+}
+
+impl fmt::Display for BibtexKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.key)
+    }
+}
+
+impl Serialize for BibtexKey {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.key.serialize(serializer)
+    }
+}
+
 /// A single regular entry in a BibTeX bibliography.
 #[derive(Debug, PartialEq)]
 pub struct Entry<D: EntryData> {
-    pub key: String,
+    pub key: BibtexKey,
     pub record_data: D,
 }
 
 impl<D: EntryData> Entry<D> {
     /// Create a new entry with the provided key and record data.
     pub fn new(key: BibtexKey, record_data: D) -> Self {
-        Self {
-            key: key.key,
-            record_data,
-        }
+        Self { key, record_data }
     }
 
-    pub fn key(&self) -> &str {
+    pub fn key(&self) -> &BibtexKey {
         &self.key
     }
 

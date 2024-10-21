@@ -619,7 +619,7 @@ fn edit_record_and_update(
         } = new_entry;
 
         if new_key != entry.key() {
-            let alias = Alias::from_str(new_key)?;
+            let alias = Alias::from_str(new_key.as_ref())?;
             info!("Creating new alias '{alias}' for '{canonical}'");
             row.apply(row::add_alias(&alias))?;
         }
