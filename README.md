@@ -59,6 +59,7 @@ will return
   volume = {180},
   year = {2014},
   zbl = {1337.28015},
+  zbmath = {06346461},
 }
 ```
 An identifier is a pair `provider:sub_id`.
@@ -116,6 +117,7 @@ Then running `autobib get hochman-entropy` returns
   volume = {180},
   year = {2014},
   zbl = {1337.28015},
+  zbmath = {06346461},
 }
 ```
 The record is identical to the record `zbl:1337.28015`, except that the citation key is the name of the alias.
