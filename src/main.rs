@@ -43,14 +43,12 @@ use self::{
         CitationKey, EntryData, RawRecordData, RecordData, RecordDatabase, RowData,
     },
     logger::Logger,
-    record::{
-        get_remote_record, GetRemoteRecordResponse, Record, RecordResponse, RecordRowResponse,
-    },
+    record::{get_remote_record, GetRemoteRecordResponse, Record, RecordRowResponse},
 };
 pub use self::{
     entry::Entry,
     http::HttpClient,
-    record::{get_record, get_record_row, Alias, RecordId, RemoteId},
+    record::{get_record_row, Alias, RecordId, RemoteId},
 };
 
 #[derive(Parser)]
@@ -299,8 +297,7 @@ fn run_cli(cli: Cli) -> Result<()> {
         Command::Alias { alias_command } => match alias_command {
             AliasCommand::Add { alias, target } => {
                 info!("Creating alias '{alias}' for '{target}'");
-                let row = record_db.initialize_row(&target)?;
-                match get_record_row(row, target, &client)? {
+                match get_record_row(&mut record_db, target, &client)? {
                     RecordRowResponse::Exists(_, row) => {
                         if !row.apply(row::add_alias(&alias))? {
                             error!("Alias already exists: '{alias}'");
@@ -371,8 +368,7 @@ fn run_cli(cli: Cli) -> Result<()> {
             }
         }
         Command::Edit { citation_key } => {
-            let row = record_db.initialize_row(&citation_key)?;
-            match get_record_row(row, citation_key, &client)? {
+            match get_record_row(&mut record_db, citation_key, &client)? {
                 record::RecordRowResponse::Exists(record, row) => {
                     edit_record_and_update(row, record)?;
                 }
@@ -402,7 +398,7 @@ fn run_cli(cli: Cli) -> Result<()> {
             ignore_null,
         } => {
             // Collect all entries which are not null
-            let valid_entries = validate_and_retrieve_entries(
+            let valid_entries = retrieve_and_validate_entries(
                 citation_keys.drain(..),
                 &mut record_db,
                 &client,
@@ -538,7 +534,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                 };
             }
 
-            let valid_entries = validate_and_retrieve_entries(
+            let valid_entries = retrieve_and_validate_entries(
                 container.drain(),
                 &mut record_db,
                 &client,
@@ -702,52 +698,23 @@ fn write_entries<W: io::Write, D: EntryData>(
     }))
 }
 
-/// Validate and retrieve BibTeX entries.
-fn validate_and_retrieve_entries<T: Iterator<Item = RecordId>>(
+/// Retrieve and validate BibTeX entries.
+fn retrieve_and_validate_entries<T: Iterator<Item = RecordId>>(
     citation_keys: T,
     record_db: &mut RecordDatabase,
     client: &HttpClient,
     ignore_null: bool,
 ) -> BTreeMap<RemoteId, NonEmpty<Entry<RawRecordData>>> {
-    let mut grouped_entries: BTreeMap<RemoteId, NonEmpty<Entry<RawRecordData>>> = BTreeMap::new();
+    let valid_entries = citation_keys.filter_map(|citation_key| {
+        retrieve_and_validate_single_entry(record_db, citation_key, client, ignore_null)
+            .unwrap_or_else(|error| {
+                error!("{error}");
+                None
+            })
+    });
 
-    for (bibtex_entry, canonical) in citation_keys
-        .filter_map(|citation_key| {
-            match get_record(record_db, citation_key, client) {
-                Err(err) => {
-                    error!("{err}");
-                    None
-                }
-                Ok(RecordResponse::Exists(record)) => Some(record),
-                Ok(RecordResponse::NullRemoteId(remote_id)) => {
-                    if !ignore_null {
-                        error!("Null record: {remote_id}");
-                    }
-                    None
-                }
-                Ok(RecordResponse::NullAlias(alias)) => {
-                    if !ignore_null {
-                        error!("Undefined alias: {alias}");
-                    }
-                    None
-                }
-            }
-        })
-        .filter_map(|record| {
-            let Record {
-                key,
-                data,
-                canonical,
-            } = record;
-            Entry::try_new(key, data).map_or_else(
-                |err| {
-                    error!("{err}\n  Suggested fix: use an alias which does not contain disallowed characters: {{}}(),=\\#%\"");
-                    None
-                },
-                |entry| Some((entry, canonical)),
-            )
-        })
-    {
+    let mut grouped_entries: BTreeMap<RemoteId, NonEmpty<Entry<RawRecordData>>> = BTreeMap::new();
+    for (bibtex_entry, canonical) in valid_entries {
         match grouped_entries.entry(canonical) {
             Occupied(e) => e.into_mut().push(bibtex_entry),
             Vacant(e) => {
@@ -756,4 +723,82 @@ fn validate_and_retrieve_entries<T: Iterator<Item = RecordId>>(
         }
     }
     grouped_entries
+}
+
+/// Retrieve and validate a single BibTeX entry.
+fn retrieve_and_validate_single_entry(
+    record_db: &mut RecordDatabase,
+    citation_key: RecordId,
+    client: &HttpClient,
+    ignore_null: bool,
+) -> Result<Option<(Entry<RawRecordData>, RemoteId)>, error::Error> {
+    match get_record_row(record_db, citation_key, client)? {
+        RecordRowResponse::Exists(record, row) => {
+            let Record {
+                key,
+                data,
+                canonical,
+            } = record;
+            let entry = validate_bibtex_entry(key, data, &row).map(|entry| (entry, canonical));
+            row.commit()?;
+            Ok(entry)
+        }
+        RecordRowResponse::NullRemoteId(remote_id, missing) => {
+            if !ignore_null {
+                error!("Null record: {remote_id}");
+            }
+            missing.commit()?;
+            Ok(None)
+        }
+        RecordRowResponse::NullAlias(alias, missing) => {
+            if !ignore_null {
+                error!("Undefined alias: {alias}");
+            }
+            missing.commit()?;
+            Ok(None)
+        }
+    }
+}
+
+/// Validate a BibTeX entry, logging errors and suggesting fixes.
+fn validate_bibtex_entry(
+    key: String,
+    data: RawRecordData,
+    row: &RecordRow,
+) -> Option<Entry<RawRecordData>> {
+    match Entry::try_new(key, data) {
+        Ok(entry) => Some(entry),
+        Err(error) => {
+            if let error::BibTeXError::InvalidKey(_) = &error {
+                match get_valid_referencing_keys(row) {
+                    Ok(alternative_keys) => {
+                        if !alternative_keys.is_empty() {
+                            error!(
+                                    "{error}\n  Suggested fix: use one of the following equivalent keys: {}",
+                                    alternative_keys.join(", ")
+                                );
+                        } else {
+                            error!("{error}\n  Suggested fix: create an alias which does not contain disallowed characters: {{}}(),=\\#%\"");
+                        }
+                    }
+                    Err(error2) => {
+                        error!(
+                            "{error}\n  Another error occurred while retrieving equivalent keys:"
+                        );
+                        error!("{error2}");
+                    }
+                }
+            } else {
+                error!("{error}");
+            }
+            None
+        }
+    }
+}
+
+/// Get keys equivalent to a given key that are valid BibTeX citation keys.
+fn get_valid_referencing_keys(row: &RecordRow) -> Result<Vec<String>, rusqlite::Error> {
+    let mut referencing_keys = row.apply(row::get_referencing_keys)?;
+    referencing_keys.retain(|k| is_entry_key(k));
+    Ok(referencing_keys)
 }
