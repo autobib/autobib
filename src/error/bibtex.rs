@@ -3,11 +3,15 @@ use thiserror::Error;
 use super::RecordDataError;
 
 #[derive(Error, Debug)]
-pub enum BibTeXError {
+#[error("Invalid BibTeX citation key: {key}")]
+pub struct BibtexKeyError {
+    pub key: String,
+}
+
+#[derive(Error, Debug)]
+pub enum BibtexDataError {
     #[error("Invalid record data: {0}")]
     InvalidData(#[from] RecordDataError),
-    #[error("Invalid BibTeX entry key: {0}")]
-    InvalidKey(String),
     #[error("Entry could not be parsed from BibTeX string.")]
     BibtexParseError,
     #[error("BibTeX string contained multiple entries.")]

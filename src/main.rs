@@ -46,7 +46,7 @@ use self::{
     record::{get_remote_record, GetRemoteRecordResponse, Record, RecordRowResponse},
 };
 pub use self::{
-    entry::Entry,
+    entry::{BibtexKey, Entry},
     http::HttpClient,
     record::{get_record_row, Alias, RecordId, RemoteId},
 };
@@ -608,7 +608,7 @@ fn edit_record_and_update(
         canonical,
     } = record;
 
-    let mut entry = Entry::try_new(key, data)?;
+    let mut entry = Entry::new(key.try_into()?, data);
 
     let editor = Editor::new(EditorConfig { suffix: ".bib" });
 
@@ -793,30 +793,24 @@ fn validate_bibtex_entry(
     data: RawRecordData,
     row: &RecordRow,
 ) -> Option<Entry<RawRecordData>> {
-    match Entry::try_new(key, data) {
-        Ok(entry) => Some(entry),
+    match BibtexKey::try_from(key) {
+        Ok(bibtex_key) => Some(Entry::new(bibtex_key, data)),
         Err(error) => {
-            if let error::BibTeXError::InvalidKey(_) = &error {
-                match get_valid_referencing_keys(row) {
-                    Ok(alternative_keys) => {
-                        if !alternative_keys.is_empty() {
-                            error!(
-                                    "{error}\n  Suggested fix: use one of the following equivalent keys: {}",
-                                    alternative_keys.join(", ")
-                                );
-                        } else {
-                            error!("{error}\n  Suggested fix: create an alias which does not contain disallowed characters: {{}}(),=\\#%\"");
-                        }
-                    }
-                    Err(error2) => {
+            match get_valid_referencing_keys(row) {
+                Ok(alternative_keys) => {
+                    if !alternative_keys.is_empty() {
                         error!(
-                            "{error}\n  Another error occurred while retrieving equivalent keys:"
-                        );
-                        error!("{error2}");
+                        "{error}\n  Suggested fix: use one of the following equivalent keys: {}",
+                        alternative_keys.join(", ")
+                    );
+                    } else {
+                        error!("{error}\n  Suggested fix: create an alias which does not contain disallowed characters: {{}}(),=\\#%\"");
                     }
                 }
-            } else {
-                error!("{error}");
+                Err(error2) => {
+                    error!("{error}\n  Another error occurred while retrieving equivalent keys:");
+                    error!("{error2}");
+                }
             }
             None
         }
