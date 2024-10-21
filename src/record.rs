@@ -31,17 +31,6 @@ pub struct Record {
     pub canonical: RemoteId,
 }
 
-/// The response type of [`get_record`].
-#[derive(Debug)]
-pub enum RecordResponse {
-    /// The record exists.
-    Exists(Record),
-    /// The remote id corresponding to the record does not exist.
-    NullRemoteId(RemoteId),
-    /// The alias does not exist in the database.
-    NullAlias(Alias),
-}
-
 /// The response type of [`get_record_row`].
 ///
 /// If the record exists, the resulting [`RecordRow`] is guaranteed to be valid for the row corresponding
@@ -52,9 +41,6 @@ pub enum RecordResponse {
 /// The initial [`RecordsTableRow`] is passed back to the caller inside the enum. Note that this
 /// transaction *must* be committed in order for database changes to be in effect, regardless if
 /// the record exists or is null, since the null records are also cached inside the database.
-///
-/// This type can be converted to a usual [`RecordResponse`], at which point the internal
-/// transaction is automatically committed.
 #[derive(Debug)]
 pub enum RecordRowResponse<'conn> {
     /// The record exists.
@@ -65,49 +51,16 @@ pub enum RecordRowResponse<'conn> {
     NullAlias(Alias, MissingRecordRow<'conn>),
 }
 
-impl TryFrom<RecordRowResponse<'_>> for RecordResponse {
-    type Error = rusqlite::Error;
-
-    fn try_from(res: RecordRowResponse<'_>) -> Result<Self, Self::Error> {
-        match res {
-            RecordRowResponse::Exists(record, row) => {
-                row.commit()?;
-                Ok(RecordResponse::Exists(record))
-            }
-            RecordRowResponse::NullRemoteId(remote_id, missing) => {
-                missing.commit()?;
-                Ok(RecordResponse::NullRemoteId(remote_id))
-            }
-            RecordRowResponse::NullAlias(alias, missing) => {
-                missing.commit()?;
-                Ok(RecordResponse::NullAlias(alias))
-            }
-        }
-    }
-}
-
-/// Get the [`Record`] associated with a [`RecordId`], or [`None`] if the [`Record`] does not exist.
-///
-/// This is essentially a convenience method for the [`get_record_row`] function, except the
-/// transaction is created and committed internally.
-pub fn get_record(
-    db: &mut RecordDatabase,
-    record_id: RecordId,
-    client: &HttpClient,
-) -> Result<RecordResponse, Error> {
-    Ok(get_record_row(db.initialize_row(&record_id)?, record_id, client)?.try_into()?)
-}
-
 /// Get the [`Record`] associated with a [`RecordId`], except within a [`RecordsTableRow`].
 ///
 /// The [`RecordsTableRow`] is passed back to the caller and must be commited for the record to be
 /// recorded in the database.
 pub fn get_record_row<'conn>(
-    row: RecordsTableRow<'conn>,
+    db: &'conn mut RecordDatabase,
     record_id: RecordId,
     client: &HttpClient,
 ) -> Result<RecordRowResponse<'conn>, Error> {
-    match row {
+    match db.initialize_row(&record_id)? {
         RecordsTableRow::Exists(row) => {
             let RowData {
                 data, canonical, ..
