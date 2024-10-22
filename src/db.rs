@@ -278,13 +278,7 @@ impl RecordDatabase {
         &mut self,
         key: &K,
     ) -> Result<RecordsTableRow, rusqlite::Error> {
-        #[allow(unused_mut)]
-        let mut tx = self.conn.transaction()?;
-
-        #[cfg(debug_assertions)]
-        tx.set_drop_behavior(rusqlite::DropBehavior::Panic);
-
-        RecordsTableRow::from_tx(tx, key)
+        RecordsTableRow::from_tx(self.conn.transaction()?, key)
     }
 
     /// Optimize the database.
