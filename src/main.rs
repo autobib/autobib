@@ -42,11 +42,11 @@ use term::{Confirm, Editor, EditorConfig};
 use self::{
     cite_search::{get_citekeys, SourceFileType},
     db::{
-        row::{self, RecordRow, RecordsTableRow},
+        state::{self, DatabaseState, RecordIdState, RecordRow, RemoteIdState},
         CitationKey, EntryData, RawRecordData, RecordData, RecordDatabase, RowData,
     },
     logger::{suggest, Logger},
-    record::{get_remote_record, GetRemoteRecordResponse, Record, RecordRowResponse},
+    record::{get_remote_response_recursive, Record, RecordRowResponse, RecursiveRemoteResponse},
 };
 pub use self::{
     entry::Entry,
@@ -100,11 +100,14 @@ enum Command {
     /// To delete an alias without deleting the underlying data, use the `autobib alias delete`
     /// command.
     Delete {
-        /// The citation key to delete.
-        citation_key: RecordId,
+        /// The citation keys to delete.
+        citation_keys: Vec<RecordId>,
         /// Delete without prompting.
         #[arg(short, long)]
         force: bool,
+        /// Also delete null records from the null record cache.
+        #[arg(short, long)]
+        delete_null: bool,
     },
     /// Edit existing records.
     ///
@@ -308,7 +311,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                 info!("Creating alias '{alias}' for '{target}'");
                 match get_record_row(&mut record_db, target, &client)? {
                     RecordRowResponse::Exists(_, row) => {
-                        if !row.apply(row::add_alias(&alias))? {
+                        if !row.apply(state::add_alias(&alias))? {
                             error!("Alias already exists: '{alias}'");
                         }
                         row.commit()?;
@@ -317,10 +320,10 @@ fn run_cli(cli: Cli) -> Result<()> {
                         missing.commit()?;
                         error!("Cannot create alias for null record '{remote_id}'");
                     }
-                    RecordRowResponse::NullAlias(alias, missing) => {
-                        missing.commit()?;
+                    RecordRowResponse::NullAlias(alias) => {
                         error!("Cannot create alias for missing alias '{alias}'");
                     }
+                    RecordRowResponse::InvalidRemoteId(record_error) => error!("{record_error}"),
                 }
             }
             AliasCommand::Delete { alias } => {
@@ -346,49 +349,65 @@ fn run_cli(cli: Cli) -> Result<()> {
             unreachable!("Request for completions script should have been handled earlier and the program should have exited then.");
         }
         Command::Delete {
-            citation_key,
+            citation_keys,
             force,
+            delete_null,
         } => {
-            match record_db.initialize_row(&citation_key)? {
-                RecordsTableRow::Exists(row) => {
-                    if !force {
-                        let referencing = row.apply(row::get_referencing_keys)?;
+            for record_id in citation_keys {
+                match record_db.state_from_record_id(record_id)? {
+                    RecordIdState::Existent(remote_id, row) => {
+                        if !force {
+                            let referencing = row.apply(state::get_referencing_keys)?;
 
-                        // there are multiple associated keys, prompt before deletion
-                        if referencing.len() > 1 {
-                            warn!("Deleting this record will delete associated keys:");
-                            for key in referencing.iter() {
-                                eprintln!("  {key}");
-                            }
-                            let prompt = Confirm::new("Delete anyway?", false);
-                            if !prompt.confirm()? {
-                                row.commit()?;
-                                bail!("Aborted deletion");
+                            // there are multiple associated keys, prompt before deletion
+                            if referencing.len() > 1 {
+                                warn!("Deleting this record will delete associated keys:");
+                                for key in referencing.iter() {
+                                    eprintln!("  {key}");
+                                }
+                                let prompt = Confirm::new("Delete anyway?", false);
+                                if !prompt.confirm()? {
+                                    row.commit()?;
+                                    error!("Aborted deletion of record: {remote_id}");
+                                    continue;
+                                }
                             }
                         }
+                        row.delete()?.commit()?;
                     }
-
-                    row.delete()?.commit()?;
-                }
-                RecordsTableRow::Missing(missing) => {
-                    missing.commit()?;
-                    bail!("Citation key '{citation_key}' does not exist.");
+                    RecordIdState::NullRemoteId(remote_id, null_row) => {
+                        if !delete_null {
+                            null_row.commit()?;
+                            error!("Null record found for '{remote_id}'");
+                            suggest!("Use `--delete-null` option to also delete null records.");
+                        } else {
+                            null_row.delete()?.commit()?;
+                        }
+                    }
+                    RecordIdState::UnknownRemoteId(remote_id, missing) => {
+                        missing.commit()?;
+                        error!("Identifier not in database: {remote_id}");
+                    }
+                    RecordIdState::UndefinedAlias(alias) => {
+                        error!("Undefined alias: {alias}");
+                    }
+                    RecordIdState::InvalidRemoteId(err) => error!("{err}"),
                 }
             }
         }
         Command::Edit { citation_key } => {
             match get_record_row(&mut record_db, citation_key, &client)? {
-                record::RecordRowResponse::Exists(record, row) => {
+                RecordRowResponse::Exists(record, row) => {
                     edit_record_and_update(row, record)?;
                 }
-                record::RecordRowResponse::NullRemoteId(remote_id, missing) => {
+                RecordRowResponse::NullRemoteId(remote_id, missing) => {
                     missing.commit()?;
-                    error!("Cannot edit null record '{remote_id}'");
+                    bail!("Cannot edit null record '{remote_id}'");
                 }
-                record::RecordRowResponse::NullAlias(alias, missing) => {
-                    missing.commit()?;
-                    error!("Cannot edit undefined alias '{alias}'");
+                RecordRowResponse::NullAlias(alias) => {
+                    bail!("Cannot edit undefined alias '{alias}'");
                 }
+                RecordRowResponse::InvalidRemoteId(err) => bail!("{err}"),
             }
         }
         Command::Find { fields } => {
@@ -423,19 +442,19 @@ fn run_cli(cli: Cli) -> Result<()> {
         Command::Info {
             citation_key,
             report,
-        } => match record_db.initialize_row(&citation_key)? {
-            RecordsTableRow::Exists(row) => {
+        } => match record_db.state_from_record_id(citation_key)? {
+            RecordIdState::Existent(record_id, row) => {
                 match report {
                     InfoReportType::All => {
-                        let row_data = row.apply(row::get_row_data)?;
+                        let row_data = row.apply(state::get_row_data)?;
                         println!("Canonical: {}", row_data.canonical);
                         println!(
                             "Equivalent references: {}",
-                            row.apply(row::get_referencing_keys)?.iter().join(", ")
+                            row.apply(state::get_referencing_keys)?.iter().join(", ")
                         );
                         println!(
                             "Valid BibTeX? {}",
-                            if is_entry_key(citation_key.name()) {
+                            if is_entry_key(record_id.name()) {
                                 "yes"
                             } else {
                                 "no"
@@ -444,44 +463,67 @@ fn run_cli(cli: Cli) -> Result<()> {
                         println!("Data last modified: {}", row_data.modified);
                     }
                     InfoReportType::Canonical => {
-                        println!("{}", row.apply(row::get_canonical)?);
+                        println!("{}", row.apply(state::get_canonical)?);
                     }
 
                     InfoReportType::Valid => {
-                        if !is_entry_key(citation_key.name()) {
-                            error!("Invalid BibTeX: {}", citation_key.name());
+                        if !is_entry_key(record_id.name()) {
+                            error!("Invalid BibTeX: {}", record_id.name());
                         }
                     }
                     InfoReportType::Equivalent => {
-                        for re in row.apply(row::get_referencing_keys)? {
+                        for re in row.apply(state::get_referencing_keys)? {
                             println!("{re}");
                         }
                     }
                     InfoReportType::Modified => {
-                        println!("{}", row.apply(row::last_modified)?);
+                        println!("{}", row.apply(state::last_modified)?);
                     }
                 };
                 row.commit()?;
             }
-            RecordsTableRow::Missing(missing) => {
+            RecordIdState::NullRemoteId(remote_id, null_row) => match report {
+                InfoReportType::All => {
+                    println!("Null record: {remote_id}");
+                    let null_row_data = null_row.apply(state::get_null_row_data)?;
+                    println!("Last attempted: {}", null_row_data.attempted);
+                }
+                InfoReportType::Canonical => {
+                    bail!("No canonical id for null record '{remote_id}'");
+                }
+                InfoReportType::Valid => {
+                    bail!("Null record '{remote_id}' is automatically invalid");
+                }
+                InfoReportType::Equivalent => {
+                    bail!("No equivalent keys for null record '{remote_id}'");
+                }
+                InfoReportType::Modified => {
+                    println!("{}", null_row.apply(state::get_null_attempted)?);
+                }
+            },
+            RecordIdState::UnknownRemoteId(remote_id, missing) => {
                 missing.commit()?;
-                error!("Citation key '{citation_key}' does not exist.");
+                bail!("Cannot obtain report for record not in database: '{remote_id}'");
             }
+            RecordIdState::UndefinedAlias(alias) => {
+                bail!("Cannot obtain report for undefined alias: '{alias}'");
+            }
+            RecordIdState::InvalidRemoteId(err) => bail!("{err}"),
         },
         Command::Local { id, edit, from } => {
             let remote_id = RemoteId::local(&id);
 
-            let (row, data) = match record_db.initialize_row(&remote_id)? {
-                RecordsTableRow::Exists(row) => {
+            let (row, data, canonical) = match record_db.state_from_remote_id(&remote_id)? {
+                RemoteIdState::Existent(row) => {
                     if from.is_some() {
                         row.commit()?;
-                        bail!("Local record '{id}' already exists")
+                        bail!("Local record '{remote_id}' already exists")
                     } else {
-                        let raw_record_data = row.apply(row::get_row_data)?.data;
-                        (row, raw_record_data)
+                        let raw_record_data = row.apply(state::get_row_data)?.data;
+                        (row, raw_record_data, remote_id)
                     }
                 }
-                RecordsTableRow::Missing(missing) => {
+                RemoteIdState::Unknown(missing) => {
                     let data = if let Some(path) = from {
                         let bibtex = read_to_string(path)?;
                         let entry = Entry::<RawRecordData>::from_str(&bibtex)?;
@@ -491,7 +533,11 @@ fn run_cli(cli: Cli) -> Result<()> {
                     };
 
                     let row = missing.insert_and_ref(&data, &remote_id)?;
-                    (row, data)
+                    (row, data, remote_id)
+                }
+                RemoteIdState::Null(null_row) => {
+                    null_row.commit()?;
+                    bail!("A local record should not be present in the `NullRecords` table.");
                 }
             };
 
@@ -499,9 +545,9 @@ fn run_cli(cli: Cli) -> Result<()> {
                 edit_record_and_update(
                     row,
                     Record {
-                        key: remote_id.to_string(),
+                        key: canonical.to_string(),
                         data,
-                        canonical: remote_id,
+                        canonical,
                     },
                 )?;
             } else {
@@ -560,31 +606,49 @@ fn run_cli(cli: Cli) -> Result<()> {
                 output_entries(out.as_ref(), valid_entries)?;
             }
         }
-        Command::Update { citation_key } => match record_db.initialize_row(&citation_key)? {
-            RecordsTableRow::Exists(row) => {
+        Command::Update { citation_key } => match record_db.state_from_record_id(citation_key)? {
+            RecordIdState::Existent(_, row) => {
                 let RowData {
                     data: existing_raw_data,
                     canonical,
                     ..
-                } = row.apply(row::get_row_data)?;
-                match get_remote_record(canonical, &client)? {
-                    GetRemoteRecordResponse::Exists(new_raw_data) => {
+                } = row.apply(state::get_row_data)?;
+                match get_remote_response_recursive(canonical, &client)? {
+                    RecursiveRemoteResponse::Exists(new_raw_data, _) => {
+                        info!("Updating existing row with new data");
                         let mut new_record = RecordData::from(new_raw_data);
                         new_record.try_merge(existing_raw_data)?;
-                        row.apply(row::update_row_data(&(&new_record).into()))?;
+                        row.apply(state::update_row_data(&(&new_record).into()))?;
                         row.commit()?;
                     }
-                    GetRemoteRecordResponse::Null(remote_id) => {
+                    RecursiveRemoteResponse::Null(remote_id) => {
                         row.commit()?;
                         error!("Remote data for canonical id '{remote_id}' is null");
                     }
                 }
             }
-            RecordsTableRow::Missing(missing) => {
+            RecordIdState::NullRemoteId(remote_id, null_row) => {
+                match get_remote_response_recursive(remote_id, &client)? {
+                    RecursiveRemoteResponse::Exists(new_data, canonical) => {
+                        info!("Found data for previously null row.");
+                        let row = null_row.insert(&new_data, &canonical)?;
+                        row.commit()?;
+                    }
+                    RecursiveRemoteResponse::Null(remote_id) => {
+                        null_row.commit()?;
+                        error!("Remote data for canonical id '{remote_id}' is null");
+                    }
+                }
+            }
+            RecordIdState::UnknownRemoteId(remote_id, missing) => {
                 missing.commit()?;
-                error!("Record corresponding to '{citation_key}' does not exist in database");
+                error!("Record corresponding to '{remote_id}' does not exist in database");
                 suggest!("Use `autobib get` to retrieve record");
             }
+            RecordIdState::UndefinedAlias(alias) => {
+                bail!("Undefined alias: '{alias}");
+            }
+            RecordIdState::InvalidRemoteId(err) => bail!("{err}"),
         },
         Command::Util { util_command } => match util_command {
             UtilCommand::Check => {
@@ -625,12 +689,12 @@ fn edit_record_and_update(
         if new_key != entry.key() {
             let alias = Alias::from_str(new_key.as_ref())?;
             info!("Creating new alias '{alias}' for '{canonical}'");
-            row.apply(row::add_alias(&alias))?;
+            row.apply(state::add_alias(&alias))?;
         }
 
         if new_record_data != entry.data() {
             info!("Updating cached data for '{canonical}'");
-            row.apply(row::update_row_data(new_record_data))?;
+            row.apply(state::update_row_data(new_record_data))?;
         }
 
         entry = new_entry;
@@ -782,11 +846,14 @@ fn retrieve_and_validate_single_entry(
             missing.commit()?;
             Ok(None)
         }
-        RecordRowResponse::NullAlias(alias, missing) => {
+        RecordRowResponse::NullAlias(alias) => {
             if !ignore_null {
                 error!("Undefined alias: {alias}");
             }
-            missing.commit()?;
+            Ok(None)
+        }
+        RecordRowResponse::InvalidRemoteId(err) => {
+            error!("{err}");
             Ok(None)
         }
     }
@@ -825,7 +892,7 @@ fn validate_bibtex_key(key: String, row: &RecordRow) -> Option<EntryKey<String>>
 
 /// Get keys equivalent to a given key that are valid BibTeX citation keys.
 fn get_valid_referencing_keys(row: &RecordRow) -> Result<Vec<String>, rusqlite::Error> {
-    let mut referencing_keys = row.apply(row::get_referencing_keys)?;
+    let mut referencing_keys = row.apply(state::get_referencing_keys)?;
     referencing_keys.retain(|k| is_entry_key(k));
     Ok(referencing_keys)
 }

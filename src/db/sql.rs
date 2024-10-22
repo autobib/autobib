@@ -37,6 +37,8 @@ sql!(update_cached_data, "Update cached record data");
 
 sql!(delete_cached_data, "Delete cached record data");
 
+sql!(delete_cached_null, "Delete cached null data");
+
 sql!(get_cached_null, "Get cached null data");
 
 sql!(set_cached_null, "Set cached null data");
@@ -63,11 +65,15 @@ sql!(rename_citation_key, "Rename a citation key");
 
 sql!(get_record_key, "Get a record key");
 
+sql!(get_null_record_key, "Get a null record key");
+
 sql!(delete_citation_key, "Delete a citation key");
+
+sql!(delete_null_record, "Delete a null record row");
 
 sql!(
     set_citation_key_overwrite,
-    "Set a citation key, replacing if one already exists"
+    "Set a citation key, overwriting if one already exists"
 );
 
 sql!(
@@ -77,5 +83,5 @@ sql!(
 
 sql!(
     set_citation_key_ignore,
-    "Set a citation key, overwriting if one already exists"
+    "Set a citation key, skipping if one already exists"
 );

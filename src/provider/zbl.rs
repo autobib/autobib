@@ -35,7 +35,7 @@ pub fn get_canonical(id: &str, client: &HttpClient) -> Result<Option<RemoteId>, 
     match entry_iter.next() {
         Some(Ok(OnlyEntryKey { entry_key })) => {
             if let Some(identifier) = entry_key.strip_prefix("zbMATH") {
-                Ok(Some(RemoteId::from_parts("zbmath", identifier)))
+                Ok(Some(RemoteId::from_parts("zbmath", identifier)?))
             } else {
                 Err(ProviderError::Unexpected(
                     "zbMATH BibTeX record has unexpected citation key format!".to_string(),

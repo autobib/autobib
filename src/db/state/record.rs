@@ -1,16 +1,53 @@
 use chrono::{DateTime, Local};
 use log::debug;
+use rusqlite::Transaction;
 
-use super::{DatabaseTransaction, MissingRecordRow, RecordRow, RowData};
+use super::{transaction::tx_impl, DatabaseState, MissingRow};
 use crate::{
-    db::{flatten_constraint_violation, sql, Constraint},
-    Alias, CitationKey, RawRecordData, RemoteId,
+    db::{flatten_constraint_violation, sql, CitationKey, Constraint, RowData, RowId},
+    Alias, RawRecordData, RemoteId,
 };
+
+/// The database state when:
+/// 1. There is no row in `Records`.
+/// 2. There is a row in `NullRecords`.
+///
+/// The `row_id` is the corresponding rowid in the `Records` table.
+#[derive(Debug)]
+pub struct RecordRow<'conn> {
+    tx: Transaction<'conn>,
+    row_id: RowId,
+}
+
+tx_impl!(RecordRow);
+
+impl<'conn> RecordRow<'conn> {
+    /// Initialize a new [`RecordRow`].
+    pub(super) fn new(tx: Transaction<'conn>, row_id: RowId) -> Self {
+        Self { tx, row_id }
+    }
+
+    /// Get the internal row id.
+    #[inline]
+    fn row_id(&self) -> RowId {
+        self.row_id
+    }
+
+    /// Delete the row.
+    pub fn delete(self) -> Result<MissingRow<'conn>, rusqlite::Error> {
+        debug!("Deleting data for row '{}'", self.row_id);
+        self.apply(save_row_to_changelog)?;
+        self.tx
+            .prepare(sql::delete_cached_data())?
+            .execute((self.row_id,))?;
+        Ok(MissingRow::new(self.tx))
+    }
+}
 
 /// Get every key in the `CitationKeys` table which references the [`RecordRow`].
 pub fn get_referencing_keys(row: &RecordRow) -> Result<Vec<String>, rusqlite::Error> {
     debug!("Getting referencing keys for '{}'.", row.row_id());
-    let mut selector = row.prepare(sql::get_all_referencing_citation_keys())?;
+    let mut selector = row.tx.prepare(sql::get_all_referencing_citation_keys())?;
     let rows = selector.query_map((row.row_id(),), |row| row.get(0))?;
     let mut referencing = Vec::with_capacity(1);
     for name_res in rows {
@@ -26,10 +63,10 @@ pub fn get_canonical(row: &RecordRow) -> Result<RemoteId, rusqlite::Error> {
     Ok(canonical)
 }
 
-/// Get the [`RowData`] corresponding to a [`RecordRow`].
+/// Get last modified time of a [`RecordRow`].
 #[inline]
 pub fn last_modified(row: &RecordRow) -> Result<DateTime<Local>, rusqlite::Error> {
-    debug!("Getting data for row '{}'.", row.row_id());
+    debug!("Getting last modified time for row '{}'.", row.row_id());
     let RowData { modified, .. } = get_row_data(row)?;
     Ok(modified)
 }
@@ -38,7 +75,7 @@ pub fn last_modified(row: &RecordRow) -> Result<DateTime<Local>, rusqlite::Error
 #[inline]
 pub fn get_row_data(row: &RecordRow) -> Result<RowData, rusqlite::Error> {
     debug!("Getting data for row '{}'.", row.row_id());
-    let mut record_selector = row.prepare_cached(sql::get_cached_data())?;
+    let mut record_selector = row.tx.prepare_cached(sql::get_cached_data())?;
     let mut record_rows = record_selector.query([row.row_id()])?;
     record_rows
         .next()?
@@ -49,7 +86,8 @@ pub fn get_row_data(row: &RecordRow) -> Result<RowData, rusqlite::Error> {
 /// Copy the [`RowData`] of a row corresponding to a [`RecordRow`] to the `Changelog` table.
 pub fn save_row_to_changelog(row: &RecordRow) -> Result<(), rusqlite::Error> {
     debug!("Saving row '{}' to Changelog table", row.row_id());
-    row.prepare_cached(sql::copy_to_changelog())?
+    row.tx
+        .prepare_cached(sql::copy_to_changelog())?
         .execute((row.row_id(),))?;
     Ok(())
 }
@@ -61,48 +99,8 @@ pub fn update_row_data(
     move |row| {
         debug!("Updating row data for row '{}'", row.row_id());
         save_row_to_changelog(row)?;
-        let mut updater = row.prepare(sql::update_cached_data())?;
+        let mut updater = row.tx.prepare(sql::update_cached_data())?;
         updater.execute((row.row_id(), &Local::now(), data.to_byte_repr()))?;
-        Ok(())
-    }
-}
-
-/// Response type from the `NullRecords` table as returned by [`check_null`].
-pub enum NullRecordsResponse {
-    /// Null was found; last attempted.
-    Found(DateTime<Local>),
-    /// Null was not found.
-    NotFound,
-}
-
-/// Check if a given [`RemoteId`] corresponds to a null record.
-pub fn check_null(
-    remote_id: &RemoteId,
-) -> impl FnOnce(&MissingRecordRow) -> Result<NullRecordsResponse, rusqlite::Error> + '_ {
-    move |missing| {
-        debug!("Checking null row for '{remote_id}'");
-        let mut null_selector = missing.prepare_cached(sql::get_cached_null())?;
-        let mut null_rows = null_selector.query([remote_id.name()])?;
-
-        match null_rows.next()? {
-            Some(row) => Ok(NullRecordsResponse::Found(row.get("attempted")?)),
-            None => Ok(NullRecordsResponse::NotFound),
-        }
-    }
-}
-
-/// Insert [`RemoteId`]s into the `NullRecords` table.
-pub fn set_null<'a, R: Iterator<Item = &'a RemoteId>>(
-    remote_id_iter: R,
-) -> impl FnOnce(&MissingRecordRow) -> Result<(), rusqlite::Error> {
-    move |missing| {
-        let mut setter = missing.prepare_cached(sql::set_cached_null())?;
-        let cache_time = Local::now();
-        for remote_id in remote_id_iter {
-            debug!("Setting null row for '{remote_id}'");
-            setter.execute((remote_id.name(), cache_time))?;
-        }
-
         Ok(())
     }
 }
@@ -151,7 +149,7 @@ fn add_refs_impl<'a, K: CitationKey + 'a, R: Iterator<Item = &'a K>>(
                 CitationKeyInsertMode::IgnoreIfExists => sql::set_citation_key_ignore(),
                 CitationKeyInsertMode::FailIfExists => sql::set_citation_key_fail(),
             };
-            let mut key_writer = row.prepare(stmt)?;
+            let mut key_writer = row.tx.prepare(stmt)?;
             match flatten_constraint_violation(
                 key_writer.execute((remote_id.name(), row.row_id())),
             )? {
