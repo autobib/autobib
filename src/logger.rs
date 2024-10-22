@@ -10,6 +10,18 @@ use std::{
 
 static HAS_ERROR: AtomicBool = AtomicBool::new(false);
 
+macro_rules! suggest {
+    () => {
+        eprintln!()
+    };
+    ($($arg:tt)*) => {
+        eprint!("{}", ::crossterm::style::Stylize::blue("HINT "));
+        eprintln!($($arg)*);
+    };
+}
+
+pub(crate) use suggest;
+
 pub struct Logger {}
 
 pub fn set_failed() {

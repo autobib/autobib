@@ -438,9 +438,9 @@ fn update() -> Result<()> {
 
     let mut cmd = s.cmd()?;
     cmd.args(["update", "zbmath:06346461"]);
-    cmd.assert().failure().stderr(predicate::str::contains(
-        "Citation key not present in database",
-    ));
+    cmd.assert()
+        .failure()
+        .stderr(predicate::str::contains("does not exist in database"));
 
     s.close()
 }
