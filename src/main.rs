@@ -45,7 +45,7 @@ use self::{
         row::{self, RecordRow, RecordsTableRow},
         CitationKey, EntryData, RawRecordData, RecordData, RecordDatabase, RowData,
     },
-    logger::Logger,
+    logger::{suggest, Logger},
     record::{get_remote_record, GetRemoteRecordResponse, Record, RecordRowResponse},
 };
 pub use self::{
@@ -582,7 +582,8 @@ fn run_cli(cli: Cli) -> Result<()> {
             }
             RecordsTableRow::Missing(missing) => {
                 missing.commit()?;
-                bail!("Citation key not present in database: '{citation_key}'");
+                error!("Record corresponding to '{citation_key}' does not exist in database");
+                suggest!("Use `autobib get` to retrieve record");
             }
         },
         Command::Util { util_command } => match util_command {
@@ -799,13 +800,14 @@ fn validate_bibtex_key(key: String, row: &RecordRow) -> Option<EntryKey<String>>
             match get_valid_referencing_keys(row) {
                 Ok(alternative_keys) => {
                     if !alternative_keys.is_empty() {
-                        error!(
-                            "{}\n  Suggested fix: use one of the following equivalent keys: {}",
-                            parse_result.error,
+                        error!("{}", parse_result.error,);
+                        suggest!(
+                            "Use one of the following equivalent keys: {}",
                             alternative_keys.join(", ")
                         );
                     } else {
-                        error!("{}\n  Suggested fix: create an alias which does not contain disallowed characters: {{}}(),=\\#%\"", parse_result.error);
+                        error!("{}", parse_result.error);
+                        suggest!("Create an alias which does not contain disallowed characters: {{}}(),=\\#%\"");
                     }
                 }
                 Err(error2) => {
