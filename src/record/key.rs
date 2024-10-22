@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     error::{RecordError, RecordErrorKind},
-    provider::lookup_validator,
+    provider::{validate_provider_sub_id, ValidationOutcome},
     CitationKey,
 };
 
@@ -125,38 +125,72 @@ pub struct RemoteId {
 }
 
 impl RemoteId {
+    /// Construct a new [`RemoteId`], assuming that the struct has been validated.
+    #[inline]
+    fn new_unchecked(full_id: String, provider_len: usize) -> Self {
+        Self {
+            full_id,
+            provider_len,
+        }
+    }
+
+    /// Construct a new [`RemoteId`] from the given full_id.
+    ///
+    /// # Safety
+    /// The caller is required to guarantee that:
+    /// 1. The `full_id` is not an [`Alias`]; i.e. it contains a ':' symbol.
+    /// 2. [`validate_provider_sub_id`] is valid
+    #[inline]
+    pub(crate) unsafe fn from_string_unchecked(full_id: String) -> Self {
+        let provider_len = full_id.find(':').unwrap();
+        Self::new_unchecked(full_id, provider_len)
+    }
+
+    /// Construct a new [`RemoteId`], checking that the `provider` and `sub_id` components are
+    /// valid.
+    pub fn new(full_id: String, provider_len: usize) -> Result<Self, RecordError> {
+        let remote_id = Self::new_unchecked(full_id, provider_len);
+        match validate_provider_sub_id(remote_id.provider(), remote_id.sub_id()) {
+            ValidationOutcome::Valid => Ok(remote_id),
+            ValidationOutcome::InvalidSubId => Err(RecordError {
+                input: remote_id.into(),
+                kind: RecordErrorKind::InvalidSubId,
+            }),
+            ValidationOutcome::InvalidProvider => Err(RecordError {
+                input: remote_id.into(),
+                kind: RecordErrorKind::InvalidSubId,
+            }),
+        }
+    }
+
     /// Get the `provider` part of the remote id.
+    #[inline]
     pub fn provider(&self) -> &str {
         &self.full_id[..self.provider_len]
     }
 
     /// Get the `sub_id` part of the remote id, after the separator.
+    #[inline]
     pub fn sub_id(&self) -> &str {
         &self.full_id[self.provider_len + 1..]
     }
 
     /// Construct a [`RemoteId`] from the provider and sub_id components.
-    pub fn from_parts(provider: &str, sub_id: &str) -> Self {
+    pub fn from_parts(provider: &str, sub_id: &str) -> Result<Self, RecordError> {
         let mut full_id = provider.to_owned();
         full_id.push(':');
         full_id.push_str(sub_id);
-        Self {
-            full_id,
-            provider_len: provider.len(),
-        }
+        Self::new(full_id, provider.len())
     }
 
     /// Create a new `local` [`RecordId`].
     pub fn local(sub_id: &str) -> Self {
-        Self::from_parts("local", sub_id)
-    }
-
-    pub(crate) fn new_unchecked(full_id: String) -> Self {
-        let provider_len = full_id.find(':').unwrap();
-        Self {
-            full_id,
-            provider_len,
-        }
+        let mut full_id = String::with_capacity(9);
+        let provider_len = 5;
+        full_id.push_str("local:");
+        full_id.push_str(sub_id);
+        // SAFETY: every `full_id` is valid for the `local:` provider.
+        Self::new_unchecked(full_id, provider_len)
     }
 }
 
@@ -184,38 +218,22 @@ impl TryFrom<RecordId> for RemoteId {
     fn try_from(record_id: RecordId) -> Result<Self, Self::Error> {
         match record_id.provider_len {
             Some(provider_len) => {
-                let remote_id = Self {
-                    full_id: record_id.full_id,
-                    provider_len,
-                };
-
-                if remote_id.provider().is_empty() {
+                if provider_len == 0 {
                     Err(RecordError {
-                        input: remote_id.name().into(),
+                        input: record_id.full_id,
                         kind: RecordErrorKind::EmptyProvider,
                     })
-                } else if remote_id.sub_id().is_empty() {
+                } else if provider_len == record_id.full_id.len() + 1 {
                     Err(RecordError {
-                        input: remote_id.name().into(),
+                        input: record_id.full_id,
                         kind: RecordErrorKind::EmptySubId,
                     })
                 } else {
-                    // perform cheap validation based on the provider
-                    match lookup_validator(remote_id.provider()) {
-                        Some(validator) if validator(remote_id.sub_id()) => Ok(remote_id),
-                        Some(_) => Err(RecordError {
-                            input: remote_id.full_id,
-                            kind: RecordErrorKind::InvalidSubId,
-                        }),
-                        None => Err(RecordError {
-                            input: remote_id.full_id,
-                            kind: RecordErrorKind::InvalidProvider,
-                        }),
-                    }
+                    RemoteId::new(record_id.full_id, provider_len)
                 }
             }
             None => Err(RecordError {
-                input: record_id.name().into(),
+                input: record_id.full_id,
                 kind: RecordErrorKind::RecordIdIsNotAlias,
             }),
         }

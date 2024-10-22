@@ -40,7 +40,7 @@ pub fn get_canonical(id: &str, client: &HttpClient) -> Result<Option<RemoteId>, 
 
     match &identifiers[..] {
         [] => Ok(None),
-        [identifier] => Ok(Some(RemoteId::from_parts("zbmath", identifier))),
+        [identifier] => Ok(Some(RemoteId::from_parts("zbmath", identifier)?)),
         _ => Err(ProviderError::Unexpected(format!(
             "Request to '{url}' returned multiple identifiers: {}",
             identifiers.join(", ")

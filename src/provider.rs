@@ -18,8 +18,7 @@ use serde::Deserialize;
 use crate::{
     db::RecordData,
     error::{ProviderError, RecordDataError},
-    record::RemoteId,
-    HttpClient,
+    HttpClient, RemoteId,
 };
 
 /// A resolver, which converts a `sub_id` into [`RecordData`].
@@ -29,10 +28,11 @@ pub type Resolver = fn(&str, &HttpClient) -> Result<Option<RecordData>, Provider
 pub type Referrer = fn(&str, &HttpClient) -> Result<Option<RemoteId>, ProviderError>;
 
 /// A validator, which checks that a `sub_id` is valid.
-pub type Validator = fn(&str) -> bool;
+type Validator = fn(&str) -> bool;
 
 /// Map the `provider` part of a [`RemoteId`] to a [`Resolver`] or [`Referrer`].
-pub(crate) fn lookup_provider(provider: &str) -> Either<Resolver, Referrer> {
+#[inline]
+fn lookup_provider(provider: &str) -> Either<Resolver, Referrer> {
     match provider {
         "arxiv" => Either::Left(arxiv::get_record),
         "doi" => Either::Left(doi::get_record),
@@ -41,13 +41,13 @@ pub(crate) fn lookup_provider(provider: &str) -> Either<Resolver, Referrer> {
         "mr" => Either::Left(mr::get_record),
         "zbmath" => Either::Left(zbmath::get_record),
         "zbl" => Either::Right(zbl::get_canonical),
-        // SAFETY: An invalid provider should have been caught by a call to lookup_validator
-        _ => panic!("Invalid provider '{provider}'!"),
+        _ => unreachable!("Invalid provider '{provider}: an invalid provider should have been caught by a call to `lookup_validator`'!"),
     }
 }
 
 /// Validate a [`RemoteId`].
-pub(crate) fn lookup_validator(provider: &str) -> Option<Validator> {
+#[inline]
+fn lookup_validator(provider: &str) -> Option<Validator> {
     match provider {
         "arxiv" => Some(arxiv::is_valid_id),
         "doi" => Some(doi::is_valid_id),
@@ -57,6 +57,59 @@ pub(crate) fn lookup_validator(provider: &str) -> Option<Validator> {
         "zbmath" => Some(zbmath::is_valid_id),
         "zbl" => Some(zbl::is_valid_id),
         _ => None,
+    }
+}
+
+/// The outcome of checking that a provider and sub_id are valid.
+pub enum ValidationOutcome {
+    /// The provider and sub_id are both valid.
+    Valid,
+    /// The provider is invalid.
+    InvalidProvider,
+    /// The sub_id is invalid for the given provider.
+    InvalidSubId,
+}
+
+/// Check that a given provider and sub_id are valid.
+#[inline]
+pub fn validate_provider_sub_id(provider: &str, sub_id: &str) -> ValidationOutcome {
+    match lookup_validator(provider) {
+        Some(validator) => {
+            if validator(sub_id) {
+                ValidationOutcome::Valid
+            } else {
+                ValidationOutcome::InvalidSubId
+            }
+        }
+        None => ValidationOutcome::InvalidProvider,
+    }
+}
+
+/// The outcome of resolving a provider and making the remote call
+pub enum RemoteResponse {
+    /// The provider was a [`Resolver`] and returned [`RecordData`].
+    Data(RecordData),
+    /// The provider was a [`Referrer`] and returned a new [`RemoteId`].
+    Reference(RemoteId),
+    /// The provider returned `None`.
+    Null,
+}
+
+/// Obtain the [`RemoteResponse`] by looking up the [`RemoteId`] using the provided `client`.
+#[inline]
+pub fn get_remote_response(
+    client: &HttpClient,
+    remote_id: &RemoteId,
+) -> Result<RemoteResponse, ProviderError> {
+    match lookup_provider(remote_id.provider()) {
+        Either::Left(resolver) => match resolver(remote_id.sub_id(), client)? {
+            Some(data) => Ok(RemoteResponse::Data(data)),
+            None => Ok(RemoteResponse::Null),
+        },
+        Either::Right(referrer) => match referrer(remote_id.sub_id(), client)? {
+            Some(new_remote_id) => Ok(RemoteResponse::Reference(new_remote_id)),
+            None => Ok(RemoteResponse::Null),
+        },
     }
 }
 

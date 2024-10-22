@@ -18,8 +18,6 @@ pub use self::{
 
 #[derive(Error, Debug)]
 pub enum Error {
-    #[error(transparent)]
-    BadRemoteId(#[from] RecordError),
     #[error("File type '{0}' not supported")]
     UnsupportedFileType(String),
     #[error("File type required")]

@@ -321,7 +321,7 @@ fn delete() -> Result<()> {
     cmd.args(["get", "local:first"]);
     cmd.assert()
         .failure()
-        .stderr(predicate::str::contains("Null record"));
+        .stderr(predicate::str::contains("Undefined local record"));
 
     s.close()
 }
@@ -371,9 +371,9 @@ fn info() -> Result<()> {
 
     let mut cmd = s.cmd()?;
     cmd.args(["info", "zbl:1337.28015", "canonical"]);
-    cmd.assert()
-        .failure()
-        .stderr(predicate::str::contains("does not exist"));
+    cmd.assert().failure().stderr(predicate::str::contains(
+        "Cannot obtain report for record not in database",
+    ));
 
     let mut cmd = s.cmd()?;
     cmd.args(["get", "zbl:1337.28015"]);

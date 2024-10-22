@@ -61,8 +61,8 @@
 //! # assert_eq!(expected_byte_repr, byte_repr);
 //! ```
 mod data;
-pub mod row;
 mod sql;
+pub mod state;
 mod validate;
 
 use std::path::Path;
@@ -72,15 +72,13 @@ use log::debug;
 use nucleo_picker::nucleo::{Injector, Utf32String};
 use rusqlite::{types::ValueRef, Connection, OptionalExtension, Transaction};
 
+pub use self::data::{binary_format_version, EntryData, RawRecordData, RecordData, DATA_MAX_BYTES};
 pub(crate) use self::data::{EntryTypeHeader, KeyHeader, ValueHeader};
+use self::state::{RecordIdState, RemoteIdState};
 use self::validate::DatabaseValidator;
-pub use self::{
-    data::{binary_format_version, EntryData, RawRecordData, RecordData, DATA_MAX_BYTES},
-    row::{MissingRecordRow, RecordRow, RecordsTableRow},
-};
 use crate::{
     error::{DatabaseError, ValidationError},
-    record::{Alias, RemoteId},
+    Alias, RecordId, RemoteId,
 };
 
 /// The current version of the database table schema.
@@ -88,22 +86,45 @@ pub const fn schema_version() -> u8 {
     0
 }
 
-/// An alias for the internal row ID used by SQLite for the `Records` table. This is the `key`
-/// column in the table schema defined in [`init_records`](sql::init_records).
+/// An alias for the internal row ID used by SQLite for the `Records` and the `NullRecords` table. This is
+/// the `key` column in the table schema defined in [`init_records`](sql::init_records), and the
+/// implicit `rowid` column in the table schema defined in [`init_null_records`](sql::init_null_records)
 type RowId = i64;
 
-/// Determine the [`RowId`] corresponding to a [`CitationKey`].
-///
-/// This is performed within a transaction since typically you want to use the resulting row
-/// identifier for subsequent queries (e.g. to retrieve the corresponding record), in which
-/// case you want to guarantee that the corresponding row still exists.
-pub fn get_row_id<K: CitationKey>(
+/// Determine the [`RowId`] in the `Records` table corresponding to a [`CitationKey`].
+fn get_row_id<K: CitationKey>(
     tx: &Transaction,
     record_id: &K,
 ) -> Result<Option<RowId>, rusqlite::Error> {
     tx.prepare_cached(sql::get_record_key())?
         .query_row([record_id.name()], |row| row.get("record_key"))
         .optional()
+}
+
+/// Determine the [`RowId`] in the `NullRecords` table corresponding to a [`CitationKey`].
+pub fn get_null_row_id(
+    tx: &Transaction,
+    remote_id: &RemoteId,
+) -> Result<Option<RowId>, rusqlite::Error> {
+    tx.prepare_cached(sql::get_null_record_key())?
+        .query_row([remote_id.name()], |row| row.get("rowid"))
+        .optional()
+}
+
+/// The contents of a row in the `Records` table.
+pub struct NullRowData {
+    /// The last time the row was modified.
+    pub attempted: DateTime<Local>,
+}
+
+impl TryFrom<&rusqlite::Row<'_>> for NullRowData {
+    type Error = rusqlite::Error;
+
+    fn try_from(row: &rusqlite::Row<'_>) -> Result<Self, Self::Error> {
+        Ok(Self {
+            attempted: row.get("attempted")?,
+        })
+    }
 }
 
 /// The contents of a row in the `Records` table.
@@ -120,10 +141,10 @@ impl TryFrom<&rusqlite::Row<'_>> for RowData {
     type Error = rusqlite::Error;
 
     fn try_from(row: &rusqlite::Row<'_>) -> Result<Self, Self::Error> {
-        Ok(RowData {
+        Ok(Self {
             // SAFETY: we assume that the underlying database is correctly formatted
             data: unsafe { RawRecordData::from_byte_repr_unchecked(row.get("data")?) },
-            canonical: RemoteId::new_unchecked(row.get("record_id")?),
+            canonical: unsafe { RemoteId::from_string_unchecked(row.get("record_id")?) },
             modified: row.get("modified")?,
         })
     }
@@ -272,13 +293,22 @@ impl RecordDatabase {
         }
     }
 
-    /// Get the [`RecordsTableRow`] associated with a [`CitationKey`].
+    /// Get the [`RecordIdState`] associated with a [`RecordId`].
     #[inline]
-    pub fn initialize_row<K: CitationKey>(
+    pub fn state_from_record_id(
         &mut self,
-        key: &K,
-    ) -> Result<RecordsTableRow, rusqlite::Error> {
-        RecordsTableRow::from_tx(self.conn.transaction()?, key)
+        record_id: RecordId,
+    ) -> Result<RecordIdState, rusqlite::Error> {
+        RecordIdState::determine(self.conn.transaction()?, record_id)
+    }
+
+    /// Get the [`RemoteIdState`] associated with a [`RemoteId`].
+    #[inline]
+    pub fn state_from_remote_id(
+        &mut self,
+        remote_id: &RemoteId,
+    ) -> Result<RemoteIdState, rusqlite::Error> {
+        RemoteIdState::determine(self.conn.transaction()?, remote_id)
     }
 
     /// Optimize the database.

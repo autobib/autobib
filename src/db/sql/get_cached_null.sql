@@ -1,1 +1,1 @@
-SELECT attempted FROM NullRecords WHERE record_id = ?1
+SELECT attempted FROM NullRecords WHERE rowid = ?1
