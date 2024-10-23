@@ -36,6 +36,11 @@ jobs:
     - uses: actions/checkout@v4
     - uses: dtolnay/rust-toolchain@stable
     - uses: Swatinem/rust-cache@v2
+    - name: Check sorted
+      run: sort -C ${{ env.REMOTES_FILE }}
+    - name: Check no duplicates
+      shell: bash
+      run: test "$(cat ${{ env.REMOTES_FILE }} | uniq -d | wc -w)" -eq 0
     - run: cargo build
     - name: Install mitmproxy
       uses: ./.github/actions/install-mitmproxy
