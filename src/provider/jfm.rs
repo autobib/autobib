@@ -1,14 +1,15 @@
-use lazy_static::lazy_static;
+use std::sync::LazyLock;
+
 use regex::{bytes::Regex as BytesRegex, Regex};
 use reqwest::StatusCode;
 use serde::Deserialize;
 
 use super::{HttpClient, ProviderError, RemoteId};
 
-lazy_static! {
-    static ref JFM_IDENTIFIER_RE: Regex = Regex::new(r"^[0-9]{2}\.[0-9]{4}\.[0-9]{2}$").unwrap();
-    static ref BIBTEX_LINK_RE: BytesRegex = BytesRegex::new(r"/bibtex/([0-9]{8})\.bib").unwrap();
-}
+static JFM_IDENTIFIER_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[0-9]{2}\.[0-9]{4}\.[0-9]{2}$").unwrap());
+static BIBTEX_LINK_RE: LazyLock<BytesRegex> =
+    LazyLock::new(|| BytesRegex::new(r"/bibtex/([0-9]{8})\.bib").unwrap());
 
 pub fn is_valid_id(id: &str) -> bool {
     JFM_IDENTIFIER_RE.is_match(id)

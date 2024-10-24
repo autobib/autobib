@@ -1,14 +1,13 @@
-use lazy_static::lazy_static;
+use std::sync::LazyLock;
+
 use regex::Regex;
 use reqwest::StatusCode;
 use serde_bibtex::de::Deserializer;
 
 use super::{HttpClient, ProviderBibtex, ProviderError, RecordData};
 
-lazy_static! {
-    static ref DOI_IDENTIFIER_RE: Regex =
-        Regex::new(r"^(10.\d{4,9}/[-._;()/:a-zA-Z0-9]+)|(10.1002/[^\s]+)$").unwrap();
-}
+static DOI_IDENTIFIER_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(10.\d{4,9}/[-._;()/:a-zA-Z0-9]+)|(10.1002/[^\s]+)$").unwrap());
 
 pub fn is_valid_id(id: &str) -> bool {
     DOI_IDENTIFIER_RE.is_match(id)

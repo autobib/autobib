@@ -1,13 +1,12 @@
-use lazy_static::lazy_static;
+use std::sync::LazyLock;
+
 use regex::Regex;
 use reqwest::StatusCode;
 use serde_bibtex::de::Deserializer;
 
 use super::{HttpClient, ProviderBibtex, ProviderError, RecordData};
 
-lazy_static! {
-    static ref ZBMATH_IDENTIFIER_RE: Regex = Regex::new(r"^[0-9]{8}$").unwrap();
-}
+static ZBMATH_IDENTIFIER_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[0-9]{8}$").unwrap());
 
 pub fn is_valid_id(id: &str) -> bool {
     ZBMATH_IDENTIFIER_RE.is_match(id)
