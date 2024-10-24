@@ -1,6 +1,7 @@
 mod key;
 
 use log::info;
+use nonempty::NonEmpty;
 
 pub use self::key::{Alias, RecordId, RemoteId};
 use crate::{
@@ -15,8 +16,6 @@ use crate::{
     provider::{get_remote_response, RemoteResponse},
     HttpClient,
 };
-
-use private::NonEmptyStack;
 
 /// The fundamental record type.
 #[derive(Debug)]
@@ -86,6 +85,25 @@ pub fn get_record_row<'conn>(
     }
 }
 
+/// Destructure a [`NonEmpty`] and return the last element.
+#[inline]
+fn into_last<T>(ne: NonEmpty<T>) -> T {
+    let NonEmpty { head, mut tail } = ne;
+    tail.pop().unwrap_or(head)
+}
+
+/// Destructure a [`NonEmpty`] and return the first and last elements. If the [`NonEmpty`] has
+/// length exactly 1, then this will clone the unique element.
+#[inline]
+fn into_ends<T: Clone>(ne: NonEmpty<T>) -> (T, T) {
+    let NonEmpty { head, mut tail } = ne;
+    // destructure to avoid borrow issues
+    match tail.pop() {
+        Some(last) => (head, last),
+        None => (head.clone(), head),
+    }
+}
+
 /// Resolve remote records inside a loop within a transaction.
 ///
 /// At each intermediate stage, attempt to read any data possible from the database
@@ -97,19 +115,22 @@ fn get_record_row_recursive<'conn>(
     client: &HttpClient,
 ) -> Result<RecordRowResponse<'conn>, Error> {
     info!("Resolving remote record for '{remote_id}'");
-    let mut history = NonEmptyStack::new(remote_id);
+    let mut history = NonEmpty::singleton(remote_id);
     loop {
-        missing = match get_remote_response(client, history.peek())? {
+        missing = match get_remote_response(client, history.last())? {
             RemoteResponse::Data(data) => {
                 let raw_record_data = (&data).into();
-                let row = missing.insert(&raw_record_data, history.peek())?;
-                row.apply(add_refs(history.descend()))?;
-                let (bottom, top) = history.into_ends();
+                let row = missing.insert(&raw_record_data, history.last())?;
+                row.apply(add_refs(history.iter()))?;
+
+                // extract bottom and top simultaneously
+                let (first, last) = into_ends(history);
+
                 break Ok(RecordRowResponse::Exists(
                     Record {
-                        key: bottom.into(),
+                        key: first.into(),
                         data: RawRecordData::from(&data),
-                        canonical: top,
+                        canonical: last,
                     },
                     row,
                 ));
@@ -118,13 +139,13 @@ fn get_record_row_recursive<'conn>(
                 RemoteIdState::Existent(row) => {
                     // not necessary to insert `new_remote_id` since we just saw that it
                     // is present in the database
-                    row.apply(add_refs(history.descend()))?;
+                    row.apply(add_refs(history.iter()))?;
                     let RowData {
                         data, canonical, ..
                     } = row.apply(get_row_data)?;
                     break Ok(RecordRowResponse::Exists(
                         Record {
-                            key: history.into_bottom().into(),
+                            key: history.head.into(),
                             data,
                             canonical,
                         },
@@ -144,13 +165,13 @@ fn get_record_row_recursive<'conn>(
                 }
             },
             RemoteResponse::Null => {
-                if history.is_singleton() {
-                    let remote_id = history.into_top();
+                if history.tail.is_empty() {
+                    let remote_id = into_last(history);
                     let null_row = missing.set_null(&remote_id)?;
                     break Ok(RecordRowResponse::NullRemoteId(remote_id, null_row));
                 } else {
                     break Err(ProviderError::UnexpectedNullRemoteFromProvider(
-                        history.into_top().into(),
+                        into_last(history).into(),
                     )
                     .into());
                 }
@@ -176,101 +197,19 @@ pub fn get_remote_response_recursive(
     client: &HttpClient,
 ) -> Result<RecursiveRemoteResponse, Error> {
     info!("Resolving remote record for '{remote_id}'");
-    let mut history = NonEmptyStack::new(remote_id);
+    let mut history = NonEmpty::singleton(remote_id);
     loop {
-        let top = history.peek();
+        let last = history.last();
 
-        match get_remote_response(client, top)? {
+        match get_remote_response(client, last)? {
             RemoteResponse::Data(data) => {
-                break Ok(RecursiveRemoteResponse::Exists(data, history.into_top()));
+                break Ok(RecursiveRemoteResponse::Exists(data, into_last(history)));
             }
             RemoteResponse::Reference(new_remote_id) => {
                 history.push(new_remote_id);
             }
             RemoteResponse::Null => {
-                break Ok(RecursiveRemoteResponse::Null(history.into_bottom()));
-            }
-        }
-    }
-}
-
-mod private {
-    /// A non-empty stack implementation.
-    #[derive(Debug)]
-    pub struct NonEmptyStack<T>(Vec<T>);
-
-    impl<T> NonEmptyStack<T> {
-        /// Construct a new [`NonEmptyStack`] with an initial element.
-        #[inline]
-        pub fn new(first: T) -> Self {
-            Self(vec![first])
-        }
-
-        /// Check if the stack consists of a single element
-        #[inline]
-        pub fn is_singleton(&self) -> bool {
-            self.0.len() == 1
-        }
-
-        /// Iterate from top to bottom
-        #[inline]
-        pub fn descend(&self) -> impl Iterator<Item = &T> {
-            self.0.iter().rev()
-        }
-
-        /// Push a new element.
-        #[inline]
-        pub fn push(&mut self, remote_id: T) {
-            self.0.push(remote_id);
-        }
-
-        /// Get the top element.
-        #[inline]
-        pub fn peek(&self) -> &T {
-            // SAFETY: the internal vec is always non-empty
-            unsafe { self.0.last().unwrap_unchecked() }
-        }
-
-        /// Drop the stack, extracting the bottom element.
-        #[inline]
-        pub fn into_bottom(mut self) -> T {
-            // SAFETY: the internal vec is always non-empty
-            unsafe { self.0.drain(..).next().unwrap_unchecked() }
-        }
-
-        /// Drop the stack, extracting the top element.
-        #[inline]
-        pub fn into_top(self) -> T {
-            self.split_top().1
-        }
-
-        /// Drop the stack, extracting the top element.
-        #[inline]
-        pub fn split_top(mut self) -> (Vec<T>, T) {
-            // SAFETY: the internal vec is always non-empty
-            let top = unsafe { self.0.pop().unwrap_unchecked() };
-            (self.0, top)
-        }
-    }
-
-    impl<T: Clone> NonEmptyStack<T> {
-        /// Drop the stack, extracting the top and bottom elements.
-        ///
-        /// Note that `T` must be [`Clone`], since it is possible that the stack has exactly one
-        /// element, so the top and the bottom elements are the same element.
-        #[inline]
-        pub fn into_ends(mut self) -> (T, T) {
-            unsafe {
-                if self.0.len() >= 2 {
-                    // SAFETY: we just checked that the length is at least 2
-                    let top = self.0.pop().unwrap_unchecked();
-                    let bottom = self.0.drain(..).next().unwrap_unchecked();
-                    (bottom, top)
-                } else {
-                    // SAFETY: the internal vec is always non-empty
-                    let top = self.0.pop().unwrap_unchecked();
-                    (top.clone(), top)
-                }
+                break Ok(RecursiveRemoteResponse::Null(history.head));
             }
         }
     }
