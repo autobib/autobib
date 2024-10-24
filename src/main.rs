@@ -165,7 +165,7 @@ enum Command {
         /// The citation key to show info.
         citation_key: RecordId,
         /// The type of information to display.
-        #[arg(value_enum, default_value_t)]
+        #[arg(short, long, value_enum, default_value_t)]
         report: InfoReportType,
     },
     /// Create or edit a local record with the given handle.
