@@ -3,13 +3,12 @@ mod null;
 mod record;
 mod transaction;
 
-use either::Either;
 use log::debug;
 use rusqlite::Transaction;
 
 pub use self::{missing::*, null::*, record::*, transaction::DatabaseState};
 use super::{get_null_row_id, get_row_id};
-use crate::{error::RecordError, Alias, RecordId, RemoteId};
+use crate::{error::RecordError, Alias, AliasOrRemoteId, RecordId, RemoteId};
 
 /// A representation of the database state beginning with an arbitrary [`RecordId`].
 #[derive(Debug)]
@@ -40,11 +39,12 @@ impl<'conn> RecordIdState<'conn> {
                 ))
             }
             None => match record_id.resolve() {
-                Ok(Either::Left(alias)) => {
+                Ok(AliasOrRemoteId::Alias(alias)) => {
                     tx.commit()?;
                     Ok(RecordIdState::UndefinedAlias(alias))
                 }
-                Ok(Either::Right(remote_id)) => match get_null_row_id(&tx, &remote_id)? {
+                Ok(AliasOrRemoteId::RemoteId(remote_id)) => match get_null_row_id(&tx, &remote_id)?
+                {
                     Some(row_id) => {
                         debug!("Beginning new transaction for row '{row_id}' in the `NullRecords` table.");
                         Ok(RecordIdState::NullRemoteId(

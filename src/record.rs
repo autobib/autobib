@@ -3,7 +3,7 @@ mod key;
 use log::info;
 use nonempty::NonEmpty;
 
-pub use self::key::{Alias, RecordId, RemoteId};
+pub use self::key::{Alias, AliasOrRemoteId, RecordId, RemoteId};
 use crate::{
     db::{
         state::{

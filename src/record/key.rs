@@ -1,6 +1,5 @@
 use std::{fmt, str::FromStr};
 
-use either::Either;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -16,16 +15,22 @@ pub struct RecordId {
     provider_len: Option<usize>,
 }
 
+/// Either an [`Alias`] or a [`RemoteId]`.
+pub enum AliasOrRemoteId {
+    Alias(Alias),
+    RemoteId(RemoteId),
+}
+
 impl RecordId {
     /// Convert a [`RecordId`] into either an [`Alias`] or a [`RemoteId`].
     ///
     /// The [`Alias`] conversion is infallible (validation only requires checking that the
     /// colon is not present) whereas the [`RemoteId`] conversion can fail if `provider` is
     /// invalid or if `sub_id` is invalid given the provider.
-    pub fn resolve(self) -> Result<Either<Alias, RemoteId>, RecordError> {
+    pub fn resolve(self) -> Result<AliasOrRemoteId, RecordError> {
         match self.provider_len {
-            Some(_) => self.try_into().map(Either::Right),
-            None => self.try_into().map(Either::Left),
+            Some(_) => self.try_into().map(AliasOrRemoteId::RemoteId),
+            None => self.try_into().map(AliasOrRemoteId::Alias),
         }
     }
 }
