@@ -1,14 +1,12 @@
-use serde_bibtex::token::is_entry_key;
-use std::str::from_utf8;
+use std::{str::from_utf8, sync::LazyLock};
 
-use lazy_static::lazy_static;
 use regex::bytes::Regex;
+use serde_bibtex::token::is_entry_key;
 
 use crate::RecordId;
 
-lazy_static! {
-    static ref AUX_CITE_LINE: Regex = Regex::new(r"\\abx@aux@cite\{[0-9]*\}\{([^\}]+)\}").unwrap();
-}
+static AUX_CITE_LINE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\\abx@aux@cite\{[0-9]*\}\{([^\}]+)\}").unwrap());
 
 /// Get all citation keys in the buffer.
 ///
