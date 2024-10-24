@@ -1,14 +1,15 @@
+use std::sync::LazyLock;
+
 use chrono::NaiveDate;
 use itertools::Itertools;
-use lazy_static::lazy_static;
 use regex::Regex;
 use reqwest::StatusCode;
 use serde::Deserialize;
 
 use super::{HttpClient, ProviderError, RecordData, RecordDataError};
 
-lazy_static! {
-    static ref ARXIV_IDENTIFIER_RE: Regex = Regex::new(concat!(
+static ARXIV_IDENTIFIER_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(concat!(
             r"^(",
             // old style:
             r"(",
@@ -22,8 +23,8 @@ lazy_static! {
             // new style: YYMM.NNNN or YYMM.NNNNN
             r"([0-9][0-9](0[1-9]|1[0-2])[.][0-9]{4,5})",
             r")$",
-    )).unwrap();
-}
+    )).unwrap()
+});
 
 pub fn is_valid_id(id: &str) -> bool {
     ARXIV_IDENTIFIER_RE.is_match(id)

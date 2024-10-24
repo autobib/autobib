@@ -72,7 +72,7 @@ use log::debug;
 use nucleo_picker::nucleo::{Injector, Utf32String};
 use rusqlite::{types::ValueRef, Connection, OptionalExtension, Transaction};
 
-pub use self::data::{binary_format_version, EntryData, RawRecordData, RecordData, DATA_MAX_BYTES};
+pub use self::data::{binary_format_version, EntryData, RawRecordData, RecordData};
 pub(crate) use self::data::{EntryTypeHeader, KeyHeader, ValueHeader};
 use self::state::{RecordIdState, RemoteIdState};
 use self::validate::DatabaseValidator;

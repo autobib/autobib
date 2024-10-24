@@ -1,10 +1,9 @@
 use std::{fmt, str::FromStr};
 
-use either::Either;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    error::{RecordError, RecordErrorKind},
+    error::{AliasConversionError, RecordError, RecordErrorKind},
     provider::{validate_provider_sub_id, ValidationOutcome},
     CitationKey,
 };
@@ -16,16 +15,22 @@ pub struct RecordId {
     provider_len: Option<usize>,
 }
 
+/// Either an [`Alias`] or a [`RemoteId]`.
+pub enum AliasOrRemoteId {
+    Alias(Alias),
+    RemoteId(RemoteId),
+}
+
 impl RecordId {
     /// Convert a [`RecordId`] into either an [`Alias`] or a [`RemoteId`].
     ///
     /// The [`Alias`] conversion is infallible (validation only requires checking that the
     /// colon is not present) whereas the [`RemoteId`] conversion can fail if `provider` is
     /// invalid or if `sub_id` is invalid given the provider.
-    pub fn resolve(self) -> Result<Either<Alias, RemoteId>, RecordError> {
+    pub fn resolve(self) -> Result<AliasOrRemoteId, RecordError> {
         match self.provider_len {
-            Some(_) => self.try_into().map(Either::Right),
-            None => self.try_into().map(Either::Left),
+            Some(_) => self.try_into().map(AliasOrRemoteId::RemoteId),
+            None => self.try_into().map(AliasOrRemoteId::Alias),
         }
     }
 }
@@ -78,10 +83,17 @@ impl CitationKey for Alias {
 }
 
 impl FromStr for Alias {
-    type Err = RecordError;
+    type Err = AliasConversionError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        RecordId::from(s).try_into()
+        if s.is_empty() {
+            Err(AliasConversionError::Empty)
+        } else {
+            match s.find(':') {
+                Some(_) => Err(AliasConversionError::IsRemoteId),
+                None => Ok(Self(s.to_string())),
+            }
+        }
     }
 }
 
@@ -223,7 +235,7 @@ impl TryFrom<RecordId> for RemoteId {
                         input: record_id.full_id,
                         kind: RecordErrorKind::EmptyProvider,
                     })
-                } else if provider_len == record_id.full_id.len() + 1 {
+                } else if provider_len + 1 == record_id.full_id.len() {
                     Err(RecordError {
                         input: record_id.full_id,
                         kind: RecordErrorKind::EmptySubId,

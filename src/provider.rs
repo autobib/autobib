@@ -11,7 +11,6 @@ pub mod mr;
 pub mod zbl;
 pub mod zbmath;
 
-use either::Either;
 use serde::Deserialize;
 
 // re-imports exposed to provider implementations
@@ -30,17 +29,23 @@ pub type Referrer = fn(&str, &HttpClient) -> Result<Option<RemoteId>, ProviderEr
 /// A validator, which checks that a `sub_id` is valid.
 type Validator = fn(&str) -> bool;
 
+/// A provider, which is either a [`Resolver`] or a [`Referrer`].
+pub enum Provider {
+    Resolver(Resolver),
+    Referrer(Referrer),
+}
+
 /// Map the `provider` part of a [`RemoteId`] to a [`Resolver`] or [`Referrer`].
 #[inline]
-fn lookup_provider(provider: &str) -> Either<Resolver, Referrer> {
+fn lookup_provider(provider: &str) -> Provider {
     match provider {
-        "arxiv" => Either::Left(arxiv::get_record),
-        "doi" => Either::Left(doi::get_record),
-        "jfm" => Either::Right(jfm::get_canonical),
-        "local" => Either::Left(local::get_record),
-        "mr" => Either::Left(mr::get_record),
-        "zbmath" => Either::Left(zbmath::get_record),
-        "zbl" => Either::Right(zbl::get_canonical),
+        "arxiv" => Provider::Resolver(arxiv::get_record),
+        "doi" => Provider::Resolver(doi::get_record),
+        "jfm" => Provider::Referrer(jfm::get_canonical),
+        "local" => Provider::Resolver(local::get_record),
+        "mr" => Provider::Resolver(mr::get_record),
+        "zbmath" => Provider::Resolver(zbmath::get_record),
+        "zbl" => Provider::Referrer(zbl::get_canonical),
         _ => unreachable!("Invalid provider '{provider}: an invalid provider should have been caught by a call to `lookup_validator`'!"),
     }
 }
@@ -102,11 +107,11 @@ pub fn get_remote_response(
     remote_id: &RemoteId,
 ) -> Result<RemoteResponse, ProviderError> {
     match lookup_provider(remote_id.provider()) {
-        Either::Left(resolver) => match resolver(remote_id.sub_id(), client)? {
+        Provider::Resolver(resolver) => match resolver(remote_id.sub_id(), client)? {
             Some(data) => Ok(RemoteResponse::Data(data)),
             None => Ok(RemoteResponse::Null),
         },
-        Either::Right(referrer) => match referrer(remote_id.sub_id(), client)? {
+        Provider::Referrer(referrer) => match referrer(remote_id.sub_id(), client)? {
             Some(new_remote_id) => Ok(RemoteResponse::Reference(new_remote_id)),
             None => Ok(RemoteResponse::Null),
         },

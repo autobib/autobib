@@ -1,6 +1,5 @@
-use std::iter::Extend;
+use std::{iter::Extend, sync::LazyLock};
 
-use lazy_static::lazy_static;
 use memchr::{memchr, memchr2, memchr3};
 use regex::Regex;
 
@@ -119,10 +118,8 @@ fn parse_cite_contents<T: Extend<RecordId>>(contents: &str, container: &mut T) {
     );
 }
 
-lazy_static! {
-    static ref CITATION_MACRO_RE: Regex =
-        Regex::new(r"(^[a-z]*cite\*?$)|(^cite[a-z]*\*?$)").unwrap();
-}
+static CITATION_MACRO_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(^[a-z]*cite\*?$)|(^cite[a-z]*\*?$)").unwrap());
 
 /// Check if the macro name is an expected citation macro.
 fn is_citation_macro_name(cmd: &str) -> bool {

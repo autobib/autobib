@@ -370,7 +370,7 @@ fn info() -> Result<()> {
     let s = TestState::init()?;
 
     let mut cmd = s.cmd()?;
-    cmd.args(["info", "zbl:1337.28015", "canonical"]);
+    cmd.args(["info", "zbl:1337.28015", "-r", "canonical"]);
     cmd.assert().failure().stderr(predicate::str::contains(
         "Cannot obtain report for record not in database",
     ));
@@ -380,7 +380,7 @@ fn info() -> Result<()> {
     cmd.assert().success();
 
     let mut cmd = s.cmd()?;
-    cmd.args(["info", "zbl:1337.28015", "canonical"]);
+    cmd.args(["info", "zbl:1337.28015", "--report", "canonical"]);
     cmd.assert().success().stdout("zbmath:06346461\n");
 
     let mut cmd = s.cmd()?;
@@ -388,7 +388,7 @@ fn info() -> Result<()> {
     cmd.assert().success();
 
     let mut cmd = s.cmd()?;
-    cmd.args(["info", "zbl:1337.28015", "equivalent"]);
+    cmd.args(["info", "zbl:1337.28015", "-r", "equivalent"]);
     cmd.assert().success().stdout(
         predicate::str::contains("%")
             .and(predicate::str::contains("zbmath:06346461"))
@@ -396,7 +396,7 @@ fn info() -> Result<()> {
     );
 
     let mut cmd = s.cmd()?;
-    cmd.args(["info", "%", "valid"]);
+    cmd.args(["info", "%", "-r", "valid"]);
     cmd.assert()
         .failure()
         .stderr(predicate::str::contains("Invalid BibTeX"));

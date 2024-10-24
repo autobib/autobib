@@ -43,7 +43,4 @@ pub enum RecordDataError {
 
     #[error("Invalid bytes: `{0}`")]
     InvalidBytes(#[from] InvalidBytesError),
-
-    #[error("Record data structure contains maximum number of entries")]
-    RecordDataFull,
 }

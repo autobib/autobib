@@ -63,7 +63,7 @@ will return
 }
 ```
 An identifier is a pair `provider:sub_id`.
-The current supported providers are:
+The currently supported providers are:
 
 - `arxiv`: An [arXiv](https://arxiv.org) identifier, such as `arxiv:1212.1873` or `arxiv:math/9201254`
 - `doi`: A [DOI](https://www.doi.org/) identifier, such as `doi:10.4007/annals.2014.180.2.7`
@@ -71,6 +71,8 @@ The current supported providers are:
 - `mr`: A [MathSciNet](https://mathscinet.ams.org/mathscinet/publications-search) identifier, such as `mr:3224722`
 - `zbl`: A [zbMath](https://zbmath.org) external identifier of the form `xxxx.xxxxx`, such as `zbl:1337.28015`
 - `zbmath`: A [zbMath](https://zbmath.org) internal identifier of the form `xxxxxxxx`, such as `zbmath:06346461`
+
+If your preferred format is not supported, feel free to [open an issue](https://github.com/autobib/autobib/issues) on the GitHub repository!
 
 ### Sourcing from files
 

@@ -28,28 +28,6 @@ pub(crate) type ValueHeader = u16;
 /// The type of integer used in the BibTeX entry type header.
 pub(crate) type EntryTypeHeader = u8;
 
-/// The maximum possible size (in bytes) of a data block.
-const MAX_DATA_BLOCK_SIZE: usize = KeyHeader::BITS as usize / 8
-    + ValueHeader::BITS as usize / 8
-    + KeyHeader::MAX as usize
-    + ValueHeader::MAX as usize;
-
-/// The maximum possible size (in bytes) of the BibTeX entry type block.
-const MAX_TYPE_BLOCK_SIZE: usize =
-    EntryTypeHeader::BITS as usize / 8 + EntryTypeHeader::MAX as usize;
-
-/// The maximum possible size (in bytes) of the vector returned by [`RawRecordData::to_byte_repr`].
-pub const DATA_MAX_BYTES: usize = 50_000_000;
-
-/// The maximum number of allowed record fields.
-///
-/// This number is chosen to be as large as possible while satisfying
-/// ```ignore
-/// DATA_HEADER_SIZE + MAX_TYPE_BLOCK_SIZE + RECORD_MAX_FIELDS * MAX_DATA_BLOCK_SIZE <= DATA_MAX_BYTES
-/// ```
-const RECORD_MAX_FIELDS: usize =
-    (DATA_MAX_BYTES - DATA_HEADER_SIZE - MAX_TYPE_BLOCK_SIZE) / MAX_DATA_BLOCK_SIZE;
-
 /// This trait represents types which encapsulate the data content of a single BibTeX entry.
 pub trait EntryData {
     /// Iterate over `(key, value)` pairs in order.
@@ -84,16 +62,10 @@ impl RawRecordData {
         match data[..] {
             [0, ..] => {
                 let mut cursor = Self::check_type(&data, 1)?;
-                let mut counter = 0;
                 loop {
                     match Self::check_data_block(&data, cursor)? {
                         Some(next_cursor) => {
-                            if counter >= RECORD_MAX_FIELDS {
-                                break Err(InvalidBytesError::new(cursor, "too many fields"));
-                            } else {
-                                cursor = next_cursor;
-                                counter += 1;
-                            }
+                            cursor = next_cursor;
                         }
                         None => break Ok(unsafe { Self::from_byte_repr_unchecked(data) }),
                     }
@@ -389,24 +361,14 @@ impl RecordData {
 
     /// Attempt to insert a new `(key, value)` pair.
     ///
-    /// The following rules are checked before insertion. The first one that fails, if any, results
-    /// in the corresponding [`RecordDataError`].
-    ///
-    /// L. RecordData can contain at most [`RECORD_MAX_FIELDS`] entries.
-    /// K1. `key` must have length at least `1` and at most [`KeyHeader::MAX`].
-    /// K2. `key` must be composed only of ASCII lowercase letters (from [`char::is_ascii_lowercase`]).
-    /// V1. `value` must have length at most [`ValueHeader::MAX`].
-    /// V2. `value` must satisfy the balanced `{}` rule (from [`serde_bibtex::token::is_balanced`]).
+    /// The `key` rules from [`check_key`](Self::check_value) and the `value` rules from
+    /// [`check_value`](Self::check_value) must be satisfied by the inserted key and value
+    /// respectively.
     pub fn check_and_insert(
         &mut self,
         key: String,
         value: String,
     ) -> Result<Option<String>, RecordDataError> {
-        // Condition L
-        if self.fields.len() >= RECORD_MAX_FIELDS && !self.fields.contains_key(&key) {
-            return Err(RecordDataError::RecordDataFull);
-        }
-
         // Conditions K1 and K2
         Self::check_key(&key)?;
 
