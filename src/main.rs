@@ -51,7 +51,7 @@ use self::{
 pub use self::{
     entry::Entry,
     http::HttpClient,
-    record::{get_record_row, Alias, RecordId, RemoteId},
+    record::{get_record_row, Alias, AliasOrRemoteId, RecordId, RemoteId},
 };
 
 #[derive(Parser)]
