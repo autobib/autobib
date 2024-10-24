@@ -58,7 +58,7 @@ pub use self::{
 #[command(author, version, about, long_about = None)]
 struct Cli {
     /// Use record database.
-    #[arg(short, long, value_name = "PATH")]
+    #[arg(short, long, value_name = "PATH", env = "AUTOBIB_DATABASE_PATH")]
     database: Option<PathBuf>,
 
     #[command(flatten)]
