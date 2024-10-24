@@ -1,4 +1,5 @@
-use lazy_static::lazy_static;
+use std::sync::LazyLock;
+
 use regex::Regex;
 use reqwest::StatusCode;
 use serde::Deserialize;
@@ -6,9 +7,8 @@ use serde_bibtex::de::Deserializer;
 
 use super::{HttpClient, ProviderError, RemoteId};
 
-lazy_static! {
-    static ref ZBL_IDENTIFIER_RE: Regex = Regex::new(r"^[0-9]{4}\.[0-9]{5}$").unwrap();
-}
+static ZBL_IDENTIFIER_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[0-9]{4}\.[0-9]{5}$").unwrap());
 
 pub fn is_valid_id(id: &str) -> bool {
     ZBL_IDENTIFIER_RE.is_match(id)
