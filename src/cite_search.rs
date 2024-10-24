@@ -22,6 +22,7 @@
 //!     assert_eq!(exp, rec);
 //! }
 //! ```
+pub mod aux;
 pub mod tex;
 
 use std::{ffi::OsStr, iter::Extend, path::Path, str::FromStr};
@@ -33,6 +34,8 @@ use crate::{error::Error, RecordId};
 pub enum SourceFileType {
     /// TeX-style contents, such as `.tex` or `.sty` files.
     Tex,
+    /// TeX-based AUX file contents, mainly `.aux` files.
+    Aux,
 }
 
 impl FromStr for SourceFileType {
@@ -41,6 +44,7 @@ impl FromStr for SourceFileType {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "tex" | "sty" | "cls" => Ok(Self::Tex),
+            "aux" => Ok(Self::Aux),
             ext => Err(Error::UnsupportedFileType(ext.into())),
         }
     }
@@ -66,6 +70,7 @@ impl SourceFileType {
 pub fn get_citekeys<T: Extend<RecordId>>(ft: SourceFileType, buffer: &[u8], container: &mut T) {
     match ft {
         SourceFileType::Tex => tex::get_citekeys(buffer, container),
+        SourceFileType::Aux => aux::get_citekeys(buffer, container),
     }
 }
 
