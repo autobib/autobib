@@ -161,3 +161,31 @@ pub fn get_citekeys<T: Extend<RecordId>>(buffer: &[u8], container: &mut T) {
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use std::collections::BTreeSet;
+    use std::iter::zip;
+
+    use super::*;
+    use crate::CitationKey;
+
+    #[test]
+    fn test_get_citekeys_tex() {
+        let contents = r"
+            An explanation can be found in \cite[§2]{ref2} (see also \cite{ref1,
+            ref3}).
+\autocite{contains space}.
+            "
+        .as_bytes();
+
+        let mut container = BTreeSet::new();
+
+        get_citekeys(contents, &mut container);
+
+        let expected = ["contains space", "ref1", "ref2", "ref3"];
+        for (exp, rec) in zip(expected.iter(), container.iter()) {
+            assert_eq!(*exp, rec.name());
+        }
+    }
+}
