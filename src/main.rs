@@ -78,6 +78,25 @@ enum InfoReportType {
     Modified,
 }
 
+#[derive(Debug, Copy, Clone)]
+enum UpdateMode {
+    PreferCurrent,
+    PreferIncoming,
+    Prompt,
+}
+
+impl UpdateMode {
+    fn from_flags(prefer_current: bool, prefer_incoming: bool) -> Self {
+        if prefer_incoming {
+            UpdateMode::PreferIncoming
+        } else if prefer_current {
+            UpdateMode::PreferCurrent
+        } else {
+            UpdateMode::Prompt
+        }
+    }
+}
+
 #[derive(Subcommand)]
 enum Command {
     /// Manage aliases.
@@ -188,6 +207,15 @@ enum Command {
     Update {
         /// The citation key to update.
         citation_key: RecordId,
+        /// Read update data from local path.
+        #[arg(short, long, value_name = "PATH")]
+        from: Option<PathBuf>,
+        /// Keep the current value without prompting in the event of a conflict.
+        #[arg(long, group = "update-mode")]
+        prefer_current: bool,
+        /// Update with the incoming value without prompting in the event of a conflict.
+        #[arg(long, group = "update-mode")]
+        prefer_incoming: bool,
     },
     /// Utilities to manage database.
     Util {
@@ -524,13 +552,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                     }
                 }
                 RemoteIdState::Unknown(missing) => {
-                    let data = if let Some(path) = from {
-                        let bibtex = read_to_string(path)?;
-                        let entry = Entry::<RawRecordData>::from_str(&bibtex)?;
-                        entry.record_data
-                    } else {
-                        (&RecordData::default()).into()
-                    };
+                    let data = data_from_path_or_default(from.as_ref())?;
 
                     let row = missing.insert_and_ref(&data, &remote_id)?;
                     (row, data, remote_id)
@@ -606,39 +628,80 @@ fn run_cli(cli: Cli) -> Result<()> {
                 output_entries(out.as_ref(), valid_entries)?;
             }
         }
-        Command::Update { citation_key } => match record_db.state_from_record_id(citation_key)? {
-            RecordIdState::Existent(_, row) => {
+        Command::Update {
+            citation_key,
+            from,
+            prefer_current,
+            prefer_incoming,
+        } => match record_db.state_from_record_id(citation_key)? {
+            RecordIdState::Existent(citation_key, row) => {
                 let RowData {
                     data: existing_raw_data,
                     canonical,
                     ..
                 } = row.apply(state::get_row_data)?;
-                match get_remote_response_recursive(canonical, &client)? {
-                    RecursiveRemoteResponse::Exists(new_raw_data, _) => {
-                        info!("Updating existing row with new data");
+                let new_raw_data = match data_from_path_or_remote(from, canonical, &client) {
+                    Ok((data, _)) => data,
+                    Err(err) => {
+                        row.commit()?;
+                        bail!(err);
+                    }
+                };
+                match UpdateMode::from_flags(prefer_current, prefer_incoming) {
+                    UpdateMode::PreferCurrent => {
+                        info!("Updating '{citation_key}' with new data, skipping existing fields");
+                        let mut existing_record = RecordData::from(existing_raw_data);
+                        existing_record.merge_or_skip(new_raw_data)?;
+                        row.apply(state::update_row_data(&(&existing_record).into()))?;
+                        row.commit()?;
+                    }
+                    UpdateMode::PreferIncoming => {
+                        info!(
+                            "Updating '{citation_key}' with new data, overwriting existing fields"
+                        );
                         let mut new_record = RecordData::from(new_raw_data);
-                        new_record.try_merge(existing_raw_data)?;
+                        new_record.merge_or_skip(existing_raw_data)?;
                         row.apply(state::update_row_data(&(&new_record).into()))?;
                         row.commit()?;
                     }
-                    RecursiveRemoteResponse::Null(remote_id) => {
+                    UpdateMode::Prompt => {
+                        info!("Updating '{citation_key}' with new data");
+                        let mut existing_record = RecordData::from(existing_raw_data);
+                        existing_record.merge_with_callback(
+                            new_raw_data,
+                            |key, current, incoming| {
+                                println!("Conflict for the field '{key}':");
+                                println!("   Current value: {current}");
+                                println!("  Incoming value: {incoming}");
+                                let prompt = Confirm::new("Accept incoming value?", false);
+                                match prompt.confirm() {
+                                    Ok(true) => incoming.to_owned(),
+                                    Ok(false) => current.to_owned(),
+                                    Err(error) => {
+                                        error!("{error}");
+                                        warn!("Keeping current value for '{key}'");
+                                        current.to_owned()
+                                    }
+                                }
+                            },
+                        )?;
+                        row.apply(state::update_row_data(&(&existing_record).into()))?;
                         row.commit()?;
-                        error!("Remote data for canonical id '{remote_id}' is null");
                     }
                 }
             }
             RecordIdState::NullRemoteId(remote_id, null_row) => {
-                match get_remote_response_recursive(remote_id, &client)? {
-                    RecursiveRemoteResponse::Exists(new_data, canonical) => {
-                        info!("Found data for previously null row.");
-                        let row = null_row.insert(&new_data, &canonical)?;
+                match data_from_path_or_remote(from, remote_id, &client) {
+                    Ok((data, canonical)) => {
+                        info!("Existing row was null; inserting new data.");
+                        let row = null_row.insert(&data, &canonical)?;
                         row.commit()?;
                     }
-                    RecursiveRemoteResponse::Null(remote_id) => {
+                    Err(err) => {
                         null_row.commit()?;
-                        error!("Remote data for canonical id '{remote_id}' is null");
+                        bail!(err);
                     }
-                }
+                };
             }
             RecordIdState::UnknownRemoteId(remote_id, missing) => {
                 missing.commit()?;
@@ -666,6 +729,46 @@ fn run_cli(cli: Cli) -> Result<()> {
     Ok(())
 }
 
+/// Either obtain data from a `.bib` file at the provided path, or look up data from the
+/// provider.
+fn data_from_path_or_remote<P: AsRef<Path>>(
+    maybe_path: Option<P>,
+    remote_id: RemoteId,
+    client: &HttpClient,
+) -> Result<(RawRecordData, RemoteId), anyhow::Error> {
+    if let Some(path) = maybe_path {
+        Ok((data_from_path(path)?, remote_id))
+    } else {
+        match get_remote_response_recursive(remote_id, client)? {
+            RecursiveRemoteResponse::Exists(record_data, canonical) => {
+                Ok((RawRecordData::from(&record_data), canonical))
+            }
+            RecursiveRemoteResponse::Null(null_remote_id) => {
+                bail!("Remote data for canonical id '{null_remote_id}' is null");
+            }
+        }
+    }
+}
+
+/// Either obtain data from a `.bib` file at the provided path, or return the default data.
+fn data_from_path_or_default<P: AsRef<Path>>(
+    maybe_path: Option<P>,
+) -> Result<RawRecordData, anyhow::Error> {
+    if let Some(path) = maybe_path {
+        data_from_path(path)
+    } else {
+        Ok((&RecordData::default()).into())
+    }
+}
+
+/// Obtain data from a bibtex record at a provided path.
+fn data_from_path<P: AsRef<Path>>(path: P) -> Result<RawRecordData, anyhow::Error> {
+    let bibtex = read_to_string(path)?;
+    let entry = Entry::<RawRecordData>::from_str(&bibtex)?;
+    Ok(entry.record_data)
+}
+
+/// Edit a record and update the entry corresponding to the [`RecordRow`].
 fn edit_record_and_update(
     row: RecordRow,
     record: Record,

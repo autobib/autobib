@@ -48,9 +48,9 @@
 //! as
 //! ```
 //! # let mut record_data = RecordData::try_new("article".into()).unwrap();
-//! # record_data.try_insert("year".into(), "2023".into()).unwrap();
+//! # record_data.check_and_insert("year".into(), "2023".into()).unwrap();
 //! # record_data
-//! #     .try_insert("title".into(), "The Title".into())
+//! #     .check_and_insert("title".into(), "The Title".into())
 //! #     .unwrap();
 //! # let byte_repr = RawRecordData::from(&record_data).into_byte_repr();
 //! let expected = vec![

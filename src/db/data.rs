@@ -291,7 +291,7 @@ impl<'a> Iterator for RawRecordFieldsIter<'a> {
 /// An in-memory [`EntryData`] implementation which supports addition and deletion of fields.
 ///
 /// This type is mutable, in that it supports addition via
-/// [`RecordData::try_insert`] and deletion via [`RecordData::remove`]. Insertion is
+/// [`RecordData::check_and_insert`] and deletion via [`RecordData::remove`]. Insertion is
 /// fallible, since the contents of this struct must satisfy the requirements of the binary data
 /// format as detailed in the [`db`](`crate::db`) module.
 ///
@@ -345,11 +345,45 @@ impl RecordData {
         }
     }
 
-    /// Merge data from `other`, overwriting existing data with new data from the other.
-    pub fn try_merge<D: EntryData>(&mut self, other: D) -> Result<(), RecordDataError> {
-        for (key, value) in other.fields() {
-            self.try_insert(key.to_owned(), value.to_owned())?;
+    /// Check that the given value satisfies the following conditions:
+    /// V1. `value` must have length at most [`ValueHeader::MAX`].
+    /// V2. `value` must satisfy the balanced `{}` rule (from [`serde_bibtex::token::is_balanced`]).
+    ///
+    /// This method is also useful for validating types in calling code before insertion,
+    /// particularly when inserting data provided interactively by the user.
+    #[inline]
+    pub fn check_value(value: &str) -> Result<(), RecordDataError> {
+        // Condition V1
+        if value.len() > ValueHeader::MAX as usize {
+            return Err(RecordDataError::ValueInvalidLength(value.len()));
         }
+
+        // Condition V2
+        if !is_balanced(value.as_bytes()) {
+            return Err(RecordDataError::ValueNotBalanced);
+        }
+
+        Ok(())
+    }
+
+    /// Check that the given key satisfies the following conditions:
+    /// K1. `key` must have length at least `1` and at most [`KeyHeader::MAX`].
+    /// K2. `key` must be composed only of ASCII lowercase letters (from [`char::is_ascii_lowercase`]).
+    ///
+    /// This method is also useful for validating types in calling code before insertion,
+    /// particularly when inserting data provided interactively by the user.
+    #[inline]
+    pub fn check_key(key: &str) -> Result<(), RecordDataError> {
+        // Condition K1
+        if key.is_empty() || key.len() > KeyHeader::MAX as usize {
+            return Err(RecordDataError::KeyInvalidLength(key.len()));
+        }
+
+        // Condition K2
+        if key.chars().any(|ch| !ch.is_ascii_lowercase()) {
+            return Err(RecordDataError::KeyNotAsciiLowercase);
+        }
+
         Ok(())
     }
 
@@ -358,42 +392,68 @@ impl RecordData {
     /// The following rules are checked before insertion. The first one that fails, if any, results
     /// in the corresponding [`RecordDataError`].
     ///
-    /// 1. RecordData can contain at most [`RECORD_MAX_FIELDS`] entries.
-    /// 2. `key` must have length at least `1` and at most [`KeyHeader::MAX`].
-    /// 3. `value` must have length at most [`ValueHeader::MAX`].
-    /// 4. `key` must be composed only of ASCII lowercase letters (from [`char::is_ascii_lowercase`]).
-    /// 5. `value` must satisfy the balanced `{}` rule (from [`serde_bibtex::token::is_balanced`]).
-    pub fn try_insert(
+    /// L. RecordData can contain at most [`RECORD_MAX_FIELDS`] entries.
+    /// K1. `key` must have length at least `1` and at most [`KeyHeader::MAX`].
+    /// K2. `key` must be composed only of ASCII lowercase letters (from [`char::is_ascii_lowercase`]).
+    /// V1. `value` must have length at most [`ValueHeader::MAX`].
+    /// V2. `value` must satisfy the balanced `{}` rule (from [`serde_bibtex::token::is_balanced`]).
+    pub fn check_and_insert(
         &mut self,
         key: String,
         value: String,
     ) -> Result<Option<String>, RecordDataError> {
-        // Condition 1
+        // Condition L
         if self.fields.len() >= RECORD_MAX_FIELDS && !self.fields.contains_key(&key) {
             return Err(RecordDataError::RecordDataFull);
         }
 
-        // Condition 2
-        if key.is_empty() || key.len() > KeyHeader::MAX as usize {
-            return Err(RecordDataError::KeyInvalidLength(key.len()));
-        }
+        // Conditions K1 and K2
+        Self::check_key(&key)?;
 
-        // Condition 3
-        if value.len() > ValueHeader::MAX as usize {
-            return Err(RecordDataError::ValueInvalidLength(value.len()));
-        }
-
-        // Condition 4
-        if key.chars().any(|ch| !ch.is_ascii_lowercase()) {
-            return Err(RecordDataError::KeyNotAsciiLowercase);
-        }
-
-        // Condition 5
-        if !is_balanced(value.as_bytes()) {
-            return Err(RecordDataError::ValueNotBalanced);
-        }
+        // Conditions V1 and V2
+        Self::check_value(&value)?;
 
         Ok(self.fields.insert(key, value))
+    }
+
+    /// Merge data from `other`, ignoring fields that already exist in `self`.
+    pub fn merge_or_skip<D: EntryData>(&mut self, other: D) -> Result<(), RecordDataError> {
+        for (key, value) in other.fields() {
+            if !self.fields.contains_key(key) {
+                self.check_and_insert(key.to_owned(), value.to_owned())?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Merge data from `other`, invoking a callback to resolve conflicts.
+    ///
+    /// The callback `resolve_conflict` takes three arguments in the following order:
+    /// the key, the existing value in `self` corresponding to the key, and the new value.
+    pub fn merge_with_callback<D: EntryData, C: FnMut(&str, &str, &str) -> String>(
+        &mut self,
+        other: D,
+        mut resolve_conflict: C,
+    ) -> Result<(), RecordDataError> {
+        for (key, value) in other.fields() {
+            match self.fields.get_mut(key) {
+                Some(current_value) if current_value != value => {
+                    let new_value = resolve_conflict(key, current_value, value);
+                    // SAFETY: since the key already corresponds to an entry in the database, we
+                    // only need to check that the value satisfies conditions V1 and V2, and we can
+                    // do an in-place memory replace to avoid the additional checks.
+                    Self::check_value(&new_value)?;
+                    // This is more efficient than using `mem::swap` since this compiles down to a
+                    // single memcpy.
+                    let _ = std::mem::replace(current_value, new_value);
+                }
+                Some(_) => {}
+                None => {
+                    self.check_and_insert(key.to_owned(), value.to_owned())?;
+                }
+            }
+        }
+        Ok(())
     }
 
     pub fn get<Q>(&self, key: &Q) -> Option<&str>
@@ -449,17 +509,19 @@ mod tests {
     fn test_data_round_trip() {
         let mut record_data = RecordData::try_new("article".into()).unwrap();
         record_data
-            .try_insert("year".into(), "2024".into())
+            .check_and_insert("year".into(), "2024".into())
             .unwrap();
         record_data
-            .try_insert("title".into(), "A title".into())
-            .unwrap();
-        record_data.try_insert("field".into(), "".into()).unwrap();
-        record_data
-            .try_insert("a".repeat(255), "🍄".into())
+            .check_and_insert("title".into(), "A title".into())
             .unwrap();
         record_data
-            .try_insert("a".into(), "b".repeat(65_535))
+            .check_and_insert("field".into(), "".into())
+            .unwrap();
+        record_data
+            .check_and_insert("a".repeat(255), "🍄".into())
+            .unwrap();
+        record_data
+            .check_and_insert("a".into(), "b".repeat(65_535))
             .unwrap();
 
         let raw_data = RawRecordData::from(&record_data);
@@ -468,7 +530,7 @@ mod tests {
 
         for (key, value) in raw_data.fields() {
             record_data_clone
-                .try_insert(key.into(), value.into())
+                .check_and_insert(key.into(), value.into())
                 .unwrap();
         }
 
@@ -484,31 +546,33 @@ mod tests {
         let mut record_data = RecordData::try_new("a".into()).unwrap();
 
         assert_eq!(
-            record_data.try_insert("a".repeat(256), "".into()),
+            record_data.check_and_insert("a".repeat(256), "".into()),
             Err(RecordDataError::KeyInvalidLength(256))
         );
 
         assert_eq!(
-            record_data.try_insert("a".into(), "🍄".repeat(20_000)),
+            record_data.check_and_insert("a".into(), "🍄".repeat(20_000)),
             Err(RecordDataError::ValueInvalidLength(80_000))
         );
 
         assert_eq!(
-            record_data.try_insert("".into(), "".into()),
+            record_data.check_and_insert("".into(), "".into()),
             Err(RecordDataError::KeyInvalidLength(0))
         );
 
-        assert!(record_data.try_insert("a".repeat(255), "".into()).is_ok(),);
+        assert!(record_data
+            .check_and_insert("a".repeat(255), "".into())
+            .is_ok(),);
     }
 
     #[test]
     fn test_format_manual() {
         let mut record_data = RecordData::try_new("article".into()).unwrap();
         record_data
-            .try_insert("year".into(), "2023".into())
+            .check_and_insert("year".into(), "2023".into())
             .unwrap();
         record_data
-            .try_insert("title".into(), "The Title".into())
+            .check_and_insert("title".into(), "The Title".into())
             .unwrap();
 
         let data = RawRecordData::from(&record_data);
@@ -616,12 +680,12 @@ mod tests {
         let mut record_data = RecordData::try_new("a".into()).unwrap();
 
         assert_eq!(
-            record_data.try_insert("BAD".into(), "".into()),
+            record_data.check_and_insert("BAD".into(), "".into()),
             Err(RecordDataError::KeyNotAsciiLowercase)
         );
 
         assert_eq!(
-            record_data.try_insert("".into(), "".into()),
+            record_data.check_and_insert("".into(), "".into()),
             Err(RecordDataError::KeyInvalidLength(0))
         );
 

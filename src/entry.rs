@@ -95,7 +95,7 @@ impl FromStr for Entry<RawRecordData> {
                 let mut record_data = RecordData::try_new(entry_type)?;
                 while let Some((mut key, val)) = fields.pop_first() {
                     key.make_ascii_lowercase();
-                    record_data.try_insert(key, val)?;
+                    record_data.check_and_insert(key, val)?;
                 }
 
                 // SAFETY: the Deserializer implementation only accepts the entry if the entry key is
@@ -115,7 +115,7 @@ impl FromStr for Entry<RawRecordData> {
 
 impl<D: EntryData> fmt::Display for Entry<D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // SAFETY: the RecordData::try_new and RecordData::try_insert methods only accept
+        // SAFETY: the RecordData::try_new and RecordData::check_and_insert methods only accept
         //         entry types and field keys which satisfy stricter requirements than the
         //         serde_bibtex syntax
         let buffer = to_string_unchecked(&[self]).expect("serialization should not fail");

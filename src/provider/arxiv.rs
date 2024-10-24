@@ -157,8 +157,8 @@ impl TryFrom<ArxivResponse> for RecordData {
                 },
         } = arxiv_response;
 
-        record_data.try_insert("author".into(), authors.to_string())?;
-        record_data.try_insert("title".into(), title)?;
+        record_data.check_and_insert("author".into(), authors.to_string())?;
+        record_data.check_and_insert("title".into(), title)?;
 
         Ok(record_data)
     }

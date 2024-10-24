@@ -9,7 +9,7 @@ use crate::{
             add_refs, get_row_data, DatabaseState, MissingRow, NullRecordRow, RecordIdState,
             RecordRow, RemoteIdState,
         },
-        RawRecordData, RecordDatabase, RowData,
+        RawRecordData, RecordData, RecordDatabase, RowData,
     },
     error::{Error, ProviderError, RecordError},
     provider::{get_remote_response, RemoteResponse},
@@ -162,7 +162,7 @@ fn get_record_row_recursive<'conn>(
 /// The result of obtaining a remote record, with no reference to a database.
 pub enum RecursiveRemoteResponse {
     /// The remote record exists, and has the provided data and canonical identifier.
-    Exists(RawRecordData, RemoteId),
+    Exists(RecordData, RemoteId),
     /// The remote record does not exist.
     Null(RemoteId),
 }
@@ -182,10 +182,7 @@ pub fn get_remote_response_recursive(
 
         match get_remote_response(client, top)? {
             RemoteResponse::Data(data) => {
-                break Ok(RecursiveRemoteResponse::Exists(
-                    RawRecordData::from(&data),
-                    history.into_top(),
-                ));
+                break Ok(RecursiveRemoteResponse::Exists(data, history.into_top()));
             }
             RemoteResponse::Reference(new_remote_id) => {
                 history.push(new_remote_id);
