@@ -15,7 +15,7 @@ macro_rules! suggest {
         eprintln!()
     };
     ($($arg:tt)*) => {
-        eprint!("{}", ::crossterm::style::Stylize::blue("HINT "));
+        eprint!("{}", ::crossterm::style::Stylize::blue("suggestion: "));
         eprintln!($($arg)*);
     };
 }
@@ -31,22 +31,22 @@ pub fn set_failed() {
 #[inline]
 fn level_as_str(level: Level) -> &'static str {
     match level {
-        Level::Error => "ERROR",
-        Level::Warn => "WARNING",
-        Level::Info => "INFO",
-        Level::Debug => "DEBUG",
-        Level::Trace => "TRACE",
+        Level::Error => "error:",
+        Level::Warn => "warning:",
+        Level::Info => "info:",
+        Level::Debug => "debug:",
+        Level::Trace => "trace:",
     }
 }
 
 #[inline]
 fn level_formatter(level: Level) -> fn(&'static str) -> StyledContent<&'static str> {
     match level {
-        Level::Error => Stylize::red,
-        Level::Warn => Stylize::yellow,
-        Level::Info => Stylize::blue,
-        Level::Debug => Stylize::magenta,
-        Level::Trace => Stylize::green,
+        Level::Error => |s| s.stylize().red().bold(),
+        Level::Warn => |s| s.stylize().yellow().bold(),
+        Level::Info => |s| s.stylize().blue().bold(),
+        Level::Debug => |s| s.stylize().magenta().bold(),
+        Level::Trace => |s| s.stylize().green().bold(),
     }
 }
 

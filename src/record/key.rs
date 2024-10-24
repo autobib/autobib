@@ -3,7 +3,7 @@ use std::{fmt, str::FromStr};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    error::{RecordError, RecordErrorKind},
+    error::{AliasConversionError, RecordError, RecordErrorKind},
     provider::{validate_provider_sub_id, ValidationOutcome},
     CitationKey,
 };
@@ -83,10 +83,17 @@ impl CitationKey for Alias {
 }
 
 impl FromStr for Alias {
-    type Err = RecordError;
+    type Err = AliasConversionError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        RecordId::from(s).try_into()
+        if s.is_empty() {
+            Err(AliasConversionError::Empty)
+        } else {
+            match s.find(':') {
+                Some(_) => Err(AliasConversionError::IsRemoteId),
+                None => Ok(Self(s.to_string())),
+            }
+        }
     }
 }
 
@@ -228,7 +235,7 @@ impl TryFrom<RecordId> for RemoteId {
                         input: record_id.full_id,
                         kind: RecordErrorKind::EmptyProvider,
                     })
-                } else if provider_len == record_id.full_id.len() + 1 {
+                } else if provider_len + 1 == record_id.full_id.len() {
                     Err(RecordError {
                         input: record_id.full_id,
                         kind: RecordErrorKind::EmptySubId,

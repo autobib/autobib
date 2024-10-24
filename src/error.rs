@@ -12,7 +12,7 @@ pub use self::{
     bibtex::BibtexDataError,
     database::{DatabaseError, ValidationError},
     provider::ProviderError,
-    record::{RecordError, RecordErrorKind},
+    record::{AliasConversionError, RecordError, RecordErrorKind},
     record_data::{InvalidBytesError, RecordDataError},
 };
 

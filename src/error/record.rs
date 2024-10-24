@@ -20,7 +20,7 @@ pub enum RecordErrorKind {
 
 impl fmt::Display for RecordError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Invalid citation key '{}': ", self.input)?;
+        write!(f, "Invalid key '{}': ", self.input)?;
         match self.kind {
             RecordErrorKind::EmptyProvider => f.write_str("provider must be non-empty"),
             RecordErrorKind::EmptySubId => f.write_str("sub-id must be non-empty"),
@@ -30,6 +30,23 @@ impl fmt::Display for RecordError {
                 f.write_str("sub-id is invalid for the given provider")
             }
             RecordErrorKind::RecordIdIsNotAlias => f.write_str("alias must not contain a colon"),
+        }
+    }
+}
+
+#[derive(Error, Debug)]
+pub enum AliasConversionError {
+    #[error("alias must not contain a colon")]
+    IsRemoteId,
+    #[error("alias must be non-empty")]
+    Empty,
+}
+
+impl From<AliasConversionError> for RecordError {
+    fn from(err: AliasConversionError) -> Self {
+        match err {
+            AliasConversionError::IsRemoteId => todo!(),
+            AliasConversionError::Empty => todo!(),
         }
     }
 }
