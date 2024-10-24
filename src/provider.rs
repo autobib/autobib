@@ -163,7 +163,7 @@ struct ProviderBibtexFields {
 macro_rules! convert_field {
     ($fields:ident, $record_data:ident, $field:ident) => {
         if let Some($field) = $fields.$field {
-            $record_data.try_insert(stringify!($field).into(), $field)?;
+            $record_data.check_and_insert(stringify!($field).into(), $field)?;
         };
     };
     ($fields:ident, $record_data:ident, $field:ident, $($tail:ident),+) => {
@@ -195,7 +195,7 @@ impl TryFrom<ProviderBibtex> for RecordData {
 
         // pad zeros for zbmath
         if let Some(field) = fields.zbmath {
-            record_data.try_insert("zbmath".to_owned(), format!("{field:0>8}"))?;
+            record_data.check_and_insert("zbmath".to_owned(), format!("{field:0>8}"))?;
         };
 
         Ok(record_data)
