@@ -45,6 +45,7 @@ use self::{
         state::{self, DatabaseState, RecordIdState, RecordRow, RemoteIdState},
         CitationKey, EntryData, RawRecordData, RecordData, RecordDatabase, RowData,
     },
+    error::AliasConversionError,
     logger::{suggest, Logger},
     record::{get_remote_response_recursive, Record, RecordRowResponse, RecursiveRemoteResponse},
 };
@@ -548,7 +549,16 @@ fn run_cli(cli: Cli) -> Result<()> {
             no_alias,
             no_edit,
         } => {
-            let remote_id = RemoteId::local(&id);
+            let alias = match Alias::from_str(&id) {
+                Ok(alias) => alias,
+                Err(AliasConversionError::Empty(_)) => {
+                    bail!("local sub-id must contain non-whitespace characters");
+                }
+                Err(AliasConversionError::IsRemoteId(_)) => {
+                    bail!("local sub-id must not contain a colon");
+                }
+            };
+            let remote_id = RemoteId::local(&alias);
 
             let (row, data, canonical) = match record_db.state_from_remote_id(&remote_id)? {
                 RemoteIdState::Existent(row) => {
@@ -573,22 +583,11 @@ fn run_cli(cli: Cli) -> Result<()> {
             };
 
             if !no_alias {
-                match Alias::from_str(&id) {
-                    Ok(alias) => {
-                        info!("Creating alias '{alias}' for '{canonical}'");
-                        if !row.apply(state::add_alias(&alias))? {
-                            warn!(
-                                "Alias '{alias}' already exists. '{canonical}' will be a different record."
-                            );
-                        }
-                    }
-                    Err(error::AliasConversionError::Empty) => {
-                        warn!("Alias not created for '{canonical}'.");
-                    }
-                    Err(error::AliasConversionError::IsRemoteId) => {
-                        warn!("Alias '{id}' not created for '{canonical}' as an alias cannot contain a colon.");
-                        suggest!("Use `--no-alias` with `autobib local` to disable automatic alias creation.");
-                    }
+                info!("Creating alias '{alias}' for '{canonical}'");
+                if !row.apply(state::add_alias(&alias))? {
+                    warn!(
+                        "Alias '{alias}' already exists. '{canonical}' will be a different record."
+                    );
                 }
             }
 
