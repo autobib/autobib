@@ -127,6 +127,18 @@ fn local() -> Result<()> {
             .unwrap();
     cmd.assert().success().stdout(predicate_file);
 
+    let mut cmd = s.cmd()?;
+    cmd.args(["local", " \n"]);
+    cmd.assert().failure().stderr(predicate::str::contains(
+        "local sub-id must contain non-whitespace characters",
+    ));
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["local", ":"]);
+    cmd.assert().failure().stderr(predicate::str::contains(
+        "local sub-id must not contain a colon",
+    ));
+
     s.close()
 }
 
