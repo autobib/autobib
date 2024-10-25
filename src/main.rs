@@ -172,12 +172,15 @@ enum Command {
     Local {
         /// The name for the record.
         id: String,
-        /// Edit record.
-        #[arg(long, action)]
-        edit: bool,
         /// Create local record from bibtex file.
         #[arg(short, long, value_name = "PATH")]
         from: Option<PathBuf>,
+        /// Do not create the alias `<ID>` for `local:<ID>`.
+        #[arg(long)]
+        no_alias: bool,
+        /// Save the local record without editing.
+        #[arg(long)]
+        no_edit: bool,
     },
     /// Generate records by searching for citation keys inside files.
     ///
@@ -349,7 +352,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                         error!("Cannot create alias for null record '{remote_id}'");
                     }
                     RecordRowResponse::NullAlias(alias) => {
-                        error!("Cannot create alias for missing alias '{alias}'");
+                        error!("Cannot create alias for undefined alias '{alias}'");
                     }
                     RecordRowResponse::InvalidRemoteId(record_error) => error!("{record_error}"),
                 }
@@ -389,7 +392,7 @@ fn run_cli(cli: Cli) -> Result<()> {
 
                             // there are multiple associated keys, prompt before deletion
                             if referencing.len() > 1 {
-                                warn!("Deleting this record will delete associated keys:");
+                                eprintln!("Deleting this record will delete associated keys:");
                                 for key in referencing.iter() {
                                     eprintln!("  {key}");
                                 }
@@ -426,14 +429,15 @@ fn run_cli(cli: Cli) -> Result<()> {
         Command::Edit { citation_key } => {
             match get_record_row(&mut record_db, citation_key, &client)? {
                 RecordRowResponse::Exists(record, row) => {
-                    edit_record_and_update(row, record)?;
+                    edit_record_and_update(&row, record)?;
+                    row.commit()?;
                 }
-                RecordRowResponse::NullRemoteId(remote_id, missing) => {
-                    missing.commit()?;
+                RecordRowResponse::NullRemoteId(remote_id, null_row) => {
+                    null_row.commit()?;
                     bail!("Cannot edit null record '{remote_id}'");
                 }
                 RecordRowResponse::NullAlias(alias) => {
-                    bail!("Cannot edit undefined alias '{alias}'");
+                    bail!("Undefined alias '{alias}'");
                 }
                 RecordRowResponse::InvalidRemoteId(err) => bail!("{err}"),
             }
@@ -449,14 +453,14 @@ fn run_cli(cli: Cli) -> Result<()> {
             }
         }
         Command::Get {
-            mut citation_keys,
+            citation_keys,
             out,
             retrieve_only,
             ignore_null,
         } => {
             // Collect all entries which are not null
             let valid_entries = retrieve_and_validate_entries(
-                citation_keys.drain(..),
+                citation_keys.into_iter(),
                 &mut record_db,
                 &client,
                 retrieve_only,
@@ -538,7 +542,12 @@ fn run_cli(cli: Cli) -> Result<()> {
             }
             RecordIdState::InvalidRemoteId(err) => bail!("{err}"),
         },
-        Command::Local { id, edit, from } => {
+        Command::Local {
+            id,
+            from,
+            no_alias,
+            no_edit,
+        } => {
             let remote_id = RemoteId::local(&id);
 
             let (row, data, canonical) = match record_db.state_from_remote_id(&remote_id)? {
@@ -563,18 +572,37 @@ fn run_cli(cli: Cli) -> Result<()> {
                 }
             };
 
-            if edit {
+            if !no_alias {
+                match Alias::from_str(&id) {
+                    Ok(alias) => {
+                        info!("Creating alias '{alias}' for '{canonical}'");
+                        if !row.apply(state::add_alias(&alias))? {
+                            warn!(
+                                "Alias '{alias}' already exists. '{canonical}' will be a different record."
+                            );
+                        }
+                    }
+                    Err(error::AliasConversionError::Empty) => {
+                        warn!("Alias not created for '{canonical}'.");
+                    }
+                    Err(error::AliasConversionError::IsRemoteId) => {
+                        warn!("Alias '{id}' not created for '{canonical}' as an alias cannot contain a colon.");
+                        suggest!("Use `--no-alias` with `autobib local` to disable automatic alias creation.");
+                    }
+                }
+            }
+
+            if !no_edit {
                 edit_record_and_update(
-                    row,
+                    &row,
                     Record {
                         key: canonical.to_string(),
                         data,
                         canonical,
                     },
                 )?;
-            } else {
-                row.commit()?;
             }
+            row.commit()?;
         }
         Command::Source {
             paths,
@@ -617,7 +645,7 @@ fn run_cli(cli: Cli) -> Result<()> {
             }
 
             let valid_entries = retrieve_and_validate_entries(
-                container.drain(),
+                container.into_iter(),
                 &mut record_db,
                 &client,
                 retrieve_only,
@@ -770,7 +798,7 @@ fn data_from_path<P: AsRef<Path>>(path: P) -> Result<RawRecordData, anyhow::Erro
 
 /// Edit a record and update the entry corresponding to the [`RecordRow`].
 fn edit_record_and_update(
-    row: RecordRow,
+    row: &RecordRow,
     record: Record,
 ) -> Result<Entry<RawRecordData>, anyhow::Error> {
     let Record {
@@ -803,7 +831,6 @@ fn edit_record_and_update(
         entry = new_entry;
     }
 
-    row.commit()?;
     Ok(entry)
 }
 

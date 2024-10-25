@@ -104,6 +104,7 @@ fn local() -> Result<()> {
         "first",
         "--from",
         "tests/resources/local/first.bib",
+        "--no-edit",
     ]);
     cmd.assert().success();
 
@@ -115,7 +116,7 @@ fn local() -> Result<()> {
     cmd.assert().success().stdout(predicate_file);
 
     let mut cmd = s.cmd()?;
-    cmd.args(["local", "second"]);
+    cmd.args(["local", "second", "--no-edit"]);
     cmd.assert().success();
 
     let mut cmd = s.cmd()?;
@@ -140,6 +141,7 @@ fn alias() -> Result<()> {
         "first",
         "--from",
         "tests/resources/local/first.bib",
+        "--no-edit",
     ]);
     cmd.assert().success();
 
@@ -152,7 +154,7 @@ fn alias() -> Result<()> {
     cmd.assert().success();
 
     let mut cmd = s.cmd()?;
-    cmd.args(["local", "second"]);
+    cmd.args(["local", "second", "--no-edit"]);
     cmd.assert().success();
 
     let mut cmd = s.cmd()?;
@@ -233,7 +235,7 @@ fn alias_remote() -> Result<()> {
     let mut cmd = s.cmd()?;
     cmd.args(["alias", "add", "a2", "alias-does-not-exist"]);
     cmd.assert().failure().stderr(predicate::str::contains(
-        "Cannot create alias for missing alias",
+        "Cannot create alias for undefined alias",
     ));
 
     let mut cmd = s.cmd()?;
@@ -296,6 +298,7 @@ fn delete() -> Result<()> {
         "first",
         "--from",
         "tests/resources/local/first.bib",
+        "--no-edit",
     ]);
     cmd.assert().success();
 
@@ -337,6 +340,7 @@ fn list() -> Result<()> {
         "first",
         "--from",
         "tests/resources/local/first.bib",
+        "--no-edit",
     ]);
     cmd.assert().success();
 
@@ -427,7 +431,7 @@ fn edit() -> Result<()> {
     cmd.args(["edit", "my_alias"]);
     cmd.assert()
         .failure()
-        .stderr(predicate::str::contains("Cannot edit undefined alias"));
+        .stderr(predicate::str::contains("Undefined alias"));
 
     s.close()
 }
