@@ -29,17 +29,17 @@ sql!(optimize, "Optimize the database");
 
 sql!(get_table_schema, "Get the table schema");
 
-sql!(get_cached_data, "Get cached record data");
+sql!(get_record_data, "Get cached record data");
 
 sql!(set_cached_data, "Set cached record data");
 
 sql!(update_cached_data, "Update cached record data");
 
-sql!(delete_cached_data, "Delete cached record data");
+sql!(delete_record_row, "Delete cached record data");
 
-sql!(delete_cached_null, "Delete cached null data");
+sql!(delete_null_record_row, "Delete cached null record data");
 
-sql!(get_cached_null, "Get cached null data");
+sql!(get_null_record_data, "Get cached null data");
 
 sql!(set_cached_null, "Set cached null data");
 
@@ -68,8 +68,6 @@ sql!(get_record_key, "Get a record key");
 sql!(get_null_record_key, "Get a null record key");
 
 sql!(delete_citation_key, "Delete a citation key");
-
-sql!(delete_null_record, "Delete a null record row");
 
 sql!(
     set_citation_key_overwrite,

@@ -42,8 +42,8 @@ use term::{Confirm, Editor, EditorConfig};
 use self::{
     cite_search::{get_citekeys, SourceFileType},
     db::{
-        state::{self, DatabaseState, RecordIdState, RecordRow, RemoteIdState},
-        CitationKey, EntryData, RawRecordData, RecordData, RecordDatabase, RowData,
+        state::{RecordIdState, RecordRow, RemoteIdState, RowData, State},
+        CitationKey, EntryData, RawRecordData, RecordData, RecordDatabase,
     },
     error::AliasConversionError,
     logger::{suggest, Logger},
@@ -343,7 +343,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                 info!("Creating alias '{alias}' for '{target}'");
                 match get_record_row(&mut record_db, target, &client)? {
                     RecordRowResponse::Exists(_, row) => {
-                        if !row.apply(state::add_alias(&alias))? {
+                        if !row.add_alias(&alias)? {
                             error!("Alias already exists: '{alias}'");
                         }
                         row.commit()?;
@@ -389,7 +389,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                 match record_db.state_from_record_id(record_id)? {
                     RecordIdState::Existent(remote_id, row) => {
                         if !force {
-                            let referencing = row.apply(state::get_referencing_keys)?;
+                            let referencing = row.get_referencing_keys()?;
 
                             // there are multiple associated keys, prompt before deletion
                             if referencing.len() > 1 {
@@ -405,6 +405,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                                 }
                             }
                         }
+                        row.save_to_changelog()?;
                         row.delete()?.commit()?;
                     }
                     RecordIdState::NullRemoteId(remote_id, null_row) => {
@@ -479,11 +480,11 @@ fn run_cli(cli: Cli) -> Result<()> {
             RecordIdState::Existent(record_id, row) => {
                 match report {
                     InfoReportType::All => {
-                        let row_data = row.apply(state::get_row_data)?;
+                        let row_data = row.get_data()?;
                         println!("Canonical: {}", row_data.canonical);
                         println!(
                             "Equivalent references: {}",
-                            row.apply(state::get_referencing_keys)?.iter().join(", ")
+                            row.get_referencing_keys()?.iter().join(", ")
                         );
                         println!(
                             "Valid BibTeX? {}",
@@ -496,7 +497,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                         println!("Data last modified: {}", row_data.modified);
                     }
                     InfoReportType::Canonical => {
-                        println!("{}", row.apply(state::get_canonical)?);
+                        println!("{}", row.get_canonical()?);
                     }
 
                     InfoReportType::Valid => {
@@ -505,12 +506,12 @@ fn run_cli(cli: Cli) -> Result<()> {
                         }
                     }
                     InfoReportType::Equivalent => {
-                        for re in row.apply(state::get_referencing_keys)? {
+                        for re in row.get_referencing_keys()? {
                             println!("{re}");
                         }
                     }
                     InfoReportType::Modified => {
-                        println!("{}", row.apply(state::last_modified)?);
+                        println!("{}", row.last_modified()?);
                     }
                 };
                 row.commit()?;
@@ -518,7 +519,7 @@ fn run_cli(cli: Cli) -> Result<()> {
             RecordIdState::NullRemoteId(remote_id, null_row) => match report {
                 InfoReportType::All => {
                     println!("Null record: {remote_id}");
-                    let null_row_data = null_row.apply(state::get_null_row_data)?;
+                    let null_row_data = null_row.get_data()?;
                     println!("Last attempted: {}", null_row_data.attempted);
                 }
                 InfoReportType::Canonical => {
@@ -531,7 +532,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                     bail!("No equivalent keys for null record '{remote_id}'");
                 }
                 InfoReportType::Modified => {
-                    println!("{}", null_row.apply(state::get_null_attempted)?);
+                    println!("{}", null_row.get_null_attempted()?);
                 }
             },
             RecordIdState::UnknownRemoteId(remote_id, missing) => {
@@ -566,7 +567,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                         row.commit()?;
                         bail!("Local record '{remote_id}' already exists")
                     } else {
-                        let raw_record_data = row.apply(state::get_row_data)?.data;
+                        let raw_record_data = row.get_data()?.data;
                         (row, raw_record_data, remote_id)
                     }
                 }
@@ -584,7 +585,7 @@ fn run_cli(cli: Cli) -> Result<()> {
 
             if !no_alias {
                 info!("Creating alias '{alias}' for '{canonical}'");
-                if !row.apply(state::add_alias(&alias))? {
+                if !row.add_alias(&alias)? {
                     warn!(
                         "Alias '{alias}' already exists. '{canonical}' will be a different record."
                     );
@@ -666,7 +667,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                     data: existing_raw_data,
                     canonical,
                     ..
-                } = row.apply(state::get_row_data)?;
+                } = row.get_data()?;
                 let new_raw_data = match data_from_path_or_remote(from, canonical, &client) {
                     Ok((data, _)) => data,
                     Err(err) => {
@@ -679,7 +680,8 @@ fn run_cli(cli: Cli) -> Result<()> {
                         info!("Updating '{citation_key}' with new data, skipping existing fields");
                         let mut existing_record = RecordData::from(existing_raw_data);
                         existing_record.merge_or_skip(new_raw_data)?;
-                        row.apply(state::update_row_data(&(&existing_record).into()))?;
+                        row.save_to_changelog()?;
+                        row.update_row_data(&(&existing_record).into())?;
                         row.commit()?;
                     }
                     UpdateMode::PreferIncoming => {
@@ -688,7 +690,8 @@ fn run_cli(cli: Cli) -> Result<()> {
                         );
                         let mut new_record = RecordData::from(new_raw_data);
                         new_record.merge_or_skip(existing_raw_data)?;
-                        row.apply(state::update_row_data(&(&new_record).into()))?;
+                        row.save_to_changelog()?;
+                        row.update_row_data(&(&new_record).into())?;
                         row.commit()?;
                     }
                     UpdateMode::Prompt => {
@@ -712,7 +715,8 @@ fn run_cli(cli: Cli) -> Result<()> {
                                 }
                             },
                         )?;
-                        row.apply(state::update_row_data(&(&existing_record).into()))?;
+                        row.save_to_changelog()?;
+                        row.update_row_data(&(&existing_record).into())?;
                         row.commit()?;
                     }
                 }
@@ -721,7 +725,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                 match data_from_path_or_remote(from, remote_id, &client) {
                     Ok((data, canonical)) => {
                         info!("Existing row was null; inserting new data.");
-                        let row = null_row.insert(&data, &canonical)?;
+                        let row = null_row.delete()?.insert(&data, &canonical)?;
                         row.commit()?;
                     }
                     Err(err) => {
@@ -797,7 +801,7 @@ fn data_from_path<P: AsRef<Path>>(path: P) -> Result<RawRecordData, anyhow::Erro
 
 /// Edit a record and update the entry corresponding to the [`RecordRow`].
 fn edit_record_and_update(
-    row: &RecordRow,
+    row: &State<RecordRow>,
     record: Record,
 ) -> Result<Entry<RawRecordData>, anyhow::Error> {
     let Record {
@@ -819,12 +823,13 @@ fn edit_record_and_update(
         if new_key != entry.key() {
             let alias = Alias::from_str(new_key.as_ref())?;
             info!("Creating new alias '{alias}' for '{canonical}'");
-            row.apply(state::add_alias(&alias))?;
+            row.add_alias(&alias)?;
         }
 
         if new_record_data != entry.data() {
             info!("Updating cached data for '{canonical}'");
-            row.apply(state::update_row_data(new_record_data))?;
+            row.save_to_changelog()?;
+            row.update_row_data(new_record_data)?;
         }
 
         entry = new_entry;
@@ -989,7 +994,7 @@ fn retrieve_and_validate_single_entry(
 }
 
 /// Validate a BibTeX key, logging errors and suggesting fixes.
-fn validate_bibtex_key(key: String, row: &RecordRow) -> Option<EntryKey<String>> {
+fn validate_bibtex_key(key: String, row: &State<RecordRow>) -> Option<EntryKey<String>> {
     match EntryKey::new(key) {
         Ok(bibtex_key) => Some(bibtex_key),
         Err(parse_result) => {
@@ -1020,8 +1025,8 @@ fn validate_bibtex_key(key: String, row: &RecordRow) -> Option<EntryKey<String>>
 }
 
 /// Get keys equivalent to a given key that are valid BibTeX citation keys.
-fn get_valid_referencing_keys(row: &RecordRow) -> Result<Vec<String>, rusqlite::Error> {
-    let mut referencing_keys = row.apply(state::get_referencing_keys)?;
+fn get_valid_referencing_keys(row: &State<RecordRow>) -> Result<Vec<String>, rusqlite::Error> {
+    let mut referencing_keys = row.get_referencing_keys()?;
     referencing_keys.retain(|k| is_entry_key(k));
     Ok(referencing_keys)
 }

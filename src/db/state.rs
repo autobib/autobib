@@ -1,24 +1,175 @@
+//! # Database state representation
+//! This module implements the [typestate pattern](https://cliffle.com/blog/rust-typestate/) to
+//! represent the internal database state as corresponds to a given [`RecordId`].
+//!
+//! The [`State`] struct is a representation of the database state corresponding to a [`RecordId`].
+//! Internally, the [`State`] struct is a wrapper around a [`rusqlite::Transaction`], which ensures
+//! that the underlying database state will not change during the running of this program.
+//!
+//! A [`RecordId`] is represented by the database in exactly one of the following ways, which is
+//! represented by the corresponding implementation of [`State`].
+//!
+//! 1. The [`RecordId`] corresponds to a row in the `Records` table, and is not present in the
+//!    `NullRecords` table. This is [`State<RecordRow`>].
+//! 2. The [`RecordId`] corresponds to a row in the `NullRecords` table, and is not present in the
+//!    `Records` table. This is [`State<NullRecordRow>`].
+//! 3. The [`RecordId`] is not present in either the `Records` table or the `NullRecords` table.
+//!    This is [`State<Missing>`].
+//!
+//! Any implementation of [`State`] has access to the following operations:
+//!
+//! - [`commit`](State::commit) the state, which writes the relevant changes to the database.
+//! - [`reset`](State::reset) the state, which re-associates the internal transaction with a new
+//!   state. Since the underlying transaction is preserved, it must be committed even for the
+//!   changes prior to the [`reset`](State::reset) takes place. As a result,
+//!   [`reset`](State::reset) should be used with care to avoid lost data!
+//!
+//! If the state has an associated row, this is represented by the [`InDatabase`] trait, which
+//! gives access to the internal [`State::row_id`] method, which returns the internal [`RowId`] of
+//! the corresponding row.
+//!
+//! The different states can be converted to each other.
+//!
+//! | From                     | To                       | Method              |
+//! |--------------------------|--------------------------|---------------------|
+//! | [`State<RecordRow>`]     | [`State<Missing>`]       | [`State::delete`]   |
+//! | [`State<NullRecordRow>`] | [`State<Missing>`]       | [`State::delete`]   |
+//! | [`State<Missing>`]       | [`State<RecordRow>`]     | [`State::insert`]   |
+//! | [`State<Missing>`]       | [`State<NullRecordRow>`] | [`State::set_null`] |
+//!
+//! Each of the particular implementation of [`State`] also supports a number of additional methods
+//! which are relevant database operations in the provided state.
 mod missing;
 mod null;
 mod record;
-mod transaction;
 
 use log::debug;
-use rusqlite::Transaction;
+use rusqlite::{CachedStatement, Error, Statement, Transaction};
 
-pub use self::{missing::*, null::*, record::*, transaction::DatabaseState};
-use super::{get_null_row_id, get_row_id};
+pub use self::{missing::*, null::*, record::*};
+use super::{get_null_row_id, get_row_id, RowId};
 use crate::{error::RecordError, Alias, AliasOrRemoteId, RecordId, RemoteId};
+
+/// A representation of the current database state corresponding to a [`RecordId`].
+#[derive(Debug)]
+pub struct State<'conn, I: DatabaseId> {
+    tx: Transaction<'conn>,
+    id: I,
+}
+
+/// A trait which represents a database id, which can either be present or missing.
+pub trait DatabaseId: private::Sealed {}
+
+/// A trait which represents a [`DatabaseId`] which is present in the database.
+pub trait InDatabase: DatabaseId + private::Sealed {
+    /// The type of data that is associated with the row, which can be read from a
+    /// [`rusqlite::Row`].
+    type Data: for<'a, 'conn> TryFrom<&'a rusqlite::Row<'conn>, Error = rusqlite::Error>;
+
+    /// The statement to get the data associated with the row.
+    const GET_STMT: &str;
+
+    /// The statement to delete the corresponding row.
+    const DELETE_STMT: &str;
+
+    /// Get the [`RowId`] corresponding to the row.
+    fn row_id(&self) -> RowId;
+
+    /// Construct from a [`RowId`] corresponding to a given row.
+    fn from_row_id(id: RowId) -> Self;
+}
+
+mod private {
+    use super::{Missing, NullRecordRow, RecordRow};
+
+    pub trait Sealed {}
+
+    impl Sealed for RecordRow {}
+    impl Sealed for NullRecordRow {}
+    impl Sealed for Missing {}
+}
+
+impl<'conn, I: DatabaseId> State<'conn, I> {
+    /// Reset the row, clearing any internal data but preserving the transaction.
+    pub fn reset(self, remote_id: &RemoteId) -> Result<RemoteIdState<'conn>, rusqlite::Error> {
+        RemoteIdState::determine(self.tx, remote_id)
+    }
+
+    /// Commit the [`State`], writing the relevant changes to the database.
+    pub fn commit(self) -> Result<(), Error> {
+        self.tx.commit()
+    }
+
+    /// Initialize a new state given a transaction and a [`DatabaseId`] implementation.
+    fn init(tx: Transaction<'conn>, id: I) -> Self {
+        Self { tx, id }
+    }
+
+    /// # Safety
+    /// The caller is guaranteed to ensure that a statement which included an insert was previously
+    /// executed on the same underlying transaction.
+    unsafe fn into_last_insert<J: InDatabase>(self) -> State<'conn, J> {
+        let Self { tx, .. } = self;
+        let id = tx.last_insert_rowid();
+        State::<'conn, J>::init(tx, <J as InDatabase>::from_row_id(id))
+    }
+
+    /// Prepare the SQL statement for execution.
+    fn prepare(&self, sql: &'static str) -> Result<Statement, Error> {
+        self.tx.prepare(sql)
+    }
+
+    /// Prepare the SQL statement for execution, caching the statement internally for more
+    /// efficient subsequent calls.
+    ///
+    /// Note that the caching only exists in memory: internally, rusqlite uses
+    /// hashlink's
+    /// [`LruCache`](https://docs.rs/hashlink/latest/hashlink/lru_cache/struct.LruCache.html) to
+    /// store statements. As a result, statement caching is only valuable for statements which
+    /// are called many times in a single program run.
+    ///
+    /// Unfortunately, rusqlite does not support compile-time pre-caching of SQLite statements.
+    fn prepare_cached(&self, sql: &'static str) -> Result<CachedStatement, Error> {
+        self.tx.prepare_cached(sql)
+    }
+}
+
+impl<'conn, I: InDatabase> State<'conn, I> {
+    /// Get the internal row-id, for use in SQL statements.
+    fn row_id(&self) -> RowId {
+        self.id.row_id()
+    }
+
+    /// Delete the row.
+    pub fn delete(self) -> Result<State<'conn, Missing>, rusqlite::Error> {
+        debug!("Deleting row");
+        self.prepare(<I as InDatabase>::DELETE_STMT)?
+            .execute((self.row_id(),))?;
+        let Self { tx, .. } = self;
+        Ok(State::<'conn, Missing>::init(tx, Missing {}))
+    }
+
+    /// Get the data associated with the row.
+    pub fn get_data(&self) -> Result<<I as InDatabase>::Data, rusqlite::Error> {
+        debug!("Retrieving associated data");
+        let mut record_selector = self.prepare_cached(<I as InDatabase>::GET_STMT)?;
+        let mut record_rows = record_selector.query([self.row_id()])?;
+        record_rows
+            .next()?
+            .expect("RowId does not exist!")
+            .try_into()
+    }
+}
 
 /// A representation of the database state beginning with an arbitrary [`RecordId`].
 #[derive(Debug)]
 pub enum RecordIdState<'conn> {
     /// The `Records` row exists.
-    Existent(RecordId, RecordRow<'conn>),
+    Existent(RecordId, State<'conn, RecordRow>),
     /// The `Records` row does not exist and the `NullRecords` row exists.
-    NullRemoteId(RemoteId, NullRecordRow<'conn>),
+    NullRemoteId(RemoteId, State<'conn, NullRecordRow>),
     /// The `Records` and `NullRecords` rows do not exist.
-    UnknownRemoteId(RemoteId, MissingRow<'conn>),
+    UnknownRemoteId(RemoteId, State<'conn, Missing>),
     /// The alias is undefined.
     UndefinedAlias(Alias),
     /// The remote id is invalid.
@@ -30,42 +181,36 @@ impl<'conn> RecordIdState<'conn> {
     /// identifier.
     #[inline]
     pub fn determine(tx: Transaction<'conn>, record_id: RecordId) -> Result<Self, rusqlite::Error> {
-        match get_row_id(&tx, &record_id)? {
+        Ok(match get_row_id(&tx, &record_id)? {
             Some(row_id) => {
                 debug!("Beginning new transaction for row '{row_id}' in the `Records` table.");
-                Ok(RecordIdState::Existent(
-                    record_id,
-                    RecordRow::new(tx, row_id),
-                ))
+                RecordIdState::Existent(record_id, State::init(tx, RecordRow::from_row_id(row_id)))
             }
             None => match record_id.resolve() {
                 Ok(AliasOrRemoteId::Alias(alias)) => {
                     tx.commit()?;
-                    Ok(RecordIdState::UndefinedAlias(alias))
+                    RecordIdState::UndefinedAlias(alias)
                 }
                 Ok(AliasOrRemoteId::RemoteId(remote_id)) => match get_null_row_id(&tx, &remote_id)?
                 {
                     Some(row_id) => {
                         debug!("Beginning new transaction for row '{row_id}' in the `NullRecords` table.");
-                        Ok(RecordIdState::NullRemoteId(
+                        RecordIdState::NullRemoteId(
                             remote_id,
-                            NullRecordRow::new(tx, row_id),
-                        ))
+                            State::init(tx, NullRecordRow::from_row_id(row_id)),
+                        )
                     }
                     None => {
                         debug!("Beginning new transaction for unknown remote id.");
-                        Ok(RecordIdState::UnknownRemoteId(
-                            remote_id,
-                            MissingRow::new(tx),
-                        ))
+                        RecordIdState::UnknownRemoteId(remote_id, State::init(tx, Missing {}))
                     }
                 },
                 Err(record_error) => {
                     tx.commit()?;
-                    Ok(RecordIdState::InvalidRemoteId(record_error))
+                    RecordIdState::InvalidRemoteId(record_error)
                 }
             },
-        }
+        })
     }
 }
 
@@ -73,11 +218,11 @@ impl<'conn> RecordIdState<'conn> {
 #[derive(Debug)]
 pub enum RemoteIdState<'conn> {
     /// The `Records` row exists.
-    Existent(RecordRow<'conn>),
+    Existent(State<'conn, RecordRow>),
     /// The `Records` row does not exist and the `NullRecords` row exists.
-    Null(NullRecordRow<'conn>),
+    Null(State<'conn, NullRecordRow>),
     /// The `Records` and `NullRecords` rows do not exist.
-    Unknown(MissingRow<'conn>),
+    Unknown(State<'conn, Missing>),
 }
 
 impl<'conn> RemoteIdState<'conn> {
@@ -88,23 +233,23 @@ impl<'conn> RemoteIdState<'conn> {
         tx: Transaction<'conn>,
         remote_id: &RemoteId,
     ) -> Result<Self, rusqlite::Error> {
-        match get_row_id(&tx, remote_id)? {
+        Ok(match get_row_id(&tx, remote_id)? {
             Some(row_id) => {
                 debug!("Beginning new transaction for row '{row_id}' in the `Records` table.");
-                Ok(Self::Existent(RecordRow::new(tx, row_id)))
+                Self::Existent(State::init(tx, RecordRow::from_row_id(row_id)))
             }
             None => {
                 match get_null_row_id(&tx, remote_id)? {
                     Some(row_id) => {
                         debug!("Beginning new transaction for row '{row_id}' in the `NullRecords` table.");
-                        Ok(Self::Null(NullRecordRow::new(tx, row_id)))
+                        Self::Null(State::init(tx, NullRecordRow::from_row_id(row_id)))
                     }
                     None => {
                         debug!("Beginning new transaction for unknown remote id.");
-                        Ok(Self::Unknown(MissingRow::new(tx)))
+                        Self::Unknown(State::init(tx, Missing {}))
                     }
                 }
             }
-        }
+        })
     }
 }

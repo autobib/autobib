@@ -1,41 +1,31 @@
 use chrono::Local;
 use log::debug;
-use rusqlite::Transaction;
 
-use super::{
-    add_refs, transaction::tx_impl, DatabaseState, NullRecordRow, RecordRow, RemoteIdState,
-};
+use super::{DatabaseId, NullRecordRow, RecordRow, State};
 use crate::{
     db::{sql, CitationKey},
     RawRecordData, RemoteId,
 };
 
-/// The database state when:
-/// 1. There is no row in `Records`.
-/// 2. There is no row in `NullRecords`.
+/// A database id which is missing.
 #[derive(Debug)]
-pub struct MissingRow<'conn> {
-    tx: Transaction<'conn>,
-}
+pub struct Missing;
 
-tx_impl!(MissingRow);
+impl DatabaseId for Missing {}
 
-impl<'conn> MissingRow<'conn> {
-    /// Initialize a new [`MissingRow`].
-    pub(super) fn new(tx: Transaction<'conn>) -> Self {
-        Self { tx }
-    }
-
+impl<'conn> State<'conn, Missing> {
     /// Set a null row, converting into a [`NullRecordRow`].
-    pub fn set_null(self, remote_id: &RemoteId) -> Result<NullRecordRow<'conn>, rusqlite::Error> {
+    pub fn set_null(
+        self,
+        remote_id: &RemoteId,
+    ) -> Result<State<'conn, NullRecordRow>, rusqlite::Error> {
         {
-            let mut setter = self.tx.prepare_cached(sql::set_cached_null())?;
+            let mut setter = self.prepare_cached(sql::set_cached_null())?;
             let cache_time = Local::now();
             setter.execute((remote_id.name(), cache_time))?;
         }
-        let row_id = self.tx.last_insert_rowid();
-
-        Ok(NullRecordRow::new(self.tx, row_id))
+        // SAFETY: the `set_cached_null` statement is an INSERT.
+        Ok(unsafe { self.into_last_insert() })
     }
 
     /// Create the row, converting into a [`RecordRow`].
@@ -43,15 +33,15 @@ impl<'conn> MissingRow<'conn> {
         self,
         data: &RawRecordData,
         canonical: &RemoteId,
-    ) -> Result<RecordRow<'conn>, rusqlite::Error> {
+    ) -> Result<State<'conn, RecordRow>, rusqlite::Error> {
         debug!("Inserting data for canonical id '{canonical}'");
-        self.tx.prepare_cached(sql::set_cached_data())?.execute((
+        self.prepare_cached(sql::set_cached_data())?.execute((
             canonical.name(),
             data.to_byte_repr(),
             &Local::now(),
         ))?;
-        let row_id = self.tx.last_insert_rowid();
-        Ok(RecordRow::new(self.tx, row_id))
+        // SAFETY: the `set_cached_data` statement is an INSERT.
+        Ok(unsafe { self.into_last_insert() })
     }
 
     /// Create the row and also insert a link in the `CitationKeys` table, converting into a [`RecordRow`].
@@ -59,14 +49,9 @@ impl<'conn> MissingRow<'conn> {
         self,
         data: &RawRecordData,
         canonical: &RemoteId,
-    ) -> Result<RecordRow<'conn>, rusqlite::Error> {
+    ) -> Result<State<'conn, RecordRow>, rusqlite::Error> {
         let row = self.insert(data, canonical)?;
-        row.apply(add_refs(std::iter::once(canonical)))?;
+        row.add_refs(std::iter::once(canonical))?;
         Ok(row)
-    }
-
-    /// Reset the row, clearing any internal data but preserving the transaction.
-    pub fn reset(self, remote_id: &RemoteId) -> Result<RemoteIdState<'conn>, rusqlite::Error> {
-        RemoteIdState::determine(self.tx, remote_id)
     }
 }

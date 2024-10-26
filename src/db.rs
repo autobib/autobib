@@ -5,6 +5,9 @@
 //! The core struct is the [`RecordDatabase`], as well as the data objects [`RecordData`],
 //! [`RawRecordData`], and the corresponding trait [`EntryData`].
 //!
+//! In order to represent internal database state, see the [`state`] module, along with its
+//! documentation.
+//!
 //! ## Description of the internal binary format
 //! We use a custom internal binary format to represent the data associated with each bibTex entry.
 //!
@@ -74,7 +77,7 @@ use rusqlite::{types::ValueRef, Connection, OptionalExtension, Transaction};
 
 pub use self::data::{binary_format_version, EntryData, RawRecordData, RecordData};
 pub(crate) use self::data::{EntryTypeHeader, KeyHeader, ValueHeader};
-use self::state::{RecordIdState, RemoteIdState};
+use self::state::{RecordIdState, RemoteIdState, RowData};
 use self::validate::DatabaseValidator;
 use crate::{
     error::{DatabaseError, ValidationError},
@@ -109,45 +112,6 @@ pub fn get_null_row_id(
     tx.prepare_cached(sql::get_null_record_key())?
         .query_row([remote_id.name()], |row| row.get("rowid"))
         .optional()
-}
-
-/// The contents of a row in the `Records` table.
-pub struct NullRowData {
-    /// The last time the row was modified.
-    pub attempted: DateTime<Local>,
-}
-
-impl TryFrom<&rusqlite::Row<'_>> for NullRowData {
-    type Error = rusqlite::Error;
-
-    fn try_from(row: &rusqlite::Row<'_>) -> Result<Self, Self::Error> {
-        Ok(Self {
-            attempted: row.get("attempted")?,
-        })
-    }
-}
-
-/// The contents of a row in the `Records` table.
-pub struct RowData {
-    /// The binary data associated with the row.
-    pub data: RawRecordData,
-    /// The canonical record id associated with the row.
-    pub canonical: RemoteId,
-    /// The last time the row was modified.
-    pub modified: DateTime<Local>,
-}
-
-impl TryFrom<&rusqlite::Row<'_>> for RowData {
-    type Error = rusqlite::Error;
-
-    fn try_from(row: &rusqlite::Row<'_>) -> Result<Self, Self::Error> {
-        Ok(Self {
-            // SAFETY: we assume that the underlying database is correctly formatted
-            data: unsafe { RawRecordData::from_byte_repr_unchecked(row.get("data")?) },
-            canonical: unsafe { RemoteId::from_string_unchecked(row.get("record_id")?) },
-            modified: row.get("modified")?,
-        })
-    }
 }
 
 /// This trait represents types which can be stored as a row in the SQL database underlying a
