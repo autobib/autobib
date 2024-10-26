@@ -6,11 +6,8 @@ use nonempty::NonEmpty;
 pub use self::key::{Alias, AliasOrRemoteId, RecordId, RemoteId};
 use crate::{
     db::{
-        state::{
-            add_refs, get_row_data, DatabaseState, MissingRow, NullRecordRow, RecordIdState,
-            RecordRow, RemoteIdState,
-        },
-        RawRecordData, RecordData, RecordDatabase, RowData,
+        state::{Missing, NullRecordRow, RecordIdState, RecordRow, RemoteIdState, RowData, State},
+        RawRecordData, RecordData, RecordDatabase,
     },
     error::{Error, ProviderError, RecordError},
     provider::{get_remote_response, RemoteResponse},
@@ -30,10 +27,10 @@ pub struct Record {
 
 /// The response type of [`get_record_row`].
 ///
-/// If the record exists, the resulting [`RecordRow`] is guaranteed to be valid for the row corresponding
+/// If the record exists, the resulting [`State<RecordRow>`] is guaranteed to be valid for the row corresponding
 /// to the [`Record`].
 ///
-/// If the record does not exist, then the resulting [`NullRecordRow`] is guaranteed to not exist in the
+/// If the record does not exist, then the resulting [`State<NullRecordRow>`] is guaranteed to not exist in the
 /// `Records` table, and be cached in the `NullRecords` table.
 ///
 /// The database state is passed back to the caller inside the enum. Note that this
@@ -42,9 +39,9 @@ pub struct Record {
 #[derive(Debug)]
 pub enum RecordRowResponse<'conn> {
     /// The record exists.
-    Exists(Record, RecordRow<'conn>),
+    Exists(Record, State<'conn, RecordRow>),
     /// The record is null.
-    NullRemoteId(RemoteId, NullRecordRow<'conn>),
+    NullRemoteId(RemoteId, State<'conn, NullRecordRow>),
     /// The identifier has an invalid form.
     InvalidRemoteId(RecordError),
     /// The alias does not exist.
@@ -64,7 +61,7 @@ pub fn get_record_row<'conn>(
         RecordIdState::Existent(record_id, row) => {
             let RowData {
                 data, canonical, ..
-            } = row.apply(get_row_data)?;
+            } = row.get_data()?;
             Ok(RecordRowResponse::Exists(
                 Record {
                     key: record_id.into(),
@@ -107,10 +104,10 @@ fn into_ends<T: Clone>(ne: NonEmpty<T>) -> (T, T) {
 /// Resolve remote records inside a loop within a transaction.
 ///
 /// At each intermediate stage, attempt to read any data possible from the database
-/// inside the transaction implicit in the [`MissingRow`], and write any new data to the
+/// inside the transaction implicit in the [`State<Missing>`], and write any new data to the
 /// database.
 fn get_record_row_recursive<'conn>(
-    mut missing: MissingRow<'conn>,
+    mut missing: State<'conn, Missing>,
     remote_id: RemoteId,
     client: &HttpClient,
 ) -> Result<RecordRowResponse<'conn>, Error> {
@@ -121,7 +118,7 @@ fn get_record_row_recursive<'conn>(
             RemoteResponse::Data(data) => {
                 let raw_record_data = (&data).into();
                 let row = missing.insert(&raw_record_data, history.last())?;
-                row.apply(add_refs(history.iter()))?;
+                row.add_refs(history.iter())?;
 
                 // extract bottom and top simultaneously
                 let (first, last) = into_ends(history);
@@ -139,10 +136,10 @@ fn get_record_row_recursive<'conn>(
                 RemoteIdState::Existent(row) => {
                     // not necessary to insert `new_remote_id` since we just saw that it
                     // is present in the database
-                    row.apply(add_refs(history.iter()))?;
+                    row.add_refs(history.iter())?;
                     let RowData {
                         data, canonical, ..
-                    } = row.apply(get_row_data)?;
+                    } = row.get_data()?;
                     break Ok(RecordRowResponse::Exists(
                         Record {
                             key: history.head.into(),

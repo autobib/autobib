@@ -1,125 +1,149 @@
 use chrono::{DateTime, Local};
 use log::debug;
-use rusqlite::Transaction;
 
-use super::{transaction::tx_impl, DatabaseState, MissingRow};
 use crate::{
-    db::{flatten_constraint_violation, sql, CitationKey, Constraint, RowData, RowId},
+    db::{flatten_constraint_violation, sql, CitationKey, Constraint, RowId},
     Alias, RawRecordData, RemoteId,
 };
 
-/// The database state when:
-/// 1. There is no row in `Records`.
-/// 2. There is a row in `NullRecords`.
-///
-/// The `row_id` is the corresponding rowid in the `Records` table.
+use super::{DatabaseId, InDatabase, State};
+
+/// An identifier for a row in the `Records` table.
 #[derive(Debug)]
-pub struct RecordRow<'conn> {
-    tx: Transaction<'conn>,
-    row_id: RowId,
+pub struct RecordRow(RowId);
+
+impl DatabaseId for RecordRow {}
+
+/// The contents of a row in the `Records` table.
+pub struct RowData {
+    /// The binary data associated with the row.
+    pub data: RawRecordData,
+    /// The canonical record id associated with the row.
+    pub canonical: RemoteId,
+    /// The last time the row was modified.
+    pub modified: DateTime<Local>,
 }
 
-tx_impl!(RecordRow);
+impl TryFrom<&rusqlite::Row<'_>> for RowData {
+    type Error = rusqlite::Error;
 
-impl<'conn> RecordRow<'conn> {
-    /// Initialize a new [`RecordRow`].
-    pub(super) fn new(tx: Transaction<'conn>, row_id: RowId) -> Self {
-        Self { tx, row_id }
+    fn try_from(row: &rusqlite::Row<'_>) -> Result<Self, Self::Error> {
+        Ok(Self {
+            // SAFETY: we assume that the underlying database is correctly formatted
+            data: unsafe { RawRecordData::from_byte_repr_unchecked(row.get("data")?) },
+            canonical: unsafe { RemoteId::from_string_unchecked(row.get("record_id")?) },
+            modified: row.get("modified")?,
+        })
     }
+}
 
-    /// Get the internal row id.
-    #[inline]
+impl InDatabase for RecordRow {
+    type Data = RowData;
+
+    const GET_STMT: &str = sql::get_record_data();
+
+    const DELETE_STMT: &str = sql::delete_record_row();
+
     fn row_id(&self) -> RowId {
-        self.row_id
+        self.0
     }
 
-    /// Delete the row.
-    pub fn delete(self) -> Result<MissingRow<'conn>, rusqlite::Error> {
-        debug!("Deleting data for row '{}'", self.row_id);
-        self.apply(save_row_to_changelog)?;
-        self.tx
-            .prepare(sql::delete_cached_data())?
-            .execute((self.row_id,))?;
-        Ok(MissingRow::new(self.tx))
+    fn from_row_id(id: RowId) -> Self {
+        Self(id)
     }
 }
 
-/// Get every key in the `CitationKeys` table which references the [`RecordRow`].
-pub fn get_referencing_keys(row: &RecordRow) -> Result<Vec<String>, rusqlite::Error> {
-    debug!("Getting referencing keys for '{}'.", row.row_id());
-    let mut selector = row.tx.prepare(sql::get_all_referencing_citation_keys())?;
-    let rows = selector.query_map((row.row_id(),), |row| row.get(0))?;
-    let mut referencing = Vec::with_capacity(1);
-    for name_res in rows {
-        referencing.push(name_res?);
-    }
-    Ok(referencing)
-}
-
-/// Get the canonical [`RemoteId`] corresponding to a [`RecordRow`].
-pub fn get_canonical(row: &RecordRow) -> Result<RemoteId, rusqlite::Error> {
-    debug!("Getting canonical identifier for '{}'.", row.row_id());
-    let RowData { canonical, .. } = get_row_data(row)?;
-    Ok(canonical)
-}
-
-/// Get last modified time of a [`RecordRow`].
-#[inline]
-pub fn last_modified(row: &RecordRow) -> Result<DateTime<Local>, rusqlite::Error> {
-    debug!("Getting last modified time for row '{}'.", row.row_id());
-    let RowData { modified, .. } = get_row_data(row)?;
-    Ok(modified)
-}
-
-/// Get the [`RowData`] corresponding to a [`RecordRow`].
-#[inline]
-pub fn get_row_data(row: &RecordRow) -> Result<RowData, rusqlite::Error> {
-    debug!("Getting data for row '{}'.", row.row_id());
-    let mut record_selector = row.tx.prepare_cached(sql::get_cached_data())?;
-    let mut record_rows = record_selector.query([row.row_id()])?;
-    record_rows
-        .next()?
-        .expect("RowId does not exist!")
-        .try_into()
-}
-
-/// Copy the [`RowData`] of a row corresponding to a [`RecordRow`] to the `Changelog` table.
-pub fn save_row_to_changelog(row: &RecordRow) -> Result<(), rusqlite::Error> {
-    debug!("Saving row '{}' to Changelog table", row.row_id());
-    row.tx
-        .prepare_cached(sql::copy_to_changelog())?
-        .execute((row.row_id(),))?;
-    Ok(())
-}
-
-/// Replace the [`RawRecordData`] corresponding to an existing [`RecordRow`] with new data.
-pub fn update_row_data(
-    data: &RawRecordData,
-) -> impl FnOnce(&RecordRow) -> Result<(), rusqlite::Error> + '_ {
-    move |row| {
-        debug!("Updating row data for row '{}'", row.row_id());
-        save_row_to_changelog(row)?;
-        let mut updater = row.tx.prepare(sql::update_cached_data())?;
-        updater.execute((row.row_id(), &Local::now(), data.to_byte_repr()))?;
+impl<'conn> State<'conn, RecordRow> {
+    /// Copy the [`RowData`] of a row corresponding to a [`RecordRow`] to the `Changelog` table.
+    pub fn save_to_changelog(&self) -> Result<(), rusqlite::Error> {
+        debug!("Saving row '{}' to Changelog table", self.row_id());
+        self.prepare_cached(sql::copy_to_changelog())?
+            .execute((self.row_id(),))?;
         Ok(())
     }
-}
 
-/// Add a new alias to the [`RecordRow`].
-///
-/// The return value is `false` if the alias already exists, and otherwise `true`.
-pub fn add_alias(alias: &Alias) -> impl FnOnce(&RecordRow) -> Result<bool, rusqlite::Error> + '_ {
-    add_refs_impl(std::iter::once(alias), CitationKeyInsertMode::FailIfExists)
-}
+    /// Get every key in the `CitationKeys` table which references the [`RecordRow`].
+    pub fn get_referencing_keys(&self) -> Result<Vec<String>, rusqlite::Error> {
+        debug!("Getting referencing keys for '{}'.", self.row_id());
+        let mut selector = self.prepare(sql::get_all_referencing_citation_keys())?;
+        let rows = selector.query_map((self.row_id(),), |row| row.get(0))?;
+        let mut referencing = Vec::with_capacity(1);
+        for name_res in rows {
+            referencing.push(name_res?);
+        }
+        Ok(referencing)
+    }
 
-/// Insert [`CitationKey`] references to the row corresponding to a [`RecordRow`].
-///
-/// The return value is `false` if the insertion failed and `CitationKeyInsertMode` is
-/// `FailIfExists`, and otherwise `true`.
-pub fn add_refs<'a, R: Iterator<Item = &'a RemoteId>>(
-    refs: R,
-) -> impl FnOnce(&RecordRow) -> Result<bool, rusqlite::Error> {
-    add_refs_impl(refs, CitationKeyInsertMode::Overwrite)
+    /// Get the canonical [`RemoteId`].
+    #[inline]
+    pub fn get_canonical(&self) -> Result<RemoteId, rusqlite::Error> {
+        debug!("Getting canonical identifier for '{}'.", self.row_id());
+        let RowData { canonical, .. } = self.get_data()?;
+        Ok(canonical)
+    }
+
+    /// Get last modified time.
+    #[inline]
+    pub fn last_modified(&self) -> Result<DateTime<Local>, rusqlite::Error> {
+        debug!("Getting last modified time for row '{}'.", self.row_id());
+        let RowData { modified, .. } = self.get_data()?;
+        Ok(modified)
+    }
+
+    /// Replace the row data with new data.
+    pub fn update_row_data(&self, data: &RawRecordData) -> Result<(), rusqlite::Error> {
+        debug!("Updating row data for row '{}'", self.row_id());
+        let mut updater = self.prepare(sql::update_cached_data())?;
+        updater.execute((self.row_id(), &Local::now(), data.to_byte_repr()))?;
+        Ok(())
+    }
+
+    /// Add a new alias for this row.
+    ///
+    /// The return value is `false` if the alias already exists, and otherwise `true`.
+    #[inline]
+    pub fn add_alias(&self, alias: &Alias) -> Result<bool, rusqlite::Error> {
+        self.add_refs_impl(std::iter::once(alias), CitationKeyInsertMode::FailIfExists)
+    }
+
+    /// Insert [`CitationKey`] references for this row.
+    ///
+    /// The return value is `false` if the insertion failed and `CitationKeyInsertMode` is
+    /// `FailIfExists`, and otherwise `true`.
+    #[inline]
+    pub fn add_refs<'a, R: Iterator<Item = &'a RemoteId>>(
+        &self,
+        refs: R,
+    ) -> Result<bool, rusqlite::Error> {
+        self.add_refs_impl(refs, CitationKeyInsertMode::Overwrite)
+    }
+
+    /// Insert [`CitationKey`] references for this row.
+    ///
+    /// The return value is `false` if the insertion failed and `CitationKeyInsertMode` is
+    /// `FailIfExists`, and otherwise `true`.
+    fn add_refs_impl<'a, K: CitationKey + 'a, R: Iterator<Item = &'a K>>(
+        &self,
+        refs: R,
+        mode: CitationKeyInsertMode,
+    ) -> Result<bool, rusqlite::Error> {
+        debug!("Inserting references to row_id '{}'", self.row_id());
+        for remote_id in refs {
+            let stmt = match mode {
+                CitationKeyInsertMode::Overwrite => sql::set_citation_key_overwrite(),
+                CitationKeyInsertMode::IgnoreIfExists => sql::set_citation_key_ignore(),
+                CitationKeyInsertMode::FailIfExists => sql::set_citation_key_fail(),
+            };
+            let mut key_writer = self.prepare(stmt)?;
+            match flatten_constraint_violation(
+                key_writer.execute((remote_id.name(), self.row_id())),
+            )? {
+                Constraint::Satisfied(_) => {}
+                Constraint::Violated => return Ok(false),
+            }
+        }
+        Ok(true)
+    }
 }
 
 /// The type of citation key insertion to perform.
@@ -130,33 +154,4 @@ pub enum CitationKeyInsertMode {
     FailIfExists,
     /// Ignore if there is an existing citation key.
     IgnoreIfExists,
-}
-
-/// Insert [`CitationKey`] references to the row corresponding to a [`RecordRow`].
-///
-/// The return value is `false` if the insertion failed and `CitationKeyInsertMode` is
-/// `FailIfExists`, and otherwise `true`.
-#[inline]
-fn add_refs_impl<'a, K: CitationKey + 'a, R: Iterator<Item = &'a K>>(
-    refs: R,
-    mode: CitationKeyInsertMode,
-) -> impl FnOnce(&RecordRow) -> Result<bool, rusqlite::Error> {
-    move |row| {
-        debug!("Inserting references to row_id '{}'", row.row_id());
-        for remote_id in refs {
-            let stmt = match mode {
-                CitationKeyInsertMode::Overwrite => sql::set_citation_key_overwrite(),
-                CitationKeyInsertMode::IgnoreIfExists => sql::set_citation_key_ignore(),
-                CitationKeyInsertMode::FailIfExists => sql::set_citation_key_fail(),
-            };
-            let mut key_writer = row.tx.prepare(stmt)?;
-            match flatten_constraint_violation(
-                key_writer.execute((remote_id.name(), row.row_id())),
-            )? {
-                Constraint::Satisfied(_) => {}
-                Constraint::Violated => return Ok(false),
-            }
-        }
-        Ok(true)
-    }
 }
