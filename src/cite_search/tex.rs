@@ -2,6 +2,7 @@ use std::{iter::Extend, sync::LazyLock};
 
 use memchr::{memchr, memchr2, memchr3};
 use regex::Regex;
+use serde_bibtex::token::is_entry_key;
 
 use crate::RecordId;
 
@@ -113,7 +114,7 @@ fn parse_cite_contents<T: Extend<RecordId>>(contents: &str, container: &mut T) {
         contents
             .split(',')
             .map(str::trim)
-            .filter(|k| *k != "*" && !k.is_empty())
+            .filter(|k| *k != "*" && is_entry_key(k))
             .map(Into::into),
     );
 }
@@ -180,7 +181,7 @@ mod test {
 
         get_citekeys(contents, &mut container);
 
-        let expected = ["contains space", "ref1", "ref2", "ref3"];
+        let expected = ["ref1", "ref2", "ref3"];
         for (exp, rec) in zip(expected.iter(), container.iter()) {
             assert_eq!(*exp, rec.name());
         }
