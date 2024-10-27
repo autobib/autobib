@@ -273,7 +273,11 @@ enum AliasCommand {
 #[derive(Subcommand)]
 enum UtilCommand {
     /// Check database for errors.
-    Check,
+    Check {
+        /// Attempt to fix errors, printing any errors which could not be fixed.
+        #[arg(short, long)]
+        fix: bool,
+    },
     /// List all valid keys.
     List {
         /// Only list the canonical keys.
@@ -760,9 +764,15 @@ fn run_cli(cli: Cli) -> Result<()> {
             RecordIdState::InvalidRemoteId(err) => bail!("{err}"),
         },
         Command::Util { util_command } => match util_command {
-            UtilCommand::Check => {
+            UtilCommand::Check { fix } => {
                 info!("Validating record binary data and consistency, and checking for dangling records.");
-                record_db.validate()?;
+                let faults = record_db.recover(fix)?;
+                if !faults.is_empty() {
+                    error!("Erroneous data found in the database.");
+                    for fault in faults {
+                        eprintln!("DATABASE ERROR: {fault}");
+                    }
+                }
             }
             UtilCommand::List { canonical } => {
                 record_db.map_citation_keys(canonical, |key_str| {

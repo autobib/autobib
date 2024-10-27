@@ -10,7 +10,7 @@ use thiserror::Error;
 
 pub use self::{
     bibtex::BibtexDataError,
-    database::{DatabaseError, ValidationError},
+    database::DatabaseError,
     provider::ProviderError,
     record::{AliasConversionError, RecordError, RecordErrorKind},
     record_data::{InvalidBytesError, RecordDataError},
