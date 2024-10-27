@@ -10,13 +10,31 @@ use std::{
 
 static HAS_ERROR: AtomicBool = AtomicBool::new(false);
 
+pub(crate) fn log_with_style<Y: FnOnce(&'static str) -> StyledContent<&'static str>>(
+    style: Y,
+    header: &'static str,
+    args: &std::fmt::Arguments,
+) {
+    if io::stderr().is_tty() {
+        eprintln!("{} {args}", style(header));
+    } else {
+        eprintln!("{header} {args}");
+    }
+}
+
 macro_rules! suggest {
     () => {
         eprintln!()
     };
     ($($arg:tt)*) => {
-        eprint!("{}", ::crossterm::style::Stylize::blue("suggestion: "));
-        eprintln!($($arg)*);
+        if ::log::log_enabled!(::log::Level::Warn) {
+            use ::crossterm::style::Stylize;
+            crate::logger::log_with_style(
+                |s| s.stylize().blue().bold(),
+                "suggestion:",
+                &format_args!($($arg)*),
+            );
+        }
     };
 }
 
@@ -70,15 +88,7 @@ impl Log for Logger {
 
         let level = record.level();
 
-        if io::stderr().is_tty() {
-            eprintln!(
-                "{} {}",
-                level_formatter(level)(level_as_str(level)),
-                record.args()
-            );
-        } else {
-            eprintln!("{} {}", level_as_str(level), record.args());
-        }
+        log_with_style(level_formatter(level), level_as_str(level), record.args());
     }
 
     #[inline]
