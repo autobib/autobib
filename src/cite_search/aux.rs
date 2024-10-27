@@ -34,6 +34,7 @@ mod test {
 \abx@aux@cite{}{a2}
 \abx@aux@cite{} {a3}
 \abx@aux@cite{0}{a4,a5}
+\abx@aux@cite{} {a 6}
         "#;
         let mut vec: Vec<RecordId> = Vec::new();
         get_citekeys(input, &mut vec);
@@ -41,7 +42,7 @@ mod test {
         for s in ["a1", "a2"] {
             assert!(vec.contains(&RecordId::from(s)));
         }
-        for s in ["a3", "a4", "a5"] {
+        for s in ["a3", "a4", "a5", "a 6"] {
             assert!(!vec.contains(&RecordId::from(s)));
         }
     }
