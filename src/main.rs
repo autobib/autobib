@@ -700,9 +700,9 @@ fn run_cli(cli: Cli) -> Result<()> {
                         existing_record.merge_with_callback(
                             new_raw_data,
                             |key, current, incoming| {
-                                println!("Conflict for the field '{key}':");
-                                println!("   Current value: {current}");
-                                println!("  Incoming value: {incoming}");
+                                eprintln!("Conflict for the field '{key}':");
+                                eprintln!("   Current value: {current}");
+                                eprintln!("  Incoming value: {incoming}");
                                 let prompt = Confirm::new("Accept incoming value?", false);
                                 match prompt.confirm() {
                                     Ok(true) => incoming.to_owned(),
