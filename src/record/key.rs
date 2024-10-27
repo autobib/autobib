@@ -86,13 +86,13 @@ impl FromStr for Alias {
     type Err = AliasConversionError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let s = s.trim();
-        if s.is_empty() {
+        let trimmed = s.trim();
+        if trimmed.is_empty() {
             Err(AliasConversionError::Empty(s.to_owned()))
         } else {
-            match s.find(':') {
+            match trimmed.find(':') {
                 Some(_) => Err(AliasConversionError::IsRemoteId(s.to_owned())),
-                None => Ok(Self(s.to_owned())),
+                None => Ok(Self(trimmed.to_owned())),
             }
         }
     }

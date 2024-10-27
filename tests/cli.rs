@@ -218,6 +218,28 @@ fn alias() -> Result<()> {
         "Could not delete alias which does not exist",
     ));
 
+    let mut cmd = s.cmd()?;
+    cmd.args(["alias", "add", "  ", "not_an_alias"]);
+    cmd.assert().failure().stderr(
+        predicate::str::contains("invalid value '  ' for '<ALIAS>'").and(predicate::str::contains(
+            "alias must contain non-whitespace characters",
+        )),
+    );
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["alias", "add", "\n\t", "not_an_alias"]);
+    cmd.assert().failure().stderr(
+        predicate::str::contains("invalid value '\n\t' for '<ALIAS>'").and(
+            predicate::str::contains("alias must contain non-whitespace characters"),
+        ),
+    );
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["alias", "add", "has ws", "not_an_alias"]);
+    cmd.assert().failure().stderr(predicate::str::contains(
+        "Cannot create alias for undefined alias",
+    ));
+
     s.close()
 }
 
@@ -295,6 +317,16 @@ fn bibtex_key_validation() -> Result<()> {
         .success()
         .stdout(predicate::str::is_empty())
         .stderr(predicate::str::is_empty());
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["alias", "add", "has ws", "cst1989"]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["get", "has ws"]);
+    cmd.assert().failure().stderr(predicate::str::contains(
+        "identifier contains invalid character",
+    ));
 
     s.close()
 }
