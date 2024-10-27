@@ -1008,7 +1008,7 @@ fn validate_bibtex_key(key: String, row: &State<RecordRow>) -> Option<EntryKey<S
                         );
                     } else {
                         error!("{}", parse_result.error);
-                        suggest!("Create an alias which does not contain disallowed characters: {{}}(),=\\#%\"");
+                        suggest!("Create an alias which does not contain whitespace or disallowed characters: {{}}(),=\\#%\"");
                     }
                 }
                 Err(error2) => {
