@@ -16,6 +16,13 @@ pub use self::{
     record_data::{InvalidBytesError, RecordDataError},
 };
 
+/// A trait for errors which have a representation which only depends on the variant, and not on
+/// particular data associated with the error.
+pub trait ShortError {
+    /// Represent an error in short form.
+    fn short_err(&self) -> &'static str;
+}
+
 #[derive(Error, Debug)]
 pub enum Error {
     #[error("File type '{0}' not supported")]

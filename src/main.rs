@@ -45,7 +45,7 @@ use self::{
         state::{RecordIdState, RecordRow, RemoteIdState, RowData, State},
         CitationKey, EntryData, RawRecordData, RecordData, RecordDatabase,
     },
-    error::AliasConversionError,
+    error::{AliasConversionError, ShortError},
     logger::{suggest, Logger},
     record::{get_remote_response_recursive, Record, RecordRowResponse, RecursiveRemoteResponse},
 };
@@ -228,12 +228,25 @@ enum Command {
     },
 }
 
+/// Parse an instance of type `T` using its [`FromStr`] implementation, but instead use the
+/// [`ShortError`] implementation of the error instead of the usual error message.
+///
+/// This is particularly useful for command line error messages, where some information is already
+/// displayed automatically by clap.
+fn with_short_err<T: FromStr>(input: &str) -> Result<T, &'static str>
+where
+    <T as FromStr>::Err: ShortError,
+{
+    T::from_str(input).map_err(|err| err.short_err())
+}
+
 /// Manage aliases.
 #[derive(Subcommand)]
 enum AliasCommand {
     /// Add a new alias.
     Add {
         /// The new alias to create.
+        #[arg(value_parser = with_short_err::<Alias>)]
         alias: Alias,
         /// What the alias points to.
         target: RecordId,
@@ -241,13 +254,15 @@ enum AliasCommand {
     /// Delete an existing alias.
     #[command(alias = "rm")]
     Delete {
-        /// The new alias to delete.
+        /// The existing alias to delete.
+        #[arg(value_parser = with_short_err::<Alias>)]
         alias: Alias,
     },
     /// Rename an existing alias.
     #[command(alias = "mv")]
     Rename {
         /// The name of the existing alias.
+        #[arg(value_parser = with_short_err::<Alias>)]
         alias: Alias,
         /// The name of the new alias.
         new: Alias,

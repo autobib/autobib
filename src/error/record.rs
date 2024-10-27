@@ -2,6 +2,8 @@ use std::fmt;
 
 use thiserror::Error;
 
+use super::ShortError;
+
 #[derive(Error, Debug)]
 pub struct RecordError {
     pub input: String,
@@ -19,35 +21,41 @@ pub enum RecordErrorKind {
     EmptyAlias,
 }
 
+impl ShortError for RecordError {
+    fn short_err(&self) -> &'static str {
+        match self.kind {
+            RecordErrorKind::EmptyProvider => "provider must contain non-whitespace characters",
+            RecordErrorKind::EmptySubId => "sub-id must contain non-whitespace characters",
+            RecordErrorKind::InvalidProvider => "provider is invalid",
+            RecordErrorKind::InvalidSubId => "sub-id is invalid for the given provider",
+            RecordErrorKind::RecordIdIsNotAlias => "alias must not contain a colon",
+            RecordErrorKind::RecordIdIsNotRemoteId => "remote id must contain a colon",
+            RecordErrorKind::EmptyAlias => "alias must contain non-whitespace characters",
+        }
+    }
+}
+
 impl fmt::Display for RecordError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Invalid key '{}': ", self.input)?;
-        match self.kind {
-            RecordErrorKind::EmptyProvider => {
-                f.write_str("provider must contain non-whitespace characters")
-            }
-            RecordErrorKind::EmptySubId => {
-                f.write_str("sub-id must contain non-whitespace characters")
-            }
-            RecordErrorKind::EmptyAlias => {
-                f.write_str("alias must contain non-whitespace characters")
-            }
-            RecordErrorKind::InvalidProvider => f.write_str("provider is invalid"),
-            RecordErrorKind::InvalidSubId => {
-                f.write_str("sub-id is invalid for the given provider")
-            }
-            RecordErrorKind::RecordIdIsNotAlias => f.write_str("alias must not contain a colon"),
-            RecordErrorKind::RecordIdIsNotRemoteId => f.write_str("remote id must contain a colon"),
-        }
+        write!(f, "Invalid key '{}': {}", self.input, self.short_err())
     }
 }
 
 #[derive(Error, Debug)]
 pub enum AliasConversionError {
-    #[error("Invalid alias '{0}': alias must not contain a colon")]
+    #[error("Invalid alias '{0}': {}", self.short_err())]
     IsRemoteId(String),
-    #[error("Invalid alias '{0}': alias must contain non-whitespace characters")]
+    #[error("Invalid alias '{0}': {}", self.short_err())]
     Empty(String),
+}
+
+impl ShortError for AliasConversionError {
+    fn short_err(&self) -> &'static str {
+        match self {
+            AliasConversionError::IsRemoteId(_) => "alias must not contain a colon",
+            AliasConversionError::Empty(_) => "alias must contain non-whitespace characters",
+        }
+    }
 }
 
 impl From<AliasConversionError> for RecordError {
