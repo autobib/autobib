@@ -71,18 +71,15 @@ mod validate;
 use std::path::Path;
 
 use chrono::{DateTime, Local};
-use log::debug;
+use log::{debug, error, warn};
 use nucleo_picker::nucleo::{Injector, Utf32String};
 use rusqlite::{types::ValueRef, Connection, OptionalExtension, Transaction};
 
 pub use self::data::{binary_format_version, EntryData, RawRecordData, RecordData};
 pub(crate) use self::data::{EntryTypeHeader, KeyHeader, ValueHeader};
 use self::state::{RecordIdState, RemoteIdState, RowData};
-use self::validate::DatabaseValidator;
-use crate::{
-    error::{DatabaseError, ValidationError},
-    Alias, RecordId, RemoteId,
-};
+use self::validate::{DatabaseFault, DatabaseValidator};
+use crate::{error::DatabaseError, Alias, RecordId, RemoteId};
 
 /// The current version of the database table schema.
 pub const fn schema_version() -> u8 {
@@ -290,16 +287,58 @@ impl RecordDatabase {
 
     /// Validate the internal consistency of the database.
     ///
-    /// This does not modify the database.
-    pub fn validate(&mut self) -> Result<(), ValidationError> {
+    /// If `fix` is true, then potentially destructive database changes will take place.
+    pub fn recover(&mut self, fix: bool) -> Result<Vec<DatabaseFault>, rusqlite::Error> {
         let validator = DatabaseValidator {
             tx: self.conn.transaction()?,
         };
-        validator.record_indexing()?;
-        validator.consistency()?;
-        validator.record_data()?;
-        validator.commit()?;
-        Ok(())
+        let mut faults = Vec::new();
+
+        validator.record_indexing(&mut faults)?;
+        validator.consistency(&mut faults)?;
+        validator.integrity(&mut faults)?;
+        validator.binary_data(&mut faults)?;
+
+        let tx = validator.into_tx();
+
+        if fix {
+            faults.retain(|fault| match Self::fix_fault_tx(&tx, fault) {
+                Ok(b) => !b,
+                Err(err) => {
+                    error!("While fixing the error {fault}, another error occurred:\n  {err}");
+                    false
+                }
+            });
+        }
+
+        tx.commit()?;
+
+        Ok(faults)
+    }
+
+    /// Attempt to fix a database fault inside a transaction.
+    ///
+    /// If the fault is fixed, return `true`, and return `false` otherwise.
+    fn fix_fault_tx(tx: &Transaction, fault: &DatabaseFault) -> Result<bool, rusqlite::Error> {
+        match fault {
+            DatabaseFault::RowHasInvalidCanonicalId(_, _) => Ok(false),
+            DatabaseFault::DanglingRecord(key, canonical) => {
+                warn!("Repairing dangling record by inserting or overwriting existing citation key with name {canonical}");
+                tx.prepare(sql::set_citation_key_overwrite())?
+                    .execute((canonical, key))?;
+                Ok(true)
+            }
+            DatabaseFault::NullCitationKeys(count) => {
+                warn!("Deleting {count} citation keys which do not reference records");
+                tx.prepare(
+                    "DELETE FROM CitationKeys WHERE record_key NOT IN (SELECT key FROM Records)",
+                )?
+                .execute(())?;
+                Ok(true)
+            }
+            DatabaseFault::IntegrityError(_) => Ok(false),
+            DatabaseFault::InvalidRecordData(_, _, _) => Ok(false),
+        }
     }
 
     /// Send the contents of the `Records` table to a [`Nucleo`](`nucleo_picker::nucleo::Nucleo`)
