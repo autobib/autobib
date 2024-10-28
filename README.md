@@ -125,7 +125,7 @@ Then running `autobib get hochman-entropy` returns
 The record is identical to the record `zbl:1337.28015`, except that the citation key is the name of the alias.
 In order to distinguish from usual identifiers, an alias cannot contain the `:` colon symbol.
 
-Note that the characters `{}(),=\#%"` are not permitted in a BibTeX entry key.
+Note that the characters `{}(),=\#%"` and whitespaces are not permitted in a BibTeX entry key.
 You can still create aliases using these characters: for instance, `autobib alias add % zbl:1337.28015` works.
 However, attempting to retrieve the BibTeX entry associated with this alias will result in an error.
 ```
