@@ -71,11 +71,16 @@ struct Cli {
 
 #[derive(Debug, Copy, Clone, ValueEnum, Default)]
 enum InfoReportType {
+    /// Show all info.
     #[default]
     All,
+    /// Print the canonical identifer.
     Canonical,
+    /// Check if the key is valid bibtex.
     Valid,
+    /// Print equivalent identifiers.
     Equivalent,
+    /// Print the last modified time.
     Modified,
 }
 
