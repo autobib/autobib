@@ -123,7 +123,7 @@ Then running `autobib get hochman-entropy` returns
 }
 ```
 The record is identical to the record `zbl:1337.28015`, except that the citation key is the name of the alias.
-In order to distinguish from usual identifiers, an alias cannot contain the `:` colon symbol.
+In order to distinguish from usual identifiers, an alias cannot contain the colon `:`.
 
 Note that the characters `{}(),=\#%"` and whitespaces are not permitted in a BibTeX entry key.
 You can still create aliases using these characters: for instance, `autobib alias add % zbl:1337.28015` works.
@@ -137,26 +137,28 @@ Run `autobib help alias` for more options for managing aliases.
 
 Aliases can be used in most locations that the usual identifiers are used.
 For instance, you can run `autobib edit hochman-entropy`, to edit the corresponding record data.
-Note, however, that these edits will apply to the original underlying record.
+Note that these edits will apply to the original underlying record.
 
 ### Creating local records
 
 Sometimes, it is necessary to create a local record which may not otherwise exist on a remote database.
-In order to do this, the command `autobib local` can be used to generate a special `local:` record, which only exists locally database.
-To modify the contents, use `autobib edit`:
+In order to do this, the command `autobib local` can be used to generate a special `local:` record, which only exists locally in the database.
+For example,
 ```bash
 autobib local my-entry
-autobib edit local:my-entry
 ```
-These two steps can be combined:
-```bash
-autobib local my-entry --edit
-```
+creates a record under the identifier `local:my-entry`.
+You will be prompted to fill in the record, unless you pass the `--no-edit` flag.
+To modify the record later, [use the `autobib edit` command](#editing-records).
+
 It is also possible to create the local record from a BibTeX file:
 ```bash
-autobib local my-entry --from source.bib
+autobib local my-entry --from source.bib --no-edit
 ```
 Note that the BibTeX file should contain exactly one entry, or this command will fail.
+
+When you create the local record `local:my-entry`, a new alias `my-entry` (if available) is also created and assigned to the new record.
+As a consequence, the `sub_id` part of a `local:` identifier must be a valid alias, i.e. it cannot contain the colon `:`.
 
 ### Searching for records
 
