@@ -550,8 +550,10 @@ fn consistency() -> Result<()> {
             "Repairing dangling record by inserting or overwriting existing citation key",
         )
         .and(predicate::str::contains(
-            "Deleting 2 citation keys which do not reference records",
-        )),
+            "Deleting citation keys which do not reference records:",
+        ))
+        .and(predicate::str::contains("zbl:1337.28015"))
+        .and(predicate::str::contains("zbmath:06346461")),
     );
 
     // check that things are fixed

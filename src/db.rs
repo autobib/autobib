@@ -328,8 +328,22 @@ impl RecordDatabase {
                     .execute((canonical, key))?;
                 Ok(true)
             }
-            DatabaseFault::NullCitationKeys(count) => {
-                warn!("Deleting {count} citation keys which do not reference records");
+            DatabaseFault::NullCitationKeys(_) => {
+                let mut invalid_keys: Vec<String> = Vec::new();
+                {
+                    let mut stmt = tx.prepare(
+                        "SELECT name FROM CitationKeys WHERE record_key NOT IN (SELECT key FROM Records)",
+                    )?;
+                    let mut rows = stmt.query(())?;
+                    while let Some(row) = rows.next()? {
+                        invalid_keys.push(row.get("name")?);
+                    }
+                }
+
+                warn!("Deleting citation keys which do not reference records:");
+                for name in invalid_keys {
+                    eprintln!("  {name}");
+                }
                 tx.prepare(
                     "DELETE FROM CitationKeys WHERE record_key NOT IN (SELECT key FROM Records)",
                 )?
