@@ -295,7 +295,7 @@ impl RecordDatabase {
         let mut faults = Vec::new();
 
         validator.record_indexing(&mut faults)?;
-        validator.consistency(&mut faults)?;
+        validator.invalid_citation_keys(&mut faults)?;
         validator.integrity(&mut faults)?;
         validator.binary_data(&mut faults)?;
 

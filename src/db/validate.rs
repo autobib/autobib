@@ -33,14 +33,21 @@ impl fmt::Display for DatabaseFault {
             DatabaseFault::DanglingRecord(row_id, name) => {
                 write!(
                     f,
-                    "Record row '{row_id}' with record id '{name}' does not contain the corresponding entry in the `CitationKeys` table."
+                    "Record row '{row_id}' with record id '{name}' does not have corresponding key in the `CitationKeys` table."
                 )
             }
             DatabaseFault::NullCitationKeys(count) => {
-                write!(
-                    f,
-                    "There are {count} citation keys which reference records which does not exist in the database."
-                )
+                if count.get() == 1 {
+                    write!(
+                        f,
+                        "A citation key references a record which does not exist in the database."
+                    )
+                } else {
+                    write!(
+                        f,
+                        "There are {count} citation keys which reference records which do not exist in the database."
+                    )
+                }
             }
             DatabaseFault::IntegrityError(err) => write!(f, "Database integrity error: {err}"),
             DatabaseFault::InvalidRecordData(row_id, name, err) => write!(
@@ -101,7 +108,10 @@ impl<'conn> DatabaseValidator<'conn> {
     }
 
     /// Check the `CitationKeys` table for foreign key constraint violations.
-    pub fn consistency(&self, faults: &mut Vec<DatabaseFault>) -> Result<(), rusqlite::Error> {
+    pub fn invalid_citation_keys(
+        &self,
+        faults: &mut Vec<DatabaseFault>,
+    ) -> Result<(), rusqlite::Error> {
         debug!("Checking citation key table consistency");
         let mut num_faults: usize = 0;
 
