@@ -1,5 +1,6 @@
 mod key;
 
+use anyhow::bail;
 use log::info;
 use nonempty::NonEmpty;
 
@@ -46,6 +47,32 @@ pub enum RecordRowResponse<'conn> {
     InvalidRemoteId(RecordError),
     /// The alias does not exist.
     NullAlias(Alias),
+}
+
+impl<'conn> RecordRowResponse<'conn> {
+    /// Either return the record and corresponding state transaction wrapper, or raise an error. In
+    /// order to commit the new changes, the resulting [`RecordRow`] must be committed.
+    ///
+    /// If the record is null, the corresponding transaction is automatically committed before
+    /// returning the relevant error.
+    pub fn exists_or_commit_null(
+        self,
+        err_prefix: &str,
+    ) -> Result<(Record, State<'conn, RecordRow>), anyhow::Error> {
+        match self {
+            RecordRowResponse::Exists(record, row) => Ok((record, row)),
+            RecordRowResponse::NullRemoteId(remote_id, null_row) => {
+                null_row.commit()?;
+                bail!("{err_prefix} null record '{remote_id}'");
+            }
+            RecordRowResponse::InvalidRemoteId(record_error) => {
+                bail!(record_error);
+            }
+            RecordRowResponse::NullAlias(alias) => {
+                bail!("{err_prefix} undefined alias '{alias}'");
+            }
+        }
+    }
 }
 
 /// Get the [`Record`] associated with a [`RecordId`].
