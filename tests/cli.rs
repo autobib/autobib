@@ -609,6 +609,35 @@ fn info() -> Result<()> {
     s.close()
 }
 
+/// Check that `autobib path` always returns the same values.
+#[test]
+fn test_path_platform_consistency() -> Result<()> {
+    let s = TestState::init()?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["path", "zbl:1337.28015"]);
+    cmd.assert().success().stdout(predicate::str::ends_with(
+        "attachments/zbmath/JX/TT/CT/GA3DGNBWGQ3DC===/\n",
+    ));
+
+    let mut cmd = s.cmd()?;
+    cmd.args([
+        "alias",
+        "add",
+        "my-alias",
+        "doi:10.1016/0021-8693(89)90256-1",
+    ]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["path", "my-alias"]);
+    cmd.assert().success().stdout(predicate::str::ends_with(
+        "attachments/doi/XN/UL/PE/GEYC4MJQGE3C6MBQGIYS2OBWHEZSQOBZFE4TAMRVGYWTC===/\n",
+    ));
+
+    s.close()
+}
+
 #[test]
 fn edit() -> Result<()> {
     let s = TestState::init()?;
