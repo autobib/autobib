@@ -15,7 +15,7 @@ pub struct RecordId {
     provider_len: Option<usize>,
 }
 
-/// Either an [`Alias`] or a [`RemoteId]`.
+/// Either an [`Alias`] or a [`RemoteId`].
 pub enum AliasOrRemoteId {
     Alias(Alias),
     RemoteId(RemoteId),
