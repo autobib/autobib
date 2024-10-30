@@ -4,6 +4,7 @@ mod entry;
 pub mod error;
 mod http;
 mod logger;
+mod normalize;
 pub mod provider;
 mod record;
 pub mod term;
@@ -52,6 +53,7 @@ use self::{
 pub use self::{
     entry::Entry,
     http::HttpClient,
+    normalize::Normalize,
     record::{get_record_row, Alias, AliasOrRemoteId, RecordId, RemoteId},
 };
 

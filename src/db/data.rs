@@ -4,12 +4,15 @@
 //!
 //! The data consists of the entry type (e.g. `article`) as well as the field keys and values (e.g. `title =
 //! {Title}`).
-use std::{collections::BTreeMap, iter::Iterator, str::from_utf8};
+use std::{borrow::Borrow, collections::BTreeMap, iter::Iterator, str::from_utf8};
 
 use delegate::delegate;
 use serde_bibtex::token::is_balanced;
 
-use crate::error::{InvalidBytesError, RecordDataError};
+use crate::{
+    error::{InvalidBytesError, RecordDataError},
+    normalize::{normalize_whitespace, Normalize},
+};
 
 /// The current version of the binary data format.
 pub const fn binary_format_version() -> u8 {
@@ -291,6 +294,18 @@ impl<D: EntryData> From<D> for RecordData {
     }
 }
 
+/// The result of checking the current state of the `eprint` and `eprinttype` relative to a provided
+/// key.
+enum EPrintState {
+    /// No changes required.
+    Ok,
+    /// The `eprint` field corresponding to the provided key needs to be updated with the provided
+    /// value.
+    NeedsUpdate(String),
+    /// The given key was not present in the record.
+    MissingKey,
+}
+
 impl RecordData {
     /// Initialize a new [`RecordData`] instance.
     ///
@@ -418,26 +433,52 @@ impl RecordData {
         Ok(())
     }
 
+    /// Check for the following configuration inside the data:
+    /// ```bib
+    ///   eprinttype = {key},
+    ///   eprint = {val},
+    ///   key = {val},
+    /// ```
+    /// If the key is missing, returns `EPrintState::Missing`; otherwise, check if the `eprinttype`
+    /// and `eprint` keys require changing.
+    fn is_eprint_normalized<Q: AsRef<str>>(&self, key: Q) -> EPrintState {
+        match self.fields.get(key.as_ref()) {
+            Some(val) => {
+                if self
+                    .fields
+                    .get("eprinttype")
+                    .is_some_and(|k| k == key.as_ref())
+                    && self.fields.get("eprint").is_some_and(|v| v == val)
+                {
+                    EPrintState::Ok
+                } else {
+                    EPrintState::NeedsUpdate(val.to_owned())
+                }
+            }
+            None => EPrintState::MissingKey,
+        }
+    }
+
     pub fn get<Q>(&self, key: &Q) -> Option<&str>
     where
-        String: std::borrow::Borrow<Q>,
-        Q: Ord,
+        String: Borrow<Q>,
+        Q: Ord + ?Sized,
     {
         self.fields.get(key).map(String::as_str)
     }
 
     pub fn contains_key<Q>(&self, key: &Q) -> bool
     where
-        String: std::borrow::Borrow<Q>,
-        Q: Ord,
+        String: Borrow<Q>,
+        Q: Ord + ?Sized,
     {
         self.fields.contains_key(key)
     }
 
     pub fn remove<Q>(&mut self, key: &Q) -> Option<String>
     where
-        String: std::borrow::Borrow<Q>,
-        Q: Ord,
+        String: Borrow<Q>,
+        Q: Ord + ?Sized,
     {
         self.fields.remove(key)
     }
@@ -462,9 +503,155 @@ impl EntryData for &RecordData {
     }
 }
 
+impl Normalize for RecordData {
+    fn normalize_eprint<Q: AsRef<str>>(&mut self, keys: std::slice::Iter<'_, Q>) -> bool {
+        for key in keys {
+            match self.is_eprint_normalized(key) {
+                EPrintState::Ok => {
+                    return false;
+                }
+                EPrintState::NeedsUpdate(val) => {
+                    // SAFETY: 'eprint' satisfies the key requirements
+                    // SAFETY: 'val' is already a value in the database, and therefore satisfies
+                    // the 'value' requirements.
+                    self.fields.insert("eprint".to_owned(), val);
+                    // SAFETY: 'eprinttype' satisfies the key requirements
+                    // SAFETY: `key` is already a key in the database, and the requirements for
+                    // keys are stricter than the requirements for values.
+                    self.fields
+                        .insert("eprinttype".to_owned(), key.as_ref().to_owned());
+                    return true;
+                }
+                EPrintState::MissingKey => {}
+            }
+        }
+        false
+    }
+
+    fn normalize_whitespace(&mut self) -> bool {
+        let mut updated = false;
+
+        for val in self.fields.values_mut() {
+            if let Some(new_val) = normalize_whitespace(val) {
+                updated = true;
+                // SAFETY: the `normalize_whitespace` function always reduces the length of the
+                // input, since it either deletes unused whitespace, or replaces whitespace
+                // with ASCII space which has the smallest possible length (as bytes)
+                *val = new_val;
+            }
+        }
+
+        updated
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_normalize_whitespace() {
+        let mut record_data = RecordData::try_new("article".into()).unwrap();
+        for (k, v) in [("a", " "), ("b", "ok"), ("c", "a\t b")] {
+            record_data.check_and_insert(k.into(), v.into()).unwrap();
+        }
+        let changed = record_data.normalize_whitespace();
+        assert!(changed);
+        assert_eq!(record_data.get("a"), Some(""));
+        assert_eq!(record_data.get("b"), Some("ok"));
+        assert_eq!(record_data.get("c"), Some("a b"));
+        assert!(!record_data.normalize_whitespace());
+    }
+
+    #[test]
+    fn test_normalize_eprint() {
+        // standard normalize
+        let mut record_data = RecordData::try_new("article".into()).unwrap();
+        for (k, v) in [
+            ("doi", "xxx"),
+            ("eprinttype", "doi"),
+            ("eprint", "xxx"),
+            ("zbl", "yyy"),
+        ] {
+            record_data.check_and_insert(k.into(), v.into()).unwrap();
+        }
+        let changed = record_data.normalize_eprint(["zbl", "doi"].iter());
+        assert!(changed);
+        assert_eq!(record_data.get("eprint"), Some("yyy"));
+        assert_eq!(record_data.get("eprinttype"), Some("zbl"));
+
+        // already ok
+        let mut record_data = RecordData::try_new("article".into()).unwrap();
+        for (k, v) in [
+            ("doi", "xxx"),
+            ("eprinttype", "doi"),
+            ("eprint", "xxx"),
+            ("zbl", "yyy"),
+        ] {
+            record_data.check_and_insert(k.into(), v.into()).unwrap();
+        }
+        let changed = record_data.normalize_eprint(["doi", "zbl"].iter());
+        assert!(!changed);
+
+        // set new
+        let mut record_data = RecordData::try_new("article".into()).unwrap();
+        for (k, v) in [("doi", "xxx"), ("zbl", "yyy")] {
+            record_data.check_and_insert(k.into(), v.into()).unwrap();
+        }
+        let changed = record_data.normalize_eprint(["zbl", "doi"].iter());
+        assert!(changed);
+        assert_eq!(record_data.get("eprint"), Some("yyy"));
+        assert_eq!(record_data.get("eprinttype"), Some("zbl"));
+
+        // set new partial
+        let mut record_data = RecordData::try_new("article".into()).unwrap();
+        for (k, v) in [("doi", "xxx"), ("eprint", "xxx")] {
+            record_data.check_and_insert(k.into(), v.into()).unwrap();
+        }
+        let changed = record_data.normalize_eprint(["zbl", "doi"].iter());
+        assert!(changed);
+        assert_eq!(record_data.get("eprint"), Some("xxx"));
+        assert_eq!(record_data.get("eprinttype"), Some("doi"));
+
+        // skip missing without changing
+        let mut record_data = RecordData::try_new("article".into()).unwrap();
+        for (k, v) in [("doi", "xxx"), ("eprint", "xxx"), ("eprinttype", "doi")] {
+            record_data.check_and_insert(k.into(), v.into()).unwrap();
+        }
+        let changed = record_data.normalize_eprint(["zbl", "doi"].iter());
+        assert!(!changed);
+
+        // set new skip
+        let mut record_data = RecordData::try_new("article".into()).unwrap();
+        for (k, v) in [("doi", "xxx")] {
+            record_data.check_and_insert(k.into(), v.into()).unwrap();
+        }
+        let changed = record_data.normalize_eprint(["zbl", "doi"].iter());
+        assert!(changed);
+        assert_eq!(record_data.get("eprint"), Some("xxx"));
+        assert_eq!(record_data.get("eprinttype"), Some("doi"));
+
+        // skip
+        let mut record_data = RecordData::try_new("article".into()).unwrap();
+        for (k, v) in [("zbl", "yyy"), ("eprinttype", "doi")] {
+            record_data.check_and_insert(k.into(), v.into()).unwrap();
+        }
+        let changed = record_data.normalize_eprint(["doi"].iter());
+        assert!(!changed);
+
+        // no data skip
+        let mut record_data = RecordData::try_new("article".into()).unwrap();
+        let changed = record_data.normalize_eprint(["doi"].iter());
+        assert!(!changed);
+
+        // no match multi skip
+        let mut record_data = RecordData::try_new("article".into()).unwrap();
+        for (k, v) in [("zbl", "yyy"), ("eprinttype", "doi")] {
+            record_data.check_and_insert(k.into(), v.into()).unwrap();
+        }
+        let changed = record_data.normalize_eprint(["doi", "zbmath"].iter());
+        assert!(!changed);
+    }
 
     /// Check that conversion into the raw form and back results in identical data.
     #[test]
