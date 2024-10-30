@@ -475,7 +475,7 @@ fn edit() -> Result<()> {
     cmd.args(["edit", "my_alias"]);
     cmd.assert()
         .failure()
-        .stderr(predicate::str::contains("Undefined alias"));
+        .stderr(predicate::str::contains("Cannot edit undefined alias"));
 
     s.close()
 }

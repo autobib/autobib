@@ -365,22 +365,12 @@ fn run_cli(cli: Cli) -> Result<()> {
         Command::Alias { alias_command } => match alias_command {
             AliasCommand::Add { alias, target } => {
                 info!("Creating alias '{alias}' for '{target}'");
-                match get_record_row(&mut record_db, target, &client)? {
-                    RecordRowResponse::Exists(_, row) => {
-                        if !row.add_alias(&alias)? {
-                            error!("Alias already exists: '{alias}'");
-                        }
-                        row.commit()?;
-                    }
-                    RecordRowResponse::NullRemoteId(remote_id, missing) => {
-                        missing.commit()?;
-                        error!("Cannot create alias for null record '{remote_id}'");
-                    }
-                    RecordRowResponse::NullAlias(alias) => {
-                        error!("Cannot create alias for undefined alias '{alias}'");
-                    }
-                    RecordRowResponse::InvalidRemoteId(record_error) => error!("{record_error}"),
+                let (_, row) = get_record_row(&mut record_db, target, &client)?
+                    .exists_or_commit_null("Cannot create alias for")?;
+                if !row.add_alias(&alias)? {
+                    error!("Alias already exists: '{alias}'");
                 }
+                row.commit()?;
             }
             AliasCommand::Delete { alias } => {
                 info!("Deleting alias '{alias}'");
@@ -453,20 +443,10 @@ fn run_cli(cli: Cli) -> Result<()> {
             }
         }
         Command::Edit { citation_key } => {
-            match get_record_row(&mut record_db, citation_key, &client)? {
-                RecordRowResponse::Exists(record, row) => {
-                    edit_record_and_update(&row, record)?;
-                    row.commit()?;
-                }
-                RecordRowResponse::NullRemoteId(remote_id, null_row) => {
-                    null_row.commit()?;
-                    bail!("Cannot edit null record '{remote_id}'");
-                }
-                RecordRowResponse::NullAlias(alias) => {
-                    bail!("Undefined alias '{alias}'");
-                }
-                RecordRowResponse::InvalidRemoteId(err) => bail!("{err}"),
-            }
+            let (record, row) = get_record_row(&mut record_db, citation_key, &client)?
+                .exists_or_commit_null("Cannot edit")?;
+            edit_record_and_update(&row, record)?;
+            row.commit()?;
         }
         Command::Find { fields } => {
             let fields_to_search: HashSet<String> =
