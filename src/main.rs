@@ -6,6 +6,7 @@ pub mod error;
 mod http;
 mod logger;
 mod normalize;
+mod path_hash;
 pub mod provider;
 mod record;
 pub mod term;
@@ -15,8 +16,8 @@ use std::{
         btree_map::Entry::{Occupied, Vacant},
         BTreeMap, HashMap, HashSet,
     },
-    fs::{create_dir_all, read_to_string, File},
-    io::{self, IsTerminal, Read},
+    fs::{create_dir_all, read_to_string, File, OpenOptions},
+    io::{self, copy, IsTerminal, Read},
     path::{Path, PathBuf},
     process::exit,
     str::FromStr,
@@ -47,6 +48,7 @@ use self::{
     },
     error::{AliasConversionError, ShortError},
     logger::{error, info, suggest, warn, Logger},
+    path_hash::PathHash,
     record::{get_remote_response_recursive, Record, RecordRowResponse, RecursiveRemoteResponse},
 };
 pub use self::{
@@ -63,17 +65,17 @@ struct Cli {
     /// Use record database.
     #[arg(short, long, value_name = "PATH", env = "AUTOBIB_DATABASE_PATH")]
     database: Option<PathBuf>,
-
     /// Use configuration file.
     #[arg(short, long, value_name = "PATH", env = "AUTOBIB_CONFIG_PATH")]
     config: Option<PathBuf>,
-
     /// Do not require user action.
     ///
     /// This option is set automatically if the standard input is not a terminal.
     #[arg(short = 'I', long, global = true)]
     no_interactive: bool,
-
+    /// Use directory for attachments.
+    #[arg(long, value_name = "PATH", env = "AUTOBIB_ATTACHMENT_DIRECTORY")]
+    attach_dir: Option<PathBuf>,
     #[command(flatten)]
     verbose: Verbosity<WarnLevel>,
 
@@ -121,6 +123,23 @@ enum Command {
     Alias {
         #[command(subcommand)]
         alias_command: AliasCommand,
+    },
+    /// Attach files.
+    ///
+    /// Add new files to the directory associated with a record, as determined by the `path`
+    /// subcommand. The original file is copied to the new directory, or can be renamed
+    /// with the `--rename` option.
+    Attach {
+        /// The record to associate the files with.
+        citation_key: RecordId,
+        /// The path to the file to add.
+        file: PathBuf,
+        /// Rename the file.
+        #[arg(short, long)]
+        rename: Option<PathBuf>,
+        /// Overwrite existing files.
+        #[arg(short, long)]
+        force: bool,
     },
     /// Generate a shell completions script.
     #[clap(hide = true)]
@@ -213,6 +232,14 @@ enum Command {
         /// Do not create the alias `<ID>` for `local:<ID>`.
         #[arg(long)]
         no_alias: bool,
+    },
+    /// Show attachment directory associated with record.
+    Path {
+        /// Show path for this key.
+        citation_key: RecordId,
+        /// Also create the directory.
+        #[arg(short, long)]
+        mkdir: bool,
     },
     /// Generate records by searching for citation keys inside files.
     ///
@@ -386,6 +413,9 @@ fn run_cli(cli: Cli) -> Result<()> {
         app_name: env!("CARGO_PKG_NAME").to_owned(),
     })?;
 
+    let data_dir = strategy.data_dir();
+    create_dir_all(&data_dir)?;
+
     // Open or create the database
     let mut record_db = if let Some(db_path) = cli.database {
         // at a user-provided path
@@ -394,9 +424,6 @@ fn run_cli(cli: Cli) -> Result<()> {
         RecordDatabase::open(db_path)?
     } else {
         // at the default path
-        let data_dir = strategy.data_dir();
-
-        create_dir_all(&data_dir)?;
         let default_db_path = data_dir.join("records.db");
         info!(
             "Using default database file '{}'",
@@ -448,6 +475,76 @@ fn run_cli(cli: Cli) -> Result<()> {
                 }
             }
         },
+        Command::Attach {
+            citation_key,
+            file,
+            rename,
+            force,
+        } => {
+            // Initialize the file directory path
+            let attachment_dir = if let Some(file_dir) = cli.attach_dir {
+                // at a user-provided path
+                info!(
+                    "Using user-provided file directory '{}'",
+                    file_dir.display()
+                );
+                file_dir
+            } else {
+                // at the default path
+                let default_db_path = data_dir.join("attachments");
+                info!(
+                    "Using default file directory '{}'",
+                    default_db_path.display()
+                );
+
+                default_db_path
+            };
+
+            // Extend with the filename.
+            let (record, row) =
+                get_record_row(&mut record_db, citation_key, &client, &config.on_insert)?
+                    .exists_or_commit_null("Cannot show directory for")?;
+            row.commit()?;
+            let Record { canonical, .. } = record;
+            let mut target = attachment_dir;
+            canonical.path_hash(&mut target);
+            create_dir_all(&target)?;
+
+            // Try to open the source file first, since this will reduce the number of redundant
+            // errors.
+            let mut source_file = File::open(&file)?;
+
+            // determine the target filename, either by parsing from the 'rename' value or
+            // defaulting to the filename of the source file
+            target.push(match rename {
+                None => {
+                    if let Some(name) = file.file_name() {
+                        name
+                    } else {
+                        bail!("Source file must not be a directory");
+                    }
+                }
+                Some(ref rename) => {
+                    match (rename.parent().and_then(Path::to_str), rename.file_name()) {
+                        // rename.parent() returns Some("") for relative paths with one component; see
+                        //  https://doc.rust-lang.org/stable/std/path/struct.Path.html#method.parent
+                        (Some(""), Some(filename)) => filename,
+                        _ => {
+                            bail!("Renamed value must be a relative path with one component");
+                        }
+                    }
+                }
+            });
+
+            let mut opts = OpenOptions::new();
+            opts.write(true);
+            if !force {
+                opts.create_new(true);
+            }
+
+            let mut target_file = opts.open(&target)?;
+            copy(&mut source_file, &mut target_file)?;
+        }
         Command::Completions { shell: _ } => {
             unreachable!("Request for completions script should have been handled earlier and the program should have exited then.");
         }
@@ -732,6 +829,43 @@ fn run_cli(cli: Cli) -> Result<()> {
                     },
                 )?;
             }
+            row.commit()?;
+        }
+        Command::Path {
+            citation_key,
+            mkdir,
+        } => {
+            // Initialize the file directory path
+            let file_dir = if let Some(file_dir) = cli.attach_dir {
+                // at a user-provided path
+                info!(
+                    "Using user-provided file directory '{}'",
+                    file_dir.display()
+                );
+                file_dir
+            } else {
+                // at the default path
+                let default_db_path = data_dir.join("attachments");
+                info!(
+                    "Using default file directory '{}'",
+                    default_db_path.display()
+                );
+
+                default_db_path
+            };
+
+            // Extend with the filename.
+            let (record, row) =
+                get_record_row(&mut record_db, citation_key, &client, &config.on_insert)?
+                    .exists_or_commit_null("Cannot show directory for")?;
+            let Record { canonical, .. } = record;
+            let mut path = file_dir;
+            canonical.path_hash(&mut path);
+            if mkdir {
+                info!("Creating directory for canonical id '{canonical}'");
+                create_dir_all(&path)?;
+            }
+            println!("{}", path.display());
             row.commit()?;
         }
         Command::Source {
