@@ -211,8 +211,8 @@ enum Command {
     },
     /// Update data associated with an existing citation key.
     ///
-    /// This adds any new fields that do not exist in the current data, but will not overwrite any
-    /// existing fields.
+    /// By default, prompt if there is a conflict between the current and incoming records. To
+    /// override this behaviour, use the `--prefer-current` or `--prefer-incoming` flags.
     Update {
         /// The citation key to update.
         citation_key: RecordId,
