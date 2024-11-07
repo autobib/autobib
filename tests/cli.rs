@@ -593,3 +593,15 @@ fn repeat() -> Result<()> {
 
     s.close()
 }
+
+/// Test identifiers which have previously caused errors
+#[test]
+fn test_identifier_exceptions() -> Result<()> {
+    let s = TestState::init()?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["get", "arxiv:2112.04570"]);
+    cmd.assert().success();
+
+    s.close()
+}
