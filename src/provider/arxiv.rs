@@ -58,7 +58,7 @@ impl TryInto<ArxivXML> for ArxivXMLDe {
                 error: Some(err),
             } => Ok(ArxivXML::Error(err)),
             _ => Err(Self::Error::Unexpected(
-                "Arxiv XML response had unexpected format!".into(),
+                "arXiv XML response had an unexpected format!".into(),
             )),
         }
     }
@@ -103,7 +103,7 @@ struct ArxivHeader {
     identifier: String,
     datestamp: NaiveDate,
     #[serde(rename = "setSpec")]
-    spec: String,
+    spec: Vec<String>,
 }
 
 #[allow(dead_code)]
@@ -111,7 +111,7 @@ struct ArxivHeader {
 struct ArxivEntry {
     id: String,
     created: NaiveDate,
-    updated: NaiveDate,
+    updated: Option<NaiveDate>,
     license: String,
     doi: Option<String>,
     authors: ArxivAuthorList,
@@ -199,8 +199,10 @@ pub fn get_record(id: &str, client: &HttpClient) -> Result<Option<RecordData>, P
             ArxivXML::Response(response) => Ok(Some(response.try_into()?)),
             ArxivXML::Error(_) => Ok(None),
         },
-        Err(_) => Err(ProviderError::Unexpected(format!(
-            "Arxiv XML response had unexpected format! Response body:\n{body}\n"
-        ))),
+        Err(err) => {
+            Err(ProviderError::Unexpected(format!(
+                "arXiv XML response had an unexpected format! Response body:\n{body}\nError message:\n{err}"
+            )))
+        }
     }
 }
