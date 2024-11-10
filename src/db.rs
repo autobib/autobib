@@ -531,6 +531,7 @@ impl Transaction<'_> {
 }
 
 impl Drop for Transaction<'_> {
+    #[inline]
     fn drop(&mut self) {
         match self.tx.drop_behavior() {
             DropBehavior::Rollback => debug!("Rolling back transaction"),
