@@ -106,8 +106,8 @@ impl<'conn, I: DatabaseId> State<'conn, I> {
     }
 
     /// # Safety
-    /// The caller is guaranteed to ensure that a statement which included an insert was previously
-    /// executed on the same underlying transaction.
+    /// The caller must ensure that a statement which included an insert was previously
+    /// executed on the same transaction.
     unsafe fn into_last_insert<J: InDatabase>(self) -> State<'conn, J> {
         let Self { tx, .. } = self;
         let id = tx.last_insert_rowid();
@@ -142,22 +142,18 @@ impl<'conn, I: InDatabase> State<'conn, I> {
 
     /// Delete the row.
     pub fn delete(self) -> Result<State<'conn, Missing>, rusqlite::Error> {
-        debug!("Deleting row");
+        debug!("Deleting row '{}'", self.row_id());
         self.prepare(<I as InDatabase>::DELETE_STMT)?
             .execute((self.row_id(),))?;
         let Self { tx, .. } = self;
-        Ok(State::<'conn, Missing>::init(tx, Missing {}))
+        Ok(State::init(tx, Missing {}))
     }
 
     /// Get the data associated with the row.
     pub fn get_data(&self) -> Result<<I as InDatabase>::Data, rusqlite::Error> {
-        debug!("Retrieving associated data");
-        let mut record_selector = self.prepare_cached(<I as InDatabase>::GET_STMT)?;
-        let mut record_rows = record_selector.query([self.row_id()])?;
-        record_rows
-            .next()?
-            .expect("RowId does not exist!")
-            .try_into()
+        debug!("Retrieving data associated with row '{}'", self.row_id());
+        self.prepare_cached(<I as InDatabase>::GET_STMT)?
+            .query_row([self.row_id()], |row| row.try_into())
     }
 }
 
