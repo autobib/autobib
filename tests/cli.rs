@@ -526,9 +526,9 @@ fn consistency() -> Result<()> {
     ));
     let mut cmd = s.cmd()?;
     cmd.args(["get", "zbmath:06346461"]);
-    cmd.assert()
-        .failure()
-        .stderr(predicate::str::contains("RowId does not exist!"));
+    cmd.assert().failure().stderr(predicate::str::contains(
+        "Database error: SQLite error: Query returned no rows",
+    ));
 
     // check that the error report is correct
     let mut cmd = s.cmd()?;
