@@ -120,10 +120,10 @@ impl<'conn> State<'conn, RecordRow> {
         match get_row_id(&self.tx, alias)? {
             Some(existing_row_id) => {
                 if existing_row_id == self.row_id() {
-                    return Ok(None);
+                    Ok(None)
                 } else {
                     let RowData { canonical, .. } = get_row_data(&self.tx, existing_row_id)?;
-                    return Ok(Some(canonical));
+                    Ok(Some(canonical))
                 }
             }
             None => {
