@@ -491,6 +491,7 @@ pub enum DeleteAliasResult {
     Missing,
 }
 
+/// Custom wrapper around a [`rusqlite::Transaction`] to provide additional logging.
 #[derive(Debug)]
 pub struct Transaction<'conn> {
     tx: rusqlite::Transaction<'conn>,
@@ -503,6 +504,9 @@ impl<'conn> From<rusqlite::Transaction<'conn>> for Transaction<'conn> {
 }
 
 impl Transaction<'_> {
+    /// Commit the transaction.
+    ///
+    /// This method sets the transaction's drop behaviour to [`rusqlite::DropBehavior::Commit`] and then drops it.
     pub fn commit(mut self) -> rusqlite::Result<()> {
         self.tx.set_drop_behavior(DropBehavior::Commit);
         drop(self);

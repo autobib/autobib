@@ -3,7 +3,7 @@
 //! represent the internal database state as corresponds to a given [`RecordId`].
 //!
 //! The [`State`] struct is a representation of the database state corresponding to a [`RecordId`].
-//! Internally, the [`State`] struct is a wrapper around a [`rusqlite::Transaction`], which ensures
+//! Internally, the [`State`] struct is a wrapper around a [`Transaction`], which ensures
 //! that the underlying database state will not change during the running of this program.
 //!
 //! A [`RecordId`] is represented by the database in exactly one of the following ways, which is
