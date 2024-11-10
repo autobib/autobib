@@ -101,11 +101,6 @@ fn get_row_id<K: CitationKey>(
         .optional()
 }
 
-fn get_row_data(tx: &Transaction, row_id: RowId) -> Result<RowData, rusqlite::Error> {
-    tx.prepare_cached(sql::get_record_data())?
-        .query_row([row_id], |row| RowData::try_from(row))
-}
-
 /// Determine the [`RowId`] in the `NullRecords` table corresponding to a [`CitationKey`].
 pub fn get_null_row_id(
     tx: &Transaction,

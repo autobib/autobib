@@ -2,9 +2,7 @@ use chrono::{DateTime, Local};
 use log::debug;
 
 use crate::{
-    db::{
-        flatten_constraint_violation, get_row_data, get_row_id, sql, CitationKey, Constraint, RowId,
-    },
+    db::{flatten_constraint_violation, get_row_id, sql, CitationKey, Constraint, RowId},
     Alias, RawRecordData, RemoteId,
 };
 
@@ -122,7 +120,10 @@ impl<'conn> State<'conn, RecordRow> {
                 if existing_row_id == self.row_id() {
                     Ok(None)
                 } else {
-                    let RowData { canonical, .. } = get_row_data(&self.tx, existing_row_id)?;
+                    let RowData { canonical, .. } = self
+                        .tx
+                        .prepare_cached(sql::get_record_data())?
+                        .query_row([existing_row_id], |row| row.try_into())?;
                     Ok(Some(canonical))
                 }
             }
