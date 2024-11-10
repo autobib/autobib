@@ -74,8 +74,7 @@ use chrono::{DateTime, Local};
 use delegate::delegate;
 use log::{debug, error, warn};
 use nucleo_picker::nucleo::{Injector, Utf32String};
-use rusqlite::DropBehavior;
-use rusqlite::{types::ValueRef, Connection, OptionalExtension};
+use rusqlite::{types::ValueRef, Connection, DropBehavior, OptionalExtension};
 
 pub use self::data::{binary_format_version, EntryData, RawRecordData, RecordData};
 pub(crate) use self::data::{EntryTypeHeader, KeyHeader, ValueHeader};
@@ -538,7 +537,7 @@ impl Drop for Transaction<'_> {
             DropBehavior::Commit => debug!("Committing transaction"),
             DropBehavior::Ignore => debug!("Ignoring transaction"),
             DropBehavior::Panic => debug!("Dropping transaction and panicking"),
-            _ => debug!("Dropping transaction with unknown behaviour"),
+            _ => debug!("Dropping transaction with unknown drop behaviour"),
         }
     }
 }
