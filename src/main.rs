@@ -589,10 +589,8 @@ fn run_cli(cli: Cli) -> Result<()> {
 
             if !no_alias {
                 info!("Creating alias '{alias}' for '{canonical}'");
-                if !row.add_alias(&alias)? {
-                    warn!(
-                        "Alias '{alias}' already exists. '{canonical}' will be a different record."
-                    );
+                if let Some(other_remote_id) = row.ensure_alias(&alias)? {
+                    warn!("Alias '{alias}' already exists and refers to '{other_remote_id}'. '{canonical}' will be a different record.");
                 }
             }
 
