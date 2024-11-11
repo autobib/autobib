@@ -414,7 +414,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                                 let prompt = Confirm::new("Delete anyway?", false);
                                 if !prompt.confirm()? {
                                     row.commit()?;
-                                    error!("Aborted deletion of record: {remote_id}");
+                                    error!("Aborted deletion of '{remote_id}'");
                                     continue;
                                 }
                             }
@@ -433,10 +433,10 @@ fn run_cli(cli: Cli) -> Result<()> {
                     }
                     RecordIdState::UnknownRemoteId(remote_id, missing) => {
                         missing.commit()?;
-                        error!("Identifier not in database: {remote_id}");
+                        error!("Identifier not in database: '{remote_id}'");
                     }
                     RecordIdState::UndefinedAlias(alias) => {
-                        error!("Undefined alias: {alias}");
+                        error!("Undefined alias: '{alias}'");
                     }
                     RecordIdState::InvalidRemoteId(err) => error!("{err}"),
                 }
@@ -742,7 +742,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                 suggest!("Use `autobib get` to retrieve record");
             }
             RecordIdState::UndefinedAlias(alias) => {
-                bail!("Undefined alias: '{alias}");
+                bail!("Undefined alias: '{alias}'");
             }
             RecordIdState::InvalidRemoteId(err) => bail!("{err}"),
         },
@@ -983,14 +983,14 @@ fn retrieve_and_validate_single_entry(
         }
         RecordRowResponse::NullRemoteId(remote_id, missing) => {
             if !ignore_null {
-                error!("Null record: {remote_id}");
+                error!("Null record: '{remote_id}'");
             }
             missing.commit()?;
             Ok(None)
         }
         RecordRowResponse::NullAlias(alias) => {
             if !ignore_null {
-                error!("Undefined alias: {alias}");
+                error!("Undefined alias: '{alias}'");
             }
             Ok(None)
         }
