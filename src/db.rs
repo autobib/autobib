@@ -71,9 +71,10 @@ mod validate;
 use std::path::Path;
 
 use chrono::{DateTime, Local};
+use delegate::delegate;
 use log::{debug, error, warn};
 use nucleo_picker::nucleo::{Injector, Utf32String};
-use rusqlite::{types::ValueRef, Connection, OptionalExtension, Transaction};
+use rusqlite::{types::ValueRef, Connection, DropBehavior, OptionalExtension};
 
 pub use self::data::{binary_format_version, EntryData, RawRecordData, RecordData};
 pub(crate) use self::data::{EntryTypeHeader, KeyHeader, ValueHeader};
@@ -180,7 +181,7 @@ impl RecordDatabase {
         debug!("Enabling write-ahead log");
         conn.pragma_update(None, "journal_mode", "WAL")?;
 
-        let tx = conn.transaction()?;
+        let tx = conn.transaction()?.into();
         Self::initialize(&tx)?;
         tx.commit()?;
 
@@ -260,7 +261,7 @@ impl RecordDatabase {
         &mut self,
         record_id: RecordId,
     ) -> Result<RecordIdState, rusqlite::Error> {
-        RecordIdState::determine(self.conn.transaction()?, record_id)
+        RecordIdState::determine(self.conn.transaction()?.into(), record_id)
     }
 
     /// Get the [`RemoteIdState`] associated with a [`RemoteId`].
@@ -269,7 +270,7 @@ impl RecordDatabase {
         &mut self,
         remote_id: &RemoteId,
     ) -> Result<RemoteIdState, rusqlite::Error> {
-        RemoteIdState::determine(self.conn.transaction()?, remote_id)
+        RemoteIdState::determine(self.conn.transaction()?.into(), remote_id)
     }
 
     /// Optimize the database.
@@ -290,7 +291,7 @@ impl RecordDatabase {
     /// If `fix` is true, then potentially destructive database changes will take place.
     pub fn recover(&mut self, fix: bool) -> Result<Vec<DatabaseFault>, rusqlite::Error> {
         let validator = DatabaseValidator {
-            tx: self.conn.transaction()?,
+            tx: self.conn.transaction()?.into(),
         };
         let mut faults = Vec::new();
 
@@ -487,4 +488,57 @@ pub enum DeleteAliasResult {
     Deleted,
     /// The alias did not exist.
     Missing,
+}
+
+/// Custom wrapper around a [`rusqlite::Transaction`] to provide additional logging.
+#[derive(Debug)]
+pub struct Transaction<'conn> {
+    tx: rusqlite::Transaction<'conn>,
+}
+
+impl<'conn> From<rusqlite::Transaction<'conn>> for Transaction<'conn> {
+    fn from(tx: rusqlite::Transaction<'conn>) -> Self {
+        Self { tx }
+    }
+}
+
+impl Transaction<'_> {
+    /// Commit the transaction.
+    ///
+    /// This method sets the transaction's drop behaviour to [`rusqlite::DropBehavior::Commit`] and then drops it.
+    pub fn commit(mut self) -> rusqlite::Result<()> {
+        self.tx.set_drop_behavior(DropBehavior::Commit);
+        drop(self);
+        Ok(())
+    }
+
+    delegate! {
+        to self.tx {
+            pub fn execute<P>(&self, sql: &str, params: P) ->rusqlite::Result<usize>
+            where
+                P: rusqlite::Params;
+            pub fn last_insert_rowid(&self) -> i64;
+            pub fn pragma_query<F>(&self, schema_name: Option<rusqlite::DatabaseName<'_>>, pragma_name: &str, f: F) -> rusqlite::Result<()>
+            where
+                F: FnMut(&rusqlite::Row<'_>) -> rusqlite::Result<()>;
+            pub fn pragma_query_value<T, F>(&self, schema_name: Option<rusqlite::DatabaseName<'_>>, pragma_name: &str, f: F) -> rusqlite::Result<T>
+            where
+                F: FnOnce(&rusqlite::Row<'_>) -> rusqlite::Result<T>;
+            pub fn prepare(&self, sql: &str) -> rusqlite::Result<rusqlite::Statement<'_>>;
+            pub fn prepare_cached(&self, sql: &str) -> rusqlite::Result<rusqlite::CachedStatement<'_>>;
+        }
+    }
+}
+
+impl Drop for Transaction<'_> {
+    #[inline]
+    fn drop(&mut self) {
+        match self.tx.drop_behavior() {
+            DropBehavior::Rollback => debug!("Rolling back transaction"),
+            DropBehavior::Commit => debug!("Committing transaction"),
+            DropBehavior::Ignore => debug!("Ignoring transaction"),
+            DropBehavior::Panic => debug!("Dropping transaction and panicking"),
+            _ => debug!("Dropping transaction with unknown drop behaviour"),
+        }
+    }
 }
