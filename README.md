@@ -25,16 +25,17 @@ cargo install --locked autobib
 
 ## Basic usage
 
-In order to see all of the commands available to Autobib, run
+To see all the commands available with Autobib, run
 ```bash
 autobib help
 autobib help <subcommand>
 ```
+
 Jump to:
 
 - [Getting records](#getting-records)
 - [Sourcing from files](#sourcing-from-files)
-- [Editing records](#editing-records)
+- [Modifying records](#modifying-records)
 - [Assigning aliases](#assigning-aliases)
 - [Creating local records](#creating-local-records)
 - [Searching for records](#searching-for-records)
@@ -90,15 +91,18 @@ autobib source main.tex --out main.bib
 ```
 will search through the document for valid citation keys and output the bibliography into the file `main.bib`.
 
-### Editing records
+### Modifying records
 
 On the first run, Autobib retrieves the data directly from a remote provider.
 The data is stored locally in a [SQLite](https://www.sqlite.org/) database, which defaults to `~/.local/share/autobib/records.db`, so that subsequent runs are substantially faster.
-You can view and update the internally stored record with
+You can view and modify the internally stored record with
 ```bash
 autobib edit zbl:1337.28015
 ```
 If the record does not yet exist in your local record database, it will be retrieved before editing.
+
+You can also re-retrieve a record from the remote provider using the `autobib update` command, or remove one from the database using the `autobib delete` command.
+Run `autobib help update` and `autobib help delete` for more details.
 
 ### Assigning aliases
 
@@ -149,7 +153,7 @@ autobib local my-entry
 ```
 creates a record under the identifier `local:my-entry`.
 You will be prompted to fill in the record, unless you pass the `--no-edit` flag.
-To modify the record later, [use the `autobib edit` command](#editing-records).
+To modify the record later, use the [`autobib edit` command](#modifying-records).
 
 It is also possible to create the local record from a BibTeX file:
 ```bash
