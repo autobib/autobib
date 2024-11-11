@@ -153,7 +153,7 @@ autobib local my-entry
 ```
 creates a record under the identifier `local:my-entry`.
 You will be prompted to fill in the record, unless you pass the `--no-edit` flag.
-To modify the record later, use the [`autobib edit` command](#modifying-records).
+To modify the record later, run the above command again or use the [`autobib edit` command](#modifying-records).
 
 It is also possible to create the local record from a BibTeX file:
 ```bash
