@@ -25,16 +25,17 @@ cargo install --locked autobib
 
 ## Basic usage
 
-In order to see all of the commands available to Autobib, run
+To see all the commands available with Autobib, run
 ```bash
 autobib help
 autobib help <subcommand>
 ```
+
 Jump to:
 
 - [Getting records](#getting-records)
 - [Sourcing from files](#sourcing-from-files)
-- [Editing records](#editing-records)
+- [Modifying records](#modifying-records)
 - [Assigning aliases](#assigning-aliases)
 - [Creating local records](#creating-local-records)
 - [Searching for records](#searching-for-records)
@@ -90,15 +91,18 @@ autobib source main.tex --out main.bib
 ```
 will search through the document for valid citation keys and output the bibliography into the file `main.bib`.
 
-### Editing records
+### Modifying records
 
 On the first run, Autobib retrieves the data directly from a remote provider.
 The data is stored locally in a [SQLite](https://www.sqlite.org/) database, which defaults to `~/.local/share/autobib/records.db`, so that subsequent runs are substantially faster.
-You can view and update the internally stored record with
+You can view and modify the internally stored record with
 ```bash
 autobib edit zbl:1337.28015
 ```
 If the record does not yet exist in your local record database, it will be retrieved before editing.
+
+You can also re-retrieve a record from the remote provider using the `autobib update` command, or remove one from the database using the `autobib delete` command.
+Run `autobib help update` and `autobib help delete` for more details.
 
 ### Assigning aliases
 
@@ -123,9 +127,9 @@ Then running `autobib get hochman-entropy` returns
 }
 ```
 The record is identical to the record `zbl:1337.28015`, except that the citation key is the name of the alias.
-In order to distinguish from usual identifiers, an alias cannot contain the `:` colon symbol.
+In order to distinguish from usual identifiers, an alias cannot contain the colon `:`.
 
-Note that the characters `{}(),=\#%"` are not permitted in a BibTeX entry key.
+Note that the characters `{}(),=\#%"` and [whitespace](https://doc.rust-lang.org/reference/whitespace.html) are not permitted in a BibTeX entry key.
 You can still create aliases using these characters: for instance, `autobib alias add % zbl:1337.28015` works.
 However, attempting to retrieve the BibTeX entry associated with this alias will result in an error.
 ```
@@ -137,26 +141,28 @@ Run `autobib help alias` for more options for managing aliases.
 
 Aliases can be used in most locations that the usual identifiers are used.
 For instance, you can run `autobib edit hochman-entropy`, to edit the corresponding record data.
-Note, however, that these edits will apply to the original underlying record.
+Note that these edits will apply to the original underlying record.
 
 ### Creating local records
 
 Sometimes, it is necessary to create a local record which may not otherwise exist on a remote database.
-In order to do this, the command `autobib local` can be used to generate a special `local:` record, which only exists locally database.
-To modify the contents, use `autobib edit`:
+In order to do this, the command `autobib local` can be used to generate a special `local:` record, which only exists locally in the database.
+For example,
 ```bash
 autobib local my-entry
-autobib edit local:my-entry
 ```
-These two steps can be combined:
-```bash
-autobib local my-entry --edit
-```
+creates a record under the identifier `local:my-entry`.
+You will be prompted to fill in the record, unless you pass the `--no-edit` flag.
+To modify the record later, use the [`autobib edit` command](#modifying-records).
+
 It is also possible to create the local record from a BibTeX file:
 ```bash
-autobib local my-entry --from source.bib
+autobib local my-entry --from source.bib --no-edit
 ```
 Note that the BibTeX file should contain exactly one entry, or this command will fail.
+
+When you create the local record `local:my-entry`, a new alias `my-entry` (if available) is also created and assigned to the new record.
+As a consequence, the `sub_id` part of a `local:` identifier must be a valid alias, i.e. it cannot contain the colon `:`.
 
 ### Searching for records
 
