@@ -5,15 +5,15 @@ use super::{RecordDataError, RecordError};
 
 #[derive(Error, Debug)]
 pub enum ProviderError {
-    #[error("Reference source returned an identifier: {0}")]
+    #[error("Reference source returned an invalid identifier: '{0}'")]
     InvalidIdFromProvider(String),
-    #[error("Reference source returned a key corresponding to a null record: {0}")]
+    #[error("Reference source returned a key corresponding to a null record: '{0}'")]
     UnexpectedNullRemoteFromProvider(String),
     #[error("Network failure: {0}")]
     NetworkFailure(#[from] reqwest::Error),
-    #[error("Undefined local record: {0}")]
+    #[error("Unexpected local record '{0}'")]
     UndefinedLocal(String),
-    #[error("Unexpected status code: {0}")]
+    #[error("Unexpected status code {0}")]
     UnexpectedStatusCode(StatusCode),
     #[error("Unexpected failure: {0}")]
     Unexpected(String),
