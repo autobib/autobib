@@ -2,7 +2,7 @@ use chrono::{DateTime, Local};
 use log::debug;
 
 use crate::{
-    db::{flatten_constraint_violation, sql, CitationKey, Constraint, RowId},
+    db::{flatten_constraint_violation, get_row_id, sql, CitationKey, Constraint, RowId},
     Alias, RawRecordData, RemoteId,
 };
 
@@ -104,6 +104,35 @@ impl<'conn> State<'conn, RecordRow> {
     #[inline]
     pub fn add_alias(&self, alias: &Alias) -> Result<bool, rusqlite::Error> {
         self.add_refs_impl(std::iter::once(alias), CitationKeyInsertMode::FailIfExists)
+    }
+
+    /// Ensure that the given alias exists for this row.
+    ///
+    /// If the alias already exists and points to a different row, the canonical id of the other row is returned.
+    #[inline]
+    pub fn ensure_alias(&self, alias: &Alias) -> Result<Option<RemoteId>, rusqlite::Error> {
+        debug!(
+            "Ensuring alias '{alias}' refers to row_id '{}'",
+            self.row_id()
+        );
+        match get_row_id(&self.tx, alias)? {
+            Some(existing_row_id) => {
+                if existing_row_id == self.row_id() {
+                    Ok(None)
+                } else {
+                    let RowData { canonical, .. } = self
+                        .tx
+                        .prepare_cached(sql::get_record_data())?
+                        .query_row([existing_row_id], |row| row.try_into())?;
+                    Ok(Some(canonical))
+                }
+            }
+            None => {
+                self.prepare(sql::set_citation_key_ignore())?
+                    .execute((alias.name(), self.row_id()))?;
+                Ok(None)
+            }
+        }
     }
 
     /// Insert [`CitationKey`] references for this row.
