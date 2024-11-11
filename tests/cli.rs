@@ -475,7 +475,7 @@ fn edit() -> Result<()> {
     cmd.args(["edit", "my_alias"]);
     cmd.assert()
         .failure()
-        .stderr(predicate::str::contains("Undefined alias"));
+        .stderr(predicate::str::contains("Cannot edit undefined alias"));
 
     s.close()
 }
@@ -489,6 +489,77 @@ fn update() -> Result<()> {
     cmd.assert()
         .failure()
         .stderr(predicate::str::contains("does not exist in database"));
+
+    s.close()
+}
+
+#[test]
+fn consistency() -> Result<()> {
+    use rusqlite::Connection;
+
+    let s = TestState::init()?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args([
+        "get",
+        "--retrieve-only",
+        "zbmath:06346461",
+        "zbl:1337.28015",
+        "mr:3224722",
+    ]);
+    cmd.assert().success();
+
+    // perform some destructive changes to the database
+    let conn = Connection::open(s.database.path())?;
+    conn.pragma_update(None, "foreign_keys", 0)?;
+    conn.prepare("DELETE FROM Records WHERE record_id = 'zbmath:06346461'")?
+        .execute(())?;
+    conn.prepare("DELETE FROM CitationKeys WHERE name = 'mr:3224722'")?
+        .execute(())?;
+    drop(conn);
+
+    // check that things are broken
+    let mut cmd = s.cmd()?;
+    cmd.args(["get", "mr:3224722"]);
+    cmd.assert().failure().stderr(predicate::str::contains(
+        "UNIQUE constraint failed: Records.record_id",
+    ));
+    let mut cmd = s.cmd()?;
+    cmd.args(["get", "zbmath:06346461"]);
+    cmd.assert().failure().stderr(predicate::str::contains(
+        "Database error: SQLite error: Query returned no rows",
+    ));
+
+    // check that the error report is correct
+    let mut cmd = s.cmd()?;
+    cmd.args(["util", "check"]);
+    cmd.assert().failure().stderr(
+        predicate::str::contains(
+            "There are 2 citation keys which reference records which do not exist in the database.",
+        )
+        .and(predicate::str::contains(
+            "Record row '2' with record id 'mr:3224722' does not have corresponding key",
+        )),
+    );
+
+    // fix things
+    let mut cmd = s.cmd()?;
+    cmd.args(["util", "check", "--fix"]);
+    cmd.assert().success().stderr(
+        predicate::str::contains(
+            "Repairing dangling record by inserting or overwriting existing citation key",
+        )
+        .and(predicate::str::contains(
+            "Deleting citation keys which do not reference records:",
+        ))
+        .and(predicate::str::contains("zbl:1337.28015"))
+        .and(predicate::str::contains("zbmath:06346461")),
+    );
+
+    // check that things are fixed
+    let mut cmd = s.cmd()?;
+    cmd.args(["get", "mr:3224722", "zbmath:06346461"]);
+    cmd.assert().success();
 
     s.close()
 }
@@ -519,6 +590,18 @@ fn repeat() -> Result<()> {
     cmd.assert()
         .success()
         .stderr(predicate::str::contains("Multiple keys for "));
+
+    s.close()
+}
+
+/// Test identifiers which have previously caused errors
+#[test]
+fn test_identifier_exceptions() -> Result<()> {
+    let s = TestState::init()?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["get", "arxiv:2112.04570"]);
+    cmd.assert().success();
 
     s.close()
 }

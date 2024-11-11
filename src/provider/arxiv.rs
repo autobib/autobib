@@ -58,7 +58,7 @@ impl TryInto<ArxivXML> for ArxivXMLDe {
                 error: Some(err),
             } => Ok(ArxivXML::Error(err)),
             _ => Err(Self::Error::Unexpected(
-                "Arxiv XML response had unexpected format!".into(),
+                "arXiv XML response had an unexpected format!".into(),
             )),
         }
     }
@@ -101,10 +101,9 @@ struct ArxivMetadata {
 #[derive(Deserialize, Debug)]
 struct ArxivHeader {
     identifier: String,
-    #[serde(rename = "datestamp")]
     datestamp: NaiveDate,
     #[serde(rename = "setSpec")]
-    spec: String,
+    spec: Vec<String>,
 }
 
 #[allow(dead_code)]
@@ -112,6 +111,9 @@ struct ArxivHeader {
 struct ArxivEntry {
     id: String,
     created: NaiveDate,
+    updated: Option<NaiveDate>,
+    license: String,
+    doi: Option<String>,
     authors: ArxivAuthorList,
     title: String,
     #[serde(rename = "abstract")]
@@ -131,7 +133,7 @@ struct ArxivAuthor {
 
 impl std::fmt::Display for ArxivAuthor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}, {}", self.keyname, self.forenames)
+        write!(f, "{}, {}", self.keyname.trim(), self.forenames.trim())
     }
 }
 
@@ -152,14 +154,28 @@ impl TryFrom<ArxivResponse> for RecordData {
                 ArxivRecord {
                     metadata:
                         ArxivMetadata {
-                            contents: ArxivEntry { authors, title, .. },
+                            contents:
+                                ArxivEntry {
+                                    created,
+                                    authors,
+                                    title,
+                                    id,
+                                    doi,
+                                    ..
+                                },
                         },
                     ..
                 },
         } = arxiv_response;
 
+        record_data.check_and_insert("arxiv".into(), id.trim().to_owned())?;
         record_data.check_and_insert("author".into(), authors.to_string())?;
-        record_data.check_and_insert("title".into(), title)?;
+        if let Some(s) = doi {
+            record_data.check_and_insert("doi".into(), s.trim().to_owned())?;
+        }
+        record_data.check_and_insert("month".into(), created.format("%m").to_string())?;
+        record_data.check_and_insert("title".into(), title.trim().to_owned())?;
+        record_data.check_and_insert("year".into(), created.format("%Y").to_string())?;
 
         Ok(record_data)
     }
@@ -183,8 +199,10 @@ pub fn get_record(id: &str, client: &HttpClient) -> Result<Option<RecordData>, P
             ArxivXML::Response(response) => Ok(Some(response.try_into()?)),
             ArxivXML::Error(_) => Ok(None),
         },
-        Err(_) => Err(ProviderError::Unexpected(format!(
-            "Arxiv XML response had unexpected format! Response body:\n{body}\n"
-        ))),
+        Err(err) => {
+            Err(ProviderError::Unexpected(format!(
+                "arXiv XML response had an unexpected format! Response body:\n{body}\nError message:\n{err}"
+            )))
+        }
     }
 }

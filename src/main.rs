@@ -71,11 +71,16 @@ struct Cli {
 
 #[derive(Debug, Copy, Clone, ValueEnum, Default)]
 enum InfoReportType {
+    /// Show all info.
     #[default]
     All,
+    /// Print the canonical identifer.
     Canonical,
+    /// Check if the key is valid bibtex.
     Valid,
+    /// Print equivalent identifiers.
     Equivalent,
+    /// Print the last modified time.
     Modified,
 }
 
@@ -206,8 +211,8 @@ enum Command {
     },
     /// Update data associated with an existing citation key.
     ///
-    /// This adds any new fields that do not exist in the current data, but will not overwrite any
-    /// existing fields.
+    /// By default, prompt if there is a conflict between the current and incoming records. To
+    /// override this behaviour, use the `--prefer-current` or `--prefer-incoming` flags.
     Update {
         /// The citation key to update.
         citation_key: RecordId,
@@ -273,7 +278,11 @@ enum AliasCommand {
 #[derive(Subcommand)]
 enum UtilCommand {
     /// Check database for errors.
-    Check,
+    Check {
+        /// Attempt to fix errors, printing any errors which could not be fixed.
+        #[arg(short, long)]
+        fix: bool,
+    },
     /// List all valid keys.
     List {
         /// Only list the canonical keys.
@@ -356,22 +365,12 @@ fn run_cli(cli: Cli) -> Result<()> {
         Command::Alias { alias_command } => match alias_command {
             AliasCommand::Add { alias, target } => {
                 info!("Creating alias '{alias}' for '{target}'");
-                match get_record_row(&mut record_db, target, &client)? {
-                    RecordRowResponse::Exists(_, row) => {
-                        if !row.add_alias(&alias)? {
-                            error!("Alias already exists: '{alias}'");
-                        }
-                        row.commit()?;
-                    }
-                    RecordRowResponse::NullRemoteId(remote_id, missing) => {
-                        missing.commit()?;
-                        error!("Cannot create alias for null record '{remote_id}'");
-                    }
-                    RecordRowResponse::NullAlias(alias) => {
-                        error!("Cannot create alias for undefined alias '{alias}'");
-                    }
-                    RecordRowResponse::InvalidRemoteId(record_error) => error!("{record_error}"),
+                let (_, row) = get_record_row(&mut record_db, target, &client)?
+                    .exists_or_commit_null("Cannot create alias for")?;
+                if !row.add_alias(&alias)? {
+                    error!("Alias already exists: '{alias}'");
                 }
+                row.commit()?;
             }
             AliasCommand::Delete { alias } => {
                 info!("Deleting alias '{alias}'");
@@ -444,20 +443,10 @@ fn run_cli(cli: Cli) -> Result<()> {
             }
         }
         Command::Edit { citation_key } => {
-            match get_record_row(&mut record_db, citation_key, &client)? {
-                RecordRowResponse::Exists(record, row) => {
-                    edit_record_and_update(&row, record)?;
-                    row.commit()?;
-                }
-                RecordRowResponse::NullRemoteId(remote_id, null_row) => {
-                    null_row.commit()?;
-                    bail!("Cannot edit null record '{remote_id}'");
-                }
-                RecordRowResponse::NullAlias(alias) => {
-                    bail!("Undefined alias '{alias}'");
-                }
-                RecordRowResponse::InvalidRemoteId(err) => bail!("{err}"),
-            }
+            let (record, row) = get_record_row(&mut record_db, citation_key, &client)?
+                .exists_or_commit_null("Cannot edit")?;
+            edit_record_and_update(&row, record)?;
+            row.commit()?;
         }
         Command::Find { fields } => {
             let fields_to_search: HashSet<String> =
@@ -600,10 +589,8 @@ fn run_cli(cli: Cli) -> Result<()> {
 
             if !no_alias {
                 info!("Creating alias '{alias}' for '{canonical}'");
-                if !row.add_alias(&alias)? {
-                    warn!(
-                        "Alias '{alias}' already exists. '{canonical}' will be a different record."
-                    );
+                if let Some(other_remote_id) = row.ensure_alias(&alias)? {
+                    warn!("Alias '{alias}' already exists and refers to '{other_remote_id}'. '{canonical}' will be a different record.");
                 }
             }
 
@@ -760,9 +747,15 @@ fn run_cli(cli: Cli) -> Result<()> {
             RecordIdState::InvalidRemoteId(err) => bail!("{err}"),
         },
         Command::Util { util_command } => match util_command {
-            UtilCommand::Check => {
+            UtilCommand::Check { fix } => {
                 info!("Validating record binary data and consistency, and checking for dangling records.");
-                record_db.validate()?;
+                let faults = record_db.recover(fix)?;
+                if !faults.is_empty() {
+                    error!("Erroneous data found in the database.");
+                    for fault in faults {
+                        eprintln!("DATABASE ERROR: {fault}");
+                    }
+                }
             }
             UtilCommand::List { canonical } => {
                 record_db.map_citation_keys(canonical, |key_str| {
