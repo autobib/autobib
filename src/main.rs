@@ -737,9 +737,11 @@ fn run_cli(cli: Cli) -> Result<()> {
                 };
             }
             RecordIdState::UnknownRemoteId(remote_id, missing) => {
-                missing.commit()?;
                 error!("Record corresponding to '{remote_id}' does not exist in database");
-                suggest!("Use `autobib get` to retrieve record");
+                if !remote_id.is_local() {
+                    suggest!("Use `autobib get` to retrieve record");
+                }
+                missing.commit()?;
             }
             RecordIdState::UndefinedAlias(alias) => {
                 bail!("Undefined alias: '{alias}'");

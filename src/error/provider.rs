@@ -12,7 +12,7 @@ pub enum ProviderError {
     #[error("Network failure: {0}")]
     NetworkFailure(#[from] reqwest::Error),
     #[error("Unexpected local record '{0}'")]
-    UndefinedLocal(String),
+    UnexpectedLocal(String),
     #[error("Unexpected status code {0}")]
     UnexpectedStatusCode(StatusCode),
     #[error("Unexpected failure: {0}")]

@@ -11,5 +11,5 @@ pub fn is_valid_id(id: &str) -> bool {
 pub fn get_record(id: &str, _client: &HttpClient) -> Result<Option<RecordData>, ProviderError> {
     // WARNING: we must return an error here, or the record will get cached locally which will
     // result in strange errors!
-    Err(ProviderError::UndefinedLocal(id.into()))
+    Err(ProviderError::UnexpectedLocal(id.into()))
 }

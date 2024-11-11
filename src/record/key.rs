@@ -190,6 +190,12 @@ impl RemoteId {
         &self.full_id[..self.provider_len]
     }
 
+    /// Check whether the `provider` part of the remote id is `local`.
+    #[inline]
+    pub fn is_local(&self) -> bool {
+        self.provider() == "local"
+    }
+
     /// Get the `sub_id` part of the remote id, after the separator.
     #[inline]
     pub fn sub_id(&self) -> &str {

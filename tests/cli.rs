@@ -116,6 +116,22 @@ fn local() -> Result<()> {
     cmd.assert().success().stdout(predicate_file);
 
     let mut cmd = s.cmd()?;
+    cmd.args(["local", "first", "--no-edit"]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args([
+        "local",
+        "first",
+        "--from",
+        "tests/resources/local/first.bib",
+        "--no-edit",
+    ]);
+    cmd.assert().failure().stderr(predicate::str::contains(
+        "Local record 'local:first' already exists",
+    ));
+
+    let mut cmd = s.cmd()?;
     cmd.args(["local", "second", "--no-edit"]);
     cmd.assert().success();
 
@@ -368,7 +384,7 @@ fn delete() -> Result<()> {
     cmd.args(["get", "local:first"]);
     cmd.assert()
         .failure()
-        .stderr(predicate::str::contains("Undefined local record"));
+        .stderr(predicate::str::contains("Unexpected local record"));
 
     s.close()
 }
@@ -486,9 +502,38 @@ fn update() -> Result<()> {
 
     let mut cmd = s.cmd()?;
     cmd.args(["update", "zbmath:06346461"]);
+    cmd.assert().failure().stderr(
+        predicate::str::contains("does not exist in database")
+            .and(predicate::str::contains("Use `autobib get`")),
+    );
+
+    s.close()
+}
+
+#[test]
+fn update_local() -> Result<()> {
+    let s = TestState::init()?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["local", "one", "--no-edit"]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["get", "local:one"]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["update", "local:one"]);
     cmd.assert()
         .failure()
-        .stderr(predicate::str::contains("does not exist in database"));
+        .stderr(predicate::str::contains("Unexpected local record"));
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["update", "local:two"]);
+    cmd.assert().failure().stderr(
+        predicate::str::contains("does not exist in database")
+            .and(predicate::str::contains("Use `autobib get`").not()),
+    );
 
     s.close()
 }
