@@ -1,6 +1,17 @@
 //! Utilities for normalizing BibTeX data
 use std::str::CharIndices;
 
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Normalization {
+    #[serde(default)]
+    normalize_whitespace: bool,
+    #[serde(default)]
+    set_eprint: Vec<String>,
+}
+
 pub trait Normalize {
     /// Attempt to set the `eprint` and `eprinttype` fields from a given field.
     ///
@@ -13,6 +24,16 @@ pub trait Normalize {
     /// Normalize whitespace by converting all whitespace blocks into a single ASCII SPACE,
     /// respecting whitespace which is explicitly escaped by `\`.
     fn normalize_whitespace(&mut self) -> bool;
+
+    /// Apply the given normalizations.
+    #[inline]
+    fn normalize(&mut self, nl: &Normalization) {
+        if nl.normalize_whitespace {
+            self.normalize_whitespace();
+        }
+
+        self.normalize_eprint(nl.set_eprint.iter());
+    }
 }
 
 /// Normalize whitespace by converting all blocks of consecutive whitespace into a single ASCII SPACE,

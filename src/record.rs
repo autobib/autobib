@@ -11,8 +11,9 @@ use crate::{
         RawRecordData, RecordData, RecordDatabase,
     },
     error::{Error, ProviderError, RecordError},
+    normalize::Normalize,
     provider::{get_remote_response, RemoteResponse},
-    HttpClient,
+    Config, HttpClient,
 };
 
 /// The fundamental record type.
@@ -83,6 +84,7 @@ pub fn get_record_row<'conn>(
     db: &'conn mut RecordDatabase,
     record_id: RecordId,
     client: &HttpClient,
+    config: &Config,
 ) -> Result<RecordRowResponse<'conn>, Error> {
     match db.state_from_record_id(record_id)? {
         RecordIdState::Existent(record_id, row) => {
@@ -104,7 +106,7 @@ pub fn get_record_row<'conn>(
         RecordIdState::UndefinedAlias(alias) => Ok(RecordRowResponse::NullAlias(alias)),
         RecordIdState::InvalidRemoteId(err) => Ok(RecordRowResponse::InvalidRemoteId(err)),
         RecordIdState::UnknownRemoteId(remote_id, missing) => {
-            get_record_row_recursive(missing, remote_id, client)
+            get_record_row_recursive(missing, remote_id, client, config)
         }
     }
 }
@@ -137,12 +139,14 @@ fn get_record_row_recursive<'conn>(
     mut missing: State<'conn, Missing>,
     remote_id: RemoteId,
     client: &HttpClient,
+    config: &Config,
 ) -> Result<RecordRowResponse<'conn>, Error> {
     info!("Resolving remote record for '{remote_id}'");
     let mut history = NonEmpty::singleton(remote_id);
     loop {
         missing = match get_remote_response(client, history.last())? {
-            RemoteResponse::Data(data) => {
+            RemoteResponse::Data(mut data) => {
+                data.normalize(&config.on_insert);
                 let raw_record_data = (&data).into();
                 let row = missing.insert(&raw_record_data, history.last())?;
                 row.add_refs(history.iter())?;
