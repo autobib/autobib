@@ -1,4 +1,5 @@
 pub mod cite_search;
+mod config;
 pub mod db;
 mod entry;
 pub mod error;
@@ -51,6 +52,7 @@ use self::{
     record::{get_remote_response_recursive, Record, RecordRowResponse, RecursiveRemoteResponse},
 };
 pub use self::{
+    config::Config,
     entry::Entry,
     http::HttpClient,
     normalize::Normalize,
@@ -63,6 +65,10 @@ struct Cli {
     /// Use record database.
     #[arg(short, long, value_name = "PATH", env = "AUTOBIB_DATABASE_PATH")]
     database: Option<PathBuf>,
+
+    /// Use configuration file.
+    #[arg(short, long, value_name = "PATH", env = "AUTOBIB_CONFIG_PATH")]
+    config: Option<PathBuf>,
 
     #[command(flatten)]
     verbose: Verbosity<WarnLevel>,
@@ -332,6 +338,12 @@ fn run_cli(cli: Cli) -> Result<()> {
     );
     info!("Database schema version: {}", db::schema_version());
 
+    let strategy = choose_app_strategy(AppStrategyArgs {
+        top_level_domain: "org".to_owned(),
+        author: env!("CARGO_PKG_NAME").to_owned(),
+        app_name: env!("CARGO_PKG_NAME").to_owned(),
+    })?;
+
     // Open or create the database
     let mut record_db = if let Some(db_path) = cli.database {
         // at a user-provided path
@@ -340,12 +352,6 @@ fn run_cli(cli: Cli) -> Result<()> {
         RecordDatabase::open(db_path)?
     } else {
         // at the default path
-        let strategy = choose_app_strategy(AppStrategyArgs {
-            top_level_domain: "org".to_owned(),
-            author: env!("CARGO_PKG_NAME").to_owned(),
-            app_name: env!("CARGO_PKG_NAME").to_owned(),
-        })?;
-
         let data_dir = strategy.data_dir();
 
         create_dir_all(&data_dir)?;
@@ -358,6 +364,13 @@ fn run_cli(cli: Cli) -> Result<()> {
         RecordDatabase::open(default_db_path)?
     };
 
+    // Read configuration from filesystem
+    let config = if let Some(config_path) = cli.config {
+        Config::load(config_path, false)?
+    } else {
+        Config::load(strategy.config_dir().join("config.toml"), true)?
+    };
+
     // Initialize the reqwest Client
     let builder = HttpClient::default_builder();
     let client = HttpClient::new(builder)?;
@@ -367,7 +380,7 @@ fn run_cli(cli: Cli) -> Result<()> {
         Command::Alias { alias_command } => match alias_command {
             AliasCommand::Add { alias, target } => {
                 info!("Creating alias '{alias}' for '{target}'");
-                let (_, row) = get_record_row(&mut record_db, target, &client)?
+                let (_, row) = get_record_row(&mut record_db, target, &client, &config)?
                     .exists_or_commit_null("Cannot create alias for")?;
                 if !row.add_alias(&alias)? {
                     error!("Alias already exists: '{alias}'");
@@ -445,7 +458,7 @@ fn run_cli(cli: Cli) -> Result<()> {
             }
         }
         Command::Edit { citation_key } => {
-            let (record, row) = get_record_row(&mut record_db, citation_key, &client)?
+            let (record, row) = get_record_row(&mut record_db, citation_key, &client, &config)?
                 .exists_or_commit_null("Cannot edit")?;
             edit_record_and_update(&row, record)?;
             row.commit()?;
@@ -473,6 +486,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                 &client,
                 retrieve_only,
                 ignore_null,
+                &config,
             );
 
             if !retrieve_only {
@@ -654,6 +668,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                 &client,
                 retrieve_only,
                 ignore_null,
+                &config,
             );
 
             if !retrieve_only {
@@ -933,6 +948,7 @@ fn retrieve_and_validate_entries<T: Iterator<Item = RecordId>>(
     client: &HttpClient,
     retrieve_only: bool,
     ignore_null: bool,
+    config: &Config,
 ) -> BTreeMap<RemoteId, NonEmpty<Entry<RawRecordData>>> {
     let valid_entries = citation_keys.filter_map(|citation_key| {
         retrieve_and_validate_single_entry(
@@ -941,6 +957,7 @@ fn retrieve_and_validate_entries<T: Iterator<Item = RecordId>>(
             client,
             retrieve_only,
             ignore_null,
+            config,
         )
         .unwrap_or_else(|error| {
             error!("{error}");
@@ -967,8 +984,9 @@ fn retrieve_and_validate_single_entry(
     client: &HttpClient,
     retrieve_only: bool,
     ignore_null: bool,
+    config: &Config,
 ) -> Result<Option<(Entry<RawRecordData>, RemoteId)>, error::Error> {
-    match get_record_row(record_db, citation_key, client)? {
+    match get_record_row(record_db, citation_key, client, config)? {
         RecordRowResponse::Exists(record, row) => {
             if retrieve_only {
                 row.commit()?;
