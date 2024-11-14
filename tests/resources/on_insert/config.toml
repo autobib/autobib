@@ -1,0 +1,3 @@
+[on_insert]
+normalize_whitespace = true
+set_eprint = ["zbl", "zbmath", "doi", "arxiv"]

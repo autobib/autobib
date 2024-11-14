@@ -504,7 +504,7 @@ impl EntryData for &RecordData {
 }
 
 impl Normalize for RecordData {
-    fn normalize_eprint<Q: AsRef<str>>(&mut self, keys: std::slice::Iter<'_, Q>) -> bool {
+    fn set_eprint<Q: AsRef<str>>(&mut self, keys: std::slice::Iter<'_, Q>) -> bool {
         for key in keys {
             match self.is_eprint_normalized(key) {
                 EPrintState::Ok => {
@@ -575,7 +575,7 @@ mod tests {
         ] {
             record_data.check_and_insert(k.into(), v.into()).unwrap();
         }
-        let changed = record_data.normalize_eprint(["zbl", "doi"].iter());
+        let changed = record_data.set_eprint(["zbl", "doi"].iter());
         assert!(changed);
         assert_eq!(record_data.get("eprint"), Some("yyy"));
         assert_eq!(record_data.get("eprinttype"), Some("zbl"));
@@ -590,7 +590,7 @@ mod tests {
         ] {
             record_data.check_and_insert(k.into(), v.into()).unwrap();
         }
-        let changed = record_data.normalize_eprint(["doi", "zbl"].iter());
+        let changed = record_data.set_eprint(["doi", "zbl"].iter());
         assert!(!changed);
 
         // set new
@@ -598,7 +598,7 @@ mod tests {
         for (k, v) in [("doi", "xxx"), ("zbl", "yyy")] {
             record_data.check_and_insert(k.into(), v.into()).unwrap();
         }
-        let changed = record_data.normalize_eprint(["zbl", "doi"].iter());
+        let changed = record_data.set_eprint(["zbl", "doi"].iter());
         assert!(changed);
         assert_eq!(record_data.get("eprint"), Some("yyy"));
         assert_eq!(record_data.get("eprinttype"), Some("zbl"));
@@ -608,7 +608,7 @@ mod tests {
         for (k, v) in [("doi", "xxx"), ("eprint", "xxx")] {
             record_data.check_and_insert(k.into(), v.into()).unwrap();
         }
-        let changed = record_data.normalize_eprint(["zbl", "doi"].iter());
+        let changed = record_data.set_eprint(["zbl", "doi"].iter());
         assert!(changed);
         assert_eq!(record_data.get("eprint"), Some("xxx"));
         assert_eq!(record_data.get("eprinttype"), Some("doi"));
@@ -618,7 +618,7 @@ mod tests {
         for (k, v) in [("doi", "xxx"), ("eprint", "xxx"), ("eprinttype", "doi")] {
             record_data.check_and_insert(k.into(), v.into()).unwrap();
         }
-        let changed = record_data.normalize_eprint(["zbl", "doi"].iter());
+        let changed = record_data.set_eprint(["zbl", "doi"].iter());
         assert!(!changed);
 
         // set new skip
@@ -626,7 +626,7 @@ mod tests {
         for (k, v) in [("doi", "xxx")] {
             record_data.check_and_insert(k.into(), v.into()).unwrap();
         }
-        let changed = record_data.normalize_eprint(["zbl", "doi"].iter());
+        let changed = record_data.set_eprint(["zbl", "doi"].iter());
         assert!(changed);
         assert_eq!(record_data.get("eprint"), Some("xxx"));
         assert_eq!(record_data.get("eprinttype"), Some("doi"));
@@ -636,12 +636,12 @@ mod tests {
         for (k, v) in [("zbl", "yyy"), ("eprinttype", "doi")] {
             record_data.check_and_insert(k.into(), v.into()).unwrap();
         }
-        let changed = record_data.normalize_eprint(["doi"].iter());
+        let changed = record_data.set_eprint(["doi"].iter());
         assert!(!changed);
 
         // no data skip
         let mut record_data = RecordData::try_new("article".into()).unwrap();
-        let changed = record_data.normalize_eprint(["doi"].iter());
+        let changed = record_data.set_eprint(["doi"].iter());
         assert!(!changed);
 
         // no match multi skip
@@ -649,7 +649,7 @@ mod tests {
         for (k, v) in [("zbl", "yyy"), ("eprinttype", "doi")] {
             record_data.check_and_insert(k.into(), v.into()).unwrap();
         }
-        let changed = record_data.normalize_eprint(["doi", "zbmath"].iter());
+        let changed = record_data.set_eprint(["doi", "zbmath"].iter());
         assert!(!changed);
     }
 

@@ -11,9 +11,9 @@ use crate::{
         RawRecordData, RecordData, RecordDatabase,
     },
     error::{Error, ProviderError, RecordError},
-    normalize::Normalize,
+    normalize::{Normalization, Normalize},
     provider::{get_remote_response, RemoteResponse},
-    Config, HttpClient,
+    HttpClient,
 };
 
 /// The fundamental record type.
@@ -76,7 +76,8 @@ impl<'conn> RecordRowResponse<'conn> {
     }
 }
 
-/// Get the [`Record`] associated with a [`RecordId`].
+/// Get the [`Record`] associated with a [`RecordId`], applying the normalizations present in the
+/// [`Normalization`].
 ///
 /// The database state is passed back to the caller and must be commited for the record to be
 /// recorded in the database.
@@ -84,7 +85,7 @@ pub fn get_record_row<'conn>(
     db: &'conn mut RecordDatabase,
     record_id: RecordId,
     client: &HttpClient,
-    config: &Config,
+    normalization: &Normalization,
 ) -> Result<RecordRowResponse<'conn>, Error> {
     match db.state_from_record_id(record_id)? {
         RecordIdState::Existent(record_id, row) => {
@@ -106,7 +107,7 @@ pub fn get_record_row<'conn>(
         RecordIdState::UndefinedAlias(alias) => Ok(RecordRowResponse::NullAlias(alias)),
         RecordIdState::InvalidRemoteId(err) => Ok(RecordRowResponse::InvalidRemoteId(err)),
         RecordIdState::UnknownRemoteId(remote_id, missing) => {
-            get_record_row_recursive(missing, remote_id, client, config)
+            get_record_row_recursive(missing, remote_id, client, normalization)
         }
     }
 }
@@ -139,14 +140,14 @@ fn get_record_row_recursive<'conn>(
     mut missing: State<'conn, Missing>,
     remote_id: RemoteId,
     client: &HttpClient,
-    config: &Config,
+    normalization: &Normalization,
 ) -> Result<RecordRowResponse<'conn>, Error> {
     info!("Resolving remote record for '{remote_id}'");
     let mut history = NonEmpty::singleton(remote_id);
     loop {
         missing = match get_remote_response(client, history.last())? {
             RemoteResponse::Data(mut data) => {
-                data.normalize(&config.on_insert);
+                data.normalize(normalization);
                 let raw_record_data = (&data).into();
                 let row = missing.insert(&raw_record_data, history.last())?;
                 row.add_refs(history.iter())?;

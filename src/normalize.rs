@@ -13,13 +13,14 @@ pub struct Normalization {
 }
 
 pub trait Normalize {
-    /// Attempt to set the `eprint` and `eprinttype` fields from a given field.
+    /// Attempt to set the `eprint` and `eprinttype` BibTeX fields using the value of a provided
+    /// BibTeX field from the `keys` iterator.
     ///
     /// Note that, if successful, this will overwrite the `eprint` and eprinttype` fields.
     ///
     /// `eprint` will be set to the corresponding value, and `eprinttype` will be set to the
     /// corresponding key. Returns `true` if the eprint was set, and `false` otherwise.
-    fn normalize_eprint<Q: AsRef<str>>(&mut self, keys: std::slice::Iter<'_, Q>) -> bool;
+    fn set_eprint<Q: AsRef<str>>(&mut self, keys: std::slice::Iter<'_, Q>) -> bool;
 
     /// Normalize whitespace by converting all whitespace blocks into a single ASCII SPACE,
     /// respecting whitespace which is explicitly escaped by `\`.
@@ -32,7 +33,7 @@ pub trait Normalize {
             self.normalize_whitespace();
         }
 
-        self.normalize_eprint(nl.set_eprint.iter());
+        self.set_eprint(nl.set_eprint.iter());
     }
 }
 
@@ -43,11 +44,11 @@ pub trait Normalize {
 /// input is already normalized. Note that the returned string, if any, necessarily has a shorter
 /// length than the original string.
 pub fn normalize_whitespace(input: &str) -> Option<String> {
-    /// Consume from the [`CharIndices`] as long as the input is whitespace. Assumes that we previously
-    /// saw a whitespace character.
+    /// Consume from the [`CharIndices`] as long as the input is whitespace, assuming that we
+    /// previously saw a whitespace character.
     ///
-    /// The offset is either the index immediately preceding the non-whitespace character, or the end of
-    /// the input. The bool indicates if we terminated with a backslash.
+    /// The offset is either the char offset immediately preceding the non-whitespace character,
+    /// or the end of the input. The bool indicates if we terminated with a backslash.
     #[inline]
     fn skip_while_ws(chars: &mut CharIndices) -> (usize, bool) {
         for (offset, ch) in chars.by_ref() {
@@ -64,29 +65,29 @@ pub fn normalize_whitespace(input: &str) -> Option<String> {
     /// When `skip_while_ok` terminates, it returns the maximal valid char boundary up to which
     /// point the char iterator does not require modification to normalize whitespace.
     #[inline]
-    fn skip_while_ok(chars: &mut CharIndices, mut saw_backslash: bool) -> usize {
-        let mut has_trailing_space = false;
+    fn skip_while_ok(chars: &mut CharIndices, mut previous_was_backslash: bool) -> usize {
+        let mut previous_was_unescaped_space = false;
 
         let final_offset = loop {
             if let Some((offset, ch)) = chars.next() {
-                if saw_backslash {
-                    saw_backslash = false;
+                if previous_was_backslash {
+                    previous_was_backslash = false;
                 } else {
                     match ch {
                         '\\' => {
-                            saw_backslash = true;
+                            previous_was_backslash = true;
                         }
                         ' ' => {
-                            if has_trailing_space {
+                            if previous_was_unescaped_space {
                                 break offset;
                             } else {
-                                has_trailing_space = true;
+                                previous_was_unescaped_space = true;
                             }
                         }
                         ch if ch.is_whitespace() => {
                             break offset;
                         }
-                        _ => has_trailing_space = false,
+                        _ => previous_was_unescaped_space = false,
                     }
                 }
             } else {
@@ -94,8 +95,8 @@ pub fn normalize_whitespace(input: &str) -> Option<String> {
             }
         };
 
-        if has_trailing_space {
-            // SAFETY: `has_trailing_space = true` only when we previously saw a space, which
+        if previous_was_unescaped_space {
+            // SAFETY: `previous_was_unescaped_space = true` only when we previously saw a space, which
             // means `final_offset >= 1`.
             unsafe { final_offset.unchecked_sub(1) }
         } else {
@@ -108,7 +109,7 @@ pub fn normalize_whitespace(input: &str) -> Option<String> {
     /// The returned index pair `(left, right)` is the next contiguous block on which the
     /// characters do not require normalization.
     #[inline]
-    fn run_step(chars: &mut CharIndices) -> (usize, usize) {
+    fn next_block_to_copy(chars: &mut CharIndices) -> (usize, usize) {
         let (left, saw_backslash) = skip_while_ws(chars);
         let right = skip_while_ok(chars, saw_backslash);
         (left, right)
@@ -118,7 +119,7 @@ pub fn normalize_whitespace(input: &str) -> Option<String> {
     let mut output = String::new();
 
     loop {
-        let (left, right) = run_step(&mut chars);
+        let (left, right) = next_block_to_copy(&mut chars);
 
         // short-circuit termination: no alloc required
         if left == 0 && right == input.len() {
@@ -186,6 +187,8 @@ mod tests {
         assert_eq!(normalize_whitespace("a\\\\\\\\ b"), None);
         assert_eq!(normalize_whitespace("a\\\\  b"), Some("a\\\\ b".to_owned()));
         assert_eq!(normalize_whitespace("a\\\\\tb"), Some("a\\\\ b".to_owned()));
+        assert_eq!(normalize_whitespace("\\"), None);
+        assert_eq!(normalize_whitespace("\\ "), None);
 
         // check edge cases
         assert_eq!(normalize_whitespace(""), None);

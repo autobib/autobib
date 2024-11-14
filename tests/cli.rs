@@ -2,25 +2,37 @@ use assert_cmd::prelude::*;
 use assert_fs::fixture::NamedTempFile;
 use predicates::prelude::*;
 
-use std::{path::Path, process::Command};
+use std::{fs, path::Path, process::Command};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 struct TestState {
     database: NamedTempFile,
+    config: NamedTempFile,
 }
 
 impl TestState {
     fn init() -> Result<Self> {
+        let config = NamedTempFile::new("config.toml")?;
+        fs::write(config.as_ref(), "")?;
         Ok(Self {
             database: NamedTempFile::new("records.db")?,
+            config,
         })
     }
 
     fn cmd(&self) -> Result<Command> {
         let mut cmd = Command::cargo_bin("autobib").unwrap();
-        cmd.arg("--database").arg(self.database.as_ref());
+        cmd.arg("--database")
+            .arg(self.database.as_ref())
+            .arg("--config")
+            .arg(self.config.as_ref());
         Ok(cmd)
+    }
+
+    fn set_config<P: AsRef<Path>>(&self, config: P) -> Result<()> {
+        fs::copy(config, self.config.as_ref())?;
+        Ok(())
     }
 
     fn close(self) -> Result<()> {
@@ -635,6 +647,41 @@ fn repeat() -> Result<()> {
     cmd.assert()
         .success()
         .stderr(predicate::str::contains("Multiple keys for "));
+
+    s.close()
+}
+
+#[test]
+fn config() -> Result<()> {
+    let s = TestState::init()?;
+
+    s.set_config(Path::new("tests/resources/config/malformed.toml"))?;
+    let mut cmd = s.cmd()?;
+    cmd.arg("get");
+    cmd.assert().failure();
+
+    s.set_config(Path::new("tests/resources/config/extra.toml"))?;
+    let mut cmd = s.cmd()?;
+    cmd.arg("get");
+    cmd.assert().failure();
+
+    s.close()
+}
+
+/// Check that the `on_insert` methods work as expected.
+#[test]
+fn on_insert() -> Result<()> {
+    let s = TestState::init()?;
+
+    s.set_config(Path::new("tests/resources/on_insert/config.toml"))?;
+
+    let predicate_file =
+        predicate::path::eq_file(Path::new("tests/resources/on_insert/stdout.txt"))
+            .utf8()
+            .unwrap();
+    let mut cmd = s.cmd()?;
+    cmd.args(["get", "mr:3224722"]);
+    cmd.assert().success().stdout(predicate_file);
 
     s.close()
 }

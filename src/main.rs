@@ -380,7 +380,7 @@ fn run_cli(cli: Cli) -> Result<()> {
         Command::Alias { alias_command } => match alias_command {
             AliasCommand::Add { alias, target } => {
                 info!("Creating alias '{alias}' for '{target}'");
-                let (_, row) = get_record_row(&mut record_db, target, &client, &config)?
+                let (_, row) = get_record_row(&mut record_db, target, &client, &config.on_insert)?
                     .exists_or_commit_null("Cannot create alias for")?;
                 if !row.add_alias(&alias)? {
                     error!("Alias already exists: '{alias}'");
@@ -458,8 +458,9 @@ fn run_cli(cli: Cli) -> Result<()> {
             }
         }
         Command::Edit { citation_key } => {
-            let (record, row) = get_record_row(&mut record_db, citation_key, &client, &config)?
-                .exists_or_commit_null("Cannot edit")?;
+            let (record, row) =
+                get_record_row(&mut record_db, citation_key, &client, &config.on_insert)?
+                    .exists_or_commit_null("Cannot edit")?;
             edit_record_and_update(&row, record)?;
             row.commit()?;
         }
@@ -986,7 +987,7 @@ fn retrieve_and_validate_single_entry(
     ignore_null: bool,
     config: &Config,
 ) -> Result<Option<(Entry<RawRecordData>, RemoteId)>, error::Error> {
-    match get_record_row(record_db, citation_key, client, config)? {
+    match get_record_row(record_db, citation_key, client, &config.on_insert)? {
         RecordRowResponse::Exists(record, row) => {
             if retrieve_only {
                 row.commit()?;
