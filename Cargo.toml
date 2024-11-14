@@ -41,6 +41,9 @@ assert_cmd = "2.0"
 assert_fs = "1.1"
 predicates = "3.1"
 
+[profile.release]
+lto = true
+
 [lints.clippy]
 redundant_closure_for_method_calls = "warn"
 same_functions_in_if_condition = "warn"
