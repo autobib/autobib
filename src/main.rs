@@ -576,12 +576,12 @@ fn run_cli(cli: Cli) -> Result<()> {
                     unsafe { RemoteId::from_string_unchecked("local:".to_owned() + &old_id) };
                 match record_db.state_from_remote_id(&old_remote_id)? {
                     RemoteIdState::Existent(row) => {
-                        if !row.change_row_canonical_id(&remote_id)? {
+                        if !row.change_canonical_id(&remote_id)? {
                             bail!("Local record '{remote_id}' already exists")
                         }
 
                         if let Ok(old_alias) = Alias::from_str(&old_id) {
-                            row.check_and_delete_alias(&old_alias)?;
+                            row.delete_alias_if_associated(&old_alias)?;
                         }
 
                         let raw_record_data = row.get_data()?.data;

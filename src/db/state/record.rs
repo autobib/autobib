@@ -101,7 +101,7 @@ impl<'conn> State<'conn, RecordRow> {
     /// Change the canonical id of the row.
     ///
     /// Returns `false` if the new canonical id already exists, and `true` otherwise.
-    pub fn change_row_canonical_id(&self, new_id: &RemoteId) -> Result<bool, rusqlite::Error> {
+    pub fn change_canonical_id(&self, new_id: &RemoteId) -> Result<bool, rusqlite::Error> {
         let old_id = self.get_canonical()?;
         debug!(
             "Changing the canonical id for row '{}' from '{old_id}' to '{new_id}'",
@@ -160,7 +160,7 @@ impl<'conn> State<'conn, RecordRow> {
 
     /// Check if the given alias exists and points to this row, and delete the alias if it does.
     #[inline]
-    pub fn check_and_delete_alias(&self, alias: &Alias) -> Result<(), rusqlite::Error> {
+    pub fn delete_alias_if_associated(&self, alias: &Alias) -> Result<(), rusqlite::Error> {
         debug!(
             "Checking if alias '{alias}' refers to row_id '{}' and deleting the alias if yes",
             self.row_id()
