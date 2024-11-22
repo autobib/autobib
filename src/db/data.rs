@@ -4,7 +4,7 @@
 //!
 //! The data consists of the entry type (e.g. `article`) as well as the field keys and values (e.g. `title =
 //! {Title}`).
-use std::{borrow::Borrow, collections::BTreeMap, iter::Iterator, str::from_utf8};
+use std::{borrow::Borrow, cmp::PartialEq, collections::BTreeMap, iter::Iterator, str::from_utf8};
 
 use delegate::delegate;
 use serde_bibtex::token::is_balanced;
@@ -32,7 +32,7 @@ pub(crate) type ValueHeader = u16;
 pub(crate) type EntryTypeHeader = u8;
 
 /// This trait represents types which encapsulate the data content of a single BibTeX entry.
-pub trait EntryData {
+pub trait EntryData: PartialEq {
     /// Iterate over `(key, value)` pairs in order.
     fn fields(&self) -> impl Iterator<Item = (&str, &str)>;
 
@@ -284,10 +284,10 @@ impl Default for RecordData {
     }
 }
 
-impl<D: EntryData> From<D> for RecordData {
-    fn from(value: D) -> Self {
-        let mut new = Self::new_unchecked(value.entry_type().to_owned());
-        for (key, value) in value.fields() {
+impl<D: EntryData> From<&D> for RecordData {
+    fn from(data: &D) -> Self {
+        let mut new = Self::new_unchecked(data.entry_type().to_owned());
+        for (key, value) in data.fields() {
             new.fields.insert(key.to_owned(), value.to_owned());
         }
         new
