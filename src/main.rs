@@ -460,7 +460,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                         if !delete_null {
                             null_row.commit()?;
                             error!("Null record found for '{remote_id}'");
-                            suggest!("Use `--delete-null` option to also delete null records.");
+                            suggest!("Use the `--delete-null` option to also delete null records.");
                         } else {
                             null_row.delete()?.commit()?;
                         }
@@ -647,7 +647,9 @@ fn run_cli(cli: Cli) -> Result<()> {
                     }
                     RemoteIdState::Null(null_row) => {
                         null_row.commit()?;
-                        bail!("'{remote_id}' was found in the 'NullRecords' table. A local record should not be present in the 'NullRecords' table.");
+                        error!("'{remote_id}' was found in the 'NullRecords' table. A local record should not be present in the 'NullRecords' table.");
+                        suggest!("Run `autobib delete --delete-null '{remote_id}'` to remove the null record.");
+                        return Ok(());
                     }
                     RemoteIdState::Unknown(missing) => {
                         missing.commit()?;
@@ -672,7 +674,9 @@ fn run_cli(cli: Cli) -> Result<()> {
                     }
                     RemoteIdState::Null(null_row) => {
                         null_row.commit()?;
-                        bail!("'{remote_id}' was found in the 'NullRecords' table. A local record should not be present in the 'NullRecords' table.");
+                        error!("'{remote_id}' was found in the 'NullRecords' table. A local record should not be present in the 'NullRecords' table.");
+                        suggest!("Run `autobib delete --delete-null '{remote_id}'` to remove the null record.");
+                        return Ok(());
                     }
                 }
             };
