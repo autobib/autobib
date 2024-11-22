@@ -144,13 +144,13 @@ fn local() -> Result<()> {
     cmd.assert().success().stdout(predicate_file);
 
     let mut cmd = s.cmd()?;
-    cmd.args(["local", "second", "--move-from", "first", "--no-edit"]);
+    cmd.args(["local", "second", "--rename-from", "first", "--no-edit"]);
     cmd.assert().failure().stderr(predicate::str::contains(
         "Local record 'local:second' already exists",
     ));
 
     let mut cmd = s.cmd()?;
-    cmd.args(["local", "third", "--move-from", "first", "--no-edit"]);
+    cmd.args(["local", "third", "--rename-from", "first", "--no-edit"]);
     cmd.assert().success();
 
     let mut cmd = s.cmd()?;
