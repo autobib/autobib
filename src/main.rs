@@ -1,9 +1,11 @@
 pub mod cite_search;
+mod config;
 pub mod db;
 mod entry;
 pub mod error;
 mod http;
 mod logger;
+mod normalize;
 pub mod provider;
 mod record;
 pub mod term;
@@ -50,8 +52,10 @@ use self::{
     record::{get_remote_response_recursive, Record, RecordRowResponse, RecursiveRemoteResponse},
 };
 pub use self::{
+    config::Config,
     entry::Entry,
     http::HttpClient,
+    normalize::Normalize,
     record::{get_record_row, Alias, AliasOrRemoteId, RecordId, RemoteId},
 };
 
@@ -61,6 +65,10 @@ struct Cli {
     /// Use record database.
     #[arg(short, long, value_name = "PATH", env = "AUTOBIB_DATABASE_PATH")]
     database: Option<PathBuf>,
+
+    /// Use configuration file.
+    #[arg(short, long, value_name = "PATH", env = "AUTOBIB_CONFIG_PATH")]
+    config: Option<PathBuf>,
 
     #[command(flatten)]
     verbose: Verbosity<WarnLevel>,
@@ -136,12 +144,29 @@ enum Command {
     },
     /// Edit existing records.
     ///
-    /// Edit an existing record using your default $EDITOR. This will open up a BibTeX file with
-    /// the contents of the record. Updating the fields or the entry type will change the underlying
+    /// Edit an existing record using your $EDITOR. This will open a BibTeX file with the
+    /// contents of the record. Updating the fields or the entry type will change the underlying
     /// data, and updating the entry key will create a new alias for the record.
+    ///
+    /// Some non-interactive edit methods are supported. These can be used along with the
+    /// `--non-interactive` flag to modify records without opening your $EDITOR:
+    ///
+    /// `--normalize-whitespace` converts whitespace blocks into a single ASCII space.
+    ///
+    /// `--set-eprint` accepts a list of field keys, and sets the "eprint" and
+    ///   "eprinttype" bibtex fields from the first field key which is present in the record.
     Edit {
         /// The citation key to edit.
         citation_key: RecordId,
+        /// Normalize whitespace.
+        #[arg(long)]
+        normalize_whitespace: bool,
+        /// Set "eprint" and "eprinttype" BibTeX fields from provided fields.
+        #[arg(long, value_delimiter = ',')]
+        set_eprint: Vec<String>,
+        /// Do not open the editor.
+        #[arg(long)]
+        non_interactive: bool,
     },
     /// Search for a citation key.
     ///
@@ -149,7 +174,7 @@ enum Command {
     /// fields against which to search, use the `--fields` option.
     Find {
         /// Fields to search (e.g. author, title).
-        #[clap(short, long, value_delimiter = ',')]
+        #[arg(short, long, value_delimiter = ',')]
         fields: Vec<String>,
     },
     /// Retrieve records given citation keys.
@@ -332,6 +357,12 @@ fn run_cli(cli: Cli) -> Result<()> {
     );
     info!("Database schema version: {}", db::schema_version());
 
+    let strategy = choose_app_strategy(AppStrategyArgs {
+        top_level_domain: "org".to_owned(),
+        author: env!("CARGO_PKG_NAME").to_owned(),
+        app_name: env!("CARGO_PKG_NAME").to_owned(),
+    })?;
+
     // Open or create the database
     let mut record_db = if let Some(db_path) = cli.database {
         // at a user-provided path
@@ -340,12 +371,6 @@ fn run_cli(cli: Cli) -> Result<()> {
         RecordDatabase::open(db_path)?
     } else {
         // at the default path
-        let strategy = choose_app_strategy(AppStrategyArgs {
-            top_level_domain: "org".to_owned(),
-            author: env!("CARGO_PKG_NAME").to_owned(),
-            app_name: env!("CARGO_PKG_NAME").to_owned(),
-        })?;
-
         let data_dir = strategy.data_dir();
 
         create_dir_all(&data_dir)?;
@@ -358,6 +383,13 @@ fn run_cli(cli: Cli) -> Result<()> {
         RecordDatabase::open(default_db_path)?
     };
 
+    // Read configuration from filesystem
+    let config = if let Some(config_path) = cli.config {
+        Config::load(config_path, false)?
+    } else {
+        Config::load(strategy.config_dir().join("config.toml"), true)?
+    };
+
     // Initialize the reqwest Client
     let builder = HttpClient::default_builder();
     let client = HttpClient::new(builder)?;
@@ -367,7 +399,7 @@ fn run_cli(cli: Cli) -> Result<()> {
         Command::Alias { alias_command } => match alias_command {
             AliasCommand::Add { alias, target } => {
                 info!("Creating alias '{alias}' for '{target}'");
-                let (_, row) = get_record_row(&mut record_db, target, &client)?
+                let (_, row) = get_record_row(&mut record_db, target, &client, &config.on_insert)?
                     .exists_or_commit_null("Cannot create alias for")?;
                 if !row.add_alias(&alias)? {
                     error!("Alias already exists: '{alias}'");
@@ -444,10 +476,35 @@ fn run_cli(cli: Cli) -> Result<()> {
                 }
             }
         }
-        Command::Edit { citation_key } => {
-            let (record, row) = get_record_row(&mut record_db, citation_key, &client)?
-                .exists_or_commit_null("Cannot edit")?;
-            edit_record_and_update(&row, record)?;
+        Command::Edit {
+            citation_key,
+            normalize_whitespace,
+            set_eprint,
+            non_interactive,
+        } => {
+            let (mut record, row) =
+                get_record_row(&mut record_db, citation_key, &client, &config.on_insert)?
+                    .exists_or_commit_null("Cannot edit")?;
+
+            if normalize_whitespace || !set_eprint.is_empty() {
+                let mut data: RecordData = (&record.data).into();
+                if normalize_whitespace {
+                    data.normalize_whitespace();
+                }
+                if !set_eprint.is_empty() {
+                    data.set_eprint(set_eprint.iter());
+                }
+
+                let new_data = (&data).into();
+                row.save_to_changelog()?;
+                row.update_row_data(&new_data)?;
+
+                record.data = new_data;
+            }
+
+            if !non_interactive {
+                edit_record_and_update(&row, record)?;
+            }
             row.commit()?;
         }
         Command::Find { fields } => {
@@ -473,6 +530,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                 &client,
                 retrieve_only,
                 ignore_null,
+                &config,
             );
 
             if !retrieve_only {
@@ -684,6 +742,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                 &client,
                 retrieve_only,
                 ignore_null,
+                &config,
             );
 
             if !retrieve_only {
@@ -712,7 +771,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                 match UpdateMode::from_flags(prefer_current, prefer_incoming) {
                     UpdateMode::PreferCurrent => {
                         info!("Updating '{citation_key}' with new data, skipping existing fields");
-                        let mut existing_record = RecordData::from(existing_raw_data);
+                        let mut existing_record = RecordData::from(&existing_raw_data);
                         existing_record.merge_or_skip(new_raw_data)?;
                         row.save_to_changelog()?;
                         row.update_row_data(&(&existing_record).into())?;
@@ -722,7 +781,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                         info!(
                             "Updating '{citation_key}' with new data, overwriting existing fields"
                         );
-                        let mut new_record = RecordData::from(new_raw_data);
+                        let mut new_record = RecordData::from(&new_raw_data);
                         new_record.merge_or_skip(existing_raw_data)?;
                         row.save_to_changelog()?;
                         row.update_row_data(&(&new_record).into())?;
@@ -730,7 +789,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                     }
                     UpdateMode::Prompt => {
                         info!("Updating '{citation_key}' with new data");
-                        let mut existing_record = RecordData::from(existing_raw_data);
+                        let mut existing_record = RecordData::from(&existing_raw_data);
                         existing_record.merge_with_callback(
                             new_raw_data,
                             |key, current, incoming| {
@@ -963,6 +1022,7 @@ fn retrieve_and_validate_entries<T: Iterator<Item = RecordId>>(
     client: &HttpClient,
     retrieve_only: bool,
     ignore_null: bool,
+    config: &Config,
 ) -> BTreeMap<RemoteId, NonEmpty<Entry<RawRecordData>>> {
     let valid_entries = citation_keys.filter_map(|citation_key| {
         retrieve_and_validate_single_entry(
@@ -971,6 +1031,7 @@ fn retrieve_and_validate_entries<T: Iterator<Item = RecordId>>(
             client,
             retrieve_only,
             ignore_null,
+            config,
         )
         .unwrap_or_else(|error| {
             error!("{error}");
@@ -997,8 +1058,9 @@ fn retrieve_and_validate_single_entry(
     client: &HttpClient,
     retrieve_only: bool,
     ignore_null: bool,
+    config: &Config,
 ) -> Result<Option<(Entry<RawRecordData>, RemoteId)>, error::Error> {
-    match get_record_row(record_db, citation_key, client)? {
+    match get_record_row(record_db, citation_key, client, &config.on_insert)? {
         RecordRowResponse::Exists(record, row) => {
             if retrieve_only {
                 row.commit()?;

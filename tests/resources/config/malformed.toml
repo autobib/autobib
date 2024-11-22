@@ -1,0 +1,2 @@
+[on_insert]
+normalize_whitespace = "true"
