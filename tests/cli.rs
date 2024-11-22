@@ -505,6 +505,39 @@ fn edit() -> Result<()> {
         .failure()
         .stderr(predicate::str::contains("Cannot edit undefined alias"));
 
+    let predicate_file =
+        predicate::path::eq_file(Path::new("tests/resources/edit/stdout_unedited.txt"))
+            .utf8()
+            .unwrap();
+    let mut cmd = s.cmd()?;
+    cmd.args(["get", "mr:3224722"]);
+    cmd.assert().success().stdout(predicate_file);
+
+    let mut cmd = s.cmd()?;
+    cmd.args([
+        "edit",
+        "--non-interactive",
+        "--set-eprint=zbl,doi",
+        "mr:3224722",
+    ]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args([
+        "edit",
+        "mr:3224722",
+        "--non-interactive",
+        "--normalize-whitespace",
+    ]);
+    cmd.assert().success();
+
+    let predicate_file = predicate::path::eq_file(Path::new("tests/resources/edit/stdout.txt"))
+        .utf8()
+        .unwrap();
+    let mut cmd = s.cmd()?;
+    cmd.args(["get", "mr:3224722"]);
+    cmd.assert().success().stdout(predicate_file);
+
     s.close()
 }
 

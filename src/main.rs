@@ -144,12 +144,29 @@ enum Command {
     },
     /// Edit existing records.
     ///
-    /// Edit an existing record using your default $EDITOR. This will open up a BibTeX file with
-    /// the contents of the record. Updating the fields or the entry type will change the underlying
+    /// Edit an existing record using your $EDITOR. This will open a BibTeX file with the
+    /// contents of the record. Updating the fields or the entry type will change the underlying
     /// data, and updating the entry key will create a new alias for the record.
+    ///
+    /// Some non-interactive edit methods are supported. These can be used along with the
+    /// `--non-interactive` flag to modify records without opening your $EDITOR:
+    ///
+    /// `--normalize-whitespace` converts whitespace blocks into a single ASCII space.
+    ///
+    /// `--set-eprint` accepts a list of field keys, and sets the "eprint" and
+    ///   "eprinttype" bibtex fields from the first field key which is present in the record.
     Edit {
         /// The citation key to edit.
         citation_key: RecordId,
+        /// Normalize whitespace.
+        #[arg(long)]
+        normalize_whitespace: bool,
+        /// Set "eprint" and "eprinttype" BibTeX fields from provided fields.
+        #[arg(long, value_delimiter = ',')]
+        set_eprint: Vec<String>,
+        /// Do not open the editor.
+        #[arg(long)]
+        non_interactive: bool,
     },
     /// Search for a citation key.
     ///
@@ -457,11 +474,35 @@ fn run_cli(cli: Cli) -> Result<()> {
                 }
             }
         }
-        Command::Edit { citation_key } => {
-            let (record, row) =
+        Command::Edit {
+            citation_key,
+            normalize_whitespace,
+            set_eprint,
+            non_interactive,
+        } => {
+            let (mut record, row) =
                 get_record_row(&mut record_db, citation_key, &client, &config.on_insert)?
                     .exists_or_commit_null("Cannot edit")?;
-            edit_record_and_update(&row, record)?;
+
+            if normalize_whitespace || !set_eprint.is_empty() {
+                let mut data: RecordData = (&record.data).into();
+                if normalize_whitespace {
+                    data.normalize_whitespace();
+                }
+                if !set_eprint.is_empty() {
+                    data.set_eprint(set_eprint.iter());
+                }
+
+                let new_data = (&data).into();
+                row.save_to_changelog()?;
+                row.update_row_data(&new_data)?;
+
+                record.data = new_data;
+            }
+
+            if !non_interactive {
+                edit_record_and_update(&row, record)?;
+            }
             row.commit()?;
         }
         Command::Find { fields } => {
@@ -698,7 +739,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                 match UpdateMode::from_flags(prefer_current, prefer_incoming) {
                     UpdateMode::PreferCurrent => {
                         info!("Updating '{citation_key}' with new data, skipping existing fields");
-                        let mut existing_record = RecordData::from(existing_raw_data);
+                        let mut existing_record = RecordData::from(&existing_raw_data);
                         existing_record.merge_or_skip(new_raw_data)?;
                         row.save_to_changelog()?;
                         row.update_row_data(&(&existing_record).into())?;
@@ -708,7 +749,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                         info!(
                             "Updating '{citation_key}' with new data, overwriting existing fields"
                         );
-                        let mut new_record = RecordData::from(new_raw_data);
+                        let mut new_record = RecordData::from(&new_raw_data);
                         new_record.merge_or_skip(existing_raw_data)?;
                         row.save_to_changelog()?;
                         row.update_row_data(&(&new_record).into())?;
@@ -716,7 +757,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                     }
                     UpdateMode::Prompt => {
                         info!("Updating '{citation_key}' with new data");
-                        let mut existing_record = RecordData::from(existing_raw_data);
+                        let mut existing_record = RecordData::from(&existing_raw_data);
                         existing_record.merge_with_callback(
                             new_raw_data,
                             |key, current, incoming| {
