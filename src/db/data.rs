@@ -11,7 +11,7 @@ use serde_bibtex::token::is_balanced;
 
 use crate::{
     error::{InvalidBytesError, RecordDataError},
-    normalize::{normalize_whitespace, Normalize},
+    normalize::{normalize_whitespace_str, Normalize},
 };
 
 /// The current version of the binary data format.
@@ -532,7 +532,7 @@ impl Normalize for RecordData {
         let mut updated = false;
 
         for val in self.fields.values_mut() {
-            if let Some(new_val) = normalize_whitespace(val) {
+            if let Some(new_val) = normalize_whitespace_str(val) {
                 updated = true;
                 // SAFETY: the `normalize_whitespace` function always reduces the length of the
                 // input, since it either deletes unused whitespace, or replaces whitespace
