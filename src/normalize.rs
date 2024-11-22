@@ -43,7 +43,7 @@ pub trait Normalize {
 /// If the input requires normalization, return the new normalized string. Otherwise, the original
 /// input is already normalized. Note that the returned string, if any, necessarily has a shorter
 /// length than the original string.
-pub fn normalize_whitespace(input: &str) -> Option<String> {
+pub fn normalize_whitespace_str(input: &str) -> Option<String> {
     /// Consume from the [`CharIndices`] as long as the input is whitespace, assuming that we
     /// previously saw a whitespace character.
     ///
@@ -149,96 +149,120 @@ mod tests {
     #[test]
     fn test_normalize_whitespace() {
         // check short circuit
-        assert_eq!(normalize_whitespace("a"), None);
-        assert_eq!(normalize_whitespace("a b c"), None);
-        assert_eq!(normalize_whitespace("a bc def gh"), None);
+        assert_eq!(normalize_whitespace_str("a"), None);
+        assert_eq!(normalize_whitespace_str("a b c"), None);
+        assert_eq!(normalize_whitespace_str("a bc def gh"), None);
 
         // check pruning
-        assert_eq!(normalize_whitespace("a b "), Some("a b".to_owned()));
-        assert_eq!(normalize_whitespace(" a b"), Some("a b".to_owned()));
-        assert_eq!(normalize_whitespace("a  b "), Some("a b".to_owned()));
-        assert_eq!(normalize_whitespace("a\tb"), Some("a b".to_owned()));
-        assert_eq!(normalize_whitespace("\ta b"), Some("a b".to_owned()));
-        assert_eq!(normalize_whitespace("\t a b"), Some("a b".to_owned()));
-        assert_eq!(normalize_whitespace(" \n abc b"), Some("abc b".to_owned()));
-        assert_eq!(normalize_whitespace(" \n\tad b"), Some("ad b".to_owned()));
-        assert_eq!(normalize_whitespace("a\t\n\tba"), Some("a ba".to_owned()));
+        assert_eq!(normalize_whitespace_str("a b "), Some("a b".to_owned()));
+        assert_eq!(normalize_whitespace_str(" a b"), Some("a b".to_owned()));
+        assert_eq!(normalize_whitespace_str("a  b "), Some("a b".to_owned()));
+        assert_eq!(normalize_whitespace_str("a\tb"), Some("a b".to_owned()));
+        assert_eq!(normalize_whitespace_str("\ta b"), Some("a b".to_owned()));
+        assert_eq!(normalize_whitespace_str("\t a b"), Some("a b".to_owned()));
         assert_eq!(
-            normalize_whitespace("aaa\t \n\tb"),
+            normalize_whitespace_str(" \n abc b"),
+            Some("abc b".to_owned())
+        );
+        assert_eq!(
+            normalize_whitespace_str(" \n\tad b"),
+            Some("ad b".to_owned())
+        );
+        assert_eq!(
+            normalize_whitespace_str("a\t\n\tba"),
+            Some("a ba".to_owned())
+        );
+        assert_eq!(
+            normalize_whitespace_str("aaa\t \n\tb"),
             Some("aaa b".to_owned())
         );
-        assert_eq!(normalize_whitespace("a \t \n\tb"), Some("a b".to_owned()));
-        assert_eq!(normalize_whitespace("a \t \n\tb\t"), Some("a b".to_owned()));
-        assert_eq!(normalize_whitespace(" aaa  b "), Some("aaa b".to_owned()));
         assert_eq!(
-            normalize_whitespace("    a    b    "),
+            normalize_whitespace_str("a \t \n\tb"),
             Some("a b".to_owned())
         );
         assert_eq!(
-            normalize_whitespace("   a\t   b \n   "),
+            normalize_whitespace_str("a \t \n\tb\t"),
+            Some("a b".to_owned())
+        );
+        assert_eq!(
+            normalize_whitespace_str(" aaa  b "),
+            Some("aaa b".to_owned())
+        );
+        assert_eq!(
+            normalize_whitespace_str("    a    b    "),
+            Some("a b".to_owned())
+        );
+        assert_eq!(
+            normalize_whitespace_str("   a\t   b \n   "),
             Some("a b".to_owned())
         );
 
         // check escapes
-        assert_eq!(normalize_whitespace("a\\  b"), None);
-        assert_eq!(normalize_whitespace("a\\b"), None);
-        assert_eq!(normalize_whitespace("a\\\\ b"), None);
-        assert_eq!(normalize_whitespace("a\\\\\\ b"), None);
-        assert_eq!(normalize_whitespace("a\\\\\\\\ b"), None);
-        assert_eq!(normalize_whitespace("a\\\\  b"), Some("a\\\\ b".to_owned()));
-        assert_eq!(normalize_whitespace("a\\\\\tb"), Some("a\\\\ b".to_owned()));
-        assert_eq!(normalize_whitespace("\\"), None);
-        assert_eq!(normalize_whitespace("\\ "), None);
+        assert_eq!(normalize_whitespace_str("a\\  b"), None);
+        assert_eq!(normalize_whitespace_str("a\\b"), None);
+        assert_eq!(normalize_whitespace_str("a\\\\ b"), None);
+        assert_eq!(normalize_whitespace_str("a\\\\\\ b"), None);
+        assert_eq!(normalize_whitespace_str("a\\\\\\\\ b"), None);
+        assert_eq!(
+            normalize_whitespace_str("a\\\\  b"),
+            Some("a\\\\ b".to_owned())
+        );
+        assert_eq!(
+            normalize_whitespace_str("a\\\\\tb"),
+            Some("a\\\\ b".to_owned())
+        );
+        assert_eq!(normalize_whitespace_str("\\"), None);
+        assert_eq!(normalize_whitespace_str("\\ "), None);
 
         // check edge cases
-        assert_eq!(normalize_whitespace(""), None);
-        assert_eq!(normalize_whitespace(" "), Some("".to_owned()));
-        assert_eq!(normalize_whitespace("  "), Some("".to_owned()));
-        assert_eq!(normalize_whitespace("\t"), Some("".to_owned()));
-        assert_eq!(normalize_whitespace("\n"), Some("".to_owned()));
-        assert_eq!(normalize_whitespace(" \t "), Some("".to_owned()));
+        assert_eq!(normalize_whitespace_str(""), None);
+        assert_eq!(normalize_whitespace_str(" "), Some("".to_owned()));
+        assert_eq!(normalize_whitespace_str("  "), Some("".to_owned()));
+        assert_eq!(normalize_whitespace_str("\t"), Some("".to_owned()));
+        assert_eq!(normalize_whitespace_str("\n"), Some("".to_owned()));
+        assert_eq!(normalize_whitespace_str(" \t "), Some("".to_owned()));
 
         // check non-ASCII
-        assert_eq!(normalize_whitespace("🍄"), None);
-        assert_eq!(normalize_whitespace("\\\u{A0} b"), None);
+        assert_eq!(normalize_whitespace_str("🍄"), None);
+        assert_eq!(normalize_whitespace_str("\\\u{A0} b"), None);
         assert_eq!(
-            normalize_whitespace("\\\u{A0} "),
+            normalize_whitespace_str("\\\u{A0} "),
             Some("\\\u{A0}".to_owned())
         );
         assert_eq!(
-            normalize_whitespace("a\u{A0}🍄 c"),
+            normalize_whitespace_str("a\u{A0}🍄 c"),
             Some("a 🍄 c".to_owned())
         );
         assert_eq!(
-            normalize_whitespace("a \u{A0}🍄 c"),
+            normalize_whitespace_str("a \u{A0}🍄 c"),
             Some("a 🍄 c".to_owned())
         );
         assert_eq!(
-            normalize_whitespace("🍄 \u{A0} b c"),
+            normalize_whitespace_str("🍄 \u{A0} b c"),
             Some("🍄 b c".to_owned())
         );
         assert_eq!(
-            normalize_whitespace("🍄\u{A0} b c"),
+            normalize_whitespace_str("🍄\u{A0} b c"),
             Some("🍄 b c".to_owned())
         );
         assert_eq!(
-            normalize_whitespace("\u{A0}a b 🍄"),
+            normalize_whitespace_str("\u{A0}a b 🍄"),
             Some("a b 🍄".to_owned())
         );
         assert_eq!(
-            normalize_whitespace("\u{A0} a b c"),
+            normalize_whitespace_str("\u{A0} a b c"),
             Some("a b c".to_owned())
         );
         assert_eq!(
-            normalize_whitespace(" \u{A0}a b c"),
+            normalize_whitespace_str(" \u{A0}a b c"),
             Some("a b c".to_owned())
         );
         assert_eq!(
-            normalize_whitespace("a b c\u{A0}"),
+            normalize_whitespace_str("a b c\u{A0}"),
             Some("a b c".to_owned())
         );
         assert_eq!(
-            normalize_whitespace("a 🍄 c \u{A0}"),
+            normalize_whitespace_str("a 🍄 c \u{A0}"),
             Some("a 🍄 c".to_owned())
         );
     }
