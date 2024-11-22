@@ -35,6 +35,8 @@ sql!(set_cached_data, "Set cached record data");
 
 sql!(update_cached_data, "Update cached record data");
 
+sql!(update_canonical_id, "Update canonical id of cached record");
+
 sql!(delete_record_row, "Delete cached record data");
 
 sql!(delete_null_record_row, "Delete cached null record data");

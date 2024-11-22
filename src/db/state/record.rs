@@ -98,6 +98,29 @@ impl<'conn> State<'conn, RecordRow> {
         Ok(())
     }
 
+    /// Change the canonical id of the row.
+    ///
+    /// Returns `false` if the new canonical id already exists, and `true` otherwise.
+    pub fn change_row_canonical_id(&self, new_id: &RemoteId) -> Result<bool, rusqlite::Error> {
+        let old_id = self.get_canonical()?;
+        debug!(
+            "Changing the canonical id for row '{}' from '{old_id}' to '{new_id}'",
+            self.row_id()
+        );
+        let result = self.prepare(sql::update_canonical_id())?.execute((
+            self.row_id(),
+            Local::now(),
+            new_id.to_string(),
+        ));
+        if let Constraint::Violated = flatten_constraint_violation(result)? {
+            return Ok(false);
+        }
+        self.add_refs_impl(std::iter::once(new_id), CitationKeyInsertMode::FailIfExists)?;
+        self.prepare(sql::delete_citation_key())?
+            .execute((old_id.name(),))?;
+        Ok(true)
+    }
+
     /// Add a new alias for this row.
     ///
     /// The return value is `false` if the alias already exists, and otherwise `true`.
@@ -128,11 +151,27 @@ impl<'conn> State<'conn, RecordRow> {
                 }
             }
             None => {
-                self.prepare(sql::set_citation_key_ignore())?
+                self.prepare(sql::set_citation_key_fail())?
                     .execute((alias.name(), self.row_id()))?;
                 Ok(None)
             }
         }
+    }
+
+    /// Check if the given alias exists and points to this row, and delete the alias if it does.
+    #[inline]
+    pub fn check_and_delete_alias(&self, alias: &Alias) -> Result<(), rusqlite::Error> {
+        debug!(
+            "Checking if alias '{alias}' refers to row_id '{}' and deleting the alias if yes",
+            self.row_id()
+        );
+        if let Some(row_id) = get_row_id(&self.tx, alias)? {
+            if row_id == self.row_id() {
+                self.prepare(sql::delete_citation_key())?
+                    .execute((alias.name(),))?;
+            }
+        }
+        Ok(())
     }
 
     /// Insert [`CitationKey`] references for this row.

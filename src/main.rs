@@ -179,8 +179,10 @@ enum Command {
         /// The name for the record.
         id: String,
         /// Create local record from bibtex file.
-        #[arg(short, long, value_name = "PATH")]
+        #[arg(short, long, value_name = "PATH", group = "input")]
         from: Option<PathBuf>,
+        #[arg(long, group = "input")]
+        move_from: Option<String>,
         /// Do not create the alias `<ID>` for `local:<ID>`.
         #[arg(long)]
         no_alias: bool,
@@ -551,6 +553,7 @@ fn run_cli(cli: Cli) -> Result<()> {
         Command::Local {
             id,
             from,
+            move_from,
             no_alias,
             no_edit,
         } => {
@@ -565,32 +568,61 @@ fn run_cli(cli: Cli) -> Result<()> {
             };
             let remote_id = RemoteId::local(&alias);
 
-            let (row, data, canonical) = match record_db.state_from_remote_id(&remote_id)? {
-                RemoteIdState::Existent(row) => {
-                    if from.is_some() {
-                        row.commit()?;
-                        bail!("Local record '{remote_id}' already exists")
-                    } else {
+            let (row, data) = if let Some(old_id) = move_from {
+                // Allowing for arbitrary `old_id` without validation and trimming
+                // so that local ids that were valid in an older version can be renamed.
+                // SAFETY: This is safe as a colon is present in the `full_id`.
+                let old_remote_id =
+                    unsafe { RemoteId::from_string_unchecked("local:".to_owned() + &old_id) };
+                match record_db.state_from_remote_id(&old_remote_id)? {
+                    RemoteIdState::Existent(row) => {
+                        if !row.change_row_canonical_id(&remote_id)? {
+                            bail!("Local record '{remote_id}' already exists")
+                        }
+
+                        if let Ok(old_alias) = Alias::from_str(&old_id) {
+                            row.check_and_delete_alias(&old_alias)?;
+                        }
+
                         let raw_record_data = row.get_data()?.data;
-                        (row, raw_record_data, remote_id)
+                        (row, raw_record_data)
+                    }
+                    RemoteIdState::Null(null_row) => {
+                        null_row.commit()?;
+                        bail!("'{remote_id}' was found in the 'NullRecords' table. A local record should not be present in the 'NullRecords' table.");
+                    }
+                    RemoteIdState::Unknown(missing) => {
+                        missing.commit()?;
+                        bail!("Local record '{old_remote_id}' does not exist");
                     }
                 }
-                RemoteIdState::Unknown(missing) => {
-                    let data = data_from_path_or_default(from.as_ref())?;
-
-                    let row = missing.insert_and_ref(&data, &remote_id)?;
-                    (row, data, remote_id)
-                }
-                RemoteIdState::Null(null_row) => {
-                    null_row.commit()?;
-                    bail!("A local record should not be present in the `NullRecords` table.");
+            } else {
+                match record_db.state_from_remote_id(&remote_id)? {
+                    RemoteIdState::Existent(row) => {
+                        if from.is_some() {
+                            row.commit()?;
+                            bail!("Local record '{remote_id}' already exists")
+                        } else {
+                            let raw_record_data = row.get_data()?.data;
+                            (row, raw_record_data)
+                        }
+                    }
+                    RemoteIdState::Unknown(missing) => {
+                        let data = data_from_path_or_default(from.as_ref())?;
+                        let row = missing.insert_and_ref(&data, &remote_id)?;
+                        (row, data)
+                    }
+                    RemoteIdState::Null(null_row) => {
+                        null_row.commit()?;
+                        bail!("'{remote_id}' was found in the 'NullRecords' table. A local record should not be present in the 'NullRecords' table.");
+                    }
                 }
             };
 
             if !no_alias {
-                info!("Creating alias '{alias}' for '{canonical}'");
+                info!("Creating alias '{alias}' for '{remote_id}'");
                 if let Some(other_remote_id) = row.ensure_alias(&alias)? {
-                    warn!("Alias '{alias}' already exists and refers to '{other_remote_id}'. '{canonical}' will be a different record.");
+                    warn!("Alias '{alias}' already exists and refers to '{other_remote_id}'. '{remote_id}' will be a different record.");
                 }
             }
 
@@ -598,9 +630,9 @@ fn run_cli(cli: Cli) -> Result<()> {
                 edit_record_and_update(
                     &row,
                     Record {
-                        key: canonical.to_string(),
+                        key: remote_id.to_string(),
                         data,
-                        canonical,
+                        canonical: remote_id,
                     },
                 )?;
             }
