@@ -182,7 +182,7 @@ enum Command {
         #[arg(short, long, value_name = "PATH", group = "input")]
         from: Option<PathBuf>,
         #[arg(long, group = "input")]
-        move_from: Option<String>,
+        rename_from: Option<String>,
         /// Do not create the alias `<ID>` for `local:<ID>`.
         #[arg(long)]
         no_alias: bool,
@@ -553,7 +553,7 @@ fn run_cli(cli: Cli) -> Result<()> {
         Command::Local {
             id,
             from,
-            move_from,
+            rename_from,
             no_alias,
             no_edit,
         } => {
@@ -568,7 +568,7 @@ fn run_cli(cli: Cli) -> Result<()> {
             };
             let remote_id = RemoteId::local(&alias);
 
-            let (row, data) = if let Some(old_id) = move_from {
+            let (row, data) = if let Some(old_id) = rename_from {
                 // Allowing for arbitrary `old_id` without validation and trimming
                 // so that local ids that were valid in an older version can be renamed.
                 // SAFETY: This is safe as a colon is present in the `full_id`.
