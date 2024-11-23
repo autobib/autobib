@@ -26,7 +26,8 @@ impl TestState {
         cmd.arg("--database")
             .arg(self.database.as_ref())
             .arg("--config")
-            .arg(self.config.as_ref());
+            .arg(self.config.as_ref())
+            .arg("--no-interactive");
         Ok(cmd)
     }
 
@@ -116,7 +117,6 @@ fn local() -> Result<()> {
         "first",
         "--from",
         "tests/resources/local/first.bib",
-        "--no-edit",
     ]);
     cmd.assert().success();
 
@@ -128,7 +128,7 @@ fn local() -> Result<()> {
     cmd.assert().success().stdout(predicate_file);
 
     let mut cmd = s.cmd()?;
-    cmd.args(["local", "first", "--no-edit"]);
+    cmd.args(["local", "first"]);
     cmd.assert().success();
 
     let mut cmd = s.cmd()?;
@@ -137,14 +137,13 @@ fn local() -> Result<()> {
         "first",
         "--from",
         "tests/resources/local/first.bib",
-        "--no-edit",
     ]);
     cmd.assert().failure().stderr(predicate::str::contains(
         "Local record 'local:first' already exists",
     ));
 
     let mut cmd = s.cmd()?;
-    cmd.args(["local", "second", "--no-edit"]);
+    cmd.args(["local", "second"]);
     cmd.assert().success();
 
     let mut cmd = s.cmd()?;
@@ -156,13 +155,13 @@ fn local() -> Result<()> {
     cmd.assert().success().stdout(predicate_file);
 
     let mut cmd = s.cmd()?;
-    cmd.args(["local", "second", "--rename-from", "first", "--no-edit"]);
+    cmd.args(["local", "second", "--rename-from", "first"]);
     cmd.assert().failure().stderr(predicate::str::contains(
         "Local record 'local:second' already exists",
     ));
 
     let mut cmd = s.cmd()?;
-    cmd.args(["local", "third", "--rename-from", "first", "--no-edit"]);
+    cmd.args(["local", "third", "--rename-from", "first"]);
     cmd.assert().success();
 
     let mut cmd = s.cmd()?;
@@ -204,7 +203,6 @@ fn alias() -> Result<()> {
         "first",
         "--from",
         "tests/resources/local/first.bib",
-        "--no-edit",
     ]);
     cmd.assert().success();
 
@@ -217,7 +215,7 @@ fn alias() -> Result<()> {
     cmd.assert().success();
 
     let mut cmd = s.cmd()?;
-    cmd.args(["local", "second", "--no-edit"]);
+    cmd.args(["local", "second"]);
     cmd.assert().success();
 
     let mut cmd = s.cmd()?;
@@ -393,7 +391,6 @@ fn delete() -> Result<()> {
         "first",
         "--from",
         "tests/resources/local/first.bib",
-        "--no-edit",
     ]);
     cmd.assert().success();
 
@@ -435,7 +432,6 @@ fn list() -> Result<()> {
         "first",
         "--from",
         "tests/resources/local/first.bib",
-        "--no-edit",
     ]);
     cmd.assert().success();
 
@@ -537,21 +533,11 @@ fn edit() -> Result<()> {
     cmd.assert().success().stdout(predicate_file);
 
     let mut cmd = s.cmd()?;
-    cmd.args([
-        "edit",
-        "--non-interactive",
-        "--set-eprint=zbl,doi",
-        "mr:3224722",
-    ]);
+    cmd.args(["edit", "--set-eprint=zbl,doi", "mr:3224722"]);
     cmd.assert().success();
 
     let mut cmd = s.cmd()?;
-    cmd.args([
-        "edit",
-        "mr:3224722",
-        "--non-interactive",
-        "--normalize-whitespace",
-    ]);
+    cmd.args(["edit", "mr:3224722", "--normalize-whitespace"]);
     cmd.assert().success();
 
     let predicate_file = predicate::path::eq_file(Path::new("tests/resources/edit/stdout.txt"))
@@ -583,7 +569,7 @@ fn update_local() -> Result<()> {
     let s = TestState::init()?;
 
     let mut cmd = s.cmd()?;
-    cmd.args(["local", "one", "--no-edit"]);
+    cmd.args(["local", "one"]);
     cmd.assert().success();
 
     let mut cmd = s.cmd()?;

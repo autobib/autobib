@@ -70,6 +70,10 @@ struct Cli {
     #[arg(short, long, value_name = "PATH", env = "AUTOBIB_CONFIG_PATH")]
     config: Option<PathBuf>,
 
+    /// Do not require user action.
+    #[arg(short = 'I', long, global = true)]
+    no_interactive: bool,
+
     #[command(flatten)]
     verbose: Verbosity<WarnLevel>,
 
@@ -100,10 +104,10 @@ enum UpdateMode {
 }
 
 impl UpdateMode {
-    fn from_flags(prefer_current: bool, prefer_incoming: bool) -> Self {
+    fn from_flags(no_interactive: bool, prefer_current: bool, prefer_incoming: bool) -> Self {
         if prefer_incoming {
             UpdateMode::PreferIncoming
-        } else if prefer_current {
+        } else if prefer_current || no_interactive {
             UpdateMode::PreferCurrent
         } else {
             UpdateMode::Prompt
@@ -136,6 +140,8 @@ enum Command {
         /// The citation keys to delete.
         citation_keys: Vec<RecordId>,
         /// Delete without prompting.
+        ///
+        /// This is implied by the `--no-interactive` flag.
         #[arg(short, long)]
         force: bool,
         /// Also delete null records from the null record cache.
@@ -149,7 +155,7 @@ enum Command {
     /// data, and updating the entry key will create a new alias for the record.
     ///
     /// Some non-interactive edit methods are supported. These can be used along with the
-    /// `--non-interactive` flag to modify records without opening your $EDITOR:
+    /// `--no-interactive` flag to modify records without opening your $EDITOR:
     ///
     /// `--normalize-whitespace` converts whitespace blocks into a single ASCII space.
     ///
@@ -164,9 +170,6 @@ enum Command {
         /// Set "eprint" and "eprinttype" BibTeX fields from provided fields.
         #[arg(long, value_delimiter = ',')]
         set_eprint: Vec<String>,
-        /// Do not open the editor.
-        #[arg(long)]
-        non_interactive: bool,
     },
     /// Search for a citation key.
     ///
@@ -206,14 +209,12 @@ enum Command {
         /// Create local record from bibtex file.
         #[arg(short, long, value_name = "PATH", group = "input")]
         from: Option<PathBuf>,
-        #[arg(long, group = "input")]
+        /// Rename an existing local record.
+        #[arg(long, value_name = "EXISTING_ID", group = "input")]
         rename_from: Option<String>,
         /// Do not create the alias `<ID>` for `local:<ID>`.
         #[arg(long)]
         no_alias: bool,
-        /// Save the local record without editing.
-        #[arg(long)]
-        no_edit: bool,
     },
     /// Generate records by searching for citation keys inside files.
     ///
@@ -238,8 +239,12 @@ enum Command {
     },
     /// Update data associated with an existing citation key.
     ///
-    /// By default, prompt if there is a conflict between the current and incoming records. To
-    /// override this behaviour, use the `--prefer-current` or `--prefer-incoming` flags.
+    /// By default, you will be prompted if there is a conflict between the current and incoming
+    /// records.
+    ///
+    /// To override this behaviour, use the `--prefer-current` or `--prefer-incoming`
+    /// flag; `--prefer-incoming` takes precedence over `--prefer-current`.
+    /// The `--no-interactive` global flag implies `--prefer-current`.
     Update {
         /// The citation key to update.
         citation_key: RecordId,
@@ -430,9 +435,12 @@ fn run_cli(cli: Cli) -> Result<()> {
         }
         Command::Delete {
             citation_keys,
-            force,
+            mut force,
             delete_null,
         } => {
+            if cli.no_interactive {
+                force = true;
+            }
             for record_id in citation_keys {
                 match record_db.state_from_record_id(record_id)? {
                     RecordIdState::Existent(remote_id, row) => {
@@ -480,7 +488,6 @@ fn run_cli(cli: Cli) -> Result<()> {
             citation_key,
             normalize_whitespace,
             set_eprint,
-            non_interactive,
         } => {
             let (mut record, row) =
                 get_record_row(&mut record_db, citation_key, &client, &config.on_insert)?
@@ -502,7 +509,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                 record.data = new_data;
             }
 
-            if !non_interactive {
+            if !cli.no_interactive {
                 edit_record_and_update(&row, record)?;
             }
             row.commit()?;
@@ -613,7 +620,6 @@ fn run_cli(cli: Cli) -> Result<()> {
             from,
             rename_from,
             no_alias,
-            no_edit,
         } => {
             let alias = match Alias::from_str(&id) {
                 Ok(alias) => alias,
@@ -688,7 +694,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                 }
             }
 
-            if !no_edit {
+            if !cli.no_interactive {
                 edit_record_and_update(
                     &row,
                     Record {
@@ -772,7 +778,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                         bail!(err);
                     }
                 };
-                match UpdateMode::from_flags(prefer_current, prefer_incoming) {
+                match UpdateMode::from_flags(cli.no_interactive, prefer_current, prefer_incoming) {
                     UpdateMode::PreferCurrent => {
                         info!("Updating '{citation_key}' with new data, skipping existing fields");
                         let mut existing_record = RecordData::from(&existing_raw_data);
