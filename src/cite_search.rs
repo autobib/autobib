@@ -22,8 +22,8 @@
 //!     assert_eq!(exp, rec);
 //! }
 //! ```
-pub mod aux;
 pub mod tex;
+pub mod tex_auxfile;
 
 use std::{ffi::OsStr, iter::Extend, path::Path, str::FromStr};
 
@@ -70,7 +70,7 @@ impl SourceFileType {
 pub fn get_citekeys<T: Extend<RecordId>>(ft: SourceFileType, buffer: &[u8], container: &mut T) {
     let get_citekey_impl = match ft {
         SourceFileType::Tex => tex::get_citekeys,
-        SourceFileType::Aux => aux::get_citekeys,
+        SourceFileType::Aux => tex_auxfile::get_citekeys,
     };
     get_citekey_impl(buffer, container);
 }
