@@ -1,15 +1,18 @@
 name: Rust
 
 on:
+  pull_request:
   push:
     branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+
+permissions:
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
   RUSTDOCFLAGS: -D warnings
+  RUST_BACKTRACE: 1
 
   REMOTES_FILE: tests/remotes.txt
   FLOWS_FILE: mitmproxy/flows
