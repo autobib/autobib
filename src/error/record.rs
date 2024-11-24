@@ -43,9 +43,9 @@ impl fmt::Display for RecordError {
 
 #[derive(Error, Debug)]
 pub enum AliasConversionError {
-    #[error("Invalid alias '{0}': {}", self.short_err())]
+    #[error("Invalid alias '{0}': {se}", se = self.short_err())]
     IsRemoteId(String),
-    #[error("Invalid alias '{0}': {}", self.short_err())]
+    #[error("Invalid alias '{0}': {se}", se = self.short_err())]
     Empty(String),
 }
 
