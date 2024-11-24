@@ -385,6 +385,20 @@ fn bibtex_key_validation() -> Result<()> {
 fn delete() -> Result<()> {
     let s = TestState::init()?;
 
+    // single deletion OK even without `--force`
+    let mut cmd = s.cmd()?;
+    cmd.args(["get", "mr:3224722"]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["delete", "mr:3224722"]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["delete", "mr:3224722"]);
+    cmd.assert().failure();
+
+    // multi deletion fails without `--force`
     let mut cmd = s.cmd()?;
     cmd.args([
         "local",
@@ -403,7 +417,27 @@ fn delete() -> Result<()> {
     cmd.assert().success();
 
     let mut cmd = s.cmd()?;
-    cmd.args(["delete", "--force", "local:first"]);
+    cmd.args(["delete", "local:first"]);
+    cmd.assert().failure().stderr(
+        predicate::str::contains("has associated keys which are not requested for deletion")
+            .and(predicate::str::contains("my_alias"))
+            .and(predicate::str::contains("first")),
+    );
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["delete", "my_alias", "first"]);
+    cmd.assert().failure().stderr(
+        predicate::str::contains("has associated keys which are not requested for deletion")
+            .and(predicate::str::contains("local:first")),
+    );
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["get", "local:first"]);
+    cmd.assert().success();
+
+    // multi deletion succeeds with `--force`
+    let mut cmd = s.cmd()?;
+    cmd.args(["delete", "--force", "local:first", "first"]);
     cmd.assert().success();
 
     let mut cmd = s.cmd()?;
@@ -417,6 +451,62 @@ fn delete() -> Result<()> {
     cmd.assert()
         .failure()
         .stderr(predicate::str::contains("Unexpected local record"));
+
+    // multi deletion succeeds if all keys are passed
+    let mut cmd = s.cmd()?;
+    cmd.args([
+        "local",
+        "first",
+        "--from",
+        "tests/resources/local/first.bib",
+    ]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["alias", "add", "my_alias", "local:first"]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["delete", "local:first", "my_alias", "first"]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["get", "my_alias"]);
+    cmd.assert()
+        .failure()
+        .stderr(predicate::str::contains("Undefined alias"));
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["get", "first"]);
+    cmd.assert()
+        .failure()
+        .stderr(predicate::str::contains("Undefined alias"));
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["get", "local:first"]);
+    cmd.assert()
+        .failure()
+        .stderr(predicate::str::contains("Unexpected local record"));
+
+    // deletions are deduplicated automatically
+    let mut cmd = s.cmd()?;
+    cmd.args([
+        "local",
+        "first",
+        "--from",
+        "tests/resources/local/first.bib",
+    ]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args([
+        "delete",
+        "local:first",
+        "first",
+        "local:first",
+        "local:first",
+    ]);
+    cmd.assert().success();
 
     s.close()
 }

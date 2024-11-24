@@ -13,7 +13,7 @@ pub mod term;
 use std::{
     collections::{
         btree_map::Entry::{Occupied, Vacant},
-        BTreeMap, HashSet,
+        BTreeMap, HashMap, HashSet,
     },
     fs::{create_dir_all, read_to_string, File},
     io::{self, Read},
@@ -44,7 +44,7 @@ use term::{Confirm, Editor, EditorConfig};
 use self::{
     cite_search::{get_citekeys, SourceFileType},
     db::{
-        state::{RecordIdState, RecordRow, RemoteIdState, RowData, State},
+        state::{NullRecordRow, RecordIdState, RecordRow, RemoteIdState, RowData, State},
         CitationKey, EntryData, RawRecordData, RecordData, RecordDatabase,
     },
     error::{AliasConversionError, ShortError},
@@ -140,8 +140,6 @@ enum Command {
         /// The citation keys to delete.
         citation_keys: Vec<RecordId>,
         /// Delete without prompting.
-        ///
-        /// This is implied by the `--no-interactive` flag.
         #[arg(short, long)]
         force: bool,
         /// Also delete null records from the null record cache.
@@ -435,52 +433,64 @@ fn run_cli(cli: Cli) -> Result<()> {
         }
         Command::Delete {
             citation_keys,
-            mut force,
+            force,
             delete_null,
         } => {
-            if cli.no_interactive {
-                force = true;
-            }
-            for record_id in citation_keys {
-                match record_db.state_from_record_id(record_id)? {
-                    RecordIdState::Existent(remote_id, row) => {
-                        if !force {
-                            let referencing = row.get_referencing_keys()?;
+            let deduplicated = filter_and_deduplicate_by_canonical(
+                citation_keys.into_iter(),
+                &mut record_db,
+                |remote_id, null_row| {
+                    if !delete_null {
+                        null_row.commit()?;
+                        error!("Null record found for '{remote_id}'");
+                        suggest!("Use the `--delete-null` option to also delete null records.");
+                    } else {
+                        null_row.delete()?.commit()?;
+                    }
+                    Ok(())
+                },
+            )?;
 
-                            // there are multiple associated keys, prompt before deletion
-                            if referencing.len() > 1 {
-                                eprintln!("Deleting this record will delete associated keys:");
-                                for key in referencing.iter() {
+            for (canonical, to_delete) in deduplicated {
+                if let Some(row) = record_db.state_from_remote_id(&canonical)?.exists() {
+                    if !force {
+                        let mut unreferenced = row
+                            .get_referencing_keys()?
+                            .into_iter()
+                            .filter(|key| !to_delete.contains(key))
+                            .peekable();
+
+                        // there are associated keys which are not present in the deletion list
+                        if unreferenced.peek().is_some() {
+                            if cli.no_interactive {
+                                // non-interactive: skip the key
+                                row.commit()?;
+                                error!("Record with canonical identifier '{canonical}' has associated keys which are not requested for deletion: {}",
+                                    unreferenced.join(", "));
+                                suggest!("Re-run with `--force` to delete anyway.");
+                                continue;
+                            } else {
+                                // interactive: prompt for deletion
+                                eprintln!("Deleting record with canonical identifier '{canonical}' will also delete associated keys:");
+                                for key in unreferenced {
                                     eprintln!("  {key}");
                                 }
                                 let prompt = Confirm::new("Delete anyway?", false);
                                 if !prompt.confirm()? {
                                     row.commit()?;
-                                    error!("Aborted deletion of '{remote_id}'");
+                                    error!(
+                                        "Aborted deletion of '{canonical}' via keys: '{}'",
+                                        to_delete.iter().join(", ")
+                                    );
                                     continue;
                                 }
                             }
                         }
-                        row.save_to_changelog()?;
-                        row.delete()?.commit()?;
                     }
-                    RecordIdState::NullRemoteId(remote_id, null_row) => {
-                        if !delete_null {
-                            null_row.commit()?;
-                            error!("Null record found for '{remote_id}'");
-                            suggest!("Use the `--delete-null` option to also delete null records.");
-                        } else {
-                            null_row.delete()?.commit()?;
-                        }
-                    }
-                    RecordIdState::UnknownRemoteId(remote_id, missing) => {
-                        missing.commit()?;
-                        error!("Identifier not in database: '{remote_id}'");
-                    }
-                    RecordIdState::UndefinedAlias(alias) => {
-                        error!("Undefined alias: '{alias}'");
-                    }
-                    RecordIdState::InvalidRemoteId(err) => error!("{err}"),
+                    row.save_to_changelog()?;
+                    row.delete()?.commit()?;
+                } else {
+                    error!("Database changed during deletion operation! Record {canonical} is no longer present in the database.");
                 }
             }
         }
@@ -869,6 +879,50 @@ fn run_cli(cli: Cli) -> Result<()> {
     };
 
     Ok(())
+}
+
+/// Lookup citation keys from the database, filtering out unknown and invalid remote ids and
+/// undefined aliases.
+///
+/// Null identifiers are filtered using the provided `null_callback`.
+///
+/// The resulting hash map has keys which are the set of all unique canonical identifiers
+/// corresponding to those citation keys which were present in the database, and values which are
+/// the corresponding referencing citation keys which were initially present in the list.
+fn filter_and_deduplicate_by_canonical<T, N>(
+    citation_keys: T,
+    record_db: &mut RecordDatabase,
+    mut null_callback: N,
+) -> Result<HashMap<RemoteId, HashSet<String>>, rusqlite::Error>
+where
+    T: Iterator<Item = RecordId>,
+    N: FnMut(RemoteId, State<NullRecordRow>) -> Result<(), rusqlite::Error>,
+{
+    let mut deduplicated = HashMap::new();
+
+    for record_id in citation_keys {
+        match record_db.state_from_record_id(record_id)? {
+            RecordIdState::Existent(remote_id, row) => {
+                deduplicated
+                    .entry(row.get_canonical()?)
+                    .or_insert_with(HashSet::new)
+                    .insert(remote_id.into());
+                row.commit()?;
+            }
+            RecordIdState::NullRemoteId(remote_id, null_row) => {
+                null_callback(remote_id, null_row)?;
+            }
+            RecordIdState::UnknownRemoteId(remote_id, missing) => {
+                missing.commit()?;
+                error!("Identifier not in database: '{remote_id}'");
+            }
+            RecordIdState::UndefinedAlias(alias) => {
+                error!("Undefined alias: '{alias}'");
+            }
+            RecordIdState::InvalidRemoteId(err) => error!("{err}"),
+        }
+    }
+    Ok(deduplicated)
 }
 
 /// Either obtain data from a `.bib` file at the provided path, or look up data from the

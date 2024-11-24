@@ -248,4 +248,19 @@ impl<'conn> RemoteIdState<'conn> {
             }
         })
     }
+
+    /// Extract the [`RecordRow`] if possible, and otherwise return [`None`].
+    pub fn exists(self) -> Option<State<'conn, RecordRow>> {
+        match self {
+            RemoteIdState::Existent(record_row) => Some(record_row),
+            RemoteIdState::Null(null_row) => {
+                drop(null_row);
+                None
+            }
+            RemoteIdState::Unknown(missing) => {
+                drop(missing);
+                None
+            }
+        }
+    }
 }
