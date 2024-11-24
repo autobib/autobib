@@ -21,8 +21,8 @@ pub enum RecordDataError {
     KeyNotAsciiLowercase,
 
     #[error(
-        "Key has invalid size {0}; must be at least 1 and at most {}",
-        KeyHeader::MAX
+        "Key has invalid size {0}; must be at least 1 and at most {max}",
+        max = KeyHeader::MAX
     )]
     KeyInvalidLength(usize),
 
@@ -30,12 +30,12 @@ pub enum RecordDataError {
     EntryTypeNotAsciiLowercase,
 
     #[error(
-        "Entry type has invalid size {0}; must be at least 1 and at most {}",
-        EntryTypeHeader::MAX
+        "Entry type has invalid size {0}; must be at least 1 and at most {max}",
+        max = EntryTypeHeader::MAX
     )]
     EntryTypeInvalidLength(usize),
 
-    #[error("Value has invalid size {0}; must be at most {}", ValueHeader::MAX)]
+    #[error("Value has invalid size {0}; must be at most {max}", max = ValueHeader::MAX)]
     ValueInvalidLength(usize),
 
     #[error("Value does not contain balanced `{{ }}` brackets")]
