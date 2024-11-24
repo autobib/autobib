@@ -143,9 +143,6 @@ enum Command {
         /// Delete without prompting.
         #[arg(short, long)]
         force: bool,
-        /// Also delete null records from the null record cache.
-        #[arg(short, long)]
-        delete_null: bool,
     },
     /// Edit existing records.
     ///
@@ -441,20 +438,15 @@ fn run_cli(cli: Cli) -> Result<()> {
         Command::Delete {
             citation_keys,
             force,
-            delete_null,
         } => {
             let deduplicated = filter_and_deduplicate_by_canonical(
                 citation_keys.into_iter(),
                 &mut record_db,
                 force,
                 |remote_id, null_row| {
-                    if !delete_null {
-                        null_row.commit()?;
-                        error!("Null record found for '{remote_id}'");
-                        suggest!("Use the `--delete-null` option to also delete null records.");
-                    } else {
-                        null_row.delete()?.commit()?;
-                    }
+                    null_row.commit()?;
+                    error!("Null record found for '{remote_id}'");
+                    suggest!("Deletion of null records is currently unsupported but will be added in the future.");
                     Ok(())
                 },
             )?;
