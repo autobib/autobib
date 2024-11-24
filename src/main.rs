@@ -312,6 +312,17 @@ enum UtilCommand {
         #[arg(short, long)]
         fix: bool,
     },
+    /// Clear caches based on conditions.
+    ///
+    /// A cache element is cleared if it matches all of the conditions simultaneously.
+    Evict {
+        /// Clear cached elements which match the given regular expression.
+        #[arg(short, long)]
+        regex: Option<String>,
+        /// Clear cached elements predating the provided time.
+        #[arg(short, long)]
+        before: Option<DateTime<Local>>,
+    },
     /// List all valid keys.
     List {
         /// Only list the canonical keys.
@@ -447,7 +458,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                 |remote_id, null_row| {
                     null_row.commit()?;
                     error!("Null record found for '{remote_id}'");
-                    suggest!("Deletion of null records is currently unsupported but will be added in the future.");
+                    suggest!("Delete null records using `autobib util evict`.");
                     Ok(())
                 },
             )?;
@@ -871,6 +882,14 @@ fn run_cli(cli: Cli) -> Result<()> {
                     for fault in faults {
                         eprintln!("DATABASE ERROR: {fault}");
                     }
+                }
+            }
+            UtilCommand::Evict { regex, before } => {
+                if let Some(re) = regex {
+                    record_db.evict_cache_regex(&re)?;
+                }
+                if let Some(be) = before {
+                    record_db.evict_cache_before(&be)?;
                 }
             }
             UtilCommand::List { canonical } => {

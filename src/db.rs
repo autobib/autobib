@@ -434,7 +434,7 @@ impl RecordDatabase {
             .query_map([], |row| {
                 if let ValueRef::Text(bytes) = row.get_ref_unwrap(0) {
                     // SAFETY: the underlying data is always valid utf-8
-                    f(unsafe { std::str::from_utf8_unchecked(bytes) });
+                    f(std::str::from_utf8(bytes).unwrap());
                 }
                 Ok(())
             })?
@@ -464,6 +464,20 @@ impl RecordDatabase {
         } else {
             Ok(DeleteAliasResult::Deleted)
         }
+    }
+
+    pub fn evict_cache_regex(&mut self, re: &str) -> Result<(), rusqlite::Error> {
+        self.conn
+            .prepare("DELETE FROM NullRecords WHERE record_id REGEXP ?1")?
+            .execute((re,))?;
+        Ok(())
+    }
+
+    pub fn evict_cache_before(&mut self, before: &DateTime<Local>) -> Result<(), rusqlite::Error> {
+        self.conn
+            .prepare("DELETE FROM NullRecords WHERE attempted <= ?1")?
+            .execute((before,))?;
+        Ok(())
     }
 }
 
