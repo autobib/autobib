@@ -28,7 +28,6 @@ use chrono::{DateTime, Local};
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 use clap_complete::aot::{generate, Shell};
 use clap_verbosity_flag::{Verbosity, WarnLevel};
-use crossterm::tty::IsTty;
 use etcetera::{choose_app_strategy, AppStrategy, AppStrategyArgs};
 use itertools::Itertools;
 use log::{error, info, warn};
@@ -1065,7 +1064,7 @@ fn output_entries<D: EntryData, P: AsRef<Path>>(
         write_entries(writer, grouped_entries)?;
     } else {
         let stdout = io::stdout();
-        if stdout.is_tty() {
+        if stdout.is_terminal() {
             // do not write an extra newline if interactive
             if !grouped_entries.is_empty() {
                 write_entries(stdout, grouped_entries)?;
