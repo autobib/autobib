@@ -1,10 +1,7 @@
-use crossterm::{
-    style::{StyledContent, Stylize},
-    tty::IsTty,
-};
+use crossterm::style::{StyledContent, Stylize};
 use log::{Level, Log, Metadata, Record};
 use std::{
-    io,
+    io::{self, IsTerminal},
     sync::atomic::{AtomicBool, Ordering},
 };
 
@@ -15,7 +12,7 @@ pub(crate) fn log_with_style<Y: FnOnce(&'static str) -> StyledContent<&'static s
     header: &'static str,
     args: &std::fmt::Arguments,
 ) {
-    if io::stderr().is_tty() {
+    if io::stderr().is_terminal() {
         eprintln!("{} {args}", style(header));
     } else {
         eprintln!("{header} {args}");
