@@ -16,7 +16,7 @@ use std::{
         BTreeMap, HashMap, HashSet,
     },
     fs::{create_dir_all, read_to_string, File},
-    io::{self, Read},
+    io::{self, IsTerminal, Read},
     path::{Path, PathBuf},
     process::exit,
     str::FromStr,
@@ -71,6 +71,8 @@ struct Cli {
     config: Option<PathBuf>,
 
     /// Do not require user action.
+    ///
+    /// This flag is switched on automatically if stdin is not a terminal.
     #[arg(short = 'I', long, global = true)]
     no_interactive: bool,
 
@@ -324,7 +326,7 @@ enum UtilCommand {
 static LOGGER: Logger = Logger {};
 
 fn main() {
-    let cli = Cli::parse();
+    let mut cli = Cli::parse();
 
     // initialize logger
     log::set_logger(&LOGGER)
@@ -337,6 +339,12 @@ fn main() {
         let bin_name = clap_command.get_name().to_owned();
         generate(shell, &mut clap_command, bin_name, &mut io::stdout());
         return;
+    }
+
+    // Check if stdin is a terminal
+    if !cli.no_interactive && !io::stdin().is_terminal() {
+        warn!("Detected non-interactive input; auto-enabling `--no-interactive`.");
+        cli.no_interactive = true;
     }
 
     // run the cli
