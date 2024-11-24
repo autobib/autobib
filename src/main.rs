@@ -439,6 +439,7 @@ fn run_cli(cli: Cli) -> Result<()> {
             let deduplicated = filter_and_deduplicate_by_canonical(
                 citation_keys.into_iter(),
                 &mut record_db,
+                force,
                 |remote_id, null_row| {
                     if !delete_null {
                         null_row.commit()?;
@@ -884,14 +885,15 @@ fn run_cli(cli: Cli) -> Result<()> {
 /// Lookup citation keys from the database, filtering out unknown and invalid remote ids and
 /// undefined aliases.
 ///
-/// Null identifiers are filtered using the provided `null_callback`.
-///
 /// The resulting hash map has keys which are the set of all unique canonical identifiers
 /// corresponding to those citation keys which were present in the database, and values which are
 /// the corresponding referencing citation keys which were initially present in the list.
+///
+/// The resulting hash set contains all of the null identifiers.
 fn filter_and_deduplicate_by_canonical<T, N>(
     citation_keys: T,
     record_db: &mut RecordDatabase,
+    ignore_errors: bool,
     mut null_callback: N,
 ) -> Result<HashMap<RemoteId, HashSet<String>>, rusqlite::Error>
 where
@@ -914,12 +916,20 @@ where
             }
             RecordIdState::UnknownRemoteId(remote_id, missing) => {
                 missing.commit()?;
-                error!("Identifier not in database: '{remote_id}'");
+                if !ignore_errors {
+                    error!("Identifier not in database: '{remote_id}'");
+                }
             }
             RecordIdState::UndefinedAlias(alias) => {
-                error!("Undefined alias: '{alias}'");
+                if !ignore_errors {
+                    error!("Undefined alias: '{alias}'");
+                }
             }
-            RecordIdState::InvalidRemoteId(err) => error!("{err}"),
+            RecordIdState::InvalidRemoteId(err) => {
+                if !ignore_errors {
+                    error!("{err}");
+                }
+            }
         }
     }
     Ok(deduplicated)

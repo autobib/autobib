@@ -508,6 +508,17 @@ fn delete() -> Result<()> {
     ]);
     cmd.assert().success();
 
+    // do not emit error for forced deletion of a record which does not exist
+    let mut cmd = s.cmd()?;
+    cmd.args(["delete", "arxiv:1212.1873"]);
+    cmd.assert()
+        .failure()
+        .stderr(predicate::str::contains("Identifier not in database"));
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["delete", "--force", "arxiv:1212.1873"]);
+    cmd.assert().success();
+
     s.close()
 }
 
