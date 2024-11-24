@@ -68,11 +68,14 @@ mod sql;
 pub mod state;
 mod validate;
 
-use std::path::Path;
+use std::{path::Path, sync::Arc};
 
 use delegate::delegate;
 use nucleo_picker::{Injector, Render};
-use rusqlite::{types::ValueRef, Connection, DropBehavior, OptionalExtension};
+use regex::Regex;
+use rusqlite::{
+    functions::FunctionFlags, types::ValueRef, Connection, DropBehavior, OptionalExtension,
+};
 
 pub use self::data::{binary_format_version, EntryData, RawRecordData, RecordData};
 pub(crate) use self::data::{EntryTypeHeader, KeyHeader, ValueHeader};
@@ -187,6 +190,9 @@ impl RecordDatabase {
         Self::initialize(&tx)?;
         tx.commit()?;
 
+        debug!("Registering regexp function");
+        Self::add_regexp_function(&conn)?;
+
         Ok(RecordDatabase { conn })
     }
 
@@ -213,6 +219,34 @@ impl RecordDatabase {
                 _ => Err(DatabaseError::InvalidSchemaVersion(db_schema_version)),
             }
         }
+    }
+
+    /// Register a regex callback for use by the SQLITE `regexp` command.
+    fn add_regexp_function(conn: &Connection) -> Result<(), rusqlite::Error> {
+        conn.create_scalar_function(
+            "regexp",
+            2,
+            FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+            move |ctx| {
+                assert_eq!(ctx.len(), 2, "called with unexpected number of arguments");
+                let regexp: Arc<Regex> = ctx.get_or_create_aux(
+                    0,
+                    |vr| -> Result<_, Box<dyn std::error::Error + Send + Sync + 'static>> {
+                        Ok(Regex::new(vr.as_str()?)?)
+                    },
+                )?;
+                let is_match = {
+                    let text = ctx
+                        .get_raw(1)
+                        .as_str()
+                        .map_err(|e| rusqlite::Error::UserFunctionError(e.into()))?;
+
+                    regexp.is_match(text)
+                };
+
+                Ok(is_match)
+            },
+        )
     }
 
     /// Initialize a table inside a transaction.
