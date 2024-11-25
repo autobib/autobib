@@ -152,12 +152,12 @@ For example,
 autobib local my-entry
 ```
 creates a record under the identifier `local:my-entry`.
-You will be prompted to fill in the record, unless you pass the `--no-edit` flag.
+You will be prompted to fill in the record, unless you pass the `-I`/`--no-interactive` flag.
 To modify the record later, run the above command again or use the [`autobib edit` command](#modifying-records).
 
 It is also possible to create the local record from a BibTeX file:
 ```bash
-autobib local my-entry --from source.bib --no-edit
+autobib -I local my-entry --from source.bib
 ```
 Note that the BibTeX file should contain exactly one entry, or this command will fail.
 
