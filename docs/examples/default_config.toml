@@ -1,0 +1,14 @@
+# Actions to perform when adding a new item to the database from a remote provider.
+# These actions are not run for local operations, such as `autobib local`.
+[on_insert]
+
+# Whether or not to normalize whitespace, which means deleting leading and trailing
+# whitespace and converting any consecutive blocks of unescaped whitespace (such as
+# normal spaces, or newlines, or Unicode whitespace) into a single ASCII space.
+normalize_whitespace = false
+
+# A list of BibTeX fields from which to automatically set the `eprint` and
+# `eprinttype` fields. For example, if `set_eprint = ["doi"]`, then any new entry
+# which contains `doi = {...}` will receive new fields `eprint = {...}` and
+# `eprinttype = {doi}`, overwriting existing values of `eprint` and `eprinttype`.
+set_eprint = []
