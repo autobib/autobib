@@ -71,7 +71,7 @@ struct Cli {
 
     /// Do not require user action.
     ///
-    /// This flag is switched on automatically if stdin is not a terminal.
+    /// This option is set automatically if the standard input is not a terminal.
     #[arg(short = 'I', long, global = true)]
     no_interactive: bool,
 
@@ -141,6 +141,9 @@ enum Command {
         /// The citation keys to delete.
         citation_keys: Vec<RecordId>,
         /// Delete without prompting.
+        ///
+        /// Deletion will fail if user confirmation is required,the program is running
+        /// non-interactively, and this option is not set.
         #[arg(short, long)]
         force: bool,
     },
@@ -151,7 +154,7 @@ enum Command {
     /// data, and updating the entry key will create a new alias for the record.
     ///
     /// Some non-interactive edit methods are supported. These can be used along with the
-    /// `--no-interactive` flag to modify records without opening your $EDITOR:
+    /// `--no-interactive` option to modify records without opening your $EDITOR:
     ///
     /// `--normalize-whitespace` converts whitespace blocks into a single ASCII space.
     ///
@@ -239,8 +242,8 @@ enum Command {
     /// records.
     ///
     /// To override this behaviour, use the `--prefer-current` or `--prefer-incoming`
-    /// flag; `--prefer-incoming` takes precedence over `--prefer-current`.
-    /// The `--no-interactive` global flag implies `--prefer-current`.
+    /// option; `--prefer-incoming` takes precedence over `--prefer-current`.
+    /// The `--no-interactive` global option implies `--prefer-current`.
     Update {
         /// The citation key to update.
         citation_key: RecordId,
