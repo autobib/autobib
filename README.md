@@ -40,6 +40,7 @@ Jump to:
 - [Creating local records](#creating-local-records)
 - [Searching for records](#searching-for-records)
 - [Shell completions](#shell-completions)
+- [Database and configuration file](#database-and-configuration-file)
 
 ### Getting records
 
@@ -94,7 +95,8 @@ will search through the document for valid citation keys and output the bibliogr
 ### Modifying records
 
 On the first run, Autobib retrieves the data directly from a remote provider.
-The data is stored locally in a [SQLite](https://www.sqlite.org/) database, which defaults to `~/.local/share/autobib/records.db`, so that subsequent runs are substantially faster.
+The data is stored locally in a [SQLite](https://www.sqlite.org/) database, so that subsequent runs are substantially faster.
+
 You can view and modify the internally stored record with
 ```bash
 autobib edit zbl:1337.28015
@@ -206,6 +208,15 @@ fi
 For this to take effect, remember to restart your shell or source the relevant file.
 Then you can try typing `autobib f` and pressing the tab key.
 You should see `autobib find `.
+
+### Database and configuration file
+
+Autobib's SQLite database is by default kept at `$XDG_DATA_HOME/autobib/records.db`, or `~/.local/share/autobib/records.db` if `$XDG_DATA_HOME` is not set or empty.
+This path can also be modified with the `AUTOBIB_DATABASE_PATH` environment variable.
+
+Autobib supports basic global configuration through a TOML file which defaults to `$XDG_CONFIG_HOME/autobib/config.toml`, or `$HOME/.config/autobib/config.toml` if `$XDG_CONFIG_HOME` is not set or empty.
+This path can also be modified with the `AUTOBIB_CONFIG_PATH` environment variable.
+See [here](docs/examples/default_config.toml) for the current configuration options and their default values.
 
 ## License
 
