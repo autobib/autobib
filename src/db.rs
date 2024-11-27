@@ -68,13 +68,16 @@ mod sql;
 pub mod state;
 mod validate;
 
-use std::path::Path;
+use std::{path::Path, sync::Arc};
 
 use chrono::{DateTime, Local};
 use delegate::delegate;
 use log::{debug, error, warn};
 use nucleo_picker::nucleo::{Injector, Utf32String};
-use rusqlite::{types::ValueRef, Connection, DropBehavior, OptionalExtension};
+use regex::Regex;
+use rusqlite::{
+    functions::FunctionFlags, types::ValueRef, Connection, DropBehavior, OptionalExtension,
+};
 
 pub use self::data::{binary_format_version, EntryData, RawRecordData, RecordData};
 pub(crate) use self::data::{EntryTypeHeader, KeyHeader, ValueHeader};
@@ -185,6 +188,9 @@ impl RecordDatabase {
         Self::initialize(&tx)?;
         tx.commit()?;
 
+        debug!("Registering regexp function");
+        Self::add_regexp_function(&conn)?;
+
         Ok(RecordDatabase { conn })
     }
 
@@ -211,6 +217,34 @@ impl RecordDatabase {
                 _ => Err(DatabaseError::InvalidSchemaVersion(db_schema_version)),
             }
         }
+    }
+
+    /// Register a regex callback for use by the SQLITE `regexp` command.
+    fn add_regexp_function(conn: &Connection) -> Result<(), rusqlite::Error> {
+        conn.create_scalar_function(
+            "regexp",
+            2,
+            FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+            move |ctx| {
+                assert_eq!(ctx.len(), 2, "called with unexpected number of arguments");
+                let regexp: Arc<Regex> = ctx.get_or_create_aux(
+                    0,
+                    |vr| -> Result<_, Box<dyn std::error::Error + Send + Sync + 'static>> {
+                        Ok(Regex::new(vr.as_str()?)?)
+                    },
+                )?;
+                let is_match = {
+                    let text = ctx
+                        .get_raw(1)
+                        .as_str()
+                        .map_err(|e| rusqlite::Error::UserFunctionError(e.into()))?;
+
+                    regexp.is_match(text)
+                };
+
+                Ok(is_match)
+            },
+        )
     }
 
     /// Initialize a table inside a transaction.
@@ -412,7 +446,7 @@ impl RecordDatabase {
             .query_map([], |row| {
                 if let ValueRef::Text(bytes) = row.get_ref_unwrap(0) {
                     // SAFETY: the underlying data is always valid utf-8
-                    f(unsafe { std::str::from_utf8_unchecked(bytes) });
+                    f(std::str::from_utf8(bytes).unwrap());
                 }
                 Ok(())
             })?
@@ -442,6 +476,20 @@ impl RecordDatabase {
         } else {
             Ok(DeleteAliasResult::Deleted)
         }
+    }
+
+    pub fn evict_cache_regex(&mut self, re: &str) -> Result<(), rusqlite::Error> {
+        self.conn
+            .prepare("DELETE FROM NullRecords WHERE record_id REGEXP ?1")?
+            .execute((re,))?;
+        Ok(())
+    }
+
+    pub fn evict_cache_before(&mut self, before: &DateTime<Local>) -> Result<(), rusqlite::Error> {
+        self.conn
+            .prepare("DELETE FROM NullRecords WHERE attempted <= ?1")?
+            .execute((before,))?;
+        Ok(())
     }
 }
 
