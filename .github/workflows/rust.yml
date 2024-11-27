@@ -59,3 +59,34 @@ jobs:
       run: cargo clippy --locked
     - name: Check formatting
       run: cargo fmt --check
+
+  builds:
+    runs-on: ${{ matrix.os }}
+    needs: mitmproxy-flows
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - build: stable
+          os: ubuntu-latest
+          rust: stable
+        - build: macos
+          os: macos-latest
+          rust: stable
+        - build: win-msvc
+          os: windows-2022
+          rust: stable
+        - build: win-gnu
+          os: windows-2022
+          rust: stable-x86_64-gnu
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Install rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: ${{ matrix.rust }}
+
+    - name: Test build
+      run: cargo build --locked --verbose
