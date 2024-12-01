@@ -43,7 +43,7 @@ impl<D: EntryData> Entry<D> {
 
 struct RecordDataWrapper<D>(D);
 
-impl<'a, D: EntryData> Serialize for RecordDataWrapper<&'a D> {
+impl<D: EntryData> Serialize for RecordDataWrapper<&'_ D> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,

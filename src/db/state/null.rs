@@ -42,7 +42,7 @@ impl InDatabase for NullRecordRow {
     }
 }
 
-impl<'conn> State<'conn, NullRecordRow> {
+impl State<'_, NullRecordRow> {
     /// Get the time when the null was cached.
     pub fn get_null_attempted(&self) -> Result<DateTime<Local>, rusqlite::Error> {
         debug!("Getting attempted time for null row '{}'.", self.row_id());
