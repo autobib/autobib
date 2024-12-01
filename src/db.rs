@@ -70,10 +70,9 @@ mod validate;
 
 use std::path::Path;
 
-use chrono::{DateTime, Local};
 use delegate::delegate;
 use log::{debug, error, warn};
-use nucleo_picker::nucleo::{Injector, Utf32String};
+use nucleo_picker::{Injector, Render};
 use rusqlite::{types::ValueRef, Connection, DropBehavior, OptionalExtension};
 
 pub use self::data::{binary_format_version, EntryData, RawRecordData, RecordData};
@@ -365,29 +364,15 @@ impl RecordDatabase {
     /// corresponding [`Nucleo`](`nucleo_picker::nucleo::Nucleo`) instance.
     ///
     /// Note, for instance, that [`String`] implements [`Into<Utf32String>`].
-    pub fn inject_all_records<T, R>(
+    pub fn inject_all_records<R: Render<RowData>>(
         &mut self,
-        injector: Injector<RemoteId>,
-        mut render_row: R,
-    ) -> Result<(), rusqlite::Error>
-    where
-        T: Into<Utf32String>,
-        R: FnMut(RawRecordData, &RemoteId, DateTime<Local>) -> T,
-    {
+        injector: Injector<RowData, R>,
+    ) -> Result<(), rusqlite::Error> {
         debug!("Sending all database records to an injector.");
         let mut retriever = self.conn.prepare(sql::get_all_records())?;
 
         for res in retriever.query_map([], |row| RowData::try_from(row))? {
-            let RowData {
-                data,
-                canonical,
-                modified,
-            } = res?;
-            let search_display: Utf32String = render_row(data, &canonical, modified).into();
-
-            let _ = injector.push(canonical, move |_, cols| {
-                cols[0] = search_display;
-            });
+            injector.push(res?);
         }
 
         Ok(())
