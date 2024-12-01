@@ -24,7 +24,6 @@ use std::{
 };
 
 use anyhow::{bail, Result};
-use chrono::{DateTime, Local};
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 use clap_complete::aot::{generate, Shell};
 use clap_verbosity_flag::{Verbosity, WarnLevel};
@@ -32,7 +31,7 @@ use etcetera::{choose_app_strategy, AppStrategy, AppStrategyArgs};
 use itertools::Itertools;
 use log::{error, info, warn};
 use nonempty::NonEmpty;
-use nucleo_picker::Picker;
+use nucleo_picker::{Picker, Render};
 use serde::Serializer as _;
 use serde_bibtex::{
     ser::Serializer,
@@ -1013,19 +1012,34 @@ fn edit_record_and_update(
     Ok(entry)
 }
 
-/// Create a field filter renderer, which given a set of allowed fields renders those fields which
-/// are present in the data in alphabetical order, separated by the `separator`.
-fn field_filter_renderer(
+/// Given a set of allowed fields renders those fields which are present in the
+/// data in alphabetical order, separated by the `separator`.
+struct FieldFilterRenderer {
     fields_to_search: HashSet<String>,
     separator: &'static str,
-) -> impl Fn(RawRecordData, &RemoteId, DateTime<Local>) -> String {
-    move |data, _, _| {
-        let field_string = data
+}
+
+impl Render<RowData> for FieldFilterRenderer {
+    type Str<'a> = String;
+
+    fn render<'a>(&self, row_data: &'a RowData) -> Self::Str<'a> {
+        let mut output: String = row_data.data.entry_type().into();
+        output.push_str(": ");
+
+        let mut first = true;
+        for (_, val) in row_data
+            .data
             .fields()
-            .filter(|(key, _)| fields_to_search.contains(*key))
-            .map(|(_, val)| val)
-            .join(separator);
-        format!("{}: {field_string}", data.entry_type())
+            .filter(|(key, _)| self.fields_to_search.contains(*key))
+        {
+            if first {
+                first = false;
+            } else {
+                output.push_str(self.separator);
+            }
+            output.push_str(val);
+        }
+        output
     }
 }
 
@@ -1035,16 +1049,17 @@ fn choose_canonical_id(
     fields_to_search: HashSet<String>,
 ) -> Result<Option<RemoteId>, io::Error> {
     // initialize picker
-    let mut picker = Picker::default();
+    let mut picker = Picker::new(FieldFilterRenderer {
+        fields_to_search,
+        separator: " ~ ",
+    });
 
     // populate the picker from a separate thread
     let injector = picker.injector();
-    thread::spawn(move || {
-        record_db.inject_all_records(injector, field_filter_renderer(fields_to_search, " ~ "))
-    });
+    thread::spawn(move || record_db.inject_all_records(injector));
 
     // get the selection
-    picker.pick().map(Option::<&_>::cloned)
+    Ok(picker.pick()?.map(|row_data| row_data.canonical.clone()))
 }
 
 /// Either write records to stdout, or to a provided file.
