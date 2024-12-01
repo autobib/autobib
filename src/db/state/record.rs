@@ -53,7 +53,7 @@ impl InDatabase for RecordRow {
     }
 }
 
-impl<'conn> State<'conn, RecordRow> {
+impl State<'_, RecordRow> {
     /// Copy the [`RowData`] of a row corresponding to a [`RecordRow`] to the `Changelog` table.
     pub fn save_to_changelog(&self) -> Result<(), rusqlite::Error> {
         debug!("Saving row '{}' to Changelog table", self.row_id());
