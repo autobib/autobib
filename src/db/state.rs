@@ -43,12 +43,11 @@ mod missing;
 mod null;
 mod record;
 
-use log::debug;
 use rusqlite::{CachedStatement, Error, Statement};
 
 pub use self::{missing::*, null::*, record::*};
 use super::{get_null_row_id, get_row_id, RowId, Transaction};
-use crate::{error::RecordError, Alias, AliasOrRemoteId, RecordId, RemoteId};
+use crate::{error::RecordError, logger::debug, Alias, AliasOrRemoteId, RecordId, RemoteId};
 
 /// A representation of the current database state corresponding to a [`RecordId`].
 #[derive(Debug)]

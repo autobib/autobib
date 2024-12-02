@@ -1,9 +1,9 @@
 use chrono::Local;
-use log::debug;
 
 use super::{DatabaseId, NullRecordRow, RecordRow, State};
 use crate::{
     db::{sql, CitationKey},
+    logger::debug,
     RawRecordData, RemoteId,
 };
 

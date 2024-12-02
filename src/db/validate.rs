@@ -1,10 +1,9 @@
 use std::{fmt, num::NonZero};
 
-use log::debug;
 use rusqlite::types::ValueRef;
 
 use super::{get_row_id, sql, Transaction};
-use crate::{error::InvalidBytesError, RawRecordData, RecordId, RemoteId};
+use crate::{error::InvalidBytesError, logger::debug, RawRecordData, RecordId, RemoteId};
 
 /// A possible fault that could occurr inside the database.
 #[derive(Debug)]

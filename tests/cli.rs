@@ -840,3 +840,14 @@ fn test_identifier_exceptions() -> Result<()> {
 
     s.close()
 }
+
+#[test]
+fn test_quiet_returns_error() -> Result<()> {
+    let s = TestState::init()?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["-q", "-q", "get", "::invalid"]);
+    cmd.assert().failure();
+
+    s.close()
+}

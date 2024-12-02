@@ -1,8 +1,8 @@
 use chrono::{DateTime, Local};
-use log::debug;
 
 use crate::{
     db::{flatten_constraint_violation, get_row_id, sql, CitationKey, Constraint, RowId},
+    logger::debug,
     Alias, RawRecordData, RemoteId,
 };
 
