@@ -71,7 +71,6 @@ mod validate;
 use std::path::Path;
 
 use delegate::delegate;
-use log::{debug, error, warn};
 use nucleo_picker::{Injector, Render};
 use rusqlite::{types::ValueRef, Connection, DropBehavior, OptionalExtension};
 
@@ -79,7 +78,11 @@ pub use self::data::{binary_format_version, EntryData, RawRecordData, RecordData
 pub(crate) use self::data::{EntryTypeHeader, KeyHeader, ValueHeader};
 use self::state::{RecordIdState, RemoteIdState, RowData};
 use self::validate::{DatabaseFault, DatabaseValidator};
-use crate::{error::DatabaseError, Alias, RecordId, RemoteId};
+use crate::{
+    error::DatabaseError,
+    logger::{debug, error, warn},
+    Alias, RecordId, RemoteId,
+};
 
 /// The current version of the database table schema.
 pub const fn schema_version() -> u8 {

@@ -1,8 +1,10 @@
 use chrono::{DateTime, Local};
-use log::debug;
 
 use super::{DatabaseId, InDatabase, State};
-use crate::db::{sql, RowId};
+use crate::{
+    db::{sql, RowId},
+    logger::debug,
+};
 
 /// An identifier for a row in the `NullRecords` table.
 #[derive(Debug)]

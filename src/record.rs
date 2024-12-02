@@ -1,7 +1,6 @@
 mod key;
 
 use anyhow::bail;
-use log::info;
 use nonempty::NonEmpty;
 
 pub use self::key::{Alias, AliasOrRemoteId, RecordId, RemoteId};
@@ -11,6 +10,7 @@ use crate::{
         RawRecordData, RecordData, RecordDatabase,
     },
     error::{Error, ProviderError, RecordError},
+    logger::info,
     normalize::{Normalization, Normalize},
     provider::{get_remote_response, RemoteResponse},
     HttpClient,

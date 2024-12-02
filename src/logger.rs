@@ -1,4 +1,6 @@
 use crossterm::style::{StyledContent, Stylize};
+#[allow(unused_imports)]
+pub use log::{debug, info, trace, warn};
 use log::{Level, Log, Metadata, Record};
 use std::{
     io::{self, IsTerminal},
@@ -20,21 +22,31 @@ pub(crate) fn log_with_style<Y: FnOnce(&'static str) -> StyledContent<&'static s
 }
 
 macro_rules! suggest {
-    () => {
-        eprintln!()
-    };
-    ($($arg:tt)*) => {
+    ($($arg:tt)+) => {
         if ::log::log_enabled!(::log::Level::Warn) {
             use ::crossterm::style::Stylize;
             crate::logger::log_with_style(
                 |s| s.stylize().blue().bold(),
                 "suggestion:",
-                &format_args!($($arg)*),
+                &format_args!($($arg)+),
             );
         }
     };
 }
 
+/// A convenience macro to combine the simultaneously error log with [`error`](log::error)  and
+/// also call [`set_failed`].
+macro_rules! error {
+    ($($arg:tt)+) => {
+        // macro must return a block since `error!` can be called in expression position
+        {
+            crate::logger::set_failed();
+            ::log::error!($($arg)+)
+        }
+    };
+}
+
+pub(crate) use error;
 pub(crate) use suggest;
 
 pub struct Logger {}
@@ -79,12 +91,7 @@ impl Log for Logger {
 
     #[inline]
     fn log(&self, record: &Record) {
-        if record.level() == Level::Error {
-            set_failed();
-        };
-
         let level = record.level();
-
         log_with_style(level_formatter(level), level_as_str(level), record.args());
     }
 

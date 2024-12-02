@@ -1,11 +1,13 @@
 use std::{fs::read_to_string, io::ErrorKind, path::Path};
 
 use anyhow::{anyhow, Error};
-use log::{debug, info};
 use serde::{Deserialize, Serialize};
 use toml::from_str;
 
-use crate::normalize::Normalization;
+use crate::{
+    logger::{debug, info},
+    normalize::Normalization,
+};
 
 #[derive(Debug, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]

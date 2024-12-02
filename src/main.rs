@@ -29,7 +29,6 @@ use clap_complete::aot::{generate, Shell};
 use clap_verbosity_flag::{Verbosity, WarnLevel};
 use etcetera::{choose_app_strategy, AppStrategy, AppStrategyArgs};
 use itertools::Itertools;
-use log::{error, info, warn};
 use nonempty::NonEmpty;
 use nucleo_picker::{Picker, Render};
 use serde::Serializer as _;
@@ -46,7 +45,7 @@ use self::{
         CitationKey, EntryData, RawRecordData, RecordData, RecordDatabase,
     },
     error::{AliasConversionError, ShortError},
-    logger::{suggest, Logger},
+    logger::{error, info, suggest, warn, Logger},
     record::{get_remote_response_recursive, Record, RecordRowResponse, RecursiveRemoteResponse},
 };
 pub use self::{
