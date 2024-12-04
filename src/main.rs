@@ -173,8 +173,8 @@ enum Command {
     /// Open an interactive picker to search for a given citation key. In order to choose the
     /// fields against which to search, use the `--fields` option.
     Find {
-        /// Fields to search (e.g. author, title).
-        #[arg(short, long, value_delimiter = ',')]
+        /// Fields to search (e.g. author, title), delimited by a comma.
+        #[arg(short, long, value_delimiter = ',', default_value = "author,title")]
         fields: Vec<String>,
     },
     /// Retrieve records given citation keys.
