@@ -526,6 +526,10 @@ fn run_cli(cli: Cli) -> Result<()> {
             row.commit()?;
         }
         Command::Find { fields } => {
+            if cli.no_interactive {
+                bail!("`autobib find` cannot run in non-interactive mode");
+            }
+
             let fields_to_search: HashSet<String> =
                 fields.iter().map(|f| f.to_lowercase()).collect();
 
