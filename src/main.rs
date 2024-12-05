@@ -330,7 +330,7 @@ enum AliasCommand {
     },
 }
 
-/// Manage aliases.
+/// Utilities to manage database.
 #[derive(Subcommand)]
 enum UtilCommand {
     /// Check database for errors.
