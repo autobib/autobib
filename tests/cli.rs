@@ -1,5 +1,6 @@
 use assert_cmd::prelude::*;
-use assert_fs::fixture::NamedTempFile;
+use assert_fs::fixture::{ChildPath, NamedTempFile, PathChild, TempDir};
+use assert_fs::prelude::*;
 use predicates::prelude::*;
 
 use std::{fs, path::Path, process::Command};
@@ -9,6 +10,7 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 struct TestState {
     database: NamedTempFile,
     config: NamedTempFile,
+    attach_dir: TempDir,
 }
 
 impl TestState {
@@ -18,6 +20,7 @@ impl TestState {
         Ok(Self {
             database: NamedTempFile::new("records.db")?,
             config,
+            attach_dir: TempDir::new()?,
         })
     }
 
@@ -27,8 +30,14 @@ impl TestState {
             .arg(self.database.as_ref())
             .arg("--config")
             .arg(self.config.as_ref())
+            .arg("--attach-dir")
+            .arg(self.attach_dir.as_ref())
             .arg("--no-interactive");
         Ok(cmd)
+    }
+
+    fn attachment<P: AsRef<Path>>(&self, path: P) -> ChildPath {
+        self.attach_dir.child(path)
     }
 
     fn set_config<P: AsRef<Path>>(&self, config: P) -> Result<()> {
@@ -609,6 +618,62 @@ fn info() -> Result<()> {
     s.close()
 }
 
+#[test]
+fn test_attach() -> Result<()> {
+    let s = TestState::init()?;
+
+    let source_file = Path::new("tests/resources/path/attachment.txt");
+
+    let temp = assert_fs::NamedTempFile::new("attachment.txt")?;
+    temp.write_file(source_file)?;
+    temp.assert(predicate::path::eq_file(source_file));
+
+    let attachment_file = s.attachment("zbmath/JX/TT/CT/GA3DGNBWGQ3DC===/attachment.txt");
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["attach", "zbl:1337.28015"]);
+    cmd.arg(temp.as_ref());
+    cmd.assert().success();
+
+    attachment_file.assert(predicate::path::eq_file(source_file));
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["attach", "zbl:1337.28015"]);
+    cmd.arg(temp.as_ref());
+    cmd.args(["--rename", "attach2.txt"]);
+    cmd.assert().success();
+
+    s.attachment("zbmath/JX/TT/CT/GA3DGNBWGQ3DC===/attach2.txt")
+        .assert(predicate::path::eq_file(source_file));
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["attach", "zbl:1337.28015"]);
+    cmd.arg(temp.as_ref());
+    cmd.args(["--rename", ".."]);
+    cmd.assert().failure();
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["attach", "zbl:1337.28015"]);
+    cmd.arg(temp.as_ref());
+    cmd.args(["--rename", "/invalid"]);
+    cmd.assert().failure();
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["attach", "zbl:1337.28015"]);
+    cmd.arg(temp.as_ref());
+    cmd.args(["--rename", ""]);
+    cmd.assert().failure();
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["attach", "zbl:1337.28015"]);
+    cmd.arg(temp.as_ref());
+    cmd.args(["--rename", "."]);
+    cmd.assert().failure();
+
+    temp.close()?;
+    s.close()
+}
+
 /// Check that `autobib path` always returns the same values.
 #[test]
 fn test_path_platform_consistency() -> Result<()> {
@@ -617,7 +682,7 @@ fn test_path_platform_consistency() -> Result<()> {
     let mut cmd = s.cmd()?;
     cmd.args(["path", "zbl:1337.28015"]);
     cmd.assert().success().stdout(predicate::str::ends_with(
-        "attachments/zbmath/JX/TT/CT/GA3DGNBWGQ3DC===/\n",
+        "/zbmath/JX/TT/CT/GA3DGNBWGQ3DC===/\n",
     ));
 
     let mut cmd = s.cmd()?;
@@ -632,7 +697,7 @@ fn test_path_platform_consistency() -> Result<()> {
     let mut cmd = s.cmd()?;
     cmd.args(["path", "my-alias"]);
     cmd.assert().success().stdout(predicate::str::ends_with(
-        "attachments/doi/XN/UL/PE/GEYC4MJQGE3C6MBQGIYS2OBWHEZSQOBZFE4TAMRVGYWTC===/\n",
+        "/doi/XN/UL/PE/GEYC4MJQGE3C6MBQGIYS2OBWHEZSQOBZFE4TAMRVGYWTC===/\n",
     ));
 
     s.close()
