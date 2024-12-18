@@ -24,6 +24,7 @@ use std::{
 };
 
 use anyhow::{bail, Result};
+use chrono::{DateTime, Local};
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 use clap_complete::aot::{generate, Shell};
 use clap_verbosity_flag::{Verbosity, WarnLevel};
@@ -314,9 +315,9 @@ enum UtilCommand {
     },
     /// Clear caches based on conditions.
     ///
-    /// A cache element is cleared if it matches all of the conditions simultaneously.
+    /// A cache entry is removed if it matches any of the given conditions.
     Evict {
-        /// Clear cached elements which match the given regular expression.
+        /// Clear entries with citation keys matching this regex.
         #[arg(short, long)]
         regex: Option<String>,
         /// Clear cached elements predating the provided time.
@@ -886,9 +887,11 @@ fn run_cli(cli: Cli) -> Result<()> {
             }
             UtilCommand::Evict { regex, before } => {
                 if let Some(re) = regex {
+                    info!("Clearing caches with keys matching regex '{re}'");
                     record_db.evict_cache_regex(&re)?;
                 }
                 if let Some(be) = before {
+                    info!("Clearing caches predating {be}");
                     record_db.evict_cache_before(&be)?;
                 }
             }

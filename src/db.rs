@@ -70,6 +70,7 @@ mod validate;
 
 use std::{path::Path, sync::Arc};
 
+use chrono::{DateTime, Local};
 use delegate::delegate;
 use nucleo_picker::{Injector, Render};
 use regex::Regex;
@@ -83,7 +84,7 @@ use self::state::{RecordIdState, RemoteIdState, RowData};
 use self::validate::{DatabaseFault, DatabaseValidator};
 use crate::{
     error::DatabaseError,
-    logger::{debug, error, warn},
+    logger::{debug, error, info, warn},
     Alias, RecordId, RemoteId,
 };
 
@@ -466,17 +467,25 @@ impl RecordDatabase {
         }
     }
 
+    /// Delete elements from `NullRecords` which match the provided regex.
+    #[inline]
     pub fn evict_cache_regex(&mut self, re: &str) -> Result<(), rusqlite::Error> {
-        self.conn
+        let num_deleted = self
+            .conn
             .prepare("DELETE FROM NullRecords WHERE record_id REGEXP ?1")?
             .execute((re,))?;
+        info!("Removed {num_deleted} cached null records.");
         Ok(())
     }
 
+    /// Delete elements from `NullRecords` which predate the provided time.
+    #[inline]
     pub fn evict_cache_before(&mut self, before: &DateTime<Local>) -> Result<(), rusqlite::Error> {
-        self.conn
+        let num_deleted = self
+            .conn
             .prepare("DELETE FROM NullRecords WHERE attempted <= ?1")?
             .execute((before,))?;
+        info!("Removed {num_deleted} cached null records.");
         Ok(())
     }
 }
