@@ -234,6 +234,19 @@ enum Command {
         #[arg(long)]
         no_alias: bool,
     },
+    /// Combine multiple records.
+    Merge {
+        /// The highest priority record which will be retained.
+        into: RecordId,
+        /// Records to be merged.
+        from: Vec<RecordId>,
+        /// Keep the current value without prompting in the event of a conflict.
+        #[arg(long, group = "update-mode")]
+        prefer_current: bool,
+        /// Update with the incoming value without prompting in the event of a conflict.
+        #[arg(long, group = "update-mode")]
+        prefer_incoming: bool,
+    },
     /// Show attachment directory associated with record.
     Path {
         /// Show path for this key.
@@ -814,6 +827,43 @@ fn run_cli(cli: Cli) -> Result<()> {
             }
             row.commit()?;
         }
+        Command::Merge {
+            into,
+            from,
+            prefer_current,
+            prefer_incoming,
+        } => {
+            let (existing, row) = get_record_row(&mut record_db, into, &client, &config.on_insert)?
+                .exists_or_commit_null("Cannot merge into")?;
+
+            let new_data: Vec<RowData> = from
+                .iter()
+                // filter keys which cannot be resolved or are equivalent to the merge target
+                .filter_map(|record_id| {
+                    // this implementation is automatically de-duplicating since an earlier merge
+                    // will result in a CitationKey entry which points to the row, which is then
+                    // dropped automatically.
+                    row.absorb(record_id, || {
+                        error!("Skipping key '{record_id}' which does not exist in the database!");
+                    })
+                    .transpose()
+                })
+                .collect::<Result<_, rusqlite::Error>>()?;
+
+            // merge data
+            let mut existing_record = RecordData::from(&existing.data);
+            merge_record_data(
+                UpdateMode::from_flags(cli.no_interactive, prefer_current, prefer_incoming),
+                &mut existing_record,
+                new_data.iter().map(|row_data| &row_data.data),
+                &existing.key,
+            )?;
+
+            // update the row data with the modified data
+            row.save_to_changelog()?;
+            row.update_row_data(&(&existing_record).into())?;
+            row.commit()?;
+        }
         Command::Path {
             citation_key,
             mkdir,
@@ -910,7 +960,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                     }
                 };
                 let mut existing_record = RecordData::from(&existing_raw_data);
-                merge_by_mode(
+                merge_record_data(
                     UpdateMode::from_flags(cli.no_interactive, prefer_current, prefer_incoming),
                     &mut existing_record,
                     once(&new_raw_data),
@@ -1363,11 +1413,11 @@ fn get_attachment_dir(
 
 /// Merge an iterator of [`RawRecordData`] into existing data, using the merge rules as specified
 /// by the passed [`UpdateMode`].
-fn merge_by_mode<'a>(
+fn merge_record_data<'a>(
     mode: UpdateMode,
     existing_record: &mut RecordData,
     new_raw_data: impl Iterator<Item = &'a RawRecordData>,
-    citation_key: &RecordId,
+    citation_key: impl std::fmt::Display,
 ) -> Result<(), anyhow::Error> {
     match mode {
         UpdateMode::PreferCurrent => {

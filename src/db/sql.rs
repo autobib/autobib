@@ -71,6 +71,8 @@ sql!(get_null_record_key, "Get a null record key");
 
 sql!(delete_citation_key, "Delete a citation key");
 
+sql!(redirect_citation_key, "Redirect a citation key");
+
 sql!(
     set_citation_key_overwrite,
     "Set a citation key, overwriting if one already exists"
