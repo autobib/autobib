@@ -62,6 +62,49 @@ impl State<'_, RecordRow> {
         Ok(())
     }
 
+    /// Delete the data associated with the provided citation key and modify the entry in
+    /// `CitationKeys` to point to this row. Returns the resulting [`RowData`] if deletion was
+    /// successful, and otherwise `None`. Deletion will fail if citation key is not present in the
+    /// database.
+    ///
+    /// The `missing_cb` is called if the provided citation key is not present in the database.
+    /// Citation keys which are equivalent to the row are skipped.
+    pub fn absorb<K: CitationKey>(
+        &self,
+        record_id: &K,
+        missing_cb: impl FnOnce(),
+    ) -> Result<Option<RowData>, rusqlite::Error> {
+        Ok(match get_row_id(&self.tx, record_id)? {
+            Some(row_id) if row_id != self.row_id() => {
+                // update rows in CitationKeys
+                self.prepare(sql::redirect_citation_key())?
+                    .execute((self.row_id(), row_id))?;
+
+                // TODO: come up with a better abstraction that allows nested `Row`s.
+
+                // get the row data
+                let row_data: RowData = self
+                    .prepare_cached(sql::get_record_data())?
+                    .query_row([row_id], |row| row.try_into())?;
+
+                // copy the row to the changelog
+                self.prepare_cached(sql::copy_to_changelog())?
+                    .execute((row_id,))?;
+
+                // delete the row
+                self.prepare_cached(sql::delete_record_row())?
+                    .execute([row_id])?;
+
+                Some(row_data)
+            }
+            None => {
+                missing_cb();
+                None
+            }
+            _ => None,
+        })
+    }
+
     /// Get every key in the `CitationKeys` table which references the [`RecordRow`].
     pub fn get_referencing_keys(&self) -> Result<Vec<String>, rusqlite::Error> {
         debug!("Getting referencing keys for '{}'.", self.row_id());
