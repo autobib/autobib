@@ -18,6 +18,7 @@ use std::{
     },
     fs::{create_dir_all, read_to_string, File, OpenOptions},
     io::{self, copy, IsTerminal, Read},
+    iter::once,
     path::{Path, PathBuf},
     process::exit,
     str::FromStr,
@@ -908,51 +909,16 @@ fn run_cli(cli: Cli) -> Result<()> {
                         bail!(err);
                     }
                 };
-                match UpdateMode::from_flags(cli.no_interactive, prefer_current, prefer_incoming) {
-                    UpdateMode::PreferCurrent => {
-                        info!("Updating '{citation_key}' with new data, skipping existing fields");
-                        let mut existing_record = RecordData::from(&existing_raw_data);
-                        existing_record.merge_or_skip(new_raw_data)?;
-                        row.save_to_changelog()?;
-                        row.update_row_data(&(&existing_record).into())?;
-                        row.commit()?;
-                    }
-                    UpdateMode::PreferIncoming => {
-                        info!(
-                            "Updating '{citation_key}' with new data, overwriting existing fields"
-                        );
-                        let mut new_record = RecordData::from(&new_raw_data);
-                        new_record.merge_or_skip(existing_raw_data)?;
-                        row.save_to_changelog()?;
-                        row.update_row_data(&(&new_record).into())?;
-                        row.commit()?;
-                    }
-                    UpdateMode::Prompt => {
-                        info!("Updating '{citation_key}' with new data");
-                        let mut existing_record = RecordData::from(&existing_raw_data);
-                        existing_record.merge_with_callback(
-                            new_raw_data,
-                            |key, current, incoming| {
-                                eprintln!("Conflict for the field '{key}':");
-                                eprintln!("   Current value: {current}");
-                                eprintln!("  Incoming value: {incoming}");
-                                let prompt = Confirm::new("Accept incoming value?", false);
-                                match prompt.confirm() {
-                                    Ok(true) => incoming.to_owned(),
-                                    Ok(false) => current.to_owned(),
-                                    Err(error) => {
-                                        error!("{error}");
-                                        warn!("Keeping current value for '{key}'");
-                                        current.to_owned()
-                                    }
-                                }
-                            },
-                        )?;
-                        row.save_to_changelog()?;
-                        row.update_row_data(&(&existing_record).into())?;
-                        row.commit()?;
-                    }
-                }
+                let mut existing_record = RecordData::from(&existing_raw_data);
+                merge_by_mode(
+                    UpdateMode::from_flags(cli.no_interactive, prefer_current, prefer_incoming),
+                    &mut existing_record,
+                    once(&new_raw_data),
+                    &citation_key,
+                )?;
+                row.save_to_changelog()?;
+                row.update_row_data(&(&existing_record).into())?;
+                row.commit()?;
             }
             RecordIdState::NullRemoteId(remote_id, null_row) => {
                 match data_from_path_or_remote(from, remote_id, &client) {
@@ -1356,6 +1322,8 @@ fn get_valid_referencing_keys(row: &State<RecordRow>) -> Result<Vec<String>, rus
     Ok(referencing_keys)
 }
 
+/// Obtain the attachment directory corresponding to the provided citation key, with automatic
+/// record retrieval.
 fn get_attachment_dir(
     record_db: &mut RecordDatabase,
     citation_key: RecordId,
@@ -1391,4 +1359,49 @@ fn get_attachment_dir(
     canonical.extend_attachments_path(&mut attachments_dir);
 
     Ok(attachments_dir)
+}
+
+/// Merge an iterator of [`RawRecordData`] into existing data, using the merge rules as specified
+/// by the passed [`UpdateMode`].
+fn merge_by_mode<'a>(
+    mode: UpdateMode,
+    existing_record: &mut RecordData,
+    new_raw_data: impl Iterator<Item = &'a RawRecordData>,
+    citation_key: &RecordId,
+) -> Result<(), anyhow::Error> {
+    match mode {
+        UpdateMode::PreferCurrent => {
+            info!("Updating '{citation_key}' with new data, skipping existing fields");
+            for data in new_raw_data {
+                existing_record.merge_or_skip(data)?;
+            }
+        }
+        UpdateMode::PreferIncoming => {
+            info!("Updating '{citation_key}' with new data, overwriting existing fields");
+            for data in new_raw_data {
+                existing_record.merge_or_overwrite(data)?;
+            }
+        }
+        UpdateMode::Prompt => {
+            info!("Updating '{citation_key}' with new data");
+            for data in new_raw_data {
+                existing_record.merge_with_callback(data, |key, current, incoming| {
+                    eprintln!("Conflict for the field '{key}':");
+                    eprintln!("   Current value: {current}");
+                    eprintln!("  Incoming value: {incoming}");
+                    let prompt = Confirm::new("Accept incoming value?", false);
+                    match prompt.confirm() {
+                        Ok(true) => incoming.to_owned(),
+                        Ok(false) => current.to_owned(),
+                        Err(error) => {
+                            error!("{error}");
+                            warn!("Keeping current value for '{key}'");
+                            current.to_owned()
+                        }
+                    }
+                })?;
+            }
+        }
+    }
+    Ok(())
 }
