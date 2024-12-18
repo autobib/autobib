@@ -393,8 +393,16 @@ impl RecordData {
         Ok(self.fields.insert(key, value))
     }
 
+    /// Merge data from `other`, overwriting fields that already exist in `self`.
+    pub fn merge_or_overwrite<D: EntryData>(&mut self, other: &D) -> Result<(), RecordDataError> {
+        for (key, value) in other.fields() {
+            self.check_and_insert(key.to_owned(), value.to_owned())?;
+        }
+        Ok(())
+    }
+
     /// Merge data from `other`, ignoring fields that already exist in `self`.
-    pub fn merge_or_skip<D: EntryData>(&mut self, other: D) -> Result<(), RecordDataError> {
+    pub fn merge_or_skip<D: EntryData>(&mut self, other: &D) -> Result<(), RecordDataError> {
         for (key, value) in other.fields() {
             if !self.fields.contains_key(key) {
                 self.check_and_insert(key.to_owned(), value.to_owned())?;
@@ -409,7 +417,7 @@ impl RecordData {
     /// the key, the existing value in `self` corresponding to the key, and the new value.
     pub fn merge_with_callback<D: EntryData, C: FnMut(&str, &str, &str) -> String>(
         &mut self,
-        other: D,
+        other: &D,
         mut resolve_conflict: C,
     ) -> Result<(), RecordDataError> {
         for (key, value) in other.fields() {

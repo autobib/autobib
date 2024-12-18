@@ -17,6 +17,7 @@ use std::{
     },
     fs::{create_dir_all, read_to_string, File},
     io::{self, IsTerminal, Read},
+    iter::once,
     path::{Path, PathBuf},
     process::exit,
     str::FromStr,
@@ -212,6 +213,18 @@ enum Command {
         /// Do not create the alias `<ID>` for `local:<ID>`.
         #[arg(long)]
         no_alias: bool,
+    },
+    Merge {
+        /// The highest priority record which will be retained.
+        into: RecordId,
+        /// Records to be merged.
+        from: Vec<RecordId>,
+        /// Keep the current value without prompting in the event of a conflict.
+        #[arg(long, group = "update-mode")]
+        prefer_current: bool,
+        /// Update with the incoming value without prompting in the event of a conflict.
+        #[arg(long, group = "update-mode")]
+        prefer_incoming: bool,
     },
     /// Generate records by searching for citation keys inside files.
     ///
@@ -719,6 +732,43 @@ fn run_cli(cli: Cli) -> Result<()> {
             }
             row.commit()?;
         }
+        Command::Merge {
+            into,
+            from,
+            prefer_current,
+            prefer_incoming,
+        } => {
+            let (existing, row) = get_record_row(&mut record_db, into, &client, &config.on_insert)?
+                .exists_or_commit_null("Cannot merge into")?;
+
+            let new_data: Vec<RowData> = from
+                .iter()
+                // filter keys which cannot be resolved or are equivalent to the merge target
+                .filter_map(|record_id| {
+                    // this implementation is automatically de-duplicating since an earlier merge
+                    // will result in a CitationKey entry which points to the row, which is then
+                    // dropped automatically.
+                    row.absorb(record_id, || {
+                        error!("Skipping key '{record_id}' which does not exist in the database!");
+                    })
+                    .transpose()
+                })
+                .collect::<Result<_, rusqlite::Error>>()?;
+
+            // merge data
+            let mut existing_record = RecordData::from(&existing.data);
+            merge_record_data(
+                UpdateMode::from_flags(cli.no_interactive, prefer_current, prefer_incoming),
+                &mut existing_record,
+                new_data.iter().map(|row_data| &row_data.data),
+                &existing.key,
+            )?;
+
+            // update the row data with the modified data
+            row.save_to_changelog()?;
+            row.update_row_data(&(&existing_record).into())?;
+            row.commit()?;
+        }
         Command::Source {
             paths,
             file_type,
@@ -791,51 +841,16 @@ fn run_cli(cli: Cli) -> Result<()> {
                         bail!(err);
                     }
                 };
-                match UpdateMode::from_flags(cli.no_interactive, prefer_current, prefer_incoming) {
-                    UpdateMode::PreferCurrent => {
-                        info!("Updating '{citation_key}' with new data, skipping existing fields");
-                        let mut existing_record = RecordData::from(&existing_raw_data);
-                        existing_record.merge_or_skip(new_raw_data)?;
-                        row.save_to_changelog()?;
-                        row.update_row_data(&(&existing_record).into())?;
-                        row.commit()?;
-                    }
-                    UpdateMode::PreferIncoming => {
-                        info!(
-                            "Updating '{citation_key}' with new data, overwriting existing fields"
-                        );
-                        let mut new_record = RecordData::from(&new_raw_data);
-                        new_record.merge_or_skip(existing_raw_data)?;
-                        row.save_to_changelog()?;
-                        row.update_row_data(&(&new_record).into())?;
-                        row.commit()?;
-                    }
-                    UpdateMode::Prompt => {
-                        info!("Updating '{citation_key}' with new data");
-                        let mut existing_record = RecordData::from(&existing_raw_data);
-                        existing_record.merge_with_callback(
-                            new_raw_data,
-                            |key, current, incoming| {
-                                eprintln!("Conflict for the field '{key}':");
-                                eprintln!("   Current value: {current}");
-                                eprintln!("  Incoming value: {incoming}");
-                                let prompt = Confirm::new("Accept incoming value?", false);
-                                match prompt.confirm() {
-                                    Ok(true) => incoming.to_owned(),
-                                    Ok(false) => current.to_owned(),
-                                    Err(error) => {
-                                        error!("{error}");
-                                        warn!("Keeping current value for '{key}'");
-                                        current.to_owned()
-                                    }
-                                }
-                            },
-                        )?;
-                        row.save_to_changelog()?;
-                        row.update_row_data(&(&existing_record).into())?;
-                        row.commit()?;
-                    }
-                }
+                let mut existing_record = RecordData::from(&existing_raw_data);
+                merge_record_data(
+                    UpdateMode::from_flags(cli.no_interactive, prefer_current, prefer_incoming),
+                    &mut existing_record,
+                    once(&new_raw_data),
+                    &citation_key,
+                )?;
+                row.save_to_changelog()?;
+                row.update_row_data(&(&existing_record).into())?;
+                row.commit()?;
             }
             RecordIdState::NullRemoteId(remote_id, null_row) => {
                 match data_from_path_or_remote(from, remote_id, &client) {
@@ -1225,4 +1240,47 @@ fn get_valid_referencing_keys(row: &State<RecordRow>) -> Result<Vec<String>, rus
     let mut referencing_keys = row.get_referencing_keys()?;
     referencing_keys.retain(|k| is_entry_key(k));
     Ok(referencing_keys)
+}
+
+fn merge_record_data<'a>(
+    mode: UpdateMode,
+    existing_record: &mut RecordData,
+    new_raw_data: impl Iterator<Item = &'a RawRecordData>,
+    citation_key: impl std::fmt::Display,
+) -> Result<(), anyhow::Error> {
+    match mode {
+        UpdateMode::PreferCurrent => {
+            info!("Updating '{citation_key}' with new data, skipping existing fields");
+            for data in new_raw_data {
+                existing_record.merge_or_skip(data)?;
+            }
+        }
+        UpdateMode::PreferIncoming => {
+            info!("Updating '{citation_key}' with new data, overwriting existing fields");
+            for data in new_raw_data {
+                existing_record.merge_or_overwrite(data)?;
+            }
+        }
+        UpdateMode::Prompt => {
+            info!("Updating '{citation_key}' with new data");
+            for data in new_raw_data {
+                existing_record.merge_with_callback(data, |key, current, incoming| {
+                    eprintln!("Conflict for the field '{key}':");
+                    eprintln!("   Current value: {current}");
+                    eprintln!("  Incoming value: {incoming}");
+                    let prompt = Confirm::new("Accept incoming value?", false);
+                    match prompt.confirm() {
+                        Ok(true) => incoming.to_owned(),
+                        Ok(false) => current.to_owned(),
+                        Err(error) => {
+                            error!("{error}");
+                            warn!("Keeping current value for '{key}'");
+                            current.to_owned()
+                        }
+                    }
+                })?;
+            }
+        }
+    }
+    Ok(())
 }
