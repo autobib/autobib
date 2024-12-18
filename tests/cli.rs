@@ -851,3 +851,20 @@ fn test_quiet_returns_error() -> Result<()> {
 
     s.close()
 }
+
+#[test]
+fn test_cache_evict() -> Result<()> {
+    let s = TestState::init()?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["get", "zbmath:96346461"]);
+    cmd.assert().failure();
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["-v", "util", "evict", "--regex", "^zbmath:*"]);
+    cmd.assert()
+        .success()
+        .stderr(predicate::str::contains("Removed 1 cached null"));
+
+    s.close()
+}
