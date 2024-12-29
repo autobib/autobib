@@ -1,4 +1,5 @@
 use chrono::{DateTime, Local};
+use serde_bibtex::token::is_entry_key;
 
 use crate::{
     db::{flatten_constraint_violation, get_row_id, sql, CitationKey, Constraint, RowId},
@@ -115,6 +116,13 @@ impl State<'_, RecordRow> {
             referencing.push(name_res?);
         }
         Ok(referencing)
+    }
+
+    /// Get keys equivalent to a given key that are valid BibTeX citation keys.
+    pub fn get_valid_referencing_keys(&self) -> Result<Vec<String>, rusqlite::Error> {
+        let mut referencing_keys = self.get_referencing_keys()?;
+        referencing_keys.retain(|k| is_entry_key(k));
+        Ok(referencing_keys)
     }
 
     /// Get the canonical [`RemoteId`].
