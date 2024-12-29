@@ -894,9 +894,9 @@ fn run_cli(cli: Cli) -> Result<()> {
                 after,
             } => {
                 let constraints = EvictionConstraint::default()
-                    .regex(regex)
-                    .before(before)
-                    .after(after);
+                    .regex(&regex)
+                    .before(&before)
+                    .after(&after);
 
                 record_db.evict_cache(&constraints)?;
             }

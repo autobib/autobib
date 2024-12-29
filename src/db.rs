@@ -470,12 +470,10 @@ impl RecordDatabase {
     /// Delete elements from `NullRecords` which match the provided constraints.
     pub fn evict_cache(&mut self, constraint: &EvictionConstraint) -> Result<(), rusqlite::Error> {
         if !constraint.is_empty() {
-            let args_refs: Vec<&dyn ToSql> = constraint.args.iter().map(AsRef::as_ref).collect();
-
             let num_deleted = self
                 .conn
                 .prepare(&constraint.stmt)?
-                .execute(&args_refs[..])?;
+                .execute(&constraint.args[..])?;
 
             info!("Removed {num_deleted} cached null records.");
         }
@@ -485,12 +483,12 @@ impl RecordDatabase {
 }
 
 #[derive(Default)]
-pub struct EvictionConstraint {
+pub struct EvictionConstraint<'a> {
     stmt: String,
-    args: Vec<Box<dyn ToSql>>,
+    args: Vec<&'a dyn ToSql>,
 }
 
-impl EvictionConstraint {
+impl<'a> EvictionConstraint<'a> {
     fn add_constraint_str(&mut self, constraint: &str) {
         if self.stmt.is_empty() {
             self.stmt.push_str("DELETE FROM NullRecords WHERE ");
@@ -501,13 +499,9 @@ impl EvictionConstraint {
         write!(self.stmt, " ?{}", self.args.len()).unwrap();
     }
 
-    fn add_constraint(
-        mut self,
-        opt: Option<impl ToSql + 'static>,
-        constraint: &'static str,
-    ) -> Self {
+    fn add_constraint(mut self, opt: &'a Option<impl ToSql>, constraint: &'static str) -> Self {
         if let Some(item) = opt {
-            self.args.push(Box::new(item));
+            self.args.push(item);
             self.add_constraint_str(constraint);
         }
         self
@@ -518,17 +512,17 @@ impl EvictionConstraint {
     }
 
     /// Add a constraint which requires the record id to match the provided regex.
-    pub fn regex(self, re: Option<String>) -> Self {
+    pub fn regex(self, re: &'a Option<String>) -> Self {
         self.add_constraint(re, "record_id REGEXP")
     }
 
     /// Add a constraint which requires the attempted time to occur before the provided time.
-    pub fn before(self, before: Option<DateTime<Local>>) -> Self {
+    pub fn before(self, before: &'a Option<DateTime<Local>>) -> Self {
         self.add_constraint(before, "attempted <=")
     }
 
     /// Add a constraint which requires the attempted time to occur after the provided time.
-    pub fn after(self, after: Option<DateTime<Local>>) -> Self {
+    pub fn after(self, after: &'a Option<DateTime<Local>>) -> Self {
         self.add_constraint(after, "attempted >=")
     }
 }
@@ -643,10 +637,12 @@ mod tests {
             .and_hms_opt(9, 10, 11)
             .unwrap();
 
+        let re = Some(".*".to_owned());
+        let after = Some(Local.from_utc_datetime(&dt));
         let constraint = EvictionConstraint::default()
-            .regex(Some(".*".to_owned()))
-            .after(Some(Local.from_utc_datetime(&dt)))
-            .before(None);
+            .regex(&re)
+            .after(&after)
+            .before(&None);
 
         assert_eq!(
             constraint.stmt,
@@ -654,7 +650,7 @@ mod tests {
         );
         assert_eq!(constraint.args.len(), 2);
 
-        let constraint = EvictionConstraint::default().regex(None);
+        let constraint = EvictionConstraint::default().regex(&None);
 
         assert!(constraint.is_empty());
         assert_eq!(constraint.stmt, "");
