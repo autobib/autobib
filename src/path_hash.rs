@@ -8,7 +8,7 @@ use crate::RemoteId;
 /// A type which can be encoded as a platform-friendly path into a buffer.
 pub trait PathHash {
     /// Extend the provided buffer with a hashed version of the path.
-    fn path_hash(&self, path_buf: &mut PathBuf);
+    fn extend_attachments_path(&self, path_buf: &mut PathBuf);
 }
 
 impl PathHash for RemoteId {
@@ -25,7 +25,7 @@ impl PathHash for RemoteId {
     ///
     /// The header `xx/xx/xx` ensures that each directory does not have more than 1024 immediate
     /// sub-directories.
-    fn path_hash(&self, path_buf: &mut PathBuf) {
+    fn extend_attachments_path(&self, path_buf: &mut PathBuf) {
         let sub_id_bytes = self.sub_id().as_bytes();
         let mut hasher = RapidInlineHasher::default();
         hasher.write(sub_id_bytes);

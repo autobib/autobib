@@ -30,7 +30,7 @@ impl TestState {
             .arg(self.database.as_ref())
             .arg("--config")
             .arg(self.config.as_ref())
-            .arg("--attach-dir")
+            .arg("--attachments-dir")
             .arg(self.attach_dir.as_ref())
             .arg("--no-interactive");
         Ok(cmd)
@@ -622,11 +622,9 @@ fn info() -> Result<()> {
 fn test_attach() -> Result<()> {
     let s = TestState::init()?;
 
-    let source_file = Path::new("tests/resources/path/attachment.txt");
-
     let temp = assert_fs::NamedTempFile::new("attachment.txt")?;
-    temp.write_file(source_file)?;
-    temp.assert(predicate::path::eq_file(source_file));
+    let temp_contents = "test\ncontents";
+    temp.write_str(temp_contents)?;
 
     let attachment_file = s.attachment("zbmath/JX/TT/CT/GA3DGNBWGQ3DC===/attachment.txt");
 
@@ -635,7 +633,7 @@ fn test_attach() -> Result<()> {
     cmd.arg(temp.as_ref());
     cmd.assert().success();
 
-    attachment_file.assert(predicate::path::eq_file(source_file));
+    attachment_file.assert(predicate::eq(temp_contents));
 
     let mut cmd = s.cmd()?;
     cmd.args(["attach", "zbl:1337.28015"]);
@@ -644,7 +642,7 @@ fn test_attach() -> Result<()> {
     cmd.assert().success();
 
     s.attachment("zbmath/JX/TT/CT/GA3DGNBWGQ3DC===/attach2.txt")
-        .assert(predicate::path::eq_file(source_file));
+        .assert(predicate::eq(temp_contents));
 
     let mut cmd = s.cmd()?;
     cmd.args(["attach", "zbl:1337.28015"]);

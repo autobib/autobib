@@ -55,7 +55,7 @@ pub use self::{
     config::Config,
     entry::Entry,
     http::HttpClient,
-    normalize::Normalize,
+    normalize::{Normalization, Normalize},
     record::{get_record_row, Alias, AliasOrRemoteId, RecordId, RemoteId},
 };
 
@@ -74,8 +74,8 @@ struct Cli {
     #[arg(short = 'I', long, global = true)]
     no_interactive: bool,
     /// Use directory for attachments.
-    #[arg(long, value_name = "PATH", env = "AUTOBIB_ATTACHMENT_DIRECTORY")]
-    attach_dir: Option<PathBuf>,
+    #[arg(long, value_name = "PATH", env = "AUTOBIB_ATTACHMENTS_DIRECTORY")]
+    attachments_dir: Option<PathBuf>,
     #[command(flatten)]
     verbose: Verbosity<WarnLevel>,
 
@@ -481,33 +481,15 @@ fn run_cli(cli: Cli) -> Result<()> {
             rename,
             force,
         } => {
-            // Initialize the file directory path
-            let attachment_dir = if let Some(file_dir) = cli.attach_dir {
-                // at a user-provided path
-                info!(
-                    "Using user-provided file directory '{}'",
-                    file_dir.display()
-                );
-                file_dir
-            } else {
-                // at the default path
-                let default_db_path = data_dir.join("attachments");
-                info!(
-                    "Using default file directory '{}'",
-                    default_db_path.display()
-                );
+            let mut target = get_attachment_dir(
+                &mut record_db,
+                citation_key,
+                &client,
+                &config.on_insert,
+                &data_dir,
+                cli.attachments_dir,
+            )?;
 
-                default_db_path
-            };
-
-            // Extend with the filename.
-            let (record, row) =
-                get_record_row(&mut record_db, citation_key, &client, &config.on_insert)?
-                    .exists_or_commit_null("Cannot show directory for")?;
-            row.commit()?;
-            let Record { canonical, .. } = record;
-            let mut target = attachment_dir;
-            canonical.path_hash(&mut target);
             create_dir_all(&target)?;
 
             // Try to open the source file first, since this will reduce the number of redundant
@@ -835,38 +817,20 @@ fn run_cli(cli: Cli) -> Result<()> {
             citation_key,
             mkdir,
         } => {
-            // Initialize the file directory path
-            let file_dir = if let Some(file_dir) = cli.attach_dir {
-                // at a user-provided path
-                info!(
-                    "Using user-provided file directory '{}'",
-                    file_dir.display()
-                );
-                file_dir
-            } else {
-                // at the default path
-                let default_db_path = data_dir.join("attachments");
-                info!(
-                    "Using default file directory '{}'",
-                    default_db_path.display()
-                );
+            let target = get_attachment_dir(
+                &mut record_db,
+                citation_key,
+                &client,
+                &config.on_insert,
+                &data_dir,
+                cli.attachments_dir,
+            )?;
 
-                default_db_path
-            };
-
-            // Extend with the filename.
-            let (record, row) =
-                get_record_row(&mut record_db, citation_key, &client, &config.on_insert)?
-                    .exists_or_commit_null("Cannot show directory for")?;
-            let Record { canonical, .. } = record;
-            let mut path = file_dir;
-            canonical.path_hash(&mut path);
             if mkdir {
-                info!("Creating directory for canonical id '{canonical}'");
-                create_dir_all(&path)?;
+                create_dir_all(&target)?;
             }
-            println!("{}", path.display());
-            row.commit()?;
+
+            println!("{}", target.display());
         }
         Command::Source {
             paths,
@@ -1386,4 +1350,41 @@ fn get_valid_referencing_keys(row: &State<RecordRow>) -> Result<Vec<String>, rus
     let mut referencing_keys = row.get_referencing_keys()?;
     referencing_keys.retain(|k| is_entry_key(k));
     Ok(referencing_keys)
+}
+
+fn get_attachment_dir(
+    record_db: &mut RecordDatabase,
+    citation_key: RecordId,
+    client: &HttpClient,
+    on_insert: &Normalization,
+    data_dir: &Path,
+    default_attachments_dir: Option<PathBuf>,
+) -> Result<PathBuf, anyhow::Error> {
+    // Initialize the file directory path
+    let mut attachments_dir = if let Some(file_dir) = default_attachments_dir {
+        // at a user-provided path
+        info!(
+            "Using user-provided file directory '{}'",
+            file_dir.display()
+        );
+        file_dir
+    } else {
+        // at the default path
+        let default_attachments_path = data_dir.join("attachments");
+        info!(
+            "Using default file directory '{}'",
+            default_attachments_path.display()
+        );
+
+        default_attachments_path
+    };
+
+    // Extend with the filename.
+    let (record, row) = get_record_row(record_db, citation_key, client, on_insert)?
+        .exists_or_commit_null("Cannot show directory for")?;
+    row.commit()?;
+    let Record { canonical, .. } = record;
+    canonical.extend_attachments_path(&mut attachments_dir);
+
+    Ok(attachments_dir)
 }
