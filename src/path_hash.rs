@@ -41,9 +41,6 @@ impl PathHash for RemoteId {
             unsafe { from_utf8_unchecked(&buffer[2..4]) },
             unsafe { from_utf8_unchecked(&buffer[4..6]) },
             &sub_id_encoded,
-            // This appends a `/` or `\`, as platform appropriate, to be clear that this
-            // is a directory
-            "",
         ]);
     }
 }
