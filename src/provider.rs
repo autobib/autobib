@@ -155,6 +155,10 @@ struct ProviderBibtexFields {
     pub year: Option<String>,
     #[serde(alias = "MRNUMBER")]
     pub mrnumber: Option<String>,
+    #[serde(alias = "Series", alias = "SERIES")]
+    pub series: Option<String>,
+    #[serde(alias = "Publisher", alias = "PUBLISHER")]
+    pub publisher: Option<String>,
     #[serde(alias = "DOI")]
     pub doi: Option<String>,
     #[serde(alias = "Language", alias = "LANGUAGE")]
@@ -194,6 +198,8 @@ impl TryFrom<ProviderBibtex> for RecordData {
             year,
             mrnumber,
             doi,
+            series,
+            publisher,
             language,
             zbl
         );
