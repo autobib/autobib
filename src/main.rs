@@ -817,7 +817,7 @@ fn run_cli(cli: Cli) -> Result<()> {
             citation_key,
             mkdir,
         } => {
-            let target = get_attachment_dir(
+            let mut target = get_attachment_dir(
                 &mut record_db,
                 citation_key,
                 &client,
@@ -829,6 +829,10 @@ fn run_cli(cli: Cli) -> Result<()> {
             if mkdir {
                 create_dir_all(&target)?;
             }
+
+            // This appends a `/` or `\` when printing, as platform appropriate, to be clear to the
+            // user that this is a directory
+            target.push("");
 
             println!("{}", target.display());
         }
