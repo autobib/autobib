@@ -43,7 +43,7 @@ use self::{
     cite_search::{get_citekeys, SourceFileType},
     db::{
         state::{NullRecordRow, RecordIdState, RecordRow, RemoteIdState, RowData, State},
-        CitationKey, EntryData, RawRecordData, RecordData, RecordDatabase,
+        CitationKey, EntryData, EvictionConstraint, RawRecordData, RecordData, RecordDatabase,
     },
     error::{AliasConversionError, ShortError},
     logger::{error, info, suggest, warn, Logger},
@@ -313,16 +313,17 @@ enum UtilCommand {
         #[arg(short, long)]
         fix: bool,
     },
-    /// Clear caches based on conditions.
-    ///
-    /// A cache entry is removed if it matches any of the given conditions.
+    /// Clear caches which match all of the provided conditions.
     Evict {
-        /// Clear entries with citation keys matching this regex.
+        /// Clear cached items with citation keys matching this regex.
         #[arg(short, long)]
         regex: Option<String>,
-        /// Clear cached elements predating the provided time.
+        /// Clear cached items predating the provided time.
         #[arg(short, long)]
         before: Option<DateTime<Local>>,
+        /// Clear cached items following the provided time.
+        #[arg(short, long)]
+        after: Option<DateTime<Local>>,
     },
     /// List all valid keys.
     List {
@@ -885,15 +886,17 @@ fn run_cli(cli: Cli) -> Result<()> {
                     }
                 }
             }
-            UtilCommand::Evict { regex, before } => {
-                if let Some(re) = regex {
-                    info!("Clearing caches with keys matching regex '{re}'");
-                    record_db.evict_cache_regex(&re)?;
-                }
-                if let Some(be) = before {
-                    info!("Clearing caches predating {be}");
-                    record_db.evict_cache_before(&be)?;
-                }
+            UtilCommand::Evict {
+                regex,
+                before,
+                after,
+            } => {
+                let constraints = EvictionConstraint::default()
+                    .regex(regex)
+                    .before(before)
+                    .after(after);
+
+                record_db.evict_cache(&constraints)?;
             }
             UtilCommand::List { canonical } => {
                 record_db.map_citation_keys(canonical, |key_str| {
