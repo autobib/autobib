@@ -316,6 +316,8 @@ enum UtilCommand {
     /// Clear caches which match all of the provided conditions.
     Evict {
         /// Clear cached items with citation keys matching this regex.
+        ///
+        /// The regex syntax is documented at <https://docs.rs/regex/latest/regex/#syntax>
         #[arg(short, long)]
         regex: Option<String>,
         /// Clear cached items predating the provided time.
