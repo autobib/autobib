@@ -68,14 +68,14 @@ mod sql;
 pub mod state;
 mod validate;
 
-use std::{path::Path, sync::Arc};
+use std::{fmt::Write, path::Path, sync::Arc};
 
 use chrono::{DateTime, Local};
 use delegate::delegate;
 use nucleo_picker::{Injector, Render};
 use regex::Regex;
 use rusqlite::{
-    functions::FunctionFlags, types::ValueRef, Connection, DropBehavior, OptionalExtension,
+    functions::FunctionFlags, types::ValueRef, Connection, DropBehavior, OptionalExtension, ToSql,
 };
 
 pub use self::data::{binary_format_version, EntryData, RawRecordData, RecordData};
@@ -467,26 +467,69 @@ impl RecordDatabase {
         }
     }
 
-    /// Delete elements from `NullRecords` which match the provided regex.
-    #[inline]
-    pub fn evict_cache_regex(&mut self, re: &str) -> Result<(), rusqlite::Error> {
-        let num_deleted = self
-            .conn
-            .prepare("DELETE FROM NullRecords WHERE record_id REGEXP ?1")?
-            .execute((re,))?;
-        info!("Removed {num_deleted} cached null records.");
+    /// Delete elements from `NullRecords` which match the provided constraints.
+    pub fn evict_cache(&mut self, constraint: &EvictionConstraint) -> Result<(), rusqlite::Error> {
+        if !constraint.is_empty() {
+            let args_refs: Vec<&dyn ToSql> = constraint.args.iter().map(AsRef::as_ref).collect();
+
+            let num_deleted = self
+                .conn
+                .prepare(&constraint.stmt)?
+                .execute(&args_refs[..])?;
+
+            info!("Removed {num_deleted} cached null records.");
+        }
+
         Ok(())
     }
+}
 
-    /// Delete elements from `NullRecords` which predate the provided time.
-    #[inline]
-    pub fn evict_cache_before(&mut self, before: &DateTime<Local>) -> Result<(), rusqlite::Error> {
-        let num_deleted = self
-            .conn
-            .prepare("DELETE FROM NullRecords WHERE attempted <= ?1")?
-            .execute((before,))?;
-        info!("Removed {num_deleted} cached null records.");
-        Ok(())
+#[derive(Default)]
+pub struct EvictionConstraint {
+    stmt: String,
+    args: Vec<Box<dyn ToSql>>,
+}
+
+impl EvictionConstraint {
+    fn add_constraint_str(&mut self, constraint: &str) {
+        if self.stmt.is_empty() {
+            self.stmt.push_str("DELETE FROM NullRecords WHERE ");
+        } else {
+            self.stmt.push_str(" AND ");
+        }
+        self.stmt.push_str(constraint);
+        write!(self.stmt, " ?{}", self.args.len()).unwrap();
+    }
+
+    fn add_constraint(
+        mut self,
+        opt: Option<impl ToSql + 'static>,
+        constraint: &'static str,
+    ) -> Self {
+        if let Some(item) = opt {
+            self.args.push(Box::new(item));
+            self.add_constraint_str(constraint);
+        }
+        self
+    }
+
+    fn is_empty(&self) -> bool {
+        self.stmt.is_empty()
+    }
+
+    /// Add a constraint which requires the record id to match the provided regex.
+    pub fn regex(self, re: Option<String>) -> Self {
+        self.add_constraint(re, "record_id REGEXP")
+    }
+
+    /// Add a constraint which requires the attempted time to occur before the provided time.
+    pub fn before(self, before: Option<DateTime<Local>>) -> Self {
+        self.add_constraint(before, "attempted <=")
+    }
+
+    /// Add a constraint which requires the attempted time to occur after the provided time.
+    pub fn after(self, after: Option<DateTime<Local>>) -> Self {
+        self.add_constraint(after, "attempted >=")
     }
 }
 
@@ -585,5 +628,36 @@ impl Drop for Transaction<'_> {
             DropBehavior::Panic => debug!("Dropping transaction and panicking"),
             _ => debug!("Dropping transaction with unknown drop behaviour"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::{NaiveDate, NaiveDateTime, TimeZone};
+
+    #[test]
+    fn test_constraint_builder() {
+        let dt: NaiveDateTime = NaiveDate::from_ymd_opt(2016, 7, 8)
+            .unwrap()
+            .and_hms_opt(9, 10, 11)
+            .unwrap();
+
+        let constraint = EvictionConstraint::default()
+            .regex(Some(".*".to_owned()))
+            .after(Some(Local.from_utc_datetime(&dt)))
+            .before(None);
+
+        assert_eq!(
+            constraint.stmt,
+            "DELETE FROM NullRecords WHERE record_id REGEXP ?1 AND attempted >= ?2"
+        );
+        assert_eq!(constraint.args.len(), 2);
+
+        let constraint = EvictionConstraint::default().regex(None);
+
+        assert!(constraint.is_empty());
+        assert_eq!(constraint.stmt, "");
+        assert_eq!(constraint.args.len(), 0);
     }
 }
