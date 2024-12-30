@@ -62,13 +62,11 @@ pub fn run_cli(cli: Cli) -> Result<()> {
     })?;
 
     let data_dir = strategy.data_dir();
-    create_dir_all(&data_dir)?;
 
     // Open or create the database
     let mut record_db = if let Some(db_path) = cli.database {
         // at a user-provided path
         info!("Using user-provided database file '{}'", db_path.display());
-
         RecordDatabase::open(db_path)?
     } else {
         // at the default path
@@ -77,7 +75,7 @@ pub fn run_cli(cli: Cli) -> Result<()> {
             "Using default database file '{}'",
             default_db_path.display()
         );
-
+        create_dir_all(&data_dir)?;
         RecordDatabase::open(default_db_path)?
     };
 
