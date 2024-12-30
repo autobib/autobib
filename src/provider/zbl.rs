@@ -5,13 +5,13 @@ use reqwest::StatusCode;
 use serde::Deserialize;
 use serde_bibtex::de::Deserializer;
 
-use super::{HttpClient, ProviderError, RemoteId};
+use super::{HttpClient, ProviderError, RemoteId, ValidationOutcome};
 
 static ZBL_IDENTIFIER_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[0-9]{4}\.[0-9]{5}$").unwrap());
 
-pub fn is_valid_id(id: &str) -> bool {
-    ZBL_IDENTIFIER_RE.is_match(id)
+pub fn is_valid_id(id: &str) -> ValidationOutcome {
+    ZBL_IDENTIFIER_RE.is_match(id).into()
 }
 
 #[derive(Debug, Deserialize, PartialEq)]

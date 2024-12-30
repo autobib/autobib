@@ -987,3 +987,24 @@ fn test_cache_evict() -> Result<()> {
 
     s.close()
 }
+
+#[test]
+fn test_normalize() -> Result<()> {
+    let s = TestState::init()?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["get", "zbmath:6346461"]);
+    cmd.assert().success().stdout(
+        predicate::path::eq_file(Path::new("tests/resources/normalize/stdout.txt"))
+            .utf8()
+            .unwrap(),
+    );
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["info", "zbmath:1111111"]);
+    cmd.assert()
+        .failure()
+        .stderr(predicate::str::contains("converted from 'zbmath:1111111'"));
+
+    s.close()
+}

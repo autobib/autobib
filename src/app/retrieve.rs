@@ -43,20 +43,20 @@ where
 
     for record_id in citation_keys {
         match record_db.state_from_record_id(record_id)? {
-            RecordIdState::Existent(remote_id, row) => {
+            RecordIdState::Existent(key, row) => {
                 deduplicated
                     .entry(row.get_canonical()?)
                     .or_insert_with(HashSet::new)
-                    .insert(remote_id.into());
+                    .insert(key);
                 row.commit()?;
             }
-            RecordIdState::NullRemoteId(remote_id, null_row) => {
-                null_callback(remote_id, null_row)?;
+            RecordIdState::NullRemoteId(mapped_remote_id, null_row) => {
+                null_callback(mapped_remote_id.key, null_row)?;
             }
-            RecordIdState::UnknownRemoteId(remote_id, missing) => {
+            RecordIdState::UnknownRemoteId(maybe_normalized, missing) => {
                 missing.commit()?;
                 if !ignore_errors {
-                    error!("Identifier not in database: '{remote_id}'");
+                    error!("Identifier not in database: {maybe_normalized}");
                 }
             }
             RecordIdState::UndefinedAlias(alias) => {

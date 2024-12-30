@@ -25,8 +25,7 @@ use crate::{
     db::{
         binary_format_version, schema_version,
         state::{RecordIdState, RemoteIdState, RowData},
-        CitationKey, DeleteAliasResult, EvictionConstraint, RecordData, RecordDatabase,
-        RenameAliasResult,
+        DeleteAliasResult, EvictionConstraint, RecordData, RecordDatabase, RenameAliasResult,
     },
     error::AliasConversionError,
     http::HttpClient,
@@ -315,7 +314,7 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                         );
                         println!(
                             "Valid BibTeX? {}",
-                            if is_entry_key(record_id.name()) {
+                            if is_entry_key(&record_id) {
                                 "yes"
                             } else {
                                 "no"
@@ -328,8 +327,8 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                     }
 
                     InfoReportType::Valid => {
-                        if !is_entry_key(record_id.name()) {
-                            error!("Invalid BibTeX: {}", record_id.name());
+                        if !is_entry_key(&record_id) {
+                            error!("Invalid BibTeX: {record_id}");
                         }
                     }
                     InfoReportType::Equivalent => {
@@ -362,9 +361,9 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                     println!("{}", null_row.get_null_attempted()?);
                 }
             },
-            RecordIdState::UnknownRemoteId(remote_id, missing) => {
+            RecordIdState::UnknownRemoteId(maybe_normalized, missing) => {
                 missing.commit()?;
-                bail!("Cannot obtain report for record not in database: '{remote_id}'");
+                bail!("Cannot obtain report for record not in database: {maybe_normalized}");
             }
             RecordIdState::UndefinedAlias(alias) => {
                 bail!("Cannot obtain report for undefined alias: '{alias}'");
@@ -601,8 +600,8 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                 row.update_row_data(&(&existing_record).into())?;
                 row.commit()?;
             }
-            RecordIdState::NullRemoteId(remote_id, null_row) => {
-                match data_from_path_or_remote(from, remote_id, &client) {
+            RecordIdState::NullRemoteId(mapped_remote_id, null_row) => {
+                match data_from_path_or_remote(from, mapped_remote_id.key, &client) {
                     Ok((data, canonical)) => {
                         info!("Existing row was null; inserting new data.");
                         let row = null_row.delete()?.insert(&data, &canonical)?;
@@ -614,9 +613,9 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                     }
                 };
             }
-            RecordIdState::UnknownRemoteId(remote_id, missing) => {
-                error!("Record corresponding to '{remote_id}' does not exist in database");
-                if !remote_id.is_local() {
+            RecordIdState::UnknownRemoteId(maybe_normalized, missing) => {
+                error!("Record corresponding does not exist in database: {maybe_normalized}");
+                if !maybe_normalized.key.is_local() {
                     suggest!("Use `autobib get` to retrieve record");
                 }
                 missing.commit()?;
