@@ -47,7 +47,9 @@ use rusqlite::{CachedStatement, Error, Statement};
 
 pub use self::{missing::*, null::*, record::*};
 use super::{get_null_row_id, get_row_id, RowId, Transaction};
-use crate::{error::RecordError, logger::debug, Alias, AliasOrRemoteId, RecordId, RemoteId};
+use crate::{
+    error::RecordError, logger::debug, Alias, AliasOrRemoteId, MappedKey, RecordId, RemoteId,
+};
 
 /// A representation of the current database state corresponding to a [`RecordId`].
 #[derive(Debug)]
@@ -160,11 +162,11 @@ impl<'conn, I: InDatabase> State<'conn, I> {
 #[derive(Debug)]
 pub enum RecordIdState<'conn> {
     /// The `Records` row exists.
-    Existent(RecordId, State<'conn, RecordRow>),
+    Existent(String, State<'conn, RecordRow>),
     /// The `Records` row does not exist and the `NullRecords` row exists.
-    NullRemoteId(RemoteId, State<'conn, NullRecordRow>),
+    NullRemoteId(MappedKey<RemoteId>, State<'conn, NullRecordRow>),
     /// The `Records` and `NullRecords` rows do not exist.
-    UnknownRemoteId(RemoteId, State<'conn, Missing>),
+    UnknownRemoteId(MappedKey<RemoteId>, State<'conn, Missing>),
     /// The alias is undefined.
     UndefinedAlias(Alias),
     /// The remote id is invalid.
@@ -179,27 +181,46 @@ impl<'conn> RecordIdState<'conn> {
         Ok(match get_row_id(&tx, &record_id)? {
             Some(row_id) => {
                 debug!("Beginning new transaction for row '{row_id}' in the `Records` table.");
-                RecordIdState::Existent(record_id, State::init(tx, RecordRow::from_row_id(row_id)))
+                RecordIdState::Existent(
+                    record_id.into(),
+                    State::init(tx, RecordRow::from_row_id(row_id)),
+                )
             }
             None => match record_id.resolve() {
+                Ok(AliasOrRemoteId::RemoteId(mapped_remote_id)) => {
+                    // if it was normalized during name resolution, we need to check the normalized
+                    // value as well
+                    if mapped_remote_id.is_mapped() {
+                        if let Some(row_id) = get_row_id(&tx, &mapped_remote_id)? {
+                            debug!("Beginning new transaction for row '{row_id}' in the `Records` table.");
+                            return Ok(RecordIdState::Existent(
+                                mapped_remote_id.into(),
+                                State::init(tx, RecordRow::from_row_id(row_id)),
+                            ));
+                        }
+                    }
+
+                    match get_null_row_id(&tx, &mapped_remote_id.key)? {
+                        Some(row_id) => {
+                            debug!("Beginning new transaction for row '{row_id}' in the `NullRecords` table.");
+                            RecordIdState::NullRemoteId(
+                                mapped_remote_id,
+                                State::init(tx, NullRecordRow::from_row_id(row_id)),
+                            )
+                        }
+                        None => {
+                            debug!("Beginning new transaction for unknown remote id.");
+                            RecordIdState::UnknownRemoteId(
+                                mapped_remote_id,
+                                State::init(tx, Missing {}),
+                            )
+                        }
+                    }
+                }
                 Ok(AliasOrRemoteId::Alias(alias)) => {
                     tx.commit()?;
                     RecordIdState::UndefinedAlias(alias)
                 }
-                Ok(AliasOrRemoteId::RemoteId(remote_id)) => match get_null_row_id(&tx, &remote_id)?
-                {
-                    Some(row_id) => {
-                        debug!("Beginning new transaction for row '{row_id}' in the `NullRecords` table.");
-                        RecordIdState::NullRemoteId(
-                            remote_id,
-                            State::init(tx, NullRecordRow::from_row_id(row_id)),
-                        )
-                    }
-                    None => {
-                        debug!("Beginning new transaction for unknown remote id.");
-                        RecordIdState::UnknownRemoteId(remote_id, State::init(tx, Missing {}))
-                    }
-                },
                 Err(record_error) => {
                     tx.commit()?;
                     RecordIdState::InvalidRemoteId(record_error)

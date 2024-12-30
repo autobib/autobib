@@ -1,10 +1,9 @@
-use super::{HttpClient, ProviderError, RecordData};
+use super::{HttpClient, ProviderError, RecordData, ValidationOutcome};
 
 #[inline]
-pub fn is_valid_id(id: &str) -> bool {
+pub fn is_valid_id(id: &str) -> ValidationOutcome {
     // Validity as a sub-id for the `local` provider is equivalent to validity as an alias.
-    let id = id.trim();
-    !id.is_empty() && !id.contains(':')
+    (id.trim().len() == id.len() && !id.is_empty() && !id.contains(':')).into()
 }
 
 #[inline]

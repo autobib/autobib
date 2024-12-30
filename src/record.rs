@@ -3,7 +3,7 @@ mod key;
 use anyhow::bail;
 use nonempty::NonEmpty;
 
-pub use self::key::{Alias, AliasOrRemoteId, RecordId, RemoteId};
+pub use self::key::{Alias, AliasOrRemoteId, MappedKey, RecordId, RemoteId};
 use crate::{
     db::{
         state::{Missing, NullRecordRow, RecordIdState, RecordRow, RemoteIdState, RowData, State},
@@ -88,13 +88,13 @@ pub fn get_record_row<'conn>(
     normalization: &Normalization,
 ) -> Result<RecordRowResponse<'conn>, Error> {
     match db.state_from_record_id(record_id)? {
-        RecordIdState::Existent(record_id, row) => {
+        RecordIdState::Existent(key, row) => {
             let RowData {
                 data, canonical, ..
             } = row.get_data()?;
             Ok(RecordRowResponse::Exists(
                 Record {
-                    key: record_id.into(),
+                    key,
                     data,
                     canonical,
                 },
@@ -102,12 +102,12 @@ pub fn get_record_row<'conn>(
             ))
         }
         RecordIdState::NullRemoteId(remote_id, null_row) => {
-            Ok(RecordRowResponse::NullRemoteId(remote_id, null_row))
+            Ok(RecordRowResponse::NullRemoteId(remote_id.key, null_row))
         }
         RecordIdState::UndefinedAlias(alias) => Ok(RecordRowResponse::NullAlias(alias)),
         RecordIdState::InvalidRemoteId(err) => Ok(RecordRowResponse::InvalidRemoteId(err)),
-        RecordIdState::UnknownRemoteId(remote_id, missing) => {
-            get_record_row_recursive(missing, remote_id, client, normalization)
+        RecordIdState::UnknownRemoteId(maybe_normalized, missing) => {
+            get_record_row_recursive(missing, maybe_normalized, client, normalization)
         }
     }
 }
@@ -119,18 +119,6 @@ fn into_last<T>(ne: NonEmpty<T>) -> T {
     tail.pop().unwrap_or(head)
 }
 
-/// Destructure a [`NonEmpty`] and return the first and last elements. If the [`NonEmpty`] has
-/// length exactly 1, then this will clone the unique element.
-#[inline]
-fn into_ends<T: Clone>(ne: NonEmpty<T>) -> (T, T) {
-    let NonEmpty { head, mut tail } = ne;
-    // destructure to avoid borrow issues
-    match tail.pop() {
-        Some(last) => (head, last),
-        None => (head.clone(), head),
-    }
-}
-
 /// Resolve remote records inside a loop within a transaction.
 ///
 /// At each intermediate stage, attempt to read any data possible from the database
@@ -138,12 +126,12 @@ fn into_ends<T: Clone>(ne: NonEmpty<T>) -> (T, T) {
 /// database.
 fn get_record_row_recursive<'conn>(
     mut missing: State<'conn, Missing>,
-    remote_id: RemoteId,
+    mapped_remote_id: MappedKey<RemoteId>,
     client: &HttpClient,
     normalization: &Normalization,
 ) -> Result<RecordRowResponse<'conn>, Error> {
-    info!("Resolving remote record for '{remote_id}'");
-    let mut history = NonEmpty::singleton(remote_id);
+    info!("Resolving remote record for {}", mapped_remote_id);
+    let mut history = NonEmpty::singleton(mapped_remote_id.key);
     loop {
         missing = match get_remote_response(client, history.last())? {
             RemoteResponse::Data(mut data) => {
@@ -152,14 +140,19 @@ fn get_record_row_recursive<'conn>(
                 let row = missing.insert(&raw_record_data, history.last())?;
                 row.add_refs(history.iter())?;
 
-                // extract bottom and top simultaneously
-                let (first, last) = into_ends(history);
+                let NonEmpty { head, mut tail } = history;
+                let (key, canonical) = match (mapped_remote_id.original, tail.pop()) {
+                    (Some(key), Some(canonical)) => (key, canonical),
+                    (Some(key), None) => (key, head),
+                    (None, Some(canonical)) => (head.into(), canonical),
+                    (None, None) => (head.to_string(), head),
+                };
 
                 break Ok(RecordRowResponse::Exists(
                     Record {
-                        key: first.into(),
+                        key,
                         data: RawRecordData::from(&data),
-                        canonical: last,
+                        canonical,
                     },
                     row,
                 ));
@@ -174,7 +167,7 @@ fn get_record_row_recursive<'conn>(
                     } = row.get_data()?;
                     break Ok(RecordRowResponse::Exists(
                         Record {
-                            key: history.head.into(),
+                            key: mapped_remote_id.original.unwrap_or(history.head.into()),
                             data,
                             canonical,
                         },

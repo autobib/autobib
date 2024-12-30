@@ -27,7 +27,7 @@ pub type Resolver = fn(&str, &HttpClient) -> Result<Option<RecordData>, Provider
 pub type Referrer = fn(&str, &HttpClient) -> Result<Option<RemoteId>, ProviderError>;
 
 /// A validator, which checks that a `sub_id` is valid.
-type Validator = fn(&str) -> bool;
+type Validator = fn(&str) -> ValidationOutcome;
 
 /// A provider, which is either a [`Resolver`] or a [`Referrer`].
 pub enum Provider {
@@ -65,10 +65,28 @@ fn lookup_validator(provider: &str) -> Option<Validator> {
     }
 }
 
-/// The outcome of checking that a provider and sub_id are valid.
 pub enum ValidationOutcome {
+    Valid,
+    Normalize(String),
+    Invalid,
+}
+
+impl From<bool> for ValidationOutcome {
+    fn from(b: bool) -> Self {
+        if b {
+            ValidationOutcome::Valid
+        } else {
+            ValidationOutcome::Invalid
+        }
+    }
+}
+
+/// The outcome of checking that a provider and sub_id are valid.
+pub enum ValidationOutcomeExtended {
     /// The provider and sub_id are both valid.
     Valid,
+    /// The provider is valid but the sub_id requires normalization.
+    Normalize(String),
     /// The provider is invalid.
     InvalidProvider,
     /// The sub_id is invalid for the given provider.
@@ -77,16 +95,14 @@ pub enum ValidationOutcome {
 
 /// Check that a given provider and sub_id are valid.
 #[inline]
-pub fn validate_provider_sub_id(provider: &str, sub_id: &str) -> ValidationOutcome {
+pub fn validate_provider_sub_id(provider: &str, sub_id: &str) -> ValidationOutcomeExtended {
     match lookup_validator(provider) {
-        Some(validator) => {
-            if validator(sub_id) {
-                ValidationOutcome::Valid
-            } else {
-                ValidationOutcome::InvalidSubId
-            }
-        }
-        None => ValidationOutcome::InvalidProvider,
+        Some(validator) => match validator(sub_id) {
+            ValidationOutcome::Valid => ValidationOutcomeExtended::Valid,
+            ValidationOutcome::Normalize(s) => ValidationOutcomeExtended::Normalize(s),
+            ValidationOutcome::Invalid => ValidationOutcomeExtended::InvalidSubId,
+        },
+        None => ValidationOutcomeExtended::InvalidProvider,
     }
 }
 

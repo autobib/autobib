@@ -132,6 +132,8 @@ mod private {
     impl Sealed for crate::Alias {}
     impl Sealed for crate::RecordId {}
     impl Sealed for crate::RemoteId {}
+    impl<T: Sealed> Sealed for crate::MappedKey<T> {}
+    // impl Sealed for crate::AliasOrRemoteId {}
 }
 
 /// Internal representation of the underlying SQL database.
