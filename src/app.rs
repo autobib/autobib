@@ -67,6 +67,9 @@ pub fn run_cli(cli: Cli) -> Result<()> {
     let mut record_db = if let Some(db_path) = cli.database {
         // at a user-provided path
         info!("Using user-provided database file '{}'", db_path.display());
+        if let Some(db_parent) = db_path.parent() {
+            create_dir_all(db_parent)?;
+        }
         RecordDatabase::open(db_path)?
     } else {
         // at the default path
