@@ -48,7 +48,8 @@ use rusqlite::{CachedStatement, Error, Statement};
 pub use self::{missing::*, null::*, record::*};
 use super::{get_null_row_id, get_row_id, RowId, Transaction};
 use crate::{
-    error::RecordError, logger::debug, Alias, AliasOrRemoteId, MappedKey, RecordId, RemoteId,
+    config::AliasTransform, error::RecordError, logger::debug, Alias, AliasOrRemoteId, MappedFrom,
+    RecordId, RemoteId,
 };
 
 /// A representation of the current database state corresponding to a [`RecordId`].
@@ -164,9 +165,9 @@ pub enum RecordIdState<'conn> {
     /// The `Records` row exists.
     Existent(String, State<'conn, RecordRow>),
     /// The `Records` row does not exist and the `NullRecords` row exists.
-    NullRemoteId(MappedKey<RemoteId>, State<'conn, NullRecordRow>),
+    NullRemoteId(MappedFrom, State<'conn, NullRecordRow>),
     /// The `Records` and `NullRecords` rows do not exist.
-    UnknownRemoteId(MappedKey<RemoteId>, State<'conn, Missing>),
+    UnknownRemoteId(MappedFrom, State<'conn, Missing>),
     /// The alias is undefined.
     UndefinedAlias(Alias),
     /// The remote id is invalid.
@@ -174,59 +175,158 @@ pub enum RecordIdState<'conn> {
 }
 
 impl<'conn> RecordIdState<'conn> {
+    #[inline]
+    pub fn determine<A: AliasTransform>(
+        tx: Transaction<'conn>,
+        record_id: RecordId,
+        alias_transform: &A,
+    ) -> Result<Self, rusqlite::Error> {
+        ExtendedRecordIdState::determine(tx, record_id, alias_transform).map(Into::into)
+    }
+}
+
+/// A representation of the database state beginning with an arbitrary [`RecordId`].
+///
+/// This is an extended version of [`RecordIdState`] which preserves more context required for the
+/// correct implementation of [`get_record_row`](crate::get_record_row).
+#[derive(Debug)]
+pub enum ExtendedRecordIdState<'conn> {
+    /// The `Records` row exists.
+    Existent(String, State<'conn, RecordRow>),
+    /// The `Records` row does not exist and the `NullRecords` row exists.
+    NullRemoteId(MappedFrom, State<'conn, NullRecordRow>),
+    /// The `Records` and `NullRecords` rows do not exist.
+    UnknownRemoteId(MappedFrom, State<'conn, Missing>),
+    /// The alias mapped to a remote id for which the `Records` and `NullRecords` rows do not exist.
+    UnknownMappedAlias(Alias, RemoteId, State<'conn, Missing>),
+    /// The alias is undefined.
+    UndefinedAlias(Alias),
+    /// The remote id is invalid.
+    InvalidRemoteId(RecordError),
+}
+
+impl<'conn> From<ExtendedRecordIdState<'conn>> for RecordIdState<'conn> {
+    fn from(value: ExtendedRecordIdState<'conn>) -> Self {
+        match value {
+            ExtendedRecordIdState::Existent(key, state) => RecordIdState::Existent(key, state),
+            ExtendedRecordIdState::NullRemoteId(mapped_from, state) => {
+                RecordIdState::NullRemoteId(mapped_from, state)
+            }
+            ExtendedRecordIdState::UnknownRemoteId(mapped_from, state) => {
+                RecordIdState::UnknownRemoteId(mapped_from, state)
+            }
+            ExtendedRecordIdState::UnknownMappedAlias(alias, remote_id, state) => {
+                RecordIdState::UnknownRemoteId(MappedFrom::mapped(remote_id, alias.into()), state)
+            }
+            ExtendedRecordIdState::UndefinedAlias(alias) => RecordIdState::UndefinedAlias(alias),
+            ExtendedRecordIdState::InvalidRemoteId(record_error) => {
+                RecordIdState::InvalidRemoteId(record_error)
+            }
+        }
+    }
+}
+
+impl<'conn> ExtendedRecordIdState<'conn> {
+    /// Create a new `Existent` variant from the provided [`Transaction`] and [`RowId`], using the
+    /// provided callback to create the key associated with the record.
+    fn existent(
+        tx: Transaction<'conn>,
+        row_id: RowId,
+        produce_key: impl FnOnce(&State<'conn, RecordRow>) -> Result<String, rusqlite::Error>,
+    ) -> Result<Self, rusqlite::Error> {
+        debug!("Beginning new transaction for row '{row_id}' in the `Records` table.");
+        let row = State::init(tx, RecordRow::from_row_id(row_id));
+        let key = produce_key(&row)?;
+        Ok(Self::Existent(key, row))
+    }
+
+    /// Match on the remote id determined from the context `id_from_context`. If the corresponding
+    /// `NullRecords` row exists, return a `NullRemoteId` by constructed from the [`MappedFrom`]
+    /// value returned by `produce_null`. Otherwise, produce a different variant using the context
+    /// and the [`State<Missing>`] database state.
+    fn null_or_missing<C>(
+        tx: Transaction<'conn>,
+        context: C,
+        id_from_context: impl for<'a> FnOnce(&'a C) -> &'a RemoteId,
+        produce_null: impl FnOnce(C) -> MappedFrom,
+        produce_missing: impl FnOnce(C, State<'conn, Missing>) -> Self,
+    ) -> Result<Self, rusqlite::Error> {
+        match get_null_row_id(&tx, id_from_context(&context))? {
+            Some(row_id) => {
+                debug!("Beginning new transaction for row '{row_id}' in the `NullRecords` table.");
+                Ok(Self::NullRemoteId(
+                    produce_null(context),
+                    State::init(tx, NullRecordRow::from_row_id(row_id)),
+                ))
+            }
+            None => {
+                debug!("Beginning new transaction for unknown remote id.");
+                Ok(produce_missing(context, State::init(tx, Missing {})))
+            }
+        }
+    }
+
     /// Determine the current state of the database, as corresponds to the provided record
     /// identifier.
-    #[inline]
-    pub fn determine(tx: Transaction<'conn>, record_id: RecordId) -> Result<Self, rusqlite::Error> {
-        Ok(match get_row_id(&tx, &record_id)? {
-            Some(row_id) => {
-                debug!("Beginning new transaction for row '{row_id}' in the `Records` table.");
-                RecordIdState::Existent(
-                    record_id.into(),
-                    State::init(tx, RecordRow::from_row_id(row_id)),
+    pub fn determine<A: AliasTransform>(
+        tx: Transaction<'conn>,
+        record_id: RecordId,
+        alias_transform: &A,
+    ) -> Result<Self, rusqlite::Error> {
+        // fast path when the identifier is already a citation key in the table
+        if let Some(row_id) = get_row_id(&tx, &record_id)? {
+            return Self::existent(tx, row_id, move |_| Ok(record_id.into()));
+        };
+
+        match record_id.resolve(alias_transform) {
+            Ok(AliasOrRemoteId::RemoteId(mapped_remote_id)) => {
+                // check the normalized value, if normalized
+                if mapped_remote_id.is_mapped() {
+                    if let Some(row_id) = get_row_id(&tx, &mapped_remote_id)? {
+                        return Self::existent(tx, row_id, move |_| Ok(mapped_remote_id.into()));
+                    }
+                }
+
+                Self::null_or_missing(
+                    tx,
+                    mapped_remote_id,
+                    |ctx| &ctx.mapped,
+                    |ctx| ctx,
+                    Self::UnknownRemoteId,
                 )
             }
-            None => match record_id.resolve() {
-                Ok(AliasOrRemoteId::RemoteId(mapped_remote_id)) => {
-                    // if it was normalized during name resolution, we need to check the normalized
-                    // value as well
-                    if mapped_remote_id.is_mapped() {
-                        if let Some(row_id) = get_row_id(&tx, &mapped_remote_id)? {
-                            debug!("Beginning new transaction for row '{row_id}' in the `Records` table.");
-                            return Ok(RecordIdState::Existent(
-                                mapped_remote_id.into(),
-                                State::init(tx, RecordRow::from_row_id(row_id)),
-                            ));
+            Ok(AliasOrRemoteId::Alias(alias, maybe_mapped)) => {
+                // check the mapped value, if mapped
+                match maybe_mapped {
+                    Some(remote_id) => {
+                        if let Some(row_id) = get_row_id(&tx, &remote_id)? {
+                            return Self::existent(tx, row_id, move |row| {
+                                if alias_transform.create() {
+                                    row.add_alias(&alias)?;
+                                }
+                                Ok(alias.into())
+                            });
                         }
-                    }
 
-                    match get_null_row_id(&tx, &mapped_remote_id.key)? {
-                        Some(row_id) => {
-                            debug!("Beginning new transaction for row '{row_id}' in the `NullRecords` table.");
-                            RecordIdState::NullRemoteId(
-                                mapped_remote_id,
-                                State::init(tx, NullRecordRow::from_row_id(row_id)),
-                            )
-                        }
-                        None => {
-                            debug!("Beginning new transaction for unknown remote id.");
-                            RecordIdState::UnknownRemoteId(
-                                mapped_remote_id,
-                                State::init(tx, Missing {}),
-                            )
-                        }
+                        Self::null_or_missing(
+                            tx,
+                            (remote_id, alias),
+                            |ctx| &ctx.0,
+                            |ctx| MappedFrom::mapped(ctx.0, ctx.1.into()),
+                            |ctx, m| Self::UnknownMappedAlias(ctx.1, ctx.0, m),
+                        )
+                    }
+                    None => {
+                        tx.commit()?;
+                        Ok(Self::UndefinedAlias(alias))
                     }
                 }
-                Ok(AliasOrRemoteId::Alias(alias)) => {
-                    tx.commit()?;
-                    RecordIdState::UndefinedAlias(alias)
-                }
-                Err(record_error) => {
-                    tx.commit()?;
-                    RecordIdState::InvalidRemoteId(record_error)
-                }
-            },
-        })
+            }
+            Err(record_error) => {
+                tx.commit()?;
+                Ok(Self::InvalidRemoteId(record_error))
+            }
+        }
     }
 }
 

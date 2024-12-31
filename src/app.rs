@@ -21,13 +21,13 @@ use serde_bibtex::token::is_entry_key;
 
 use crate::{
     cite_search::{get_citekeys, SourceFileType},
-    config::Config,
+    config::load_config,
     db::{
         binary_format_version, schema_version,
         state::{RecordIdState, RemoteIdState, RowData},
         DeleteAliasResult, EvictionConstraint, RecordData, RecordDatabase, RenameAliasResult,
     },
-    error::AliasConversionError,
+    error::AliasErrorKind,
     http::HttpClient,
     logger::{error, info, suggest, warn},
     normalize::Normalize,
@@ -83,9 +83,9 @@ pub fn run_cli(cli: Cli) -> Result<()> {
 
     // Read configuration from filesystem
     let config = if let Some(config_path) = cli.config {
-        Config::load(config_path, false)?
+        load_config(config_path, false)?
     } else {
-        Config::load(strategy.config_dir().join("config.toml"), true)?
+        load_config(strategy.config_dir().join("config.toml"), true)?
     };
 
     // Initialize the reqwest Client
@@ -97,7 +97,7 @@ pub fn run_cli(cli: Cli) -> Result<()> {
         Command::Alias { alias_command } => match alias_command {
             AliasCommand::Add { alias, target } => {
                 info!("Creating alias '{alias}' for '{target}'");
-                let (_, row) = get_record_row(&mut record_db, target, &client, &config.on_insert)?
+                let (_, row) = get_record_row(&mut record_db, target, &client, &config)?
                     .exists_or_commit_null("Cannot create alias for")?;
                 if !row.add_alias(&alias)? {
                     error!("Alias already exists: '{alias}'");
@@ -130,9 +130,8 @@ pub fn run_cli(cli: Cli) -> Result<()> {
             force,
         } => {
             // Extend with the filename.
-            let (record, row) =
-                get_record_row(&mut record_db, citation_key, &client, &config.on_insert)?
-                    .exists_or_commit_null("Cannot attach file for")?;
+            let (record, row) = get_record_row(&mut record_db, citation_key, &client, &config)?
+                .exists_or_commit_null("Cannot attach file for")?;
             row.commit()?;
             let mut target = get_attachment_dir(&record.canonical, &data_dir, cli.attachments_dir)?;
 
@@ -190,6 +189,7 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                     suggest!("Delete null records using `autobib util evict`.");
                     Ok(())
                 },
+                &config,
             )?;
 
             for (canonical, to_delete) in deduplicated {
@@ -240,9 +240,8 @@ pub fn run_cli(cli: Cli) -> Result<()> {
             normalize_whitespace,
             set_eprint,
         } => {
-            let (mut record, row) =
-                get_record_row(&mut record_db, citation_key, &client, &config.on_insert)?
-                    .exists_or_commit_null("Cannot edit")?;
+            let (mut record, row) = get_record_row(&mut record_db, citation_key, &client, &config)?
+                .exists_or_commit_null("Cannot edit")?;
 
             if normalize_whitespace || !set_eprint.is_empty() {
                 let mut data: RecordData = (&record.data).into();
@@ -302,7 +301,7 @@ pub fn run_cli(cli: Cli) -> Result<()> {
         Command::Info {
             citation_key,
             report,
-        } => match record_db.state_from_record_id(citation_key)? {
+        } => match record_db.state_from_record_id(citation_key, &config.alias_transform)? {
             RecordIdState::Existent(record_id, row) => {
                 match report {
                     InfoReportType::All => {
@@ -368,6 +367,7 @@ pub fn run_cli(cli: Cli) -> Result<()> {
             RecordIdState::UndefinedAlias(alias) => {
                 bail!("Cannot obtain report for undefined alias: '{alias}'");
             }
+
             RecordIdState::InvalidRemoteId(err) => bail!("{err}"),
         },
         Command::Local {
@@ -378,12 +378,12 @@ pub fn run_cli(cli: Cli) -> Result<()> {
         } => {
             let alias = match Alias::from_str(&id) {
                 Ok(alias) => alias,
-                Err(AliasConversionError::Empty(_)) => {
-                    bail!("local sub-id must contain non-whitespace characters");
-                }
-                Err(AliasConversionError::IsRemoteId(_)) => {
-                    bail!("local sub-id must not contain a colon");
-                }
+                Err(e) => match e.kind {
+                    AliasErrorKind::Empty => {
+                        bail!("local sub-id must contain non-whitespace characters")
+                    }
+                    AliasErrorKind::IsRemoteId => bail!("local sub-id must not contain a colon"),
+                },
             };
             let remote_id = RemoteId::local(&alias);
 
@@ -465,7 +465,7 @@ pub fn run_cli(cli: Cli) -> Result<()> {
             prefer_current,
             prefer_incoming,
         } => {
-            let (existing, row) = get_record_row(&mut record_db, into, &client, &config.on_insert)?
+            let (existing, row) = get_record_row(&mut record_db, into, &client, &config)?
                 .exists_or_commit_null("Cannot merge into")?;
 
             let new_data: Vec<RowData> = from
@@ -501,9 +501,8 @@ pub fn run_cli(cli: Cli) -> Result<()> {
             mkdir,
         } => {
             // Extend with the filename.
-            let (record, row) =
-                get_record_row(&mut record_db, citation_key, &client, &config.on_insert)?
-                    .exists_or_commit_null("Cannot show directory for")?;
+            let (record, row) = get_record_row(&mut record_db, citation_key, &client, &config)?
+                .exists_or_commit_null("Cannot show directory for")?;
             row.commit()?;
             let mut target = get_attachment_dir(&record.canonical, &data_dir, cli.attachments_dir)?;
 
@@ -575,7 +574,7 @@ pub fn run_cli(cli: Cli) -> Result<()> {
             from,
             prefer_current,
             prefer_incoming,
-        } => match record_db.state_from_record_id(citation_key)? {
+        } => match record_db.state_from_record_id(citation_key, &config.alias_transform)? {
             RecordIdState::Existent(citation_key, row) => {
                 let RowData {
                     data: existing_raw_data,
@@ -601,7 +600,7 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                 row.commit()?;
             }
             RecordIdState::NullRemoteId(mapped_remote_id, null_row) => {
-                match data_from_path_or_remote(from, mapped_remote_id.key, &client) {
+                match data_from_path_or_remote(from, mapped_remote_id.mapped, &client) {
                     Ok((data, canonical)) => {
                         info!("Existing row was null; inserting new data.");
                         let row = null_row.delete()?.insert(&data, &canonical)?;
@@ -614,8 +613,8 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                 };
             }
             RecordIdState::UnknownRemoteId(maybe_normalized, missing) => {
-                error!("Record corresponding does not exist in database: {maybe_normalized}");
-                if !maybe_normalized.key.is_local() {
+                error!("Record does not exist in database: {maybe_normalized}");
+                if !maybe_normalized.mapped.is_local() {
                     suggest!("Use `autobib get` to retrieve record");
                 }
                 missing.commit()?;

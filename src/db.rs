@@ -80,9 +80,10 @@ use rusqlite::{
 
 pub use self::data::{binary_format_version, EntryData, RawRecordData, RecordData};
 pub(crate) use self::data::{EntryTypeHeader, KeyHeader, ValueHeader};
-use self::state::{RecordIdState, RemoteIdState, RowData};
+use self::state::{ExtendedRecordIdState, RecordIdState, RemoteIdState, RowData};
 use self::validate::{DatabaseFault, DatabaseValidator};
 use crate::{
+    config::AliasTransform,
     error::DatabaseError,
     logger::{debug, error, info, warn},
     Alias, RecordId, RemoteId,
@@ -132,8 +133,7 @@ mod private {
     impl Sealed for crate::Alias {}
     impl Sealed for crate::RecordId {}
     impl Sealed for crate::RemoteId {}
-    impl<T: Sealed> Sealed for crate::MappedKey<T> {}
-    // impl Sealed for crate::AliasOrRemoteId {}
+    impl<T> Sealed for crate::MappedFrom<T> {}
 }
 
 /// Internal representation of the underlying SQL database.
@@ -296,11 +296,26 @@ impl RecordDatabase {
 
     /// Get the [`RecordIdState`] associated with a [`RecordId`].
     #[inline]
-    pub fn state_from_record_id(
+    pub fn extended_state_from_record_id<A: AliasTransform>(
         &mut self,
         record_id: RecordId,
+        alias_transform: &A,
+    ) -> Result<ExtendedRecordIdState, rusqlite::Error> {
+        ExtendedRecordIdState::determine(
+            self.conn.transaction()?.into(),
+            record_id,
+            alias_transform,
+        )
+    }
+
+    /// Get the [`RecordIdState`] associated with a [`RecordId`].
+    #[inline]
+    pub fn state_from_record_id<A: AliasTransform>(
+        &mut self,
+        record_id: RecordId,
+        alias_transform: &A,
     ) -> Result<RecordIdState, rusqlite::Error> {
-        RecordIdState::determine(self.conn.transaction()?.into(), record_id)
+        RecordIdState::determine(self.conn.transaction()?.into(), record_id, alias_transform)
     }
 
     /// Get the [`RemoteIdState`] associated with a [`RemoteId`].

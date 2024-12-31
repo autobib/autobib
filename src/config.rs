@@ -1,26 +1,38 @@
-use std::{fs::read_to_string, io::ErrorKind, path::Path};
+use std::{fs::read_to_string, io::ErrorKind, path::Path, sync::LazyLock};
 
 use anyhow::{anyhow, Error};
-use serde::{Deserialize, Serialize};
+use regex::Regex;
+use serde::Deserialize;
 use toml::from_str;
 
 use crate::{
     logger::{debug, info},
     normalize::Normalization,
+    Alias, CitationKey,
 };
 
-#[derive(Debug, Default, Deserialize, Serialize)]
+#[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Config {
+struct RawConfig {
+    #[serde(default)]
+    pub alias_transform: RawAutoAlias,
     #[serde(default)]
     pub on_insert: Normalization,
 }
 
-impl Config {
-    /// Attempt to load the configuration file from the provided path.
-    ///
-    /// If `missing_ok` is true and the file is not found, this returns the default configuration.
-    pub fn load<P: AsRef<Path>>(path: P, missing_ok: bool) -> Result<Self, Error> {
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawAutoAlias {
+    #[serde(default)]
+    rules: Vec<(String, String)>,
+    #[serde(default)]
+    create_alias: bool,
+}
+
+impl RawConfig {
+    /// Load configuration by deserializing a toml file at the provided path, returning the default
+    /// of `missing_ok` is true.
+    fn load<P: AsRef<Path>>(path: P, missing_ok: bool) -> Result<Self, Error> {
         match read_to_string(&path) {
             Ok(st) => {
                 info!(
@@ -43,5 +55,84 @@ impl Config {
                 }
             }
         }
+    }
+}
+
+#[derive(Debug)]
+pub struct Config<F> {
+    pub alias_transform: LazyAliasTransform<F>,
+    pub on_insert: Normalization,
+}
+
+#[derive(Debug)]
+pub struct LazyAliasTransform<F> {
+    rules: LazyLock<Vec<(Regex, String)>, F>,
+    create_alias: bool,
+}
+
+/// Attempt to load the configuration file from the provided path.
+///
+/// If `missing_ok` is true and the file is not found, this returns the default configuration.
+pub fn load_config<P: AsRef<Path>>(
+    path: P,
+    missing_ok: bool,
+) -> Result<Config<impl FnOnce() -> Vec<(Regex, String)>>, Error> {
+    let RawConfig {
+        alias_transform: RawAutoAlias {
+            rules,
+            create_alias,
+        },
+        on_insert,
+    } = RawConfig::load(path, missing_ok)?;
+
+    let rules = LazyLock::new(move || {
+        rules
+            .into_iter()
+            .filter_map(|(re, s)| Regex::new(&re).ok().map(|compiled| (compiled, s)))
+            .collect()
+    });
+
+    let alias_transform = LazyAliasTransform {
+        rules,
+        create_alias,
+    };
+
+    Ok(Config {
+        alias_transform,
+        on_insert,
+    })
+}
+
+pub trait AliasTransform {
+    /// Iterate over the internal matching patterns and return a pair (provider, sub_id) if one of
+    /// the matches succeeds. The default implementation automatically fails.
+    fn map_alias<'a>(&'a self, _alias: &'a Alias) -> Option<(&'a str, &'a str)> {
+        None
+    }
+
+    /// Whether or not to save the alias in the the `CitationKeys` table after mapping.
+    fn create(&self) -> bool {
+        false
+    }
+}
+
+impl AliasTransform for () {}
+
+impl<F: FnOnce() -> Vec<(Regex, String)>> AliasTransform for LazyAliasTransform<F> {
+    fn map_alias<'a>(&'a self, alias: &'a Alias) -> Option<(&'a str, &'a str)> {
+        for (re, provider) in self.rules.iter() {
+            // TODO: replace with if-let chain when stabilized in 2024 edition
+            if let Some(cap) = re.captures(alias.name()) {
+                if let Some(res) = cap.get(1) {
+                    return Some((provider, res.as_str()));
+                }
+            }
+        }
+
+        None
+    }
+
+    fn create(&self) -> bool {
+        self.create_alias
     }
 }

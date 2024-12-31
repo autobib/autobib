@@ -3,17 +3,20 @@ mod key;
 use anyhow::bail;
 use nonempty::NonEmpty;
 
-pub use self::key::{Alias, AliasOrRemoteId, MappedKey, RecordId, RemoteId};
+pub use self::key::{Alias, AliasOrRemoteId, MappedFrom, RecordId, RemoteId};
 use crate::{
+    config::AliasTransform,
     db::{
-        state::{Missing, NullRecordRow, RecordIdState, RecordRow, RemoteIdState, RowData, State},
+        state::{
+            ExtendedRecordIdState, Missing, NullRecordRow, RecordRow, RemoteIdState, RowData, State,
+        },
         RawRecordData, RecordData, RecordDatabase,
     },
     error::{Error, ProviderError, RecordError},
     logger::info,
     normalize::{Normalization, Normalize},
     provider::{get_remote_response, RemoteResponse},
-    HttpClient,
+    Config, HttpClient,
 };
 
 /// The fundamental record type.
@@ -81,14 +84,14 @@ impl<'conn> RecordRowResponse<'conn> {
 ///
 /// The database state is passed back to the caller and must be commited for the record to be
 /// recorded in the database.
-pub fn get_record_row<'conn>(
+pub fn get_record_row<'conn, F: FnOnce() -> Vec<(regex::Regex, String)>>(
     db: &'conn mut RecordDatabase,
     record_id: RecordId,
     client: &HttpClient,
-    normalization: &Normalization,
+    config: &Config<F>,
 ) -> Result<RecordRowResponse<'conn>, Error> {
-    match db.state_from_record_id(record_id)? {
-        RecordIdState::Existent(key, row) => {
+    match db.extended_state_from_record_id(record_id, &config.alias_transform)? {
+        ExtendedRecordIdState::Existent(key, row) => {
             let RowData {
                 data, canonical, ..
             } = row.get_data()?;
@@ -101,13 +104,28 @@ pub fn get_record_row<'conn>(
                 row,
             ))
         }
-        RecordIdState::NullRemoteId(remote_id, null_row) => {
-            Ok(RecordRowResponse::NullRemoteId(remote_id.key, null_row))
+        ExtendedRecordIdState::NullRemoteId(remote_id, null_row) => {
+            Ok(RecordRowResponse::NullRemoteId(remote_id.mapped, null_row))
         }
-        RecordIdState::UndefinedAlias(alias) => Ok(RecordRowResponse::NullAlias(alias)),
-        RecordIdState::InvalidRemoteId(err) => Ok(RecordRowResponse::InvalidRemoteId(err)),
-        RecordIdState::UnknownRemoteId(maybe_normalized, missing) => {
-            get_record_row_recursive(missing, maybe_normalized, client, normalization)
+        ExtendedRecordIdState::UndefinedAlias(alias) => Ok(RecordRowResponse::NullAlias(alias)),
+        ExtendedRecordIdState::InvalidRemoteId(err) => Ok(RecordRowResponse::InvalidRemoteId(err)),
+        ExtendedRecordIdState::UnknownMappedAlias(alias, mapped, missing) => {
+            get_record_row_recursive(missing, mapped, client, &config.on_insert, |row| {
+                // create the new alias
+                if config.alias_transform.create() {
+                    row.add_alias(&alias)?;
+                }
+                Ok(Some(alias.into()))
+            })
+        }
+        ExtendedRecordIdState::UnknownRemoteId(maybe_normalized, missing) => {
+            get_record_row_recursive(
+                missing,
+                maybe_normalized.mapped,
+                client,
+                &config.on_insert,
+                |_| Ok(maybe_normalized.original),
+            )
         }
     }
 }
@@ -121,17 +139,23 @@ fn into_last<T>(ne: NonEmpty<T>) -> T {
 
 /// Resolve remote records inside a loop within a transaction.
 ///
+/// The `exists_callback` is called if the remote record exists, and is passed a reference to the
+/// row which will eventually be returned. The closure can optionally return a string which
+/// will be used as the bibtex key in the resulting returned [`Record`]. If the closure does not
+/// returns nothing, the original [`RemoteId`] is used as the bibtex key.
+///
 /// At each intermediate stage, attempt to read any data possible from the database
 /// inside the transaction implicit in the [`State<Missing>`], and write any new data to the
 /// database.
 fn get_record_row_recursive<'conn>(
     mut missing: State<'conn, Missing>,
-    mapped_remote_id: MappedKey<RemoteId>,
+    remote_id: RemoteId,
     client: &HttpClient,
     normalization: &Normalization,
+    exists_callback: impl FnOnce(&State<'conn, RecordRow>) -> Result<Option<String>, rusqlite::Error>,
 ) -> Result<RecordRowResponse<'conn>, Error> {
-    info!("Resolving remote record for {}", mapped_remote_id);
-    let mut history = NonEmpty::singleton(mapped_remote_id.key);
+    info!("Resolving remote record for {}", remote_id);
+    let mut history = NonEmpty::singleton(remote_id);
     loop {
         missing = match get_remote_response(client, history.last())? {
             RemoteResponse::Data(mut data) => {
@@ -139,9 +163,10 @@ fn get_record_row_recursive<'conn>(
                 let raw_record_data = (&data).into();
                 let row = missing.insert(&raw_record_data, history.last())?;
                 row.add_refs(history.iter())?;
+                let original = exists_callback(&row)?;
 
                 let NonEmpty { head, mut tail } = history;
-                let (key, canonical) = match (mapped_remote_id.original, tail.pop()) {
+                let (key, canonical) = match (original, tail.pop()) {
                     (Some(key), Some(canonical)) => (key, canonical),
                     (Some(key), None) => (key, head),
                     (None, Some(canonical)) => (head.into(), canonical),
@@ -165,9 +190,10 @@ fn get_record_row_recursive<'conn>(
                     let RowData {
                         data, canonical, ..
                     } = row.get_data()?;
+                    let original = exists_callback(&row)?;
                     break Ok(RecordRowResponse::Exists(
                         Record {
-                            key: mapped_remote_id.original.unwrap_or(history.head.into()),
+                            key: original.unwrap_or(history.head.into()),
                             data,
                             canonical,
                         },
