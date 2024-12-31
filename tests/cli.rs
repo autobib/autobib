@@ -1008,3 +1008,54 @@ fn test_normalize() -> Result<()> {
 
     s.close()
 }
+
+#[test]
+fn test_auto_alias() -> Result<()> {
+    let s = TestState::init()?;
+
+    s.set_config(Path::new("tests/resources/auto_alias/config.toml"))?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["get", "zbMATH06346461"]);
+    cmd.assert().success().stdout(
+        predicate::path::eq_file(Path::new("tests/resources/auto_alias/stdout.txt"))
+            .utf8()
+            .unwrap(),
+    );
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["get", "zbMATH6346461"]);
+    cmd.assert()
+        .failure()
+        .stderr(predicate::str::contains("Undefined alias"));
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["get", "zbl:1337.28015"]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["info", "zbl:1337.28015", "--report", "equivalent"]);
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("zbMATH06346461"));
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["get", "mr:3224722"]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["get", "MR3224722"]);
+    cmd.assert().success().stdout(
+        predicate::path::eq_file(Path::new("tests/resources/auto_alias/stdout_mr.txt"))
+            .utf8()
+            .unwrap(),
+    );
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["info", "MR3224722", "--report", "equivalent"]);
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("mr:3224722"));
+
+    s.close()
+}

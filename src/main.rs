@@ -31,7 +31,7 @@ pub use self::{
     entry::Entry,
     http::HttpClient,
     normalize::{Normalization, Normalize},
-    record::{get_record_row, Alias, AliasOrRemoteId, MappedKey, RecordId, RemoteId},
+    record::{get_record_row, Alias, AliasOrRemoteId, MappedFrom, RecordId, RemoteId},
     term::{Confirm, Editor, EditorConfig},
 };
 
