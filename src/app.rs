@@ -21,7 +21,7 @@ use serde_bibtex::token::is_entry_key;
 
 use crate::{
     cite_search::{get_citekeys, SourceFileType},
-    config::load_config,
+    config,
     db::{
         binary_format_version, schema_version,
         state::{RecordIdState, RemoteIdState, RowData},
@@ -81,12 +81,10 @@ pub fn run_cli(cli: Cli) -> Result<()> {
         RecordDatabase::open(default_db_path)?
     };
 
-    // Read configuration from filesystem
-    let config = if let Some(config_path) = cli.config {
-        load_config(config_path, false)?
-    } else {
-        load_config(strategy.config_dir().join("config.toml"), true)?
-    };
+    let (config_path, missing_ok) = cli.config.map_or_else(
+        || (strategy.config_dir().join("config.toml"), true),
+        |path| (path, false),
+    );
 
     // Initialize the reqwest Client
     let builder = HttpClient::default_builder();
@@ -97,7 +95,8 @@ pub fn run_cli(cli: Cli) -> Result<()> {
         Command::Alias { alias_command } => match alias_command {
             AliasCommand::Add { alias, target } => {
                 info!("Creating alias '{alias}' for '{target}'");
-                let (_, row) = get_record_row(&mut record_db, target, &client, &config)?
+                let cfg = config::load(&config_path, missing_ok)?;
+                let (_, row) = get_record_row(&mut record_db, target, &client, &cfg)?
                     .exists_or_commit_null("Cannot create alias for")?;
                 if !row.add_alias(&alias)? {
                     error!("Alias already exists: '{alias}'");
@@ -130,7 +129,8 @@ pub fn run_cli(cli: Cli) -> Result<()> {
             force,
         } => {
             // Extend with the filename.
-            let (record, row) = get_record_row(&mut record_db, citation_key, &client, &config)?
+            let cfg = config::load(&config_path, missing_ok)?;
+            let (record, row) = get_record_row(&mut record_db, citation_key, &client, &cfg)?
                 .exists_or_commit_null("Cannot attach file for")?;
             row.commit()?;
             let mut target = get_attachment_dir(&record.canonical, &data_dir, cli.attachments_dir)?;
@@ -179,6 +179,7 @@ pub fn run_cli(cli: Cli) -> Result<()> {
             citation_keys,
             force,
         } => {
+            let cfg = config::load(&config_path, missing_ok)?;
             let deduplicated = filter_and_deduplicate_by_canonical(
                 citation_keys.into_iter(),
                 &mut record_db,
@@ -189,7 +190,7 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                     suggest!("Delete null records using `autobib util evict`.");
                     Ok(())
                 },
-                &config,
+                &cfg,
             )?;
 
             for (canonical, to_delete) in deduplicated {
@@ -240,7 +241,8 @@ pub fn run_cli(cli: Cli) -> Result<()> {
             normalize_whitespace,
             set_eprint,
         } => {
-            let (mut record, row) = get_record_row(&mut record_db, citation_key, &client, &config)?
+            let cfg = config::load(&config_path, missing_ok)?;
+            let (mut record, row) = get_record_row(&mut record_db, citation_key, &client, &cfg)?
                 .exists_or_commit_null("Cannot edit")?;
 
             if normalize_whitespace || !set_eprint.is_empty() {
@@ -284,6 +286,7 @@ pub fn run_cli(cli: Cli) -> Result<()> {
             retrieve_only,
             ignore_null,
         } => {
+            let cfg = config::load(&config_path, missing_ok)?;
             // Collect all entries which are not null
             let valid_entries = retrieve_and_validate_entries(
                 citation_keys.into_iter(),
@@ -291,7 +294,7 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                 &client,
                 retrieve_only,
                 ignore_null,
-                &config,
+                &cfg,
             );
 
             if !retrieve_only {
@@ -301,75 +304,78 @@ pub fn run_cli(cli: Cli) -> Result<()> {
         Command::Info {
             citation_key,
             report,
-        } => match record_db.state_from_record_id(citation_key, &config.alias_transform)? {
-            RecordIdState::Existent(record_id, row) => {
-                match report {
-                    InfoReportType::All => {
-                        let row_data = row.get_data()?;
-                        println!("Canonical: {}", row_data.canonical);
-                        println!(
-                            "Equivalent references: {}",
-                            row.get_referencing_keys()?.iter().join(", ")
-                        );
-                        println!(
-                            "Valid BibTeX? {}",
-                            if is_entry_key(&record_id) {
-                                "yes"
-                            } else {
-                                "no"
+        } => {
+            let cfg = config::load(&config_path, missing_ok)?;
+            match record_db.state_from_record_id(citation_key, &cfg.alias_transform)? {
+                RecordIdState::Existent(record_id, row) => {
+                    match report {
+                        InfoReportType::All => {
+                            let row_data = row.get_data()?;
+                            println!("Canonical: {}", row_data.canonical);
+                            println!(
+                                "Equivalent references: {}",
+                                row.get_referencing_keys()?.iter().join(", ")
+                            );
+                            println!(
+                                "Valid BibTeX? {}",
+                                if is_entry_key(&record_id) {
+                                    "yes"
+                                } else {
+                                    "no"
+                                }
+                            );
+                            println!("Data last modified: {}", row_data.modified);
+                        }
+                        InfoReportType::Canonical => {
+                            println!("{}", row.get_canonical()?);
+                        }
+
+                        InfoReportType::Valid => {
+                            if !is_entry_key(&record_id) {
+                                error!("Invalid BibTeX: {record_id}");
                             }
-                        );
-                        println!("Data last modified: {}", row_data.modified);
+                        }
+                        InfoReportType::Equivalent => {
+                            for re in row.get_referencing_keys()? {
+                                println!("{re}");
+                            }
+                        }
+                        InfoReportType::Modified => {
+                            println!("{}", row.last_modified()?);
+                        }
+                    };
+                    row.commit()?;
+                }
+                RecordIdState::NullRemoteId(remote_id, null_row) => match report {
+                    InfoReportType::All => {
+                        println!("Null record: {remote_id}");
+                        let null_row_data = null_row.get_data()?;
+                        println!("Last attempted: {}", null_row_data.attempted);
                     }
                     InfoReportType::Canonical => {
-                        println!("{}", row.get_canonical()?);
+                        bail!("No canonical id for null record '{remote_id}'");
                     }
-
                     InfoReportType::Valid => {
-                        if !is_entry_key(&record_id) {
-                            error!("Invalid BibTeX: {record_id}");
-                        }
+                        bail!("Null record '{remote_id}' is automatically invalid");
                     }
                     InfoReportType::Equivalent => {
-                        for re in row.get_referencing_keys()? {
-                            println!("{re}");
-                        }
+                        bail!("No equivalent keys for null record '{remote_id}'");
                     }
                     InfoReportType::Modified => {
-                        println!("{}", row.last_modified()?);
+                        println!("{}", null_row.get_null_attempted()?);
                     }
-                };
-                row.commit()?;
-            }
-            RecordIdState::NullRemoteId(remote_id, null_row) => match report {
-                InfoReportType::All => {
-                    println!("Null record: {remote_id}");
-                    let null_row_data = null_row.get_data()?;
-                    println!("Last attempted: {}", null_row_data.attempted);
+                },
+                RecordIdState::UnknownRemoteId(maybe_normalized, missing) => {
+                    missing.commit()?;
+                    bail!("Cannot obtain report for record not in database: {maybe_normalized}");
                 }
-                InfoReportType::Canonical => {
-                    bail!("No canonical id for null record '{remote_id}'");
+                RecordIdState::UndefinedAlias(alias) => {
+                    bail!("Cannot obtain report for undefined alias: '{alias}'");
                 }
-                InfoReportType::Valid => {
-                    bail!("Null record '{remote_id}' is automatically invalid");
-                }
-                InfoReportType::Equivalent => {
-                    bail!("No equivalent keys for null record '{remote_id}'");
-                }
-                InfoReportType::Modified => {
-                    println!("{}", null_row.get_null_attempted()?);
-                }
-            },
-            RecordIdState::UnknownRemoteId(maybe_normalized, missing) => {
-                missing.commit()?;
-                bail!("Cannot obtain report for record not in database: {maybe_normalized}");
-            }
-            RecordIdState::UndefinedAlias(alias) => {
-                bail!("Cannot obtain report for undefined alias: '{alias}'");
-            }
 
-            RecordIdState::InvalidRemoteId(err) => bail!("{err}"),
-        },
+                RecordIdState::InvalidRemoteId(err) => bail!("{err}"),
+            }
+        }
         Command::Local {
             id,
             from,
@@ -465,7 +471,8 @@ pub fn run_cli(cli: Cli) -> Result<()> {
             prefer_current,
             prefer_incoming,
         } => {
-            let (existing, row) = get_record_row(&mut record_db, into, &client, &config)?
+            let cfg = config::load(&config_path, missing_ok)?;
+            let (existing, row) = get_record_row(&mut record_db, into, &client, &cfg)?
                 .exists_or_commit_null("Cannot merge into")?;
 
             let new_data: Vec<RowData> = from
@@ -500,8 +507,9 @@ pub fn run_cli(cli: Cli) -> Result<()> {
             citation_key,
             mkdir,
         } => {
+            let cfg = config::load(&config_path, missing_ok)?;
             // Extend with the filename.
-            let (record, row) = get_record_row(&mut record_db, citation_key, &client, &config)?
+            let (record, row) = get_record_row(&mut record_db, citation_key, &client, &cfg)?
                 .exists_or_commit_null("Cannot show directory for")?;
             row.commit()?;
             let mut target = get_attachment_dir(&record.canonical, &data_dir, cli.attachments_dir)?;
@@ -523,6 +531,7 @@ pub fn run_cli(cli: Cli) -> Result<()> {
             retrieve_only,
             ignore_null,
         } => {
+            let cfg = config::load(&config_path, missing_ok)?;
             let mut buffer = Vec::new();
 
             // The citation keys do not need to be sorted since sorting
@@ -562,7 +571,7 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                 &client,
                 retrieve_only,
                 ignore_null,
-                &config,
+                &cfg,
             );
 
             if !retrieve_only {
@@ -574,56 +583,59 @@ pub fn run_cli(cli: Cli) -> Result<()> {
             from,
             prefer_current,
             prefer_incoming,
-        } => match record_db.state_from_record_id(citation_key, &config.alias_transform)? {
-            RecordIdState::Existent(citation_key, row) => {
-                let RowData {
-                    data: existing_raw_data,
-                    canonical,
-                    ..
-                } = row.get_data()?;
-                let new_raw_data = match data_from_path_or_remote(from, canonical, &client) {
-                    Ok((data, _)) => data,
-                    Err(err) => {
-                        row.commit()?;
-                        bail!(err);
-                    }
-                };
-                let mut existing_record = RecordData::from(&existing_raw_data);
-                merge_record_data(
-                    UpdateMode::from_flags(cli.no_interactive, prefer_current, prefer_incoming),
-                    &mut existing_record,
-                    once(&new_raw_data),
-                    &citation_key,
-                )?;
-                row.save_to_changelog()?;
-                row.update_row_data(&(&existing_record).into())?;
-                row.commit()?;
-            }
-            RecordIdState::NullRemoteId(mapped_remote_id, null_row) => {
-                match data_from_path_or_remote(from, mapped_remote_id.mapped, &client) {
-                    Ok((data, canonical)) => {
-                        info!("Existing row was null; inserting new data.");
-                        let row = null_row.delete()?.insert(&data, &canonical)?;
-                        row.commit()?;
-                    }
-                    Err(err) => {
-                        null_row.commit()?;
-                        bail!(err);
-                    }
-                };
-            }
-            RecordIdState::UnknownRemoteId(maybe_normalized, missing) => {
-                error!("Record does not exist in database: {maybe_normalized}");
-                if !maybe_normalized.mapped.is_local() {
-                    suggest!("Use `autobib get` to retrieve record");
+        } => {
+            let cfg = config::load(&config_path, missing_ok)?;
+            match record_db.state_from_record_id(citation_key, &cfg.alias_transform)? {
+                RecordIdState::Existent(citation_key, row) => {
+                    let RowData {
+                        data: existing_raw_data,
+                        canonical,
+                        ..
+                    } = row.get_data()?;
+                    let new_raw_data = match data_from_path_or_remote(from, canonical, &client) {
+                        Ok((data, _)) => data,
+                        Err(err) => {
+                            row.commit()?;
+                            bail!(err);
+                        }
+                    };
+                    let mut existing_record = RecordData::from(&existing_raw_data);
+                    merge_record_data(
+                        UpdateMode::from_flags(cli.no_interactive, prefer_current, prefer_incoming),
+                        &mut existing_record,
+                        once(&new_raw_data),
+                        &citation_key,
+                    )?;
+                    row.save_to_changelog()?;
+                    row.update_row_data(&(&existing_record).into())?;
+                    row.commit()?;
                 }
-                missing.commit()?;
+                RecordIdState::NullRemoteId(mapped_remote_id, null_row) => {
+                    match data_from_path_or_remote(from, mapped_remote_id.mapped, &client) {
+                        Ok((data, canonical)) => {
+                            info!("Existing row was null; inserting new data.");
+                            let row = null_row.delete()?.insert(&data, &canonical)?;
+                            row.commit()?;
+                        }
+                        Err(err) => {
+                            null_row.commit()?;
+                            bail!(err);
+                        }
+                    };
+                }
+                RecordIdState::UnknownRemoteId(maybe_normalized, missing) => {
+                    error!("Record does not exist in database: {maybe_normalized}");
+                    if !maybe_normalized.mapped.is_local() {
+                        suggest!("Use `autobib get` to retrieve record");
+                    }
+                    missing.commit()?;
+                }
+                RecordIdState::UndefinedAlias(alias) => {
+                    bail!("Undefined alias: '{alias}'");
+                }
+                RecordIdState::InvalidRemoteId(err) => bail!("{err}"),
             }
-            RecordIdState::UndefinedAlias(alias) => {
-                bail!("Undefined alias: '{alias}'");
-            }
-            RecordIdState::InvalidRemoteId(err) => bail!("{err}"),
-        },
+        }
         Command::Util { util_command } => match util_command {
             UtilCommand::Check { fix } => {
                 info!("Validating record binary data and consistency, and checking for dangling records.");
@@ -634,6 +646,9 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                         eprintln!("DATABASE ERROR: {fault}");
                     }
                 }
+
+                info!("Validating configuration.");
+                config::validate(&config_path)?;
             }
             UtilCommand::Evict {
                 regex,

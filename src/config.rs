@@ -1,3 +1,5 @@
+mod validate;
+
 use std::{fs::read_to_string, io::ErrorKind, path::Path, sync::LazyLock};
 
 use anyhow::{anyhow, Error};
@@ -10,6 +12,7 @@ use crate::{
     normalize::Normalization,
     Alias, CitationKey,
 };
+pub use validate::validate_config as validate;
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -73,7 +76,7 @@ pub struct LazyAliasTransform<F> {
 /// Attempt to load the configuration file from the provided path.
 ///
 /// If `missing_ok` is true and the file is not found, this returns the default configuration.
-pub fn load_config<P: AsRef<Path>>(
+pub fn load<P: AsRef<Path>>(
     path: P,
     missing_ok: bool,
 ) -> Result<Config<impl FnOnce() -> Vec<(Regex, String)>>, Error> {
