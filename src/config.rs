@@ -1,6 +1,6 @@
 mod validate;
 
-use std::{fs::read_to_string, io::ErrorKind, path::Path, sync::LazyLock};
+use std::{fs::read_to_string, io, path::Path, sync::LazyLock};
 
 use anyhow::{anyhow, Error};
 use regex::Regex;
@@ -14,7 +14,7 @@ use crate::{
 };
 pub use validate::validate_config as validate;
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 struct RawConfig {
     #[serde(default)]
@@ -23,7 +23,7 @@ struct RawConfig {
     pub on_insert: Normalization,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 struct RawAutoAlias {
     #[serde(default)]
@@ -47,7 +47,7 @@ impl RawConfig {
                 Ok(config)
             }
             Err(err) => {
-                if missing_ok && err.kind() == ErrorKind::NotFound {
+                if missing_ok && err.kind() == io::ErrorKind::NotFound {
                     info!(
                         "Configuration file not found at path '{}'; using default configuration",
                         path.as_ref().display()
@@ -71,6 +71,13 @@ pub struct Config<F> {
 pub struct LazyAliasTransform<F> {
     rules: LazyLock<Vec<(Regex, String)>, F>,
     create_alias: bool,
+}
+
+#[cold]
+pub fn write_default<W: ?Sized + io::Write>(writer: &mut W) -> Result<(), io::Error> {
+    writer
+        .write(include_str!("config/default_config.toml").as_bytes())
+        .map(|_| ())
 }
 
 /// Attempt to load the configuration file from the provided path.
@@ -137,5 +144,20 @@ impl<F: FnOnce() -> Vec<(Regex, String)>> AliasTransform for LazyAliasTransform<
 
     fn create(&self) -> bool {
         self.create_alias
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_config() {
+        let mut default_config_bytes = Vec::new();
+        write_default(&mut default_config_bytes).unwrap();
+        let st = String::from_utf8(default_config_bytes).unwrap();
+        let cfg: RawConfig = from_str(&st).unwrap();
+
+        assert_eq!(cfg, RawConfig::default());
     }
 }

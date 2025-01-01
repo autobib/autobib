@@ -175,6 +175,9 @@ pub fn run_cli(cli: Cli) -> Result<()> {
         Command::Completions { shell: _ } => {
             unreachable!("Request for completions script should have been handled earlier and the program should have exited then.");
         }
+        Command::DefaultConfig => {
+            config::write_default(&mut std::io::stdout())?;
+        }
         Command::Delete {
             citation_keys,
             force,
