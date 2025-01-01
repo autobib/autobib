@@ -226,7 +226,7 @@ This path can also be modified with the `AUTOBIB_DATABASE_PATH` environment vari
 
 Autobib supports basic global configuration through a TOML file which defaults to `$XDG_CONFIG_HOME/autobib/config.toml`, or `$HOME/.config/autobib/config.toml` if `$XDG_CONFIG_HOME` is not set or empty.
 This path can also be modified with the `AUTOBIB_CONFIG_PATH` environment variable.
-See [here](docs/examples/default_config.toml) for the current configuration options and their default values.
+You can generate a default configuration file with `autobib default-config`, or view the configuration options [here](src/config/default_config.toml).
 
 ## License
 
