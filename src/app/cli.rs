@@ -100,6 +100,9 @@ pub enum Command {
         /// The shell for which to generate the script.
         shell: Shell,
     },
+    /// Generate configuration file.
+    #[clap(hide = true)]
+    DefaultConfig,
     /// Delete records and associated keys.
     ///
     /// Delete a record, and all referencing keys (such as aliases) which are associated with the
