@@ -145,6 +145,16 @@ Aliases can be used in most locations that the usual identifiers are used.
 For instance, you can run `autobib edit hochman-entropy`, to edit the corresponding record data.
 Note that these edits will apply to the original underlying record.
 
+Many providers have default key formats; for instance, zbMath internally uses keys of the form `zbMATH06346461`.
+Autobib can be configured to automatically convert aliases matching certain rules to `provider:sub_id` pairs.
+For example, to convert `zbMATH06346461` to `zbmath:06346461` and automatically generate permanent aliases in your database, use the `[alias_transform]` in your [configuration](#database-and-configuration-file):
+```toml
+[alias_transform]
+rules = [["^zbMATH([0-9]{8})$", "zbmath"]]
+create_alias = true
+```
+Read the [default configuration](src/config/default_config.toml) for more detail.
+
 ### Creating local records
 
 Sometimes, it is necessary to create a local record which may not otherwise exist on a remote database.
