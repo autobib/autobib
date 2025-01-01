@@ -183,6 +183,7 @@ dependencies = [
  "quick-xml",
  "rapidhash",
  "regex",
+ "regex-syntax",
  "reqwest",
  "rusqlite",
  "serde",

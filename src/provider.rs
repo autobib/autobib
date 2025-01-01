@@ -106,6 +106,11 @@ pub fn validate_provider_sub_id(provider: &str, sub_id: &str) -> ValidationOutco
     }
 }
 
+#[inline]
+pub fn is_valid_provider(provider: &str) -> bool {
+    lookup_validator(provider).is_some()
+}
+
 /// The outcome of resolving a provider and making the remote call
 pub enum RemoteResponse {
     /// The provider was a [`Resolver`] and returned [`RecordData`].
