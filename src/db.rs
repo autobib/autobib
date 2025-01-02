@@ -151,12 +151,12 @@ mod private {
 /// 3. `NullRecords`. This is a cache table used to keep track of records which are known to
 ///    not exist. The table schema is documented in [`init_null_records`](sql::init_null_records).
 ///
-/// For a [`RemoteId`], there are two variants:
+/// For a [`RemoteId`], there are two variants depending on the value returned by [`get_remote_response`](crate::provider::get_remote_response):
 ///
-/// - Canonical: if the corresponding provider implementation is a
-///   [`Resolver`](`crate::provider::Resolver`).
-/// - Reference: if the corresponding provider implementation is a
-///   [`Referrer`](`crate::provider::Referrer`).
+/// - Canonical: if the return type is
+///   [`RemoteResponse::Data`](crate::provider::RemoteResponse::Data).
+/// - Reference: if the return type is
+///   [`RemoteResponse::Reference`](crate::provider::RemoteResponse::Reference).
 ///
 /// This distinction is not currently enforced by types, but it may be in the future.
 ///
