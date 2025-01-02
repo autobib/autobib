@@ -21,16 +21,16 @@ use crate::{
 };
 
 /// A resolver, which converts a `sub_id` into [`RecordData`].
-pub type Resolver = fn(&str, &HttpClient) -> Result<Option<RecordData>, ProviderError>;
+type Resolver = fn(&str, &HttpClient) -> Result<Option<RecordData>, ProviderError>;
 
 /// A referrer, which converts a `sub_id` into [`RemoteId`].
-pub type Referrer = fn(&str, &HttpClient) -> Result<Option<RemoteId>, ProviderError>;
+type Referrer = fn(&str, &HttpClient) -> Result<Option<RemoteId>, ProviderError>;
 
 /// A validator, which checks that a `sub_id` is valid.
 type Validator = fn(&str) -> ValidationOutcome;
 
 /// A provider, which is either a [`Resolver`] or a [`Referrer`].
-pub enum Provider {
+enum Provider {
     Resolver(Resolver),
     Referrer(Referrer),
 }
@@ -106,6 +106,7 @@ pub fn validate_provider_sub_id(provider: &str, sub_id: &str) -> ValidationOutco
     }
 }
 
+/// Check if the given string corresponds to a valid provider.
 #[inline]
 pub fn is_valid_provider(provider: &str) -> bool {
     lookup_validator(provider).is_some()
@@ -162,28 +163,28 @@ struct ProviderBibtex {
 /// this can/will cause problems when deserializing.
 #[derive(Debug, Default, Deserialize)]
 struct ProviderBibtexFields {
-    #[serde(alias = "Title", alias = "TITLE")]
-    pub title: Option<String>,
     #[serde(alias = "Author", alias = "AUTHOR")]
     pub author: Option<String>,
-    #[serde(alias = "Journal", alias = "JOURNAL")]
-    pub journal: Option<String>,
-    #[serde(alias = "Volume", alias = "VOLUME")]
-    pub volume: Option<String>,
-    #[serde(alias = "Pages", alias = "PAGES")]
-    pub pages: Option<String>,
-    #[serde(alias = "Year", alias = "YEAR")]
-    pub year: Option<String>,
-    #[serde(alias = "MRNUMBER")]
-    pub mrnumber: Option<String>,
-    #[serde(alias = "Series", alias = "SERIES")]
-    pub series: Option<String>,
-    #[serde(alias = "Publisher", alias = "PUBLISHER")]
-    pub publisher: Option<String>,
     #[serde(alias = "DOI")]
     pub doi: Option<String>,
+    #[serde(alias = "Journal", alias = "JOURNAL")]
+    pub journal: Option<String>,
     #[serde(alias = "Language", alias = "LANGUAGE")]
     pub language: Option<String>,
+    #[serde(alias = "MRNUMBER")]
+    pub mrnumber: Option<String>,
+    #[serde(alias = "Pages", alias = "PAGES")]
+    pub pages: Option<String>,
+    #[serde(alias = "Publisher", alias = "PUBLISHER")]
+    pub publisher: Option<String>,
+    #[serde(alias = "Series", alias = "SERIES")]
+    pub series: Option<String>,
+    #[serde(alias = "Title", alias = "TITLE")]
+    pub title: Option<String>,
+    #[serde(alias = "Volume", alias = "VOLUME")]
+    pub volume: Option<String>,
+    #[serde(alias = "Year", alias = "YEAR")]
+    pub year: Option<String>,
     #[serde(alias = "Zbl")]
     pub zbl: Option<String>,
     #[serde(alias = "zbMATH")]
@@ -211,17 +212,17 @@ impl TryFrom<ProviderBibtex> for RecordData {
         convert_field!(
             fields,
             record_data,
-            title,
             author,
-            journal,
-            volume,
-            pages,
-            year,
-            mrnumber,
             doi,
-            series,
-            publisher,
+            journal,
             language,
+            mrnumber,
+            pages,
+            publisher,
+            series,
+            title,
+            volume,
+            year,
             zbl
         );
 
