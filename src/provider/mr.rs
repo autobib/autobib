@@ -2,7 +2,7 @@ use reqwest::StatusCode;
 use serde::Deserialize;
 use serde_bibtex::de::Deserializer;
 
-use super::{HttpClient, ProviderBibtex, ProviderError, RecordData};
+use super::{HttpClient, ProviderBibtex, ProviderError, RecordData, ValidationOutcome};
 
 #[allow(dead_code)]
 #[derive(Deserialize)]
@@ -12,8 +12,8 @@ struct MathscinetRecord {
     id: u32,
 }
 
-pub fn is_valid_id(id: &str) -> bool {
-    id.len() == 7 && id.as_bytes().iter().all(u8::is_ascii_digit)
+pub fn is_valid_id(id: &str) -> ValidationOutcome {
+    (id.len() == 7 && id.as_bytes().iter().all(u8::is_ascii_digit)).into()
 }
 
 pub fn get_record(id: &str, client: &HttpClient) -> Result<Option<RecordData>, ProviderError> {

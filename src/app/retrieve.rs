@@ -29,11 +29,12 @@ use crate::{
 /// the corresponding referencing citation keys which were initially present in the list.
 ///
 /// The resulting hash set contains all of the null identifiers.
-pub fn filter_and_deduplicate_by_canonical<T, N>(
+pub fn filter_and_deduplicate_by_canonical<T, N, F: FnOnce() -> Vec<(regex::Regex, String)>>(
     citation_keys: T,
     record_db: &mut RecordDatabase,
     ignore_errors: bool,
     mut null_callback: N,
+    config: &Config<F>,
 ) -> Result<HashMap<RemoteId, HashSet<String>>, rusqlite::Error>
 where
     T: Iterator<Item = RecordId>,
@@ -42,21 +43,21 @@ where
     let mut deduplicated = HashMap::new();
 
     for record_id in citation_keys {
-        match record_db.state_from_record_id(record_id)? {
-            RecordIdState::Existent(remote_id, row) => {
+        match record_db.state_from_record_id(record_id, &config.alias_transform)? {
+            RecordIdState::Existent(key, row) => {
                 deduplicated
                     .entry(row.get_canonical()?)
                     .or_insert_with(HashSet::new)
-                    .insert(remote_id.into());
+                    .insert(key);
                 row.commit()?;
             }
-            RecordIdState::NullRemoteId(remote_id, null_row) => {
-                null_callback(remote_id, null_row)?;
+            RecordIdState::NullRemoteId(mapped_remote_id, null_row) => {
+                null_callback(mapped_remote_id.mapped, null_row)?;
             }
-            RecordIdState::UnknownRemoteId(remote_id, missing) => {
+            RecordIdState::UnknownRemoteId(maybe_normalized, missing) => {
                 missing.commit()?;
                 if !ignore_errors {
-                    error!("Identifier not in database: '{remote_id}'");
+                    error!("Identifier not in database: {maybe_normalized}");
                 }
             }
             RecordIdState::UndefinedAlias(alias) => {
@@ -75,13 +76,16 @@ where
 }
 
 /// Retrieve and validate BibTeX entries.
-pub fn retrieve_and_validate_entries<T: Iterator<Item = RecordId>>(
+pub fn retrieve_and_validate_entries<
+    T: Iterator<Item = RecordId>,
+    F: FnOnce() -> Vec<(regex::Regex, String)>,
+>(
     citation_keys: T,
     record_db: &mut RecordDatabase,
     client: &HttpClient,
     retrieve_only: bool,
     ignore_null: bool,
-    config: &Config,
+    config: &Config<F>,
 ) -> BTreeMap<RemoteId, NonEmpty<Entry<RawRecordData>>> {
     let valid_entries = citation_keys.filter_map(|citation_key| {
         retrieve_and_validate_single_entry(
@@ -111,15 +115,15 @@ pub fn retrieve_and_validate_entries<T: Iterator<Item = RecordId>>(
 }
 
 /// Retrieve and validate a single BibTeX entry.
-fn retrieve_and_validate_single_entry(
+fn retrieve_and_validate_single_entry<F: FnOnce() -> Vec<(regex::Regex, String)>>(
     record_db: &mut RecordDatabase,
     citation_key: RecordId,
     client: &HttpClient,
     retrieve_only: bool,
     ignore_null: bool,
-    config: &Config,
+    config: &Config<F>,
 ) -> Result<Option<(Entry<RawRecordData>, RemoteId)>, Error> {
-    match get_record_row(record_db, citation_key, client, &config.on_insert)? {
+    match get_record_row(record_db, citation_key, client, config)? {
         RecordRowResponse::Exists(record, row) => {
             if retrieve_only {
                 row.commit()?;

@@ -1,15 +1,19 @@
-use std::sync::LazyLock;
-
-use regex::Regex;
 use reqwest::StatusCode;
 use serde_bibtex::de::Deserializer;
 
-use super::{HttpClient, ProviderBibtex, ProviderError, RecordData};
+use super::{HttpClient, ProviderBibtex, ProviderError, RecordData, ValidationOutcome};
 
-static ZBMATH_IDENTIFIER_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[0-9]{8}$").unwrap());
-
-pub fn is_valid_id(id: &str) -> bool {
-    ZBMATH_IDENTIFIER_RE.is_match(id)
+pub fn is_valid_id(id: &str) -> ValidationOutcome {
+    if id.len() == 8 && id.as_bytes().iter().all(u8::is_ascii_digit) {
+        ValidationOutcome::Valid
+    } else if id.len() == 7 && id.as_bytes().iter().all(u8::is_ascii_digit) {
+        let mut normalized = String::with_capacity(8);
+        normalized.push('0');
+        normalized.push_str(id);
+        ValidationOutcome::Normalize(normalized)
+    } else {
+        ValidationOutcome::Invalid
+    }
 }
 
 pub fn get_record(id: &str, client: &HttpClient) -> Result<Option<RecordData>, ProviderError> {

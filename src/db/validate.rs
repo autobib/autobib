@@ -1,9 +1,9 @@
-use std::{fmt, num::NonZero};
+use std::{fmt, num::NonZero, str::FromStr};
 
 use rusqlite::types::ValueRef;
 
 use super::{get_row_id, sql, Transaction};
-use crate::{error::InvalidBytesError, logger::debug, RawRecordData, RecordId, RemoteId};
+use crate::{error::InvalidBytesError, logger::debug, RawRecordData, RemoteId};
 
 /// A possible fault that could occurr inside the database.
 #[derive(Debug)]
@@ -78,7 +78,7 @@ impl<'conn> DatabaseValidator<'conn> {
             // first verify that we actually get a proper canonical id
             let row_id = row.get("key")?;
             let name: String = row.get("record_id")?;
-            let canonical_id: RemoteId = match RecordId::from(name.as_ref()).try_into() {
+            let canonical_id: RemoteId = match RemoteId::from_str(name.as_ref()) {
                 Ok(remote_id) => remote_id,
                 Err(_) => {
                     faults.push(DatabaseFault::RowHasInvalidCanonicalId(row_id, name));

@@ -6,7 +6,7 @@ use regex::Regex;
 use reqwest::StatusCode;
 use serde::Deserialize;
 
-use super::{HttpClient, ProviderError, RecordData, RecordDataError};
+use super::{HttpClient, ProviderError, RecordData, RecordDataError, ValidationOutcome};
 
 static ARXIV_IDENTIFIER_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(concat!(
@@ -26,8 +26,8 @@ static ARXIV_IDENTIFIER_RE: LazyLock<Regex> = LazyLock::new(|| {
     )).unwrap()
 });
 
-pub fn is_valid_id(id: &str) -> bool {
-    ARXIV_IDENTIFIER_RE.is_match(id)
+pub fn is_valid_id(id: &str) -> ValidationOutcome {
+    ARXIV_IDENTIFIER_RE.is_match(id).into()
 }
 
 #[derive(Deserialize, Debug)]

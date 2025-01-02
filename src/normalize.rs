@@ -1,9 +1,9 @@
 //! Utilities for normalizing BibTeX data
 use std::str::CharIndices;
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
-#[derive(Debug, Default, Deserialize, Serialize)]
+#[derive(Debug, Default, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Normalization {
     #[serde(default)]

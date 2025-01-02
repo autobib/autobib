@@ -1,0 +1,7 @@
+[alias_transform]
+rules = [
+    ["^zbMATH([0-9]{8})$", "zbmath"],
+    ["^MR([0-9]{7})$", "mr"],
+]
+
+create_alias = true
