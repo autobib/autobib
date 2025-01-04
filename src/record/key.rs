@@ -12,21 +12,20 @@ use crate::{
     CitationKey,
 };
 
-/// A wrapper struct for a citation key (such as a [`RemoteId`] or an [`Alias`]) which has been
-/// transformed from an original key, for instance through a sub_id normalization or an alias
-/// transform.
+/// A wrapper struct for a [`RemoteId`] which has been transformed from an original key, for
+/// instance through a sub_id normalization or an alias transform.
 ///
 /// This struct has a special [`Display`](fmt::Display) implementation which shows both the key and
 /// the original value if the original value exists.
 #[derive(Debug)]
-pub struct MappedFrom<T = String> {
+pub struct MappedKey<T = String> {
     /// The underlying key.
     pub mapped: RemoteId,
     /// The original value of the key, if normalization was applied.
     pub original: Option<T>,
 }
 
-impl<T> MappedFrom<T> {
+impl<T> MappedKey<T> {
     /// Initialize for a key which was unchanged.
     pub fn unchanged(key: RemoteId) -> Self {
         Self {
@@ -49,8 +48,8 @@ impl<T> MappedFrom<T> {
     }
 }
 
-impl<T: Into<String>> From<MappedFrom<T>> for String {
-    fn from(value: MappedFrom<T>) -> Self {
+impl<T: Into<String>> From<MappedKey<T>> for String {
+    fn from(value: MappedKey<T>) -> Self {
         if let Some(original) = value.original {
             original.into()
         } else {
@@ -59,7 +58,7 @@ impl<T: Into<String>> From<MappedFrom<T>> for String {
     }
 }
 
-impl<T: fmt::Display> fmt::Display for MappedFrom<T> {
+impl<T: fmt::Display> fmt::Display for MappedKey<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "'{}'", self.mapped)?;
         if let Some(s) = &self.original {
@@ -69,7 +68,7 @@ impl<T: fmt::Display> fmt::Display for MappedFrom<T> {
     }
 }
 
-impl<T> CitationKey for MappedFrom<T> {
+impl<T> CitationKey for MappedKey<T> {
     fn name(&self) -> &str {
         self.mapped.name()
     }
@@ -84,7 +83,7 @@ impl<T> CitationKey for MappedFrom<T> {
 fn resolve_provider_sub_id(
     full_id: String,
     provider_len: usize,
-) -> Result<MappedFrom, RemoteIdConversionError> {
+) -> Result<MappedKey, RemoteIdConversionError> {
     if provider_len + 1 == full_id.len() {
         Err(RemoteIdConversionError {
             input: full_id,
@@ -99,13 +98,13 @@ fn resolve_provider_sub_id(
         let provider = &full_id[..provider_len];
         let sub_id = &full_id[provider_len + 1..];
         match validate_provider_sub_id(provider, sub_id) {
-            ValidationOutcomeExtended::Valid => Ok(MappedFrom::unchanged(RemoteId::new_unchecked(
+            ValidationOutcomeExtended::Valid => Ok(MappedKey::unchanged(RemoteId::new_unchecked(
                 full_id,
                 provider_len,
             ))),
             ValidationOutcomeExtended::Normalize(mut normalized) => {
                 normalized.insert_str(0, &full_id[..provider_len + 1]);
-                Ok(MappedFrom::mapped(
+                Ok(MappedKey::mapped(
                     RemoteId::new_unchecked(normalized, provider_len),
                     full_id,
                 ))
@@ -215,7 +214,7 @@ pub enum AliasOrRemoteId {
     /// An [`Alias`], and a possible value that it was mapped to.
     Alias(Alias, Option<RemoteId>),
     /// A [`RemoteId`], which may have been mapped from the original `provider:sub_id`.
-    RemoteId(MappedFrom),
+    RemoteId(MappedKey),
 }
 
 impl From<AliasOrRemoteId> for String {

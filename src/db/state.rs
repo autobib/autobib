@@ -48,7 +48,7 @@ use rusqlite::{CachedStatement, Error, Statement};
 pub use self::{missing::*, null::*, record::*};
 use super::{get_null_row_id, get_row_id, RowId, Transaction};
 use crate::{
-    config::AliasTransform, error::RecordError, logger::debug, Alias, AliasOrRemoteId, MappedFrom,
+    config::AliasTransform, error::RecordError, logger::debug, Alias, AliasOrRemoteId, MappedKey,
     RecordId, RemoteId,
 };
 
@@ -159,15 +159,40 @@ impl<'conn, I: InDatabase> State<'conn, I> {
     }
 }
 
+/// A record does not exist in the `Records` or `NullRecords` table.
+#[derive(Debug)]
+pub enum Unknown<'conn> {
+    /// The record was originally an alias, and it was mapped to the given remote identifier.
+    MappedAlias(Alias, RemoteId, State<'conn, Missing>),
+    /// The record was a remote identifier, possibly with a transformation applied.
+    RemoteId(MappedKey, State<'conn, Missing>),
+}
+
+impl Unknown<'_> {
+    /// Commit the [`Missing`] transaction, and convert the underlying data into a [`MappedKey`].
+    pub fn combine_and_commit(self) -> Result<MappedKey, rusqlite::Error> {
+        match self {
+            Unknown::MappedAlias(alias, remote_id, state) => {
+                state.commit()?;
+                Ok(MappedKey::mapped(remote_id, alias.into()))
+            }
+            Unknown::RemoteId(mapped_key, state) => {
+                state.commit()?;
+                Ok(mapped_key)
+            }
+        }
+    }
+}
+
 /// A representation of the database state beginning with an arbitrary [`RecordId`].
 #[derive(Debug)]
 pub enum RecordIdState<'conn> {
     /// The `Records` row exists.
     Existent(String, State<'conn, RecordRow>),
     /// The `Records` row does not exist and the `NullRecords` row exists.
-    NullRemoteId(MappedFrom, State<'conn, NullRecordRow>),
+    NullRemoteId(MappedKey, State<'conn, NullRecordRow>),
     /// The `Records` and `NullRecords` rows do not exist.
-    UnknownRemoteId(MappedFrom, State<'conn, Missing>),
+    Unknown(Unknown<'conn>),
     /// The alias is undefined.
     UndefinedAlias(Alias),
     /// The remote id is invalid.
@@ -175,58 +200,6 @@ pub enum RecordIdState<'conn> {
 }
 
 impl<'conn> RecordIdState<'conn> {
-    #[inline]
-    pub fn determine<A: AliasTransform>(
-        tx: Transaction<'conn>,
-        record_id: RecordId,
-        alias_transform: &A,
-    ) -> Result<Self, rusqlite::Error> {
-        ExtendedRecordIdState::determine(tx, record_id, alias_transform).map(Into::into)
-    }
-}
-
-/// A representation of the database state beginning with an arbitrary [`RecordId`].
-///
-/// This is an extended version of [`RecordIdState`] which preserves more context required for the
-/// correct implementation of [`get_record_row`](crate::get_record_row).
-#[derive(Debug)]
-pub enum ExtendedRecordIdState<'conn> {
-    /// The `Records` row exists.
-    Existent(String, State<'conn, RecordRow>),
-    /// The `Records` row does not exist and the `NullRecords` row exists.
-    NullRemoteId(MappedFrom, State<'conn, NullRecordRow>),
-    /// The `Records` and `NullRecords` rows do not exist.
-    UnknownRemoteId(MappedFrom, State<'conn, Missing>),
-    /// The alias mapped to a remote id for which the `Records` and `NullRecords` rows do not exist.
-    UnknownMappedAlias(Alias, RemoteId, State<'conn, Missing>),
-    /// The alias is undefined.
-    UndefinedAlias(Alias),
-    /// The remote id is invalid.
-    InvalidRemoteId(RecordError),
-}
-
-impl<'conn> From<ExtendedRecordIdState<'conn>> for RecordIdState<'conn> {
-    fn from(value: ExtendedRecordIdState<'conn>) -> Self {
-        match value {
-            ExtendedRecordIdState::Existent(key, state) => RecordIdState::Existent(key, state),
-            ExtendedRecordIdState::NullRemoteId(mapped_from, state) => {
-                RecordIdState::NullRemoteId(mapped_from, state)
-            }
-            ExtendedRecordIdState::UnknownRemoteId(mapped_from, state) => {
-                RecordIdState::UnknownRemoteId(mapped_from, state)
-            }
-            ExtendedRecordIdState::UnknownMappedAlias(alias, remote_id, state) => {
-                RecordIdState::UnknownRemoteId(MappedFrom::mapped(remote_id, alias.into()), state)
-            }
-            ExtendedRecordIdState::UndefinedAlias(alias) => RecordIdState::UndefinedAlias(alias),
-            ExtendedRecordIdState::InvalidRemoteId(record_error) => {
-                RecordIdState::InvalidRemoteId(record_error)
-            }
-        }
-    }
-}
-
-impl<'conn> ExtendedRecordIdState<'conn> {
     /// Create a new `Existent` variant from the provided [`Transaction`] and [`RowId`], using the
     /// provided callback to create the key associated with the record.
     fn existent(
@@ -241,14 +214,14 @@ impl<'conn> ExtendedRecordIdState<'conn> {
     }
 
     /// Match on the remote id determined from the context `id_from_context`. If the corresponding
-    /// `NullRecords` row exists, return a `NullRemoteId` by constructed from the [`MappedFrom`]
+    /// `NullRecords` row exists, return a `NullRemoteId` constructed from the [`MappedKey`]
     /// value returned by `produce_null`. Otherwise, produce a different variant using the context
     /// and the [`State<Missing>`] database state.
     fn null_or_missing<C>(
         tx: Transaction<'conn>,
         context: C,
         id_from_context: impl for<'a> FnOnce(&'a C) -> &'a RemoteId,
-        produce_null: impl FnOnce(C) -> MappedFrom,
+        produce_null: impl FnOnce(C) -> MappedKey,
         produce_missing: impl FnOnce(C, State<'conn, Missing>) -> Self,
     ) -> Result<Self, rusqlite::Error> {
         match get_null_row_id(&tx, id_from_context(&context))? {
@@ -292,7 +265,7 @@ impl<'conn> ExtendedRecordIdState<'conn> {
                     mapped_remote_id,
                     |ctx| &ctx.mapped,
                     |ctx| ctx,
-                    Self::UnknownRemoteId,
+                    |ctx, m| Self::Unknown(Unknown::RemoteId(ctx, m)),
                 )
             }
             Ok(AliasOrRemoteId::Alias(alias, maybe_mapped)) => {
@@ -312,8 +285,8 @@ impl<'conn> ExtendedRecordIdState<'conn> {
                             tx,
                             (remote_id, alias),
                             |ctx| &ctx.0,
-                            |ctx| MappedFrom::mapped(ctx.0, ctx.1.into()),
-                            |ctx, m| Self::UnknownMappedAlias(ctx.1, ctx.0, m),
+                            |ctx| MappedKey::mapped(ctx.0, ctx.1.into()),
+                            |ctx, m| Self::Unknown(Unknown::MappedAlias(ctx.1, ctx.0, m)),
                         )
                     }
                     None => {
