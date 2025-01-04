@@ -54,8 +54,8 @@ where
             RecordIdState::NullRemoteId(mapped_remote_id, null_row) => {
                 null_callback(mapped_remote_id.mapped, null_row)?;
             }
-            RecordIdState::UnknownRemoteId(maybe_normalized, missing) => {
-                missing.commit()?;
+            RecordIdState::Unknown(unknown) => {
+                let maybe_normalized = unknown.combine_and_commit()?;
                 if !ignore_errors {
                     error!("Identifier not in database: {maybe_normalized}");
                 }

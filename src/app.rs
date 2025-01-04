@@ -368,8 +368,8 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                         println!("{}", null_row.get_null_attempted()?);
                     }
                 },
-                RecordIdState::UnknownRemoteId(maybe_normalized, missing) => {
-                    missing.commit()?;
+                RecordIdState::Unknown(unknown) => {
+                    let maybe_normalized = unknown.combine_and_commit()?;
                     bail!("Cannot obtain report for record not in database: {maybe_normalized}");
                 }
                 RecordIdState::UndefinedAlias(alias) => {
@@ -626,12 +626,12 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                         }
                     };
                 }
-                RecordIdState::UnknownRemoteId(maybe_normalized, missing) => {
+                RecordIdState::Unknown(unknown) => {
+                    let maybe_normalized = unknown.combine_and_commit()?;
                     error!("Record does not exist in database: {maybe_normalized}");
                     if !maybe_normalized.mapped.is_local() {
                         suggest!("Use `autobib get` to retrieve record");
                     }
-                    missing.commit()?;
                 }
                 RecordIdState::UndefinedAlias(alias) => {
                     bail!("Undefined alias: '{alias}'");

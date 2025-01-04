@@ -3,12 +3,13 @@ mod key;
 use anyhow::bail;
 use nonempty::NonEmpty;
 
-pub use self::key::{Alias, AliasOrRemoteId, MappedFrom, RecordId, RemoteId};
+pub use self::key::{Alias, AliasOrRemoteId, MappedKey, RecordId, RemoteId};
 use crate::{
     config::AliasTransform,
     db::{
         state::{
-            ExtendedRecordIdState, Missing, NullRecordRow, RecordRow, RemoteIdState, RowData, State,
+            Missing, NullRecordRow, RecordIdState, RecordRow, RemoteIdState, RowData, State,
+            Unknown,
         },
         RawRecordData, RecordData, RecordDatabase,
     },
@@ -91,7 +92,7 @@ pub fn get_record_row<'conn, F: FnOnce() -> Vec<(regex::Regex, String)>>(
     config: &Config<F>,
 ) -> Result<RecordRowResponse<'conn>, Error> {
     match db.extended_state_from_record_id(record_id, &config.alias_transform)? {
-        ExtendedRecordIdState::Existent(key, row) => {
+        RecordIdState::Existent(key, row) => {
             let RowData {
                 data, canonical, ..
             } = row.get_data()?;
@@ -104,12 +105,12 @@ pub fn get_record_row<'conn, F: FnOnce() -> Vec<(regex::Regex, String)>>(
                 row,
             ))
         }
-        ExtendedRecordIdState::NullRemoteId(remote_id, null_row) => {
+        RecordIdState::NullRemoteId(remote_id, null_row) => {
             Ok(RecordRowResponse::NullRemoteId(remote_id.mapped, null_row))
         }
-        ExtendedRecordIdState::UndefinedAlias(alias) => Ok(RecordRowResponse::NullAlias(alias)),
-        ExtendedRecordIdState::InvalidRemoteId(err) => Ok(RecordRowResponse::InvalidRemoteId(err)),
-        ExtendedRecordIdState::UnknownMappedAlias(alias, mapped, missing) => {
+        RecordIdState::UndefinedAlias(alias) => Ok(RecordRowResponse::NullAlias(alias)),
+        RecordIdState::InvalidRemoteId(err) => Ok(RecordRowResponse::InvalidRemoteId(err)),
+        RecordIdState::Unknown(Unknown::MappedAlias(alias, mapped, missing)) => {
             get_record_row_recursive(missing, mapped, client, &config.on_insert, |row| {
                 // create the new alias
                 if config.alias_transform.create() {
@@ -118,7 +119,7 @@ pub fn get_record_row<'conn, F: FnOnce() -> Vec<(regex::Regex, String)>>(
                 Ok(Some(alias.into()))
             })
         }
-        ExtendedRecordIdState::UnknownRemoteId(maybe_normalized, missing) => {
+        RecordIdState::Unknown(Unknown::RemoteId(maybe_normalized, missing)) => {
             get_record_row_recursive(
                 missing,
                 maybe_normalized.mapped,
