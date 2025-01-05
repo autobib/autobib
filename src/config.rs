@@ -12,8 +12,10 @@ use crate::{
     normalize::Normalization,
     Alias, CitationKey,
 };
-pub use validate::validate_config as validate;
+pub use validate::report_config_errors as validate;
 
+/// A direct representation of the default configuration used by library, for easy deserialization
+/// from configuration files.
 #[derive(Debug, Default, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 struct RawConfig {
@@ -23,6 +25,7 @@ struct RawConfig {
     pub on_insert: Normalization,
 }
 
+/// A direct representation of the `[auto_alias]` section of the configuration.
 #[derive(Debug, Default, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 struct RawAutoAlias {
