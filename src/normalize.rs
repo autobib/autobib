@@ -1,8 +1,9 @@
 //! Utilities for normalizing BibTeX data
-use std::str::CharIndices;
+use std::{slice::Iter, str::CharIndices};
 
 use serde::Deserialize;
 
+/// A normalization which can be applied to bibliographic record data.
 #[derive(Debug, Default, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Normalization {
@@ -12,6 +13,9 @@ pub struct Normalization {
     set_eprint: Vec<String>,
 }
 
+/// Types which can be normalized by the operations specified in a [`Normalization`].
+///
+/// In practice, this is only implemented for [`RecordData`](crate::db::RecordData).
 pub trait Normalize {
     /// Attempt to set the `eprint` and `eprinttype` BibTeX fields using the value of a provided
     /// BibTeX field from the `keys` iterator.
@@ -20,7 +24,7 @@ pub trait Normalize {
     ///
     /// `eprint` will be set to the corresponding value, and `eprinttype` will be set to the
     /// corresponding key. Returns `true` if the eprint was set, and `false` otherwise.
-    fn set_eprint<Q: AsRef<str>>(&mut self, keys: std::slice::Iter<'_, Q>) -> bool;
+    fn set_eprint<Q: AsRef<str>>(&mut self, keys: Iter<'_, Q>) -> bool;
 
     /// Normalize whitespace by converting all whitespace blocks into a single ASCII SPACE,
     /// respecting whitespace which is explicitly escaped by `\`.
