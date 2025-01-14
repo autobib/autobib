@@ -23,8 +23,10 @@ set_eprint = []
 # Here are some suggested match groups for various identifiers.
 # - arxiv (new style only): ([0-9][0-9](?:0[1-9]|1[0-2])[.][0-9]{4,5})
 # - doi: (10.\d{4,9}/[-._;()/:a-zA-Z0-9]+)|(10.1002/[^\s]+)
+# - isbn: ([0-9]{10}|[0-9]{13})
 # - jfm: ([0-9]{2}\.[0-9]{4}\.[0-9]{2})
 # - mr: ([0-9]{7})
+# - ol: ([0-9]{8}M)
 # - zbl: ([0-9]{4}\.[0-9]{5})
 # - zbmath: ([0-9]{8})
 #

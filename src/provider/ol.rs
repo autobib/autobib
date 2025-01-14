@@ -119,6 +119,8 @@ pub fn get_record(id: &str, client: &HttpClient) -> Result<Option<RecordData>, P
                 record_data.check_and_insert("isbn".into(), isbn)?;
             }
 
+            record_data.check_and_insert("openlibrary".into(), id.into())?;
+
             if let Some(page_count) = number_of_pages {
                 record_data.check_and_insert("pagetotal".into(), page_count.to_string())?;
             }
