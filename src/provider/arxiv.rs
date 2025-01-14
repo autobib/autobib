@@ -44,20 +44,20 @@ enum ArxivXML {
     Error(ArxivError),
 }
 
-impl TryInto<ArxivXML> for ArxivXMLDe {
+impl TryFrom<ArxivXMLDe> for ArxivXML {
     type Error = ProviderError;
 
-    fn try_into(self) -> Result<ArxivXML, Self::Error> {
-        match self {
-            Self {
+    fn try_from(val: ArxivXMLDe) -> Result<ArxivXML, ProviderError> {
+        match val {
+            ArxivXMLDe {
                 response: Some(resp),
                 error: None,
             } => Ok(ArxivXML::Response(resp)),
-            Self {
+            ArxivXMLDe {
                 response: None,
                 error: Some(err),
             } => Ok(ArxivXML::Error(err)),
-            _ => Err(Self::Error::Unexpected(
+            _ => Err(ProviderError::Unexpected(
                 "arXiv XML response had an unexpected format!".into(),
             )),
         }
