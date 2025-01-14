@@ -3,13 +3,15 @@
 //!
 //! The fundamental types are [`Resolver`], [`Referrer`], and [`Validator`], which abstract over
 //! resource acquisition and resolution from a provider.
-pub mod arxiv;
-pub mod doi;
-pub mod jfm;
-pub mod local;
-pub mod mr;
-pub mod zbl;
-pub mod zbmath;
+mod arxiv;
+mod doi;
+mod isbn;
+mod jfm;
+mod local;
+mod mr;
+mod ol;
+mod zbl;
+mod zbmath;
 
 use serde::Deserialize;
 
@@ -41,9 +43,11 @@ fn lookup_provider(provider: &str) -> Provider {
     match provider {
         "arxiv" => Provider::Resolver(arxiv::get_record),
         "doi" => Provider::Resolver(doi::get_record),
+        "isbn" => Provider::Referrer(isbn::get_canonical),
         "jfm" => Provider::Referrer(jfm::get_canonical),
         "local" => Provider::Resolver(local::get_record),
         "mr" => Provider::Resolver(mr::get_record),
+        "ol" => Provider::Resolver(ol::get_record),
         "zbmath" => Provider::Resolver(zbmath::get_record),
         "zbl" => Provider::Referrer(zbl::get_canonical),
         _ => unreachable!("Invalid provider '{provider}: an invalid provider should have been caught by a call to `lookup_validator`'!"),
@@ -56,15 +60,18 @@ fn lookup_validator(provider: &str) -> Option<Validator> {
     match provider {
         "arxiv" => Some(arxiv::is_valid_id),
         "doi" => Some(doi::is_valid_id),
+        "isbn" => Some(isbn::is_valid_id),
         "jfm" => Some(jfm::is_valid_id),
         "local" => Some(local::is_valid_id),
         "mr" => Some(mr::is_valid_id),
+        "ol" => Some(ol::is_valid_id),
         "zbmath" => Some(zbmath::is_valid_id),
         "zbl" => Some(zbl::is_valid_id),
         _ => None,
     }
 }
 
+#[derive(Debug, PartialEq)]
 pub enum ValidationOutcome {
     Valid,
     Normalize(String),
