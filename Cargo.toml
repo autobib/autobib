@@ -27,7 +27,7 @@ etcetera = "0.8"
 itertools = "0.13"
 memchr = "2.7"
 nonempty = "0.10"
-nucleo-picker = "0.6"
+nucleo-picker = "0.8"
 quick-xml = { version = "0.37", features = ["serialize"] }
 rapidhash = "1.1"
 regex = "1.11"
