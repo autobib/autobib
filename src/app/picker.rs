@@ -1,4 +1,4 @@
-use std::{collections::HashSet, io, path::PathBuf, thread};
+use std::{collections::HashSet, path::PathBuf, thread};
 
 use nucleo_picker::{Picker, Render};
 use walkdir::{DirEntry, WalkDir};
@@ -6,7 +6,6 @@ use walkdir::{DirEntry, WalkDir};
 use crate::{
     db::{state::RowData, EntryData, RecordDatabase},
     path_hash::PathHash,
-    record::RemoteId,
 };
 
 pub fn choose_attachment_path<F: FnMut(&std::path::Path) -> bool + Send + 'static>(
@@ -15,9 +14,9 @@ pub fn choose_attachment_path<F: FnMut(&std::path::Path) -> bool + Send + 'stati
     entry_type: bool,
     attachment_root: PathBuf,
     mut filter: F,
-) -> Result<Option<Vec<DirEntry>>, io::Error> {
+) -> Picker<AttachmentData, FieldFilterRenderer> {
     // initialize picker
-    let mut picker = Picker::new(FieldFilterRenderer {
+    let picker = Picker::new(FieldFilterRenderer {
         fields_to_search,
         separator: " ~ ",
         entry_type,
@@ -52,8 +51,7 @@ pub fn choose_attachment_path<F: FnMut(&std::path::Path) -> bool + Send + 'stati
         })
     });
 
-    // get the selection
-    Ok(picker.pick()?.map(|data| data.attachments.clone()))
+    picker
 }
 
 /// Open an interactive prompt for the user to select a record.
@@ -61,9 +59,9 @@ pub fn choose_canonical_id(
     mut record_db: RecordDatabase,
     fields_to_search: HashSet<String>,
     entry_type: bool,
-) -> Result<Option<RemoteId>, io::Error> {
+) -> Picker<RowData, FieldFilterRenderer> {
     // initialize picker
-    let mut picker = Picker::new(FieldFilterRenderer {
+    let picker = Picker::new(FieldFilterRenderer {
         fields_to_search,
         separator: " ~ ",
         entry_type,
@@ -73,13 +71,12 @@ pub fn choose_canonical_id(
     let injector = picker.injector();
     thread::spawn(move || record_db.inject_all_records(injector));
 
-    // get the selection
-    Ok(picker.pick()?.map(|row_data| row_data.canonical.clone()))
+    picker
 }
 
-struct AttachmentData {
-    row_data: RowData,
-    attachments: Vec<DirEntry>,
+pub struct AttachmentData {
+    pub row_data: RowData,
+    pub attachments: Vec<DirEntry>,
 }
 
 impl Render<AttachmentData> for FieldFilterRenderer {
@@ -92,7 +89,7 @@ impl Render<AttachmentData> for FieldFilterRenderer {
 
 /// Given a set of allowed fields renders those fields which are present in the
 /// data in alphabetical order, separated by the `separator`.
-struct FieldFilterRenderer {
+pub struct FieldFilterRenderer {
     fields_to_search: HashSet<String>,
     separator: &'static str,
     entry_type: bool,

@@ -285,25 +285,27 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                 fields.iter().map(|f| f.to_lowercase()).collect();
 
             if with_attachment {
-                if let Some(dir_entries) = choose_attachment_path(
+                let mut picker = choose_attachment_path(
                     record_db,
                     fields_to_search,
                     entry_type,
                     get_attachment_root(&data_dir, cli.attachments_dir)?,
                     Path::is_file,
-                )? {
-                    for entry in dir_entries {
-                        println!("{}", entry.path().display());
+                );
+                match picker.pick()? {
+                    Some(data) => {
+                        for entry in data.attachments.iter() {
+                            println!("{}", entry.path().display());
+                        }
                     }
-                } else {
-                    error!("No item selected.");
+
+                    None => error!("No item selected."),
                 }
             } else {
-                // we search all records for the canonical id
-                if let Some(res) = choose_canonical_id(record_db, fields_to_search, entry_type)? {
-                    println!("{res}");
-                } else {
-                    error!("No item selected.");
+                let mut picker = choose_canonical_id(record_db, fields_to_search, entry_type);
+                match picker.pick()? {
+                    Some(row_data) => println!("{}", row_data.canonical),
+                    None => error!("No item selected."),
                 }
             }
         }
