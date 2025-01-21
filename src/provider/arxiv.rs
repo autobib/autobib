@@ -112,7 +112,7 @@ struct ArxivEntry {
     id: String,
     created: NaiveDate,
     updated: Option<NaiveDate>,
-    license: String,
+    license: Option<String>,
     doi: Option<String>,
     authors: ArxivAuthorList,
     title: String,
