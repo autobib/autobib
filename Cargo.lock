@@ -192,6 +192,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.11",
  "toml",
+ "walkdir",
 ]
 
 [[package]]

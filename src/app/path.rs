@@ -15,15 +15,14 @@ use crate::{
     record::{get_remote_response_recursive, RecursiveRemoteResponse, RemoteId},
 };
 
-/// Obtain the attachment directory corresponding to the provided citation key, with automatic
-/// record retrieval.
-pub fn get_attachment_dir(
-    canonical: &RemoteId,
+/// Get the attachment root directory, either as a default from the data directory or using the
+/// user provided value.
+pub fn get_attachment_root(
     data_dir: &Path,
     default_attachments_dir: Option<PathBuf>,
 ) -> Result<PathBuf, anyhow::Error> {
     // Initialize the file directory path
-    let mut attachments_dir = if let Some(file_dir) = default_attachments_dir {
+    Ok(if let Some(file_dir) = default_attachments_dir {
         // at a user-provided path
         info!(
             "Using user-provided file directory '{}'",
@@ -39,11 +38,19 @@ pub fn get_attachment_dir(
         );
 
         default_attachments_path
-    };
+    })
+}
 
-    canonical.extend_attachments_path(&mut attachments_dir);
-
-    Ok(attachments_dir)
+/// Obtain the attachment directory corresponding to the provided citation key, with automatic
+/// record retrieval.
+pub fn get_attachment_dir(
+    canonical: &RemoteId,
+    data_dir: &Path,
+    default_attachments_dir: Option<PathBuf>,
+) -> Result<PathBuf, anyhow::Error> {
+    let mut attachments_root = get_attachment_root(data_dir, default_attachments_dir)?;
+    canonical.extend_attachments_path(&mut attachments_root);
+    Ok(attachments_root)
 }
 
 /// Either obtain data from a `.bib` file at the provided path, or look up data from the
