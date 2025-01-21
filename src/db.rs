@@ -406,24 +406,36 @@ impl RecordDatabase {
         }
     }
 
-    /// Send the contents of the `Records` table to a [`Nucleo`](`nucleo_picker::nucleo::Nucleo`)
-    /// instance via its [`Injector`].
+    /// Send the contents of the `Records` table to a [`Picker`](`nucleo_picker::Picker`)
+    /// via its [`Injector`].
     ///
-    /// The `render_row` argument is a closure which accepts a row from the Records table, which
-    /// consists of the [`RawRecordData`] along with a reference to the corresponding `CanonicalId`
-    /// and the time it was last modified. The return type is used as the search string for the
-    /// corresponding [`Nucleo`](`nucleo_picker::nucleo::Nucleo`) instance.
-    ///
-    /// Note, for instance, that [`String`] implements [`Into<Utf32String>`].
+    /// This is a convenience wrapper around [`Self::inject_records`] which simply sends all row data
+    /// to the picker without filtering or mapping.
     pub fn inject_all_records<R: Render<RowData>>(
         &mut self,
         injector: Injector<RowData, R>,
+    ) -> Result<(), rusqlite::Error> {
+        self.inject_records(injector, Some)
+    }
+
+    /// Send the contents of the `Records` table to a [`Picker`](`nucleo_picker::Picker`)
+    /// via its [`Injector`].
+    ///
+    /// The provided `filter_map` closure plays a similar role to [`Iterator::filter_map`]
+    /// by transforming a [`RowData`] into the picker item type, with the option to exclude
+    /// the item from being sent to the matcher entirely by returning [`None`].
+    pub fn inject_records<T, F: FnMut(RowData) -> Option<T>, R: Render<T>>(
+        &mut self,
+        injector: Injector<T, R>,
+        mut filter_map: F,
     ) -> Result<(), rusqlite::Error> {
         debug!("Sending all database records to an injector.");
         let mut retriever = self.conn.prepare(sql::get_all_records())?;
 
         for res in retriever.query_map([], |row| RowData::try_from(row))? {
-            injector.push(res?);
+            if let Some(data) = filter_map(res?) {
+                injector.push(data);
+            }
         }
 
         Ok(())

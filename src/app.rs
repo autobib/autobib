@@ -39,8 +39,11 @@ use crate::{
 use self::{
     cli::{AliasCommand, InfoReportType, UpdateMode, UtilCommand},
     edit::{edit_record_and_update, merge_record_data},
-    path::{data_from_path_or_default, data_from_path_or_remote, get_attachment_dir},
-    picker::choose_canonical_id,
+    path::{
+        data_from_path_or_default, data_from_path_or_remote, get_attachment_dir,
+        get_attachment_root,
+    },
+    picker::{choose_attachment_path, choose_canonical_id},
     retrieve::{filter_and_deduplicate_by_canonical, retrieve_and_validate_entries},
     write::output_entries,
 };
@@ -269,7 +272,11 @@ pub fn run_cli(cli: Cli) -> Result<()> {
             }
             row.commit()?;
         }
-        Command::Find { fields } => {
+        Command::Find {
+            fields,
+            entry_type,
+            with_attachment,
+        } => {
             if cli.no_interactive {
                 bail!("`autobib find` cannot run in non-interactive mode");
             }
@@ -277,10 +284,27 @@ pub fn run_cli(cli: Cli) -> Result<()> {
             let fields_to_search: HashSet<String> =
                 fields.iter().map(|f| f.to_lowercase()).collect();
 
-            if let Some(res) = choose_canonical_id(record_db, fields_to_search)? {
-                println!("{res}");
+            if with_attachment {
+                if let Some(dir_entries) = choose_attachment_path(
+                    record_db,
+                    fields_to_search,
+                    entry_type,
+                    get_attachment_root(&data_dir, cli.attachments_dir)?,
+                    Path::is_file,
+                )? {
+                    for entry in dir_entries {
+                        println!("{}", entry.path().display());
+                    }
+                } else {
+                    error!("No item selected.");
+                }
             } else {
-                error!("No item selected.");
+                // we search all records for the canonical id
+                if let Some(res) = choose_canonical_id(record_db, fields_to_search, entry_type)? {
+                    println!("{res}");
+                } else {
+                    error!("No item selected.");
+                }
             }
         }
         Command::Get {

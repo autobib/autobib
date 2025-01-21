@@ -149,9 +149,15 @@ pub enum Command {
     /// Open an interactive picker to search for a given citation key. In order to choose the
     /// fields against which to search, use the `--fields` option.
     Find {
-        /// Fields to search (e.g. author, title), delimited by a comma.
+        /// Fields to search (e.g. author, title), delimited by commas.
         #[arg(short, long, value_delimiter = ',', default_value = "author,title")]
         fields: Vec<String>,
+        /// Display entry type for searching.
+        #[arg(short, long)]
+        entry_type: bool,
+        /// Only list records with at least one attachment.
+        #[arg(short = 'A', long)]
+        with_attachment: bool,
     },
     /// Retrieve records given citation keys.
     Get {
