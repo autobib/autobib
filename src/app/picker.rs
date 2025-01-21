@@ -8,6 +8,7 @@ use crate::{
     path_hash::PathHash,
 };
 
+/// Returns a picker which returns the record attachment data associated with the picked item.
 pub fn choose_attachment_path<F: FnMut(&std::path::Path) -> bool + Send + 'static>(
     mut record_db: RecordDatabase,
     fields_to_search: HashSet<String>,
@@ -54,7 +55,7 @@ pub fn choose_attachment_path<F: FnMut(&std::path::Path) -> bool + Send + 'stati
     picker
 }
 
-/// Open an interactive prompt for the user to select a record.
+/// Returns a picker which returns the record data associated with the picked item.
 pub fn choose_canonical_id(
     mut record_db: RecordDatabase,
     fields_to_search: HashSet<String>,
@@ -74,21 +75,16 @@ pub fn choose_canonical_id(
     picker
 }
 
+/// A wrapper around a [`RowData`] which also contains a list of attachments associated with the
+/// record.
 pub struct AttachmentData {
     pub row_data: RowData,
     pub attachments: Vec<DirEntry>,
 }
 
-impl Render<AttachmentData> for FieldFilterRenderer {
-    type Str<'a> = String;
-
-    fn render<'a>(&self, item: &'a AttachmentData) -> Self::Str<'a> {
-        self.render(&item.row_data)
-    }
-}
-
-/// Given a set of allowed fields renders those fields which are present in the
-/// data in alphabetical order, separated by the `separator`.
+/// Given a set of allowed fields, renders those fields which are present in the
+/// data in alphabetical order, separated by the `separator`. If `entry_type` is `true`, also
+/// render the entry type as a prefix, for example `article: `.
 pub struct FieldFilterRenderer {
     fields_to_search: HashSet<String>,
     separator: &'static str,
@@ -119,5 +115,13 @@ impl Render<RowData> for FieldFilterRenderer {
             output.push_str(val);
         }
         output
+    }
+}
+
+impl Render<AttachmentData> for FieldFilterRenderer {
+    type Str<'a> = String;
+
+    fn render<'a>(&self, item: &'a AttachmentData) -> Self::Str<'a> {
+        self.render(&item.row_data)
     }
 }

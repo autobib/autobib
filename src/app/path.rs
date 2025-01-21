@@ -41,8 +41,7 @@ pub fn get_attachment_root(
     })
 }
 
-/// Obtain the attachment directory corresponding to the provided citation key, with automatic
-/// record retrieval.
+/// Get the attachment directory corresponding to the provided citation key.
 pub fn get_attachment_dir(
     canonical: &RemoteId,
     data_dir: &Path,
