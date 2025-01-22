@@ -1,12 +1,35 @@
 use std::{collections::HashSet, path::PathBuf, thread};
 
-use nucleo_picker::{Picker, Render};
+use nucleo_picker::{Picker, PickerOptions, Render};
 use walkdir::{DirEntry, WalkDir};
 
 use crate::{
     db::{state::RowData, EntryData, RecordDatabase},
     path_hash::PathHash,
 };
+
+pub struct DirEntryRenderer;
+
+impl Render<DirEntry> for DirEntryRenderer {
+    type Str<'a> = std::borrow::Cow<'a, str>;
+
+    fn render<'a>(&self, item: &'a DirEntry) -> Self::Str<'a> {
+        item.path().to_string_lossy()
+    }
+}
+
+pub fn choose_attachment<'a>(
+    attachments: impl IntoIterator<Item = &'a DirEntry>,
+) -> Picker<DirEntry, DirEntryRenderer> {
+    let mut picker = PickerOptions::new()
+        .config(nucleo_picker::nucleo::Config::DEFAULT.match_paths())
+        // Use our custom renderer for a `DirEntry`
+        .picker(DirEntryRenderer);
+
+    picker.extend(attachments.into_iter().cloned());
+
+    picker
+}
 
 /// Returns a picker which returns the record attachment data associated with the picked item.
 pub fn choose_attachment_path<F: FnMut(&std::path::Path) -> bool + Send + 'static>(

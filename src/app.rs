@@ -43,7 +43,7 @@ use self::{
         data_from_path_or_default, data_from_path_or_remote, get_attachment_dir,
         get_attachment_root,
     },
-    picker::{choose_attachment_path, choose_canonical_id},
+    picker::{choose_attachment, choose_attachment_path, choose_canonical_id},
     retrieve::{filter_and_deduplicate_by_canonical, retrieve_and_validate_entries},
     write::output_entries,
 };
@@ -299,12 +299,27 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                     match picker.pick()? {
                         Some(data) => {
                             if data.attachments.len() > 1 {
+                                // if there are multiple attachments, open the picker again to
+                                // select an attachment
+                                //
+                                // unfortunately the borrow here is unavoidable since `nucleo` does
+                                // not allow passing ownership of the underlying item buffer back
+                                // to the caller when complete.
+                                let mut attachment_picker = choose_attachment(&data.attachments);
+                                match attachment_picker.pick()? {
+                                    Some(dir_entry) => {
+                                        println!("{}", dir_entry.path().display());
+                                    }
+                                    None => error!("No attachment selected."),
+                                }
                             } else {
+                                // there has to be at least one attachment since the
+                                // `choose_attachment_path` method only returns a non-empty list of
+                                // attachments
                                 println!("{}", data.attachments[0].path().display());
-                            }
+                            };
                         }
-
-                        None => error!("No item selected."),
+                        None => error!("No record selected."),
                     }
                 }
                 FindMode::CanonicalId => {
