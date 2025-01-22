@@ -37,7 +37,7 @@ use crate::{
 };
 
 use self::{
-    cli::{AliasCommand, InfoReportType, UpdateMode, UtilCommand},
+    cli::{AliasCommand, FindMode, InfoReportType, UpdateMode, UtilCommand},
     edit::{edit_record_and_update, merge_record_data},
     path::{
         data_from_path_or_default, data_from_path_or_remote, get_attachment_dir,
@@ -275,8 +275,11 @@ pub fn run_cli(cli: Cli) -> Result<()> {
         Command::Find {
             fields,
             entry_type,
-            with_attachment,
+            attachments,
+            records: id,
         } => {
+            let find_mode = FindMode::from_flags(attachments, id);
+
             if cli.no_interactive {
                 bail!("`autobib find` cannot run in non-interactive mode");
             }
@@ -284,28 +287,32 @@ pub fn run_cli(cli: Cli) -> Result<()> {
             let fields_to_search: HashSet<String> =
                 fields.iter().map(|f| f.to_lowercase()).collect();
 
-            if with_attachment {
-                let mut picker = choose_attachment_path(
-                    record_db,
-                    fields_to_search,
-                    entry_type,
-                    get_attachment_root(&data_dir, cli.attachments_dir)?,
-                    Path::is_file,
-                );
-                match picker.pick()? {
-                    Some(data) => {
-                        for entry in data.attachments.iter() {
-                            println!("{}", entry.path().display());
+            match find_mode {
+                FindMode::Attachments => {
+                    let mut picker = choose_attachment_path(
+                        record_db,
+                        fields_to_search,
+                        entry_type,
+                        get_attachment_root(&data_dir, cli.attachments_dir)?,
+                        Path::is_file,
+                    );
+                    match picker.pick()? {
+                        Some(data) => {
+                            if data.attachments.len() > 1 {
+                            } else {
+                                println!("{}", data.attachments[0].path().display());
+                            }
                         }
-                    }
 
-                    None => error!("No item selected."),
+                        None => error!("No item selected."),
+                    }
                 }
-            } else {
-                let mut picker = choose_canonical_id(record_db, fields_to_search, entry_type);
-                match picker.pick()? {
-                    Some(row_data) => println!("{}", row_data.canonical),
-                    None => error!("No item selected."),
+                FindMode::CanonicalId => {
+                    let mut picker = choose_canonical_id(record_db, fields_to_search, entry_type);
+                    match picker.pick()? {
+                        Some(row_data) => println!("{}", row_data.canonical),
+                        None => error!("No item selected."),
+                    }
                 }
             }
         }

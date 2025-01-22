@@ -52,6 +52,22 @@ pub enum InfoReportType {
 }
 
 #[derive(Debug, Copy, Clone)]
+pub enum FindMode {
+    Attachments,
+    CanonicalId,
+}
+
+impl FindMode {
+    pub fn from_flags(attachments: bool, _records: bool) -> Self {
+        if attachments {
+            FindMode::Attachments
+        } else {
+            FindMode::CanonicalId
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
 pub enum UpdateMode {
     PreferCurrent,
     PreferIncoming,
@@ -155,9 +171,12 @@ pub enum Command {
         /// Display entry type for searching.
         #[arg(short, long)]
         entry_type: bool,
-        /// Only list records with at least one attachment.
-        #[arg(short = 'A', long)]
-        with_attachment: bool,
+        /// Search record attachments and print the selected path.
+        #[arg(long, group = "find_mode")]
+        attachments: bool,
+        /// Search records and print the selected canonical identifier.
+        #[arg(long, group = "find_mode")]
+        records: bool,
     },
     /// Retrieve records given citation keys.
     Get {
