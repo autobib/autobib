@@ -305,7 +305,7 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                                 // unfortunately the borrow here is unavoidable since `nucleo` does
                                 // not allow passing ownership of the underlying item buffer back
                                 // to the caller when complete.
-                                let mut attachment_picker = choose_attachment(&data.attachments);
+                                let mut attachment_picker = choose_attachment(data);
                                 match attachment_picker.pick()? {
                                     Some(dir_entry) => {
                                         println!("{}", dir_entry.path().display());
