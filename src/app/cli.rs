@@ -172,7 +172,7 @@ pub enum Command {
         #[arg(short, long)]
         entry_type: bool,
         /// Search record attachments and print the selected path.
-        #[arg(long, group = "find_mode")]
+        #[arg(short, long, group = "find_mode")]
         attachments: bool,
         /// Search records and print the selected canonical identifier.
         #[arg(long, group = "find_mode")]
