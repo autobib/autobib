@@ -1,4 +1,8 @@
-use std::{collections::HashSet, path::PathBuf, thread};
+use std::{
+    collections::HashSet,
+    path::{Path, PathBuf},
+    thread,
+};
 
 use nucleo_picker::{Picker, PickerOptions, Render};
 use walkdir::{DirEntry, WalkDir};
@@ -8,31 +12,36 @@ use crate::{
     path_hash::PathHash,
 };
 
-pub struct DirEntryRenderer;
+pub struct DirEntryRenderer {
+    root: PathBuf,
+}
 
 impl Render<DirEntry> for DirEntryRenderer {
     type Str<'a> = std::borrow::Cow<'a, str>;
 
     fn render<'a>(&self, item: &'a DirEntry) -> Self::Str<'a> {
-        item.path().to_string_lossy()
+        item.path()
+            .strip_prefix(&self.root)
+            .expect("DirEntry was created originally from this root path")
+            .to_string_lossy()
     }
 }
 
-pub fn choose_attachment<'a>(
-    attachments: impl IntoIterator<Item = &'a DirEntry>,
-) -> Picker<DirEntry, DirEntryRenderer> {
+pub fn choose_attachment(att_data: &AttachmentData) -> Picker<DirEntry, DirEntryRenderer> {
     let mut picker = PickerOptions::new()
         .config(nucleo_picker::nucleo::Config::DEFAULT.match_paths())
         // Use our custom renderer for a `DirEntry`
-        .picker(DirEntryRenderer);
+        .picker(DirEntryRenderer {
+            root: att_data.attachment_root.clone(),
+        });
 
-    picker.extend(attachments.into_iter().cloned());
+    picker.extend(att_data.attachments.iter().cloned());
 
     picker
 }
 
 /// Returns a picker which returns the record attachment data associated with the picked item.
-pub fn choose_attachment_path<F: FnMut(&std::path::Path) -> bool + Send + 'static>(
+pub fn choose_attachment_path<F: FnMut(&Path) -> bool + Send + 'static>(
     mut record_db: RecordDatabase,
     fields_to_search: HashSet<String>,
     entry_type: bool,
@@ -49,16 +58,15 @@ pub fn choose_attachment_path<F: FnMut(&std::path::Path) -> bool + Send + 'stati
     // populate the picker from a separate thread
     let injector = picker.injector();
     thread::spawn(move || {
-        // save some alloctions by reusing the underlying buffer for the temp 'walk dir' root
-        let mut buffer = PathBuf::new();
-
         record_db.inject_records(injector, |row_data| {
             // fill the buffer with the attachment path
-            buffer.clone_from(&attachment_root);
-            row_data.canonical.extend_attachments_path(&mut buffer);
+            let mut attachment_root = attachment_root.to_path_buf();
+            row_data
+                .canonical
+                .extend_attachments_path(&mut attachment_root);
 
             // walk through all of the entries in the attachment path
-            let attachments: Vec<_> = WalkDir::new(&buffer)
+            let attachments: Vec<_> = WalkDir::new(&attachment_root)
                 .into_iter()
                 .flatten()
                 .filter(|dir_entry| filter(dir_entry.path()))
@@ -70,6 +78,7 @@ pub fn choose_attachment_path<F: FnMut(&std::path::Path) -> bool + Send + 'stati
                 Some(AttachmentData {
                     row_data,
                     attachments,
+                    attachment_root,
                 })
             }
         })
@@ -103,6 +112,7 @@ pub fn choose_canonical_id(
 pub struct AttachmentData {
     pub row_data: RowData,
     pub attachments: Vec<DirEntry>,
+    pub attachment_root: PathBuf,
 }
 
 /// Given a set of allowed fields, renders those fields which are present in the
