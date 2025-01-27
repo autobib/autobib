@@ -564,6 +564,8 @@ impl Normalize for RecordData {
             if let Some(truncate_offset) =
                 TRAILING_JOURNAL_SERIES_RE.find(journal).map(|m| m.start())
             {
+                // SAFETY: the new value is a prefix of the previous value, and the regex
+                // guarantees that it will not result in unbalanced {}
                 journal.truncate(truncate_offset);
                 return true;
             }

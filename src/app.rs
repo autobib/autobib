@@ -246,31 +246,35 @@ pub fn run_cli(cli: Cli) -> Result<()> {
             citation_key,
             normalize_whitespace,
             set_eprint,
+            strip_journal_series,
         } => {
             let cfg = config::load(&config_path, missing_ok)?;
-            let (mut record, row) = get_record_row(&mut record_db, citation_key, &client, &cfg)?
-                .exists_or_commit_null("Cannot edit")?;
+            let nl = crate::normalize::Normalization {
+                normalize_whitespace,
+                set_eprint,
+                strip_journal_series,
+            };
 
-            if normalize_whitespace || !set_eprint.is_empty() {
-                let mut data: RecordData = (&record.data).into();
-                if normalize_whitespace {
-                    data.normalize_whitespace();
+            for key in citation_key {
+                let (mut record, row) = get_record_row(&mut record_db, key, &client, &cfg)?
+                    .exists_or_commit_null("Cannot edit")?;
+
+                if !nl.is_identity() {
+                    let mut data: RecordData = (&record.data).into();
+                    if data.normalize(&nl) {
+                        let new_data = (&data).into();
+                        row.save_to_changelog()?;
+                        row.update_row_data(&new_data)?;
+
+                        record.data = new_data;
+                    }
                 }
-                if !set_eprint.is_empty() {
-                    data.set_eprint(set_eprint.iter());
+
+                if !cli.no_interactive {
+                    edit_record_and_update(&row, record)?;
                 }
-
-                let new_data = (&data).into();
-                row.save_to_changelog()?;
-                row.update_row_data(&new_data)?;
-
-                record.data = new_data;
+                row.commit()?;
             }
-
-            if !cli.no_interactive {
-                edit_record_and_update(&row, record)?;
-            }
-            row.commit()?;
         }
         Command::Find {
             fields,

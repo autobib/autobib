@@ -8,11 +8,19 @@ use serde::Deserialize;
 #[serde(deny_unknown_fields)]
 pub struct Normalization {
     #[serde(default)]
-    normalize_whitespace: bool,
+    pub normalize_whitespace: bool,
     #[serde(default)]
-    set_eprint: Vec<String>,
+    pub set_eprint: Vec<String>,
     #[serde(default)]
-    strip_journal_series: bool,
+    pub strip_journal_series: bool,
+}
+
+impl Normalization {
+    /// Returns `true` if the normalization is guaranteed to do nothing. Note that the
+    /// normalization, when applied to a record, may still not result in any changes.
+    pub fn is_identity(&self) -> bool {
+        !self.normalize_whitespace && !self.strip_journal_series && self.set_eprint.is_empty()
+    }
 }
 
 /// Types which can be normalized by the operations specified in a [`Normalization`].
@@ -37,16 +45,19 @@ pub trait Normalize {
 
     /// Apply the given normalizations.
     #[inline]
-    fn normalize(&mut self, nl: &Normalization) {
+    fn normalize(&mut self, nl: &Normalization) -> bool {
+        let mut changed = false;
         if nl.normalize_whitespace {
-            self.normalize_whitespace();
+            changed |= self.normalize_whitespace();
         }
 
-        self.set_eprint(nl.set_eprint.iter());
+        changed |= self.set_eprint(nl.set_eprint.iter());
 
         if nl.strip_journal_series {
-            self.strip_journal_series();
+            changed |= self.strip_journal_series();
         }
+
+        changed
     }
 }
 
