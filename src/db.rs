@@ -224,6 +224,11 @@ impl RecordDatabase {
         }
     }
 
+    /// Execute [sqlite VACUUM](https://www.sqlite.org/lang_vacuum.html).
+    pub fn vacuum(&mut self) -> Result<(), rusqlite::Error> {
+        self.conn.execute("VACUUM", ()).map(|_| ())
+    }
+
     /// Register a regex callback for use by the SQLITE `regexp` command.
     fn add_regexp_function(conn: &Connection) -> Result<(), rusqlite::Error> {
         conn.create_scalar_function(

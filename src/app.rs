@@ -705,6 +705,9 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                 info!("Validating configuration.");
                 config::validate(&config_path)?;
             }
+            UtilCommand::Optimize => {
+                record_db.vacuum()?;
+            }
             UtilCommand::Evict {
                 regex,
                 before,
