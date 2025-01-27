@@ -338,8 +338,21 @@ impl RemoteId {
     /// 4. [`validate_provider_sub_id`] is valid.
     #[inline]
     pub(crate) unsafe fn from_string_unchecked(full_id: String) -> Self {
-        let provider_len = full_id.find(':').unwrap();
-        Self::new_unchecked(full_id, provider_len)
+        Self::from_alias_or_remote_id_unchecked(full_id).unwrap()
+    }
+
+    /// Construct a new [`RemoteId`] from the given identifier which might be an alias.
+    ///
+    /// # Safety
+    /// The caller is required to guarantee that either the identifier is an alias, or:
+    /// 1. The `full_id` has a non-empty `provider` part, i.e. it does not start with ':';
+    /// 2. The `full_id` has a non-empty `sub_id` part, i.e. the first ':' is not at the end; and
+    /// 3. [`validate_provider_sub_id`] is valid.
+    #[inline]
+    pub(crate) fn from_alias_or_remote_id_unchecked(full_id: String) -> Option<Self> {
+        full_id
+            .find(':')
+            .map(|provider_len| Self::new_unchecked(full_id, provider_len))
     }
 
     /// Get the `provider` part of the remote id.

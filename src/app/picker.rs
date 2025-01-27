@@ -4,6 +4,7 @@ use std::{
     thread,
 };
 
+use nonempty::NonEmpty;
 use nucleo_picker::{Picker, PickerOptions, Render};
 use walkdir::{DirEntry, WalkDir};
 
@@ -66,21 +67,17 @@ pub fn choose_attachment_path<F: FnMut(&Path) -> bool + Send + 'static>(
                 .extend_attachments_path(&mut attachment_root);
 
             // walk through all of the entries in the attachment path
-            let attachments: Vec<_> = WalkDir::new(&attachment_root)
-                .into_iter()
-                .flatten()
-                .filter(|dir_entry| filter(dir_entry.path()))
-                .collect();
-
-            if attachments.is_empty() {
-                None
-            } else {
-                Some(AttachmentData {
-                    row_data,
-                    attachments,
-                    attachment_root,
-                })
-            }
+            NonEmpty::collect(
+                WalkDir::new(&attachment_root)
+                    .into_iter()
+                    .flatten()
+                    .filter(|dir_entry| filter(dir_entry.path())),
+            )
+            .map(|attachments| AttachmentData {
+                row_data,
+                attachments,
+                attachment_root,
+            })
         })
     });
 
@@ -92,7 +89,10 @@ pub fn choose_canonical_id(
     mut record_db: RecordDatabase,
     fields_to_search: HashSet<String>,
     entry_type: bool,
-) -> Picker<RowData, FieldFilterRenderer> {
+) -> (
+    Picker<RowData, FieldFilterRenderer>,
+    thread::JoinHandle<Result<RecordDatabase, rusqlite::Error>>,
+) {
     // initialize picker
     let picker = Picker::new(FieldFilterRenderer {
         fields_to_search,
@@ -102,16 +102,23 @@ pub fn choose_canonical_id(
 
     // populate the picker from a separate thread
     let injector = picker.injector();
-    thread::spawn(move || record_db.inject_all_records(injector));
+    let handle = thread::spawn(move || {
+        // TODO: to better support cancellation here, we could use an Arc<AtomicBool>
+        // cancellation token; paginate the select using `SELECT ... LIMIT ...` with some sane
+        // page size (maybe 10k? this should take <1ms per page), and then check for cancellation
+        // between pages.
+        record_db.inject_all_records(injector)?;
+        Ok(record_db)
+    });
 
-    picker
+    (picker, handle)
 }
 
 /// A wrapper around a [`RowData`] which also contains a list of attachments associated with the
 /// record.
 pub struct AttachmentData {
     pub row_data: RowData,
-    pub attachments: Vec<DirEntry>,
+    pub attachments: NonEmpty<DirEntry>,
     pub attachment_root: PathBuf,
 }
 

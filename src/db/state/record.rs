@@ -108,12 +108,28 @@ impl State<'_, RecordRow> {
 
     /// Get every key in the `CitationKeys` table which references the [`RecordRow`].
     pub fn get_referencing_keys(&self) -> Result<Vec<String>, rusqlite::Error> {
+        self.get_referencing_keys_impl(Some)
+    }
+
+    /// Get every remote id in the `CitationKeys` table which references the [`RecordRow`].
+    pub fn get_referencing_remote_ids(&self) -> Result<Vec<RemoteId>, rusqlite::Error> {
+        self.get_referencing_keys_impl(RemoteId::from_alias_or_remote_id_unchecked)
+    }
+
+    /// Get a transformed version of every key in the `CitationKeys` table which references
+    /// the [`RecordRow`] for which the provided `filter_map` does not return `None`.
+    fn get_referencing_keys_impl<T, F: FnMut(String) -> Option<T>>(
+        &self,
+        mut filter_map: F,
+    ) -> Result<Vec<T>, rusqlite::Error> {
         debug!("Getting referencing keys for '{}'.", self.row_id());
         let mut selector = self.prepare(sql::get_all_referencing_citation_keys())?;
         let rows = selector.query_map((self.row_id(),), |row| row.get(0))?;
         let mut referencing = Vec::with_capacity(1);
         for name_res in rows {
-            referencing.push(name_res?);
+            if let Some(mapped) = filter_map(name_res?) {
+                referencing.push(mapped);
+            }
         }
         Ok(referencing)
     }
