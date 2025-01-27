@@ -151,14 +151,17 @@ pub enum Command {
     /// `--set-eprint` accepts a list of field keys, and sets the "eprint" and
     ///   "eprinttype" bibtex fields from the first field key which is present in the record.
     Edit {
-        /// The citation key to edit.
-        citation_key: RecordId,
+        /// The citation key(s) to edit.
+        citation_key: Vec<RecordId>,
         /// Normalize whitespace.
         #[arg(long)]
         normalize_whitespace: bool,
         /// Set "eprint" and "eprinttype" BibTeX fields from provided fields.
         #[arg(long, value_delimiter = ',')]
         set_eprint: Vec<String>,
+        /// Strip trailing journal series
+        #[arg(long)]
+        strip_journal_series: bool,
     },
     /// Search for a citation key.
     ///
