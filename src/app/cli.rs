@@ -337,6 +337,8 @@ pub enum UtilCommand {
         #[arg(short, long)]
         fix: bool,
     },
+    /// Optimize database to (potentially) reduce storage size.
+    Optimize,
     /// Clear caches which match all of the provided conditions.
     Evict {
         /// Clear cached items with citation keys matching this regex.
