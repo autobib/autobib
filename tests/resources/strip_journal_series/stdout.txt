@@ -1,0 +1,12 @@
+@article{zbl:1337.28015,
+  author = {Hochman, Michael},
+  doi = {10.4007/annals.2014.180.2.7},
+  journal = {Ann. Math.},
+  language = {English},
+  pages = {773--822},
+  title = {On self-similar sets with overlaps and inverse theorems for entropy},
+  volume = {180},
+  year = {2014},
+  zbl = {1337.28015},
+  zbmath = {06346461},
+}

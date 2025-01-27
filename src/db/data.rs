@@ -4,9 +4,13 @@
 //!
 //! The data consists of the entry type (e.g. `article`) as well as the field keys and values (e.g. `title =
 //! {Title}`).
-use std::{borrow::Borrow, cmp::PartialEq, collections::BTreeMap, iter::Iterator, str::from_utf8};
+use std::{
+    borrow::Borrow, cmp::PartialEq, collections::BTreeMap, iter::Iterator, str::from_utf8,
+    sync::LazyLock,
+};
 
 use delegate::delegate;
+use regex::Regex;
 use serde_bibtex::token::is_balanced;
 
 use crate::{
@@ -511,6 +515,9 @@ impl EntryData for &RecordData {
     }
 }
 
+static TRAILING_JOURNAL_SERIES_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\s*\([1-9][0-9]*\)$").unwrap());
+
 impl Normalize for RecordData {
     fn set_eprint<Q: AsRef<str>>(&mut self, keys: std::slice::Iter<'_, Q>) -> bool {
         for key in keys {
@@ -550,6 +557,18 @@ impl Normalize for RecordData {
         }
 
         updated
+    }
+
+    fn strip_journal_series(&mut self) -> bool {
+        if let Some(journal) = self.fields.get_mut("journal") {
+            if let Some(truncate_offset) =
+                TRAILING_JOURNAL_SERIES_RE.find(journal).map(|m| m.start())
+            {
+                journal.truncate(truncate_offset);
+                return true;
+            }
+        }
+        false
     }
 }
 

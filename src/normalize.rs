@@ -11,6 +11,8 @@ pub struct Normalization {
     normalize_whitespace: bool,
     #[serde(default)]
     set_eprint: Vec<String>,
+    #[serde(default)]
+    strip_journal_series: bool,
 }
 
 /// Types which can be normalized by the operations specified in a [`Normalization`].
@@ -30,6 +32,9 @@ pub trait Normalize {
     /// respecting whitespace which is explicitly escaped by `\`.
     fn normalize_whitespace(&mut self) -> bool;
 
+    /// Strip trailing numbered series indicators, such as the (2) in `Ann. Math. (2)`
+    fn strip_journal_series(&mut self) -> bool;
+
     /// Apply the given normalizations.
     #[inline]
     fn normalize(&mut self, nl: &Normalization) {
@@ -38,6 +43,10 @@ pub trait Normalize {
         }
 
         self.set_eprint(nl.set_eprint.iter());
+
+        if nl.strip_journal_series {
+            self.strip_journal_series();
+        }
     }
 }
 

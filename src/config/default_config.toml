@@ -13,6 +13,10 @@ normalize_whitespace = false
 # `eprinttype = {doi}`, overwriting existing values of `eprint` and `eprinttype`.
 set_eprint = []
 
+# Whether or not to strip trailing numbered series indicators, such as the (2) in
+# "Ann. Math. (2)"
+strip_journal_series = false
+
 # Automatically convert aliases to provider:sub_id pairs, based on regex match rules.
 [alias_transform]
 # A list of [pattern, provider] pairs. The first capture group which matches is used
