@@ -20,6 +20,8 @@ pub use validate::report_config_errors as validate;
 #[serde(deny_unknown_fields)]
 struct RawConfig {
     #[serde(default)]
+    pub preferred_providers: Vec<String>,
+    #[serde(default)]
     pub alias_transform: RawAutoAlias,
     #[serde(default)]
     pub on_insert: Normalization,
@@ -66,6 +68,7 @@ impl RawConfig {
 
 #[derive(Debug)]
 pub struct Config<F> {
+    pub preferred_providers: Vec<String>,
     pub alias_transform: LazyAliasTransform<F>,
     pub on_insert: Normalization,
 }
@@ -91,6 +94,7 @@ pub fn load<P: AsRef<Path>>(
     missing_ok: bool,
 ) -> Result<Config<impl FnOnce() -> Vec<(Regex, String)>>, Error> {
     let RawConfig {
+        preferred_providers,
         alias_transform: RawAutoAlias {
             rules,
             create_alias,
@@ -111,6 +115,7 @@ pub fn load<P: AsRef<Path>>(
     };
 
     Ok(Config {
+        preferred_providers,
         alias_transform,
         on_insert,
     })

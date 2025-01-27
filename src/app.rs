@@ -281,9 +281,9 @@ pub fn run_cli(cli: Cli) -> Result<()> {
             fields,
             entry_type,
             attachments,
-            records: id,
+            records,
         } => {
-            let find_mode = FindMode::from_flags(attachments, id);
+            let find_mode = FindMode::from_flags(attachments, records);
 
             if cli.no_interactive {
                 bail!("`autobib find` cannot run in non-interactive mode");
@@ -318,19 +318,46 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                                     None => error!("No attachment selected."),
                                 }
                             } else {
-                                // there has to be at least one attachment since the
-                                // `choose_attachment_path` method only returns a non-empty list of
-                                // attachments
-                                println!("{}", data.attachments[0].path().display());
+                                println!("{}", data.attachments.first().path().display());
                             };
                         }
                         None => error!("No record selected."),
                     }
                 }
                 FindMode::CanonicalId => {
-                    let mut picker = choose_canonical_id(record_db, fields_to_search, entry_type);
+                    let (mut picker, handle) =
+                        choose_canonical_id(record_db, fields_to_search, entry_type);
                     match picker.pick()? {
-                        Some(row_data) => println!("{}", row_data.canonical),
+                        Some(row_data) => {
+                            let cfg = config::load(&config_path, missing_ok)?;
+                            if !cfg.preferred_providers.is_empty() {
+                                // get a key from the preferred provider if possible
+                                let mut record_db =
+                                    handle.join().expect("Thread should not have panicked")?;
+                                if let Some(row) = record_db
+                                    .state_from_remote_id(&row_data.canonical)?
+                                    .exists()
+                                {
+                                    // try to find a referencing key with the expected provider
+                                    let referencing_ids = row.get_referencing_remote_ids()?;
+                                    for provider in cfg.preferred_providers {
+                                        if let Some(remote_id) = referencing_ids
+                                            .iter()
+                                            .find(|id| id.provider() == provider)
+                                        {
+                                            println!("{remote_id}");
+                                            return Ok(());
+                                        }
+                                    }
+                                } else {
+                                    bail!("Record deleted while picker was running!");
+                                };
+
+                                // if there are no preferred providers or none matched, just print
+                                // the canonical identifier
+                                println!("{}", row_data.canonical);
+                            }
+                        }
                         None => error!("No item selected."),
                     }
                 }
