@@ -1016,6 +1016,25 @@ fn test_normalize() -> Result<()> {
 }
 
 #[test]
+fn test_strip_journal_series() -> Result<()> {
+    let s = TestState::init()?;
+
+    s.set_config(Path::new(
+        "tests/resources/strip_journal_series/config.toml",
+    ))?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["get", "zbl:1337.28015"]);
+    cmd.assert().success().stdout(
+        predicate::path::eq_file(Path::new("tests/resources/strip_journal_series/stdout.txt"))
+            .utf8()
+            .unwrap(),
+    );
+
+    s.close()
+}
+
+#[test]
 fn test_auto_alias() -> Result<()> {
     let s = TestState::init()?;
 

@@ -1,0 +1,2 @@
+[on_insert]
+strip_journal_series = true
