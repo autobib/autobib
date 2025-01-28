@@ -42,6 +42,14 @@ pub trait EntryData: PartialEq {
 
     /// Get the `entry_type` as a string slice.
     fn entry_type(&self) -> &str;
+
+    /// Get the value of the field.
+    ///
+    /// The default implementation iterates over all fields and returns the first match.
+    fn get_field(&self, field_name: &str) -> Option<&str> {
+        self.fields()
+            .find_map(|(key, val)| if field_name == key { Some(val) } else { None })
+    }
 }
 
 /// A raw binary representation of the field key and fields of a BibTeX entry.
@@ -512,6 +520,10 @@ impl EntryData for &RecordData {
 
     fn entry_type(&self) -> &str {
         &self.entry_type
+    }
+
+    fn get_field(&self, field_name: &str) -> Option<&str> {
+        self.get(field_name)
     }
 }
 

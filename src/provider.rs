@@ -17,7 +17,7 @@ use serde::Deserialize;
 
 // re-imports exposed to provider implementations
 use crate::{
-    db::RecordData,
+    db::{EntryData, RecordData},
     error::{ProviderError, RecordDataError},
     HttpClient, RemoteId,
 };
@@ -98,6 +98,62 @@ pub enum ValidationOutcomeExtended {
     InvalidProvider,
     /// The sub_id is invalid for the given provider.
     InvalidSubId,
+}
+
+/// Convert a bibtex field name whose value may contain an identifier for the returned provider.
+#[inline]
+fn field_name_to_provider(field_name: &str) -> Option<&'static str> {
+    match field_name {
+        "arxiv" => Some("arxiv"),
+        "doi" => Some("doi"),
+        "mrnumber" => Some("mr"),
+        "zbl" => Some("zbl"),
+        "zbmath" => Some("zbmath"),
+        _ => None,
+    }
+}
+
+/// Given a provider and sub-id, push to the provided buffer if the `provider` is accepted by
+/// `filter` and the `provider:sub_id` is valid.
+#[inline]
+fn push_remote_id_if_valid<F: FnOnce(&str) -> bool, G: FnOnce(RemoteId)>(
+    provider: &str,
+    sub_id: &str,
+    filter: F,
+    push: G,
+) {
+    if filter(provider) {
+        if let Ok(remote_id) = RemoteId::from_parts(provider, sub_id) {
+            push(remote_id);
+        }
+    }
+}
+
+/// Determine candidates for valid remote identifiers from the provided bibtex data. Each
+/// provider is passed to `filter`, and is only appended if `filter` returns `true`. This enables
+/// skipping sub-id validation for undesired providers.
+///
+/// The `push` closure is called on each resulting [`RemoteId`].
+///
+/// Note that the identifiers are determined based on heuristics and may not be valid.
+pub fn determine_remote_id_candidates<D: EntryData, F: FnMut(&str) -> bool, G: FnMut(RemoteId)>(
+    data: &D,
+    mut filter: F,
+    mut push: G,
+) {
+    // first determine candidates using provider-specific fields
+    for (name, value) in data.fields() {
+        if let Some(provider) = field_name_to_provider(name) {
+            push_remote_id_if_valid(provider, value, &mut filter, &mut push);
+        }
+    }
+
+    // next, determine candidates using the `eprint` and `eprinttype` fields
+    if let Some(provider) = data.get_field("eprinttype") {
+        if let Some(sub_id) = data.get_field("eprint") {
+            push_remote_id_if_valid(provider, sub_id, &mut filter, &mut push);
+        }
+    }
 }
 
 /// Check that a given provider and sub_id are valid.
