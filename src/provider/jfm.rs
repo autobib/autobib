@@ -2,7 +2,6 @@ use std::sync::LazyLock;
 
 use regex::{bytes::Regex as BytesRegex, Regex};
 use reqwest::StatusCode;
-use serde::Deserialize;
 
 use super::{HttpClient, ProviderError, RemoteId, ValidationOutcome};
 
@@ -13,11 +12,6 @@ static BIBTEX_LINK_RE: LazyLock<BytesRegex> =
 
 pub fn is_valid_id(id: &str) -> ValidationOutcome {
     JFM_IDENTIFIER_RE.is_match(id).into()
-}
-
-#[derive(Debug, Deserialize, PartialEq)]
-struct OnlyEntryKey<'r> {
-    entry_key: &'r str,
 }
 
 pub fn get_canonical(id: &str, client: &HttpClient) -> Result<Option<RemoteId>, ProviderError> {

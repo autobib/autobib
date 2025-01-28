@@ -85,6 +85,37 @@ fn get() -> Result<()> {
     s.close()
 }
 
+/// Check that `autobib get --append` returns what is expected.
+#[test]
+fn get_append() -> Result<()> {
+    let s = TestState::init()?;
+
+    let output = NamedTempFile::new("out.bib")?;
+    output.write_str("@preprint{arxiv:1212.1873,}\n")?;
+
+    let mut cmd = s.cmd()?;
+
+    cmd.args([
+        "get",
+        "zbl:1337.28015",
+        "arxiv:1212.1873",
+        "--out",
+        &output.to_string_lossy(),
+        "--append",
+    ]);
+
+    cmd.assert().success().stderr(predicate::str::is_empty());
+
+    let predicate_file =
+        predicate::path::eq_file(Path::new("tests/resources/get_append/stdout.txt"))
+            .utf8()
+            .unwrap();
+
+    assert!(predicate_file.eval(output.as_ref()));
+
+    s.close()
+}
+
 /// Check that `autobib source` returns what is expected.
 #[test]
 fn source() -> Result<()> {
@@ -99,6 +130,43 @@ fn source() -> Result<()> {
         .success()
         .stdout(predicate_file)
         .stderr(predicate::str::is_empty());
+
+    s.close()
+}
+
+/// Check that the `--skip*` and `--append` options for `autobib source`
+/// work as expected
+#[test]
+fn source_skip() -> Result<()> {
+    let s = TestState::init()?;
+
+    let output = NamedTempFile::new("out.bib")?;
+    output.write_str("@preprint{arxiv:1212.1873,}\n")?;
+
+    let mut cmd = s.cmd()?;
+
+    cmd.arg("source")
+        .arg("tests/resources/source_skip/main.tex");
+    cmd.args([
+        "--skip",
+        "isbn:9781119942399",
+        "--skip-from",
+        "tests/resources/source_skip/skip.tex",
+        "--skip-from",
+        "tests/resources/source_skip/skip.bib",
+        "--out",
+        &output.to_string_lossy(),
+        "--append",
+    ]);
+
+    cmd.assert().success().stderr(predicate::str::is_empty());
+
+    let predicate_file =
+        predicate::path::eq_file(Path::new("tests/resources/source_skip/stdout.txt"))
+            .utf8()
+            .unwrap();
+
+    assert!(predicate_file.eval(output.as_ref()));
 
     s.close()
 }
