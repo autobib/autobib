@@ -374,6 +374,7 @@ impl RemoteId {
     }
 
     /// Construct a [`RemoteId`] from the provider and sub_id components.
+    #[inline]
     pub fn from_parts(provider: &str, sub_id: &str) -> Result<Self, RecordError> {
         let mut full_id = String::with_capacity(provider.len() + sub_id.len() + 1);
         full_id.push_str(provider);
