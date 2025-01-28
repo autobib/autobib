@@ -183,12 +183,12 @@ pub fn run_cli(cli: Cli) -> Result<()> {
             config::write_default(&mut std::io::stdout())?;
         }
         Command::Delete {
-            citation_keys,
+            citation_key,
             force,
         } => {
             let cfg = config::load(&config_path, missing_ok)?;
             let deduplicated = filter_and_deduplicate_by_canonical(
-                citation_keys.into_iter(),
+                citation_key.into_iter(),
                 &mut record_db,
                 force,
                 |remote_id, null_row| {
@@ -337,7 +337,7 @@ pub fn run_cli(cli: Cli) -> Result<()> {
             }
         }
         Command::Get {
-            citation_keys,
+            citation_key,
             out,
             append,
             retrieve_only,
@@ -359,7 +359,7 @@ pub fn run_cli(cli: Cli) -> Result<()> {
             // Collect all entries which are not null, excluding those which should be skipped
             let cfg = config::load(&config_path, missing_ok)?;
             let valid_entries = retrieve_and_validate_entries(
-                citation_keys
+                citation_key
                     .into_iter()
                     .filter(|k| !skipped_keys.contains(k)),
                 &mut record_db,
