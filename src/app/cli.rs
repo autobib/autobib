@@ -129,7 +129,7 @@ pub enum Command {
     /// command.
     Delete {
         /// The citation keys to delete.
-        citation_keys: Vec<RecordId>,
+        citation_key: Vec<RecordId>,
         /// Delete without prompting.
         ///
         /// Deletion will fail if user confirmation is required,the program is running
@@ -157,7 +157,7 @@ pub enum Command {
         #[arg(long)]
         normalize_whitespace: bool,
         /// Set "eprint" and "eprinttype" BibTeX fields from provided fields.
-        #[arg(long, value_delimiter = ',')]
+        #[arg(long, value_delimiter = ',', value_name = "FIELD_NAME")]
         set_eprint: Vec<String>,
         /// Strip trailing journal series
         #[arg(long)]
@@ -169,7 +169,13 @@ pub enum Command {
     /// fields against which to search, use the `--fields` option.
     Find {
         /// Fields to search (e.g. author, title), delimited by commas.
-        #[arg(short, long, value_delimiter = ',', default_value = "author,title")]
+        #[arg(
+            short,
+            long,
+            value_delimiter = ',',
+            default_value = "author,title",
+            value_name = "NAME"
+        )]
         fields: Vec<String>,
         /// Display entry type for searching.
         #[arg(short, long)]
@@ -184,9 +190,9 @@ pub enum Command {
     /// Retrieve records given citation keys.
     Get {
         /// The citation keys to retrieve.
-        citation_keys: Vec<RecordId>,
+        citation_key: Vec<RecordId>,
         /// Write output to file.
-        #[arg(short, long, group = "output")]
+        #[arg(short, long, group = "output", value_name = "PATH")]
         out: Option<PathBuf>,
         /// Append new entries to the output.
         #[arg(short, long, requires = "out")]
@@ -250,10 +256,10 @@ pub enum Command {
         /// The files in which to search.
         paths: Vec<PathBuf>,
         /// Override file type detection.
-        #[arg(long)]
+        #[arg(long, value_name = "FILETYPE")]
         file_type: Option<SourceFileType>,
         /// Write output to file.
-        #[arg(short, long, group = "output")]
+        #[arg(short, long, group = "output", value_name = "PATH")]
         out: Option<PathBuf>,
         /// Append new entries to the output.
         #[arg(short, long, requires = "out")]
@@ -262,13 +268,13 @@ pub enum Command {
         #[arg(long, group = "output")]
         retrieve_only: bool,
         /// Skip a citation key (if present).
-        #[arg(short, long)]
+        #[arg(short, long, value_name = "CITATION_KEY")]
         skip: Vec<RecordId>,
         /// Skip citation keys which are present in the provided `.bib` file(s).
-        #[arg(long)]
+        #[arg(long, value_name = "PATH")]
         skip_from: Vec<PathBuf>,
         /// Override file type detection for skip files.
-        #[arg(long)]
+        #[arg(long, value_name = "FILETYPE")]
         skip_file_type: Option<SourceFileType>,
         /// Ignore null records and aliases.
         #[arg(long)]
