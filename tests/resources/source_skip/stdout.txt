@@ -1,0 +1,25 @@
+@preprint{arxiv:1212.1873,}
+
+@book{jfm:60.0017.02,
+  author = {Hilbert, D. and Bernays, P.},
+  language = {German},
+  publisher = {Springer, Cham},
+  series = {Grundlehren Math. Wiss.},
+  title = {Grundlagen der {Mathematik}. {I}.},
+  volume = {40},
+  year = {1934},
+  zbmath = {02537022},
+}
+
+@article{zbmath:06346461,
+  author = {Hochman, Michael},
+  doi = {10.4007/annals.2014.180.2.7},
+  journal = {Ann. Math. (2)},
+  language = {English},
+  pages = {773--822},
+  title = {On self-similar sets with overlaps and inverse theorems for entropy},
+  volume = {180},
+  year = {2014},
+  zbl = {1337.28015},
+  zbmath = {06346461},
+}

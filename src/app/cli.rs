@@ -188,6 +188,9 @@ pub enum Command {
         /// Write output to file.
         #[arg(short, long, group = "output")]
         out: Option<PathBuf>,
+        /// Append new entries to the output.
+        #[arg(short, long, requires = "out")]
+        append: bool,
         /// Retrieve records but do not output BibTeX or check the validity of citation keys.
         #[arg(long, group = "output")]
         retrieve_only: bool,
@@ -252,9 +255,21 @@ pub enum Command {
         /// Write output to file.
         #[arg(short, long, group = "output")]
         out: Option<PathBuf>,
+        /// Append new entries to the output.
+        #[arg(short, long, requires = "out")]
+        append: bool,
         /// Retrieve records but do not output BibTeX or check the validity of citation keys.
         #[arg(long, group = "output")]
         retrieve_only: bool,
+        /// Skip a citation key (if present).
+        #[arg(short, long)]
+        skip: Vec<RecordId>,
+        /// Skip citation keys which are present in the provided `.bib` file(s).
+        #[arg(long)]
+        skip_from: Vec<PathBuf>,
+        /// Override file type detection for skip files.
+        #[arg(long)]
+        skip_file_type: Option<SourceFileType>,
         /// Ignore null records and aliases.
         #[arg(long)]
         ignore_null: bool,

@@ -22,6 +22,7 @@
 //!     assert_eq!(exp, rec);
 //! }
 //! ```
+pub mod bib;
 pub mod tex;
 pub mod tex_auxfile;
 
@@ -36,6 +37,8 @@ pub enum SourceFileType {
     Tex,
     /// TeX-based AUX file contents, mainly `.aux` files.
     Aux,
+    /// Read citation keys from a BibTeX file.
+    Bib,
 }
 
 impl FromStr for SourceFileType {
@@ -45,6 +48,7 @@ impl FromStr for SourceFileType {
         match s {
             "tex" | "sty" | "cls" => Ok(Self::Tex),
             "aux" => Ok(Self::Aux),
+            "bib" => Ok(Self::Bib),
             ext => Err(Error::UnsupportedFileType(ext.into())),
         }
     }
@@ -62,15 +66,37 @@ impl SourceFileType {
     }
 }
 
+/// A wrapper type for a container which implements [`Extend`].
+struct FilterExtend<'a, E, F> {
+    container: &'a mut E,
+    f: F,
+}
+
+impl<E: Extend<RecordId>, F: FnMut(&RecordId) -> bool> Extend<RecordId> for FilterExtend<'_, E, F> {
+    fn extend<T: IntoIterator<Item = RecordId>>(&mut self, iter: T) {
+        self.container.extend(iter.into_iter().filter(&mut self.f));
+    }
+}
+
+pub fn get_citekeys_filter<T: Extend<RecordId>, F: FnMut(&RecordId) -> bool>(
+    ft: SourceFileType,
+    buffer: &[u8],
+    container: &mut T,
+    f: F,
+) {
+    let get_citekey_impl = match ft {
+        SourceFileType::Tex => tex::get_citekeys,
+        SourceFileType::Aux => tex_auxfile::get_citekeys,
+        SourceFileType::Bib => bib::get_citekeys,
+    };
+    get_citekey_impl(buffer, &mut FilterExtend { container, f });
+}
+
 /// Read citekeys from a byte buffer into a container.
 ///
 /// The byte buffer is assumed to have file type specified by `ft`.
 /// The citekeys are inserted into the container using the container's [`Extend`] implementation.
 /// The order is is not necessarily the same as the order of the keys in the buffer.
 pub fn get_citekeys<T: Extend<RecordId>>(ft: SourceFileType, buffer: &[u8], container: &mut T) {
-    let get_citekey_impl = match ft {
-        SourceFileType::Tex => tex::get_citekeys,
-        SourceFileType::Aux => tex_auxfile::get_citekeys,
-    };
-    get_citekey_impl(buffer, container);
+    get_citekeys_filter(ft, buffer, container, |_| true);
 }

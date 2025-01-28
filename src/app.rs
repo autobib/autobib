@@ -3,6 +3,7 @@ mod edit;
 mod path;
 mod picker;
 mod retrieve;
+mod source;
 mod write;
 
 use std::{
@@ -45,7 +46,7 @@ use self::{
     },
     picker::{choose_attachment, choose_attachment_path, choose_canonical_id},
     retrieve::{filter_and_deduplicate_by_canonical, retrieve_and_validate_entries},
-    write::output_entries,
+    write::{init_outfile, output_entries},
 };
 
 pub use self::cli::{Cli, Command};
@@ -338,13 +339,29 @@ pub fn run_cli(cli: Cli) -> Result<()> {
         Command::Get {
             citation_keys,
             out,
+            append,
             retrieve_only,
             ignore_null,
         } => {
+            let mut outfile = init_outfile(out, append)?;
+
+            // Initialize the skipped keys to contain keys already present in the outfile (if
+            // appending)
+            let mut skipped_keys: HashSet<RecordId> = HashSet::new();
+            if let Some(file) = outfile.as_mut() {
+                if append {
+                    let mut scratch = Vec::new();
+                    file.read_to_end(&mut scratch)?;
+                    get_citekeys(SourceFileType::Bib, &scratch, &mut skipped_keys);
+                }
+            }
+
+            // Collect all entries which are not null, excluding those which should be skipped
             let cfg = config::load(&config_path, missing_ok)?;
-            // Collect all entries which are not null
             let valid_entries = retrieve_and_validate_entries(
-                citation_keys.into_iter(),
+                citation_keys
+                    .into_iter()
+                    .filter(|k| !skipped_keys.contains(k)),
                 &mut record_db,
                 &client,
                 retrieve_only,
@@ -353,7 +370,7 @@ pub fn run_cli(cli: Cli) -> Result<()> {
             );
 
             if !retrieve_only {
-                output_entries(out.as_ref(), valid_entries)?;
+                output_entries(outfile, append, valid_entries)?;
             }
         }
         Command::Info {
@@ -583,45 +600,61 @@ pub fn run_cli(cli: Cli) -> Result<()> {
             paths,
             file_type,
             out,
+            append,
+            skip,
+            skip_from,
+            skip_file_type,
             retrieve_only,
             ignore_null,
         } => {
-            let cfg = config::load(&config_path, missing_ok)?;
-            let mut buffer = Vec::new();
+            let mut outfile = init_outfile(out, append)?;
+            let mut scratch = Vec::new();
 
-            // The citation keys do not need to be sorted since sorting
-            // happens in the `validate_and_retrieve` function.
-            let mut container: HashSet<RecordId> = HashSet::new();
-
-            for path in paths {
-                match File::open(path.clone()).and_then(|mut f| f.read_to_end(&mut buffer)) {
-                    Ok(_) => {
-                        if let Some(mode) = file_type.or_else(|| {
-                            SourceFileType::detect(&path).map_or_else(
-                                |err| {
-                                    error!(
-                                        "File '{}': {err}. Force filetype with `--file-type`.",
-                                        path.display()
-                                    );
-                                    None
-                                },
-                                Some,
-                            )
-                        }) {
-                            info!("Reading citation keys from '{}'", path.display());
-                            get_citekeys(mode, &buffer, &mut container);
-                            buffer.clear();
-                        }
-                    }
-                    Err(err) => error!(
-                        "Failed to read contents of path '{}': {err}",
-                        path.display()
-                    ),
-                };
+            // initialize skipped keys with:
+            // - explicitly passed keys
+            // - keys from the provided files
+            // - any keys in the output bibfile, if appending
+            let mut skipped_keys: HashSet<RecordId> = HashSet::new();
+            skipped_keys.extend(skip);
+            for skip_path in skip_from {
+                source::get_citekeys_from_file(
+                    skip_path,
+                    skip_file_type,
+                    &mut skipped_keys,
+                    &mut scratch,
+                    "--skip-file-type",
+                )?;
+            }
+            if let Some(file) = outfile.as_mut() {
+                if append {
+                    // read the file into the buffer
+                    file.read_to_end(&mut scratch)?;
+                    get_citekeys(SourceFileType::Bib, &scratch, &mut skipped_keys);
+                }
             }
 
+            // read citation keys from all of the paths, excluding those which are present in
+            // 'skipped_keys'
+            //
+            // The citation keys do not need to be sorted since sorting
+            // happens in the `validate_and_retrieve` function.
+            let mut all_citekeys: HashSet<RecordId> = HashSet::new();
+
+            for path in paths {
+                source::get_citekeys_from_file_filter(
+                    path,
+                    file_type,
+                    &mut all_citekeys,
+                    &mut scratch,
+                    "--file-type",
+                    |record_id| !skipped_keys.contains(record_id),
+                )?;
+            }
+
+            // retrieve all of the entries
+            let cfg = config::load(&config_path, missing_ok)?;
             let valid_entries = retrieve_and_validate_entries(
-                container.into_iter(),
+                all_citekeys.into_iter(),
                 &mut record_db,
                 &client,
                 retrieve_only,
@@ -630,7 +663,7 @@ pub fn run_cli(cli: Cli) -> Result<()> {
             );
 
             if !retrieve_only {
-                output_entries(out.as_ref(), valid_entries)?;
+                output_entries(outfile, append, valid_entries)?;
             }
         }
         Command::Update {
