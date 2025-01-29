@@ -23,7 +23,7 @@ use clap_complete::aot::generate;
 use self::{
     app::{run_cli, Cli, Command},
     db::{CitationKey, RawRecordData},
-    logger::{error, warn, Logger},
+    logger::{error, info, Logger},
 };
 
 pub use self::{
@@ -53,9 +53,9 @@ fn main() {
         return;
     }
 
-    // Check if stdin is a terminal
-    if !cli.no_interactive && !io::stdin().is_terminal() {
-        warn!("Detected non-interactive input; auto-enabling `--no-interactive`.");
+    // Check if stdin and stderr are terminals; if not, set no_interactive to 'false'
+    if !(cli.no_interactive || io::stdin().is_terminal() && io::stderr().is_terminal()) {
+        info!("Detected non-interactive input; auto-enabling `--no-interactive`.");
         cli.no_interactive = true;
     }
 
