@@ -7,7 +7,7 @@ mod source;
 mod write;
 
 use std::{
-    collections::HashSet,
+    collections::{BTreeSet, HashSet},
     fs::{create_dir_all, File, OpenOptions},
     io::{copy, Read},
     iter::once,
@@ -46,7 +46,7 @@ use self::{
     },
     picker::{choose_attachment, choose_attachment_path, choose_canonical_id},
     retrieve::{filter_and_deduplicate_by_canonical, retrieve_and_validate_entries},
-    write::{init_outfile, output_entries},
+    write::{init_outfile, output_entries, output_keys},
 };
 
 pub use self::cli::{Cli, Command};
@@ -606,6 +606,7 @@ pub fn run_cli(cli: Cli) -> Result<()> {
             skip_file_type,
             retrieve_only,
             ignore_null,
+            print_keys,
         } => {
             let mut outfile = init_outfile(out, append)?;
             let mut scratch = Vec::new();
@@ -633,37 +634,54 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                 }
             }
 
-            // read citation keys from all of the paths, excluding those which are present in
-            // 'skipped_keys'
-            //
-            // The citation keys do not need to be sorted since sorting
-            // happens in the `validate_and_retrieve` function.
-            let mut all_citekeys: HashSet<RecordId> = HashSet::new();
+            if print_keys {
+                // only print the keys which were found
+                let mut all_citekeys: BTreeSet<RecordId> = BTreeSet::new();
 
-            for path in paths {
-                source::get_citekeys_from_file_filter(
-                    path,
-                    file_type,
-                    &mut all_citekeys,
-                    &mut scratch,
-                    "--file-type",
-                    |record_id| !skipped_keys.contains(record_id),
-                )?;
-            }
+                for path in paths {
+                    source::get_citekeys_from_file_filter(
+                        path,
+                        file_type,
+                        &mut all_citekeys,
+                        &mut scratch,
+                        "--file-type",
+                        |record_id| !skipped_keys.contains(record_id),
+                    )?;
+                }
+                output_keys(all_citekeys.iter())?;
+            } else {
+                // read citation keys from all of the paths, excluding those which are present in
+                // 'skipped_keys'
+                //
+                // The citation keys do not need to be sorted since sorting
+                // happens in the `validate_and_retrieve` function.
+                let mut all_citekeys: HashSet<RecordId> = HashSet::new();
 
-            // retrieve all of the entries
-            let cfg = config::load(&config_path, missing_ok)?;
-            let valid_entries = retrieve_and_validate_entries(
-                all_citekeys.into_iter(),
-                &mut record_db,
-                &client,
-                retrieve_only,
-                ignore_null,
-                &cfg,
-            );
+                for path in paths {
+                    source::get_citekeys_from_file_filter(
+                        path,
+                        file_type,
+                        &mut all_citekeys,
+                        &mut scratch,
+                        "--file-type",
+                        |record_id| !skipped_keys.contains(record_id),
+                    )?;
+                }
 
-            if !retrieve_only {
-                output_entries(outfile, append, valid_entries)?;
+                // retrieve all of the entries
+                let cfg = config::load(&config_path, missing_ok)?;
+                let valid_entries = retrieve_and_validate_entries(
+                    all_citekeys.into_iter(),
+                    &mut record_db,
+                    &client,
+                    retrieve_only,
+                    ignore_null,
+                    &cfg,
+                );
+
+                if !retrieve_only {
+                    output_entries(outfile, append, valid_entries)?;
+                }
             }
         }
         Command::Update {
