@@ -122,7 +122,7 @@ fn source() -> Result<()> {
     let s = TestState::init()?;
 
     let mut cmd = s.cmd()?;
-    cmd.arg("source").arg("tests/resources/source/main.tex");
+    cmd.args(["source", "tests/resources/source/main.tex"]);
     let predicate_file = predicate::path::eq_file(Path::new("tests/resources/source/stdout.txt"))
         .utf8()
         .unwrap();
@@ -130,6 +130,17 @@ fn source() -> Result<()> {
         .success()
         .stdout(predicate_file)
         .stderr(predicate::str::is_empty());
+
+    s.close()
+}
+
+/// Check that `autobib source --print-keys` works.
+#[test]
+fn source_keys_only() -> Result<()> {
+    let s = TestState::init()?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["source", "tests/resources/source/main.tex", "--print-keys"]);
 
     s.close()
 }

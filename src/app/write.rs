@@ -9,7 +9,7 @@ use nonempty::NonEmpty;
 use serde::Serializer as _;
 use serde_bibtex::ser::Serializer;
 
-use crate::{db::EntryData, entry::Entry, logger::warn, record::RemoteId};
+use crate::{db::EntryData, entry::Entry, logger::warn, record::RemoteId, CitationKey};
 
 pub fn init_outfile<P: AsRef<Path>>(
     out: Option<P>,
@@ -31,6 +31,15 @@ pub fn init_outfile<P: AsRef<Path>>(
         },
         None => Ok(None),
     }
+}
+
+pub fn output_keys<'a>(keys: impl Iterator<Item = &'a crate::RecordId>) -> Result<(), io::Error> {
+    let mut stdout = io::BufWriter::new(io::stdout());
+    for key in keys {
+        stdout.write_all(key.name().as_bytes())?;
+        stdout.write_all(b"\n")?;
+    }
+    Ok(())
 }
 
 /// Either write records to stdout, or to a provided file.

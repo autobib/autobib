@@ -267,6 +267,9 @@ pub enum Command {
         /// Retrieve records but do not output BibTeX or check the validity of citation keys.
         #[arg(long, group = "output")]
         retrieve_only: bool,
+        /// Only print the citation keys which were found (sorted and deduplicated).
+        #[arg(long, group = "output")]
+        print_keys: bool,
         /// Skip a citation key (if present).
         #[arg(short, long, value_name = "CITATION_KEY")]
         skip: Vec<RecordId>,
