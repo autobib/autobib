@@ -1,5 +1,6 @@
 mod cli;
 mod edit;
+mod import;
 mod path;
 mod picker;
 mod retrieve;
@@ -17,6 +18,7 @@ use std::{
 
 use anyhow::{bail, Result};
 use etcetera::{choose_app_strategy, AppStrategy, AppStrategyArgs};
+use import::ImportOutcome;
 use itertools::Itertools;
 use serde_bibtex::token::is_entry_key;
 
@@ -28,17 +30,17 @@ use crate::{
         state::{RecordIdState, RemoteIdState, RowData},
         DeleteAliasResult, EvictionConstraint, RecordData, RecordDatabase, RenameAliasResult,
     },
+    entry::entries_from_bibtex,
     error::AliasErrorKind,
     http::HttpClient,
-    logger::{error, info, suggest, warn},
+    logger::{debug, error, info, suggest, warn},
     normalize::Normalize,
-    record::Record,
-    record::{get_record_row, Alias, RecordId, RemoteId},
+    record::{get_record_row, Alias, Record, RecordId, RemoteId},
     term::Confirm,
 };
 
 use self::{
-    cli::{AliasCommand, FindMode, InfoReportType, UpdateMode, UtilCommand},
+    cli::{AliasCommand, FindMode, ImportMode, InfoReportType, UpdateMode, UtilCommand},
     edit::{edit_record_and_update, merge_record_data},
     path::{
         data_from_path_or_default, data_from_path_or_remote, get_attachment_dir,
@@ -400,6 +402,74 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                 output_entries(outfile, append, valid_entries)?;
             }
         }
+        Command::Import {
+            target,
+            local,
+            determine_key,
+            retrieve,
+            retrieve_only,
+            no_alias,
+            log_failures,
+            prefer_current,
+            prefer_incoming,
+        } => {
+            let import_config = self::import::ImportConfig {
+                update_mode: UpdateMode::from_flags(
+                    cli.no_interactive,
+                    prefer_current,
+                    prefer_incoming,
+                ),
+                import_mode: ImportMode::from_flags(local, determine_key, retrieve, retrieve_only),
+                no_alias,
+                no_interactive: cli.no_interactive,
+            };
+            debug!("Using import configuration: {import_config:?}");
+            let cfg = config::load(&config_path, missing_ok)?;
+
+            let mut scratch = Vec::new();
+
+            for bibfile in target {
+                scratch.clear();
+                match File::open(&bibfile).and_then(|mut file| file.read_to_end(&mut scratch)) {
+                    Ok(_) => {
+                        for res in entries_from_bibtex(&scratch) {
+                            match res {
+                                Ok(entry) => {
+                                    match import::import_entry(
+                                        entry,
+                                        &import_config,
+                                        &mut record_db,
+                                        &client,
+                                        &cfg,
+                                    )? {
+                                        ImportOutcome::Success => {}
+                                        ImportOutcome::Failure(error, entry) => {
+                                            if log_failures {
+                                                println!("% Import failed: {error}");
+                                                println!("{entry}");
+                                            } else {
+                                                error!("Failed to import entry from file '{}' with key '{}'", bibfile.display(), entry.key().as_ref());
+                                            }
+                                        }
+                                        ImportOutcome::UserCancelled => {
+                                            error!("Cancelled editing; entry was not imported!");
+                                        }
+                                    }
+                                }
+                                Err(err) => {
+                                    error!("Parse error for file '{}': {err}", bibfile.display());
+                                }
+                            }
+                        }
+                    }
+                    Err(err) => error!(
+                        "Failed to read contents of file '{}': {err}",
+                        bibfile.display()
+                    ),
+                }
+            }
+            // todo!()
+        }
         Command::Info {
             citation_key,
             report,
@@ -512,9 +582,10 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                         (row, raw_record_data)
                     }
                     RemoteIdState::Null(null_row) => {
-                        null_row.commit()?;
-                        error!("'{remote_id}' was found in the 'NullRecords' table. A local record should not be present in the 'NullRecords' table.");
-                        return Ok(());
+                        // a local remote id should never be in the null records table
+                        // so we just silently delete it
+                        null_row.delete()?.commit()?;
+                        bail!("Local record '{old_remote_id}' does not exist");
                     }
                     RemoteIdState::Unknown(missing) => {
                         missing.commit()?;
@@ -534,7 +605,7 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                     }
                     RemoteIdState::Unknown(missing) => {
                         let data = data_from_path_or_default(from.as_ref())?;
-                        let row = missing.insert_and_ref(&data, &remote_id)?;
+                        let row = missing.insert(&data, &remote_id)?;
                         (row, data)
                     }
                     RemoteIdState::Null(null_row) => {
@@ -784,6 +855,7 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                 config::validate(&config_path)?;
             }
             UtilCommand::Optimize => {
+                info!("Optimizing database.");
                 record_db.vacuum()?;
             }
             UtilCommand::Evict {

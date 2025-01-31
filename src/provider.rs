@@ -19,7 +19,7 @@ use serde::Deserialize;
 use crate::{
     db::{EntryData, RecordData},
     error::{ProviderError, RecordDataError},
-    HttpClient, RemoteId,
+    HttpClient, MappedKey, RemoteId,
 };
 
 /// A resolver, which converts a `sub_id` into [`RecordData`].
@@ -114,44 +114,45 @@ fn field_name_to_provider(field_name: &str) -> Option<&'static str> {
 }
 
 /// Given a provider and sub-id, push to the provided buffer if the `provider` is accepted by
-/// `filter` and the `provider:sub_id` is valid.
+/// `preprocess` and the `provider:sub_id` is valid.
 #[inline]
-fn push_remote_id_if_valid<F: FnOnce(&str) -> bool, G: FnOnce(RemoteId)>(
+fn push_remote_id_if_valid<T, F: FnOnce(&str) -> Option<T>, G: FnOnce(MappedKey, T)>(
     provider: &str,
     sub_id: &str,
-    filter: F,
+    preprocess: F,
     push: G,
 ) {
-    if filter(provider) {
-        if let Ok(remote_id) = RemoteId::from_parts(provider, sub_id) {
-            push(remote_id);
+    if let Some(filtered) = preprocess(provider) {
+        if let Ok(remote_id) = MappedKey::mapped_from_parts(provider, sub_id) {
+            push(remote_id, filtered);
         }
     }
 }
 
 /// Determine candidates for valid remote identifiers from the provided bibtex data. Each
-/// provider is passed to `filter`, and is only appended if `filter` returns `true`. This enables
-/// skipping sub-id validation for undesired providers.
-///
-/// The `push` closure is called on each resulting [`RemoteId`].
-///
-/// Note that the identifiers are determined based on heuristics and may not be valid.
-pub fn determine_remote_id_candidates<D: EntryData, F: FnMut(&str) -> bool, G: FnMut(RemoteId)>(
+/// provider is passed to `preprocess`, and is only processed if `preprocess` returns `Some(T)`. The value
+/// `T`, if `Some`, and the resulting [`MappedKey`], is subsequently passed to `push`.
+pub fn determine_remote_id_candidates<
+    T,
+    D: EntryData,
+    F: FnMut(&str) -> Option<T>,
+    G: FnMut(MappedKey, T),
+>(
     data: &D,
-    mut filter: F,
+    mut preprocess: F,
     mut push: G,
 ) {
     // first determine candidates using provider-specific fields
     for (name, value) in data.fields() {
         if let Some(provider) = field_name_to_provider(name) {
-            push_remote_id_if_valid(provider, value, &mut filter, &mut push);
+            push_remote_id_if_valid(provider, value, &mut preprocess, &mut push);
         }
     }
 
     // next, determine candidates using the `eprint` and `eprinttype` fields
     if let Some(provider) = data.get_field("eprinttype") {
         if let Some(sub_id) = data.get_field("eprint") {
-            push_remote_id_if_valid(provider, sub_id, &mut filter, &mut push);
+            push_remote_id_if_valid(provider, sub_id, &mut preprocess, &mut push);
         }
     }
 }
@@ -173,6 +174,18 @@ pub fn validate_provider_sub_id(provider: &str, sub_id: &str) -> ValidationOutco
 #[inline]
 pub fn is_valid_provider(provider: &str) -> bool {
     lookup_validator(provider).is_some()
+}
+
+#[inline]
+pub fn is_canonical(provider: &str) -> bool {
+    lookup_validator(provider).is_some()
+        && matches!(lookup_provider(provider), Provider::Resolver(_))
+}
+
+#[inline]
+pub fn is_reference(provider: &str) -> bool {
+    lookup_validator(provider).is_some()
+        && matches!(lookup_provider(provider), Provider::Referrer(_))
 }
 
 /// The outcome of resolving a provider and making the remote call

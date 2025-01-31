@@ -29,10 +29,14 @@ impl<'conn> State<'conn, Missing> {
     }
 
     /// Create the row, converting into a [`RecordRow`].
-    pub fn insert(
+    ///
+    /// # Safety
+    /// The 'canonical' remote id must be present in the provided `refs` iterator.
+    pub(crate) unsafe fn insert_with_refs<'a, R: Iterator<Item = &'a RemoteId>>(
         self,
         data: &RawRecordData,
         canonical: &RemoteId,
+        refs: R,
     ) -> Result<State<'conn, RecordRow>, rusqlite::Error> {
         debug!("Inserting data for canonical id '{canonical}'");
         self.prepare_cached(sql::set_cached_data())?.execute((
@@ -41,17 +45,19 @@ impl<'conn> State<'conn, Missing> {
             &Local::now(),
         ))?;
         // SAFETY: the `set_cached_data` statement is an INSERT.
-        Ok(unsafe { self.into_last_insert() })
+        let row = unsafe { self.into_last_insert() };
+        row.add_refs(refs)?;
+        Ok(row)
     }
 
     /// Create the row and also insert a link in the `CitationKeys` table, converting into a [`RecordRow`].
-    pub fn insert_and_ref(
+    pub fn insert(
         self,
         data: &RawRecordData,
         canonical: &RemoteId,
     ) -> Result<State<'conn, RecordRow>, rusqlite::Error> {
-        let row = self.insert(data, canonical)?;
-        row.add_refs(std::iter::once(canonical))?;
+        // SAFETY: 'canonical' is passed as a ref.
+        let row = unsafe { self.insert_with_refs(data, canonical, std::iter::once(canonical))? };
         Ok(row)
     }
 }

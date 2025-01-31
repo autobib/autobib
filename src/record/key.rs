@@ -1,3 +1,5 @@
+mod mapped;
+
 use std::{fmt, str::FromStr};
 
 use serde::{Deserialize, Serialize};
@@ -11,68 +13,7 @@ use crate::{
     provider::{validate_provider_sub_id, ValidationOutcomeExtended},
     CitationKey,
 };
-
-/// A wrapper struct for a [`RemoteId`] which has been transformed from an original key, for
-/// instance through a sub_id normalization or an alias transform.
-///
-/// This struct has a special [`Display`](fmt::Display) implementation which shows both the key and
-/// the original value if the original value exists.
-#[derive(Debug)]
-pub struct MappedKey<T = String> {
-    /// The underlying key.
-    pub mapped: RemoteId,
-    /// The original value of the key, if normalization was applied.
-    pub original: Option<T>,
-}
-
-impl<T> MappedKey<T> {
-    /// Initialize for a key which was unchanged.
-    pub fn unchanged(key: RemoteId) -> Self {
-        Self {
-            mapped: key,
-            original: None,
-        }
-    }
-
-    /// Initialize for a key which was mapped from some original value.
-    pub fn mapped(key: RemoteId, original: T) -> Self {
-        Self {
-            mapped: key,
-            original: Some(original),
-        }
-    }
-
-    /// Returns whether or not this variant is mapped.
-    pub fn is_mapped(&self) -> bool {
-        self.original.is_some()
-    }
-}
-
-impl<T: Into<String>> From<MappedKey<T>> for String {
-    fn from(value: MappedKey<T>) -> Self {
-        if let Some(original) = value.original {
-            original.into()
-        } else {
-            value.mapped.into()
-        }
-    }
-}
-
-impl<T: fmt::Display> fmt::Display for MappedKey<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "'{}'", self.mapped)?;
-        if let Some(s) = &self.original {
-            write!(f, " (converted from '{s}')")?;
-        }
-        Ok(())
-    }
-}
-
-impl<T> CitationKey for MappedKey<T> {
-    fn name(&self) -> &str {
-        self.mapped.name()
-    }
-}
+pub use mapped::{MappedAliasOrRemoteId, MappedKey};
 
 /// Resolve the provider and sub_id implicit inside the provided `full_id`.
 ///
@@ -226,7 +167,7 @@ impl From<AliasOrRemoteId> for String {
     }
 }
 
-impl TryFrom<AliasOrRemoteId> for RemoteId {
+impl TryFrom<AliasOrRemoteId> for MappedKey {
     type Error = RecordError;
 
     #[inline]
@@ -236,8 +177,17 @@ impl TryFrom<AliasOrRemoteId> for RemoteId {
                 input: alias.into(),
                 kind: RecordErrorKind::RemoteId(RemoteIdErrorKind::IsAlias),
             }),
-            AliasOrRemoteId::RemoteId(maybe_normalized) => Ok(maybe_normalized.mapped),
+            AliasOrRemoteId::RemoteId(maybe_normalized) => Ok(maybe_normalized),
         }
+    }
+}
+
+impl TryFrom<AliasOrRemoteId> for RemoteId {
+    type Error = RecordError;
+
+    #[inline]
+    fn try_from(value: AliasOrRemoteId) -> Result<Self, Self::Error> {
+        MappedKey::try_from(value).map(|k| k.mapped)
     }
 }
 
@@ -376,17 +326,7 @@ impl RemoteId {
     /// Construct a [`RemoteId`] from the provider and sub_id components.
     #[inline]
     pub fn from_parts(provider: &str, sub_id: &str) -> Result<Self, RecordError> {
-        let mut full_id = String::with_capacity(provider.len() + sub_id.len() + 1);
-        full_id.push_str(provider);
-        full_id.push(':');
-        full_id.push_str(sub_id);
-
-        RecordId {
-            full_id,
-            provider_len: Some(provider.len()),
-        }
-        .resolve(&())
-        .and_then(TryFrom::try_from)
+        MappedKey::mapped_from_parts(provider, sub_id).map(Into::into)
     }
 
     /// Create a new `local` [`RecordId`].
