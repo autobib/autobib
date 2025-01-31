@@ -17,13 +17,15 @@ impl Default for EditorConfig {
 }
 
 pub struct Editor {
-    config: EditorConfig,
+    inner: Builder<'static, 'static>,
 }
 
 impl Editor {
     /// Initialize a new editor using the [`EditorConfig`].
     pub fn new(config: EditorConfig) -> Self {
-        Self { config }
+        let mut inner = Builder::new();
+        inner.suffix(config.suffix);
+        Self { inner }
     }
 
     /// Edit the object and optionally return a new object. This will repeatedly prompt the user to
@@ -31,15 +33,11 @@ impl Editor {
     /// guaranteed to be different than the old object. This returns `Ok(None)` if the user cancelled
     /// the edit.
     pub fn edit<T: ToString + FromStr + PartialEq>(&self, object: &T) -> Result<Option<T>> {
-        let mut editor = Builder::new();
         let prompter = Confirm::new("Continue editing?", true);
-
-        editor.suffix(self.config.suffix);
-
         let mut response = object.to_string();
 
         loop {
-            let user_text = edit_with_builder(&response, &editor)?;
+            let user_text = edit_with_builder(&response, &self.inner)?;
 
             // the text was unchanged
             if user_text == response {
