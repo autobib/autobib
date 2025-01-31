@@ -217,9 +217,14 @@ impl EntryData for RawRecordData {
     }
 }
 
-impl From<&RecordData> for RawRecordData {
+// Hack to avoid conflicting trait implementations
+trait EntryDataExt: EntryData {}
+impl EntryDataExt for RecordData {}
+impl EntryDataExt for &RecordData {}
+
+impl<D: EntryDataExt> From<D> for RawRecordData {
     /// Convert a [`RecordData`] into a [`RawRecordData`] for insertion into the database.
-    fn from(record_data: &RecordData) -> Self {
+    fn from(record_data: D) -> Self {
         let mut data = vec![binary_format_version()];
 
         let entry_type = record_data.entry_type();
@@ -510,6 +515,20 @@ impl RecordData {
             pub fn keys(&self) -> std::collections::btree_map::Keys<'_, String, String>;
             pub fn values(&self) -> std::collections::btree_map::Values<'_, String, String>;
         }
+    }
+}
+
+impl EntryData for RecordData {
+    fn fields(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.fields.iter().map(|(k, v)| (k.as_str(), v.as_str()))
+    }
+
+    fn entry_type(&self) -> &str {
+        &self.entry_type
+    }
+
+    fn get_field(&self, field_name: &str) -> Option<&str> {
+        self.get(field_name)
     }
 }
 

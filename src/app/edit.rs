@@ -11,6 +11,7 @@ use crate::{
         RawRecordData, RecordData,
     },
     entry::Entry,
+    error::MergeError,
     logger::{error, info, warn},
     record::{Alias, Record},
     term::{Confirm, Editor, EditorConfig},
@@ -62,22 +63,22 @@ pub fn merge_record_data<'a>(
     existing_record: &mut RecordData,
     new_raw_data: impl Iterator<Item = &'a RawRecordData>,
     citation_key: impl std::fmt::Display,
-) -> Result<(), anyhow::Error> {
+) -> Result<(), MergeError> {
     match mode {
         UpdateMode::PreferCurrent => {
-            info!("Updating '{citation_key}' with new data, skipping existing fields");
+            info!("Updating {citation_key} with new data, skipping existing fields");
             for data in new_raw_data {
                 existing_record.merge_or_skip(data)?;
             }
         }
         UpdateMode::PreferIncoming => {
-            info!("Updating '{citation_key}' with new data, overwriting existing fields");
+            info!("Updating {citation_key} with new data, overwriting existing fields");
             for data in new_raw_data {
                 existing_record.merge_or_overwrite(data)?;
             }
         }
         UpdateMode::Prompt => {
-            info!("Updating '{citation_key}' with new data");
+            info!("Updating {citation_key} with new data, prompting on conflict");
             for data in new_raw_data {
                 existing_record.merge_with_callback(data, |key, current, incoming| {
                     eprintln!("Conflict for the field '{key}':");

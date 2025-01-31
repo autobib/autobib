@@ -1,9 +1,10 @@
 mod key;
+mod mapped;
 
 use anyhow::bail;
 use nonempty::NonEmpty;
 
-pub use self::key::{Alias, AliasOrRemoteId, MappedKey, RecordId, RemoteId};
+pub use self::key::{Alias, AliasOrRemoteId, MappedAliasOrRemoteId, MappedKey, RecordId, RemoteId};
 use crate::{
     config::AliasTransform,
     db::{
@@ -31,6 +32,21 @@ pub struct Record {
     pub canonical: RemoteId,
 }
 
+/// The response type of [`get_record_row_remote`].
+///
+/// If the record exists, the resulting [`State<RecordRow>`] is guaranteed to be valid for the row corresponding
+/// to the [`Record`].
+///
+/// If the record does not exist, then the resulting [`State<NullRecordRow>`] is guaranteed to not exist in the
+/// `Records` table, and be cached in the `NullRecords` table.
+#[derive(Debug)]
+pub enum RemoteRecordRowResponse<'conn> {
+    /// The record exists.
+    Exists(Record, State<'conn, RecordRow>),
+    /// The record is null.
+    Null(RemoteId, State<'conn, NullRecordRow>),
+}
+
 /// The response type of [`get_record_row`].
 ///
 /// If the record exists, the resulting [`State<RecordRow>`] is guaranteed to be valid for the row corresponding
@@ -52,6 +68,19 @@ pub enum RecordRowResponse<'conn> {
     InvalidRemoteId(RecordError),
     /// The alias does not exist.
     NullAlias(Alias),
+}
+
+impl<'conn> From<RemoteRecordRowResponse<'conn>> for RecordRowResponse<'conn> {
+    fn from(resp: RemoteRecordRowResponse<'conn>) -> Self {
+        match resp {
+            RemoteRecordRowResponse::Exists(record, state) => {
+                RecordRowResponse::Exists(record, state)
+            }
+            RemoteRecordRowResponse::Null(remote_id, state) => {
+                RecordRowResponse::NullRemoteId(remote_id, state)
+            }
+        }
+    }
 }
 
 impl<'conn> RecordRowResponse<'conn> {
@@ -80,8 +109,25 @@ impl<'conn> RecordRowResponse<'conn> {
     }
 }
 
-/// Get the [`Record`] associated with a [`RecordId`], applying the normalizations present in the
-/// [`Normalization`].
+fn row_to_response<'conn, K: Into<String>, T: From<RemoteRecordRowResponse<'conn>>>(
+    key: K,
+    row: State<'conn, RecordRow>,
+) -> Result<T, Error> {
+    let RowData {
+        data, canonical, ..
+    } = row.get_data()?;
+    Ok(RemoteRecordRowResponse::Exists(
+        Record {
+            key: key.into(),
+            data,
+            canonical,
+        },
+        row,
+    )
+    .into())
+}
+
+/// Get the [`Record`] associated with a [`RecordId`].
 ///
 /// The database state is passed back to the caller and must be commited for the record to be
 /// recorded in the database.
@@ -93,17 +139,8 @@ pub fn get_record_row<'conn, F: FnOnce() -> Vec<(regex::Regex, String)>>(
 ) -> Result<RecordRowResponse<'conn>, Error> {
     match db.extended_state_from_record_id(record_id, &config.alias_transform)? {
         RecordIdState::Existent(key, row) => {
-            let RowData {
-                data, canonical, ..
-            } = row.get_data()?;
-            Ok(RecordRowResponse::Exists(
-                Record {
-                    key,
-                    data,
-                    canonical,
-                },
-                row,
-            ))
+            info!("Found existing data for key {}", key);
+            row_to_response(key, row)
         }
         RecordIdState::NullRemoteId(remote_id, null_row) => {
             Ok(RecordRowResponse::NullRemoteId(remote_id.mapped, null_row))
@@ -118,6 +155,7 @@ pub fn get_record_row<'conn, F: FnOnce() -> Vec<(regex::Regex, String)>>(
                 }
                 Ok(Some(alias.into()))
             })
+            .map(Into::into)
         }
         RecordIdState::Unknown(Unknown::RemoteId(maybe_normalized, missing)) => {
             get_record_row_recursive(
@@ -127,6 +165,26 @@ pub fn get_record_row<'conn, F: FnOnce() -> Vec<(regex::Regex, String)>>(
                 &config.on_insert,
                 |_| Ok(maybe_normalized.original),
             )
+            .map(Into::into)
+        }
+    }
+}
+
+/// Get the [`Record`] associated with a [`RemoteId`].
+pub fn get_record_row_remote<'conn, F: FnOnce() -> Vec<(regex::Regex, String)>>(
+    db: &'conn mut RecordDatabase,
+    remote_id: RemoteId,
+    client: &HttpClient,
+    config: &Config<F>,
+) -> Result<RemoteRecordRowResponse<'conn>, Error> {
+    match db.state_from_remote_id(&remote_id)? {
+        RemoteIdState::Existent(row) => {
+            info!("Found existing data for key {}", remote_id);
+            row_to_response(remote_id, row)
+        }
+        RemoteIdState::Null(null_row) => Ok(RemoteRecordRowResponse::Null(remote_id, null_row)),
+        RemoteIdState::Unknown(missing) => {
+            get_record_row_recursive(missing, remote_id, client, &config.on_insert, |_| Ok(None))
         }
     }
 }
@@ -154,7 +212,7 @@ fn get_record_row_recursive<'conn>(
     client: &HttpClient,
     normalization: &Normalization,
     exists_callback: impl FnOnce(&State<'conn, RecordRow>) -> Result<Option<String>, rusqlite::Error>,
-) -> Result<RecordRowResponse<'conn>, Error> {
+) -> Result<RemoteRecordRowResponse<'conn>, Error> {
     info!("Resolving remote record for {}", remote_id);
     let mut history = NonEmpty::singleton(remote_id);
     loop {
@@ -162,8 +220,11 @@ fn get_record_row_recursive<'conn>(
             RemoteResponse::Data(mut data) => {
                 data.normalize(normalization);
                 let raw_record_data = (&data).into();
-                let row = missing.insert(&raw_record_data, history.last())?;
-                row.add_refs(history.iter())?;
+
+                // SAFETY: the provided canonical identifier is present in the provided references
+                let row = unsafe {
+                    missing.insert_with_refs(&raw_record_data, history.last(), history.iter())?
+                };
                 let original = exists_callback(&row)?;
 
                 let NonEmpty { head, mut tail } = history;
@@ -174,7 +235,7 @@ fn get_record_row_recursive<'conn>(
                     (None, None) => (head.to_string(), head),
                 };
 
-                break Ok(RecordRowResponse::Exists(
+                break Ok(RemoteRecordRowResponse::Exists(
                     Record {
                         key,
                         data: RawRecordData::from(&data),
@@ -192,7 +253,7 @@ fn get_record_row_recursive<'conn>(
                         data, canonical, ..
                     } = row.get_data()?;
                     let original = exists_callback(&row)?;
-                    break Ok(RecordRowResponse::Exists(
+                    break Ok(RemoteRecordRowResponse::Exists(
                         Record {
                             key: original.unwrap_or(history.head.into()),
                             data,
@@ -217,7 +278,7 @@ fn get_record_row_recursive<'conn>(
                 if history.tail.is_empty() {
                     let remote_id = into_last(history);
                     let null_row = missing.set_null(&remote_id)?;
-                    break Ok(RecordRowResponse::NullRemoteId(remote_id, null_row));
+                    break Ok(RemoteRecordRowResponse::Null(remote_id, null_row));
                 } else {
                     break Err(ProviderError::UnexpectedNullRemoteFromProvider(
                         into_last(history).into(),

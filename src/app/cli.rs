@@ -15,25 +15,25 @@ use crate::{
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 pub struct Cli {
+    #[command(subcommand)]
+    pub command: Command,
+
     /// Use record database.
     #[arg(short, long, value_name = "PATH", env = "AUTOBIB_DATABASE_PATH")]
     pub database: Option<PathBuf>,
     /// Use configuration file.
     #[arg(short, long, value_name = "PATH", env = "AUTOBIB_CONFIG_PATH")]
     pub config: Option<PathBuf>,
+    /// Use directory for attachments.
+    #[arg(long, value_name = "PATH", env = "AUTOBIB_ATTACHMENTS_DIRECTORY")]
+    pub attachments_dir: Option<PathBuf>,
     /// Do not require user action.
     ///
     /// This option is set automatically if the standard input is not a terminal.
     #[arg(short = 'I', long, global = true)]
     pub no_interactive: bool,
-    /// Use directory for attachments.
-    #[arg(long, value_name = "PATH", env = "AUTOBIB_ATTACHMENTS_DIRECTORY")]
-    pub attachments_dir: Option<PathBuf>,
     #[command(flatten)]
     pub verbose: Verbosity<WarnLevel>,
-
-    #[command(subcommand)]
-    pub command: Command,
 }
 
 #[derive(Debug, Copy, Clone, ValueEnum, Default)]
@@ -63,6 +63,33 @@ impl FindMode {
             FindMode::Attachments
         } else {
             FindMode::CanonicalId
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub enum ImportMode {
+    Local,
+    DetermineKey,
+    Retrieve,
+    RetrieveOnly,
+}
+
+impl ImportMode {
+    pub fn from_flags(
+        _local: bool,
+        determine_key: bool,
+        retrieve: bool,
+        retrieve_only: bool,
+    ) -> Self {
+        if determine_key {
+            Self::DetermineKey
+        } else if retrieve {
+            Self::Retrieve
+        } else if retrieve_only {
+            Self::RetrieveOnly
+        } else {
+            Self::Local
         }
     }
 }
@@ -204,6 +231,35 @@ pub enum Command {
         #[arg(long)]
         ignore_null: bool,
     },
+    /// Import records from a bibtex file.
+    Import {
+        /// The BibeX file(s) from which to import.
+        target: Vec<PathBuf>,
+        /// Import as `local:` records.
+        #[arg(short = 'l', long, group = "import_mode")]
+        local: bool,
+        /// Import with automatically determined keys.
+        #[arg(short = 'k', long, group = "import_mode")]
+        determine_key: bool,
+        /// Import with automatically determined keys, first retrieving from remote.
+        #[arg(short = 'r', long, group = "import_mode")]
+        retrieve: bool,
+        /// Only determine the key and retrieve from remote.
+        #[arg(short = 'R', long, group = "import_mode")]
+        retrieve_only: bool,
+        /// Never create aliases.
+        #[arg(short = 'A', long)]
+        no_alias: bool,
+        /// Print entries which could not be imported
+        #[arg(long)]
+        log_failures: bool,
+        /// Keep the current value without prompting in the event of a conflict.
+        #[arg(long, group = "on-conflict")]
+        prefer_current: bool,
+        /// Update with the incoming value without prompting in the event of a conflict.
+        #[arg(long, group = "on-conflict")]
+        prefer_incoming: bool,
+    },
     /// Show metadata for citation key.
     Info {
         /// The citation key to show info.
@@ -223,7 +279,7 @@ pub enum Command {
         #[arg(long, value_name = "EXISTING_ID", group = "input")]
         rename_from: Option<String>,
         /// Do not create the alias `<ID>` for `local:<ID>`.
-        #[arg(long)]
+        #[arg(short = 'A', long)]
         no_alias: bool,
     },
     /// Combine multiple records.
@@ -288,8 +344,7 @@ pub enum Command {
     /// By default, you will be prompted if there is a conflict between the current and incoming
     /// records.
     ///
-    /// To override this behaviour, use the `--prefer-current` or `--prefer-incoming`
-    /// option; `--prefer-incoming` takes precedence over `--prefer-current`.
+    /// To override this behaviour, use `--prefer-current` or `--prefer-incoming`.
     /// The `--no-interactive` global option implies `--prefer-current`.
     Update {
         /// The citation key to update.
