@@ -25,7 +25,7 @@ impl Normalization {
 
 /// Types which can be normalized by the operations specified in a [`Normalization`].
 ///
-/// In practice, this is only implemented for [`RecordData`](crate::db::RecordData).
+/// In practice, this is only implemented for [`RecordData`](crate::entry::RecordData).
 pub trait Normalize {
     /// Attempt to set the `eprint` and `eprinttype` BibTeX fields using the value of a provided
     /// BibTeX field from the `keys` iterator.

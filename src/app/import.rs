@@ -10,9 +10,9 @@ use crate::{
     config::Config,
     db::{
         state::{Missing, RecordRow, RemoteIdState, State},
-        RecordData, RecordDatabase,
+        RecordDatabase,
     },
-    entry::Entry,
+    entry::{Entry, RecordData},
     error::{self, RecordError},
     logger::{info, warn},
     provider::{determine_remote_id_candidates, is_canonical},

@@ -7,8 +7,7 @@ use std::{
 use anyhow::bail;
 
 use crate::{
-    db::{RawRecordData, RecordData},
-    entry::Entry,
+    entry::{Entry, RawRecordData, RecordData},
     http::HttpClient,
     logger::info,
     path_hash::PathHash,

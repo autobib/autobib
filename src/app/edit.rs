@@ -6,11 +6,8 @@ use serde_bibtex::token::EntryKey;
 use super::UpdateMode;
 
 use crate::{
-    db::{
-        state::{RecordRow, State},
-        RawRecordData, RecordData,
-    },
-    entry::Entry,
+    db::state::{RecordRow, State},
+    entry::{Entry, RawRecordData, RecordData},
     error::MergeError,
     logger::{error, info, warn},
     record::{Alias, Record},
