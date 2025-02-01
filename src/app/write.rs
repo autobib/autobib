@@ -9,7 +9,12 @@ use nonempty::NonEmpty;
 use serde::Serializer as _;
 use serde_bibtex::ser::Serializer;
 
-use crate::{db::EntryData, entry::Entry, logger::warn, record::RemoteId, CitationKey};
+use crate::{
+    entry::{Entry, EntryData},
+    logger::warn,
+    record::RemoteId,
+    CitationKey,
+};
 
 pub fn init_outfile<P: AsRef<Path>>(
     out: Option<P>,

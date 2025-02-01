@@ -1,3 +1,5 @@
+mod data;
+
 use std::{fmt, str::FromStr};
 
 use delegate::delegate;
@@ -7,10 +9,10 @@ use serde::{
 };
 use serde_bibtex::{de::Deserializer, to_string_unchecked, token::EntryKey};
 
-use crate::{
-    db::{EntryData, RawRecordData, RecordData},
-    error::BibtexDataError,
-};
+pub use self::data::{binary_format_version, EntryData, RawRecordData, RecordData};
+pub(crate) use self::data::{EntryTypeHeader, KeyHeader, ValueHeader};
+
+use crate::error::BibtexDataError;
 
 /// A single regular entry in a BibTeX bibliography.
 #[derive(Debug, PartialEq)]

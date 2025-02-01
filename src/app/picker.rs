@@ -9,7 +9,8 @@ use nucleo_picker::{Picker, PickerOptions, Render};
 use walkdir::{DirEntry, WalkDir};
 
 use crate::{
-    db::{state::RowData, EntryData, RecordDatabase},
+    db::{state::RowData, RecordDatabase},
+    entry::EntryData,
     path_hash::PathHash,
 };
 

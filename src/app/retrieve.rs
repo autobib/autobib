@@ -11,9 +11,9 @@ use crate::{
     config::Config,
     db::{
         state::{NullRecordRow, RecordIdState, RecordRow, State},
-        RawRecordData, RecordDatabase,
+        RecordDatabase,
     },
-    entry::Entry,
+    entry::{Entry, RawRecordData},
     error::Error,
     http::HttpClient,
     logger::{error, suggest},

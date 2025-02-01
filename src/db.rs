@@ -2,8 +2,7 @@
 //! This module implements the abstraction over the underlying [SQLite](https://sqlite.org/)
 //! database in which all bibliographic data is stored.
 //!
-//! The core struct is the [`RecordDatabase`], as well as the data objects [`RecordData`],
-//! [`RawRecordData`], and the corresponding trait [`EntryData`].
+//! The core struct is the [`RecordDatabase`].
 //!
 //! In order to represent internal database state, see the [`state`] module, along with its
 //! documentation.
@@ -63,7 +62,6 @@
 //! ];
 //! # assert_eq!(expected_byte_repr, byte_repr);
 //! ```
-mod data;
 mod sql;
 pub mod state;
 mod validate;
@@ -78,8 +76,6 @@ use rusqlite::{
     functions::FunctionFlags, types::ValueRef, Connection, DropBehavior, OptionalExtension, ToSql,
 };
 
-pub use self::data::{binary_format_version, EntryData, RawRecordData, RecordData};
-pub(crate) use self::data::{EntryTypeHeader, KeyHeader, ValueHeader};
 use self::state::{RecordIdState, RemoteIdState, RowData};
 use self::validate::{DatabaseFault, DatabaseValidator};
 use crate::{
