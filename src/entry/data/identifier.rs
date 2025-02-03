@@ -8,10 +8,11 @@ use crate::error::RecordDataError;
 ///
 /// 1. has length at least `1` and at most [`u8::MAX`].
 /// 2. composed only of ASCII lowercase letters (from [`char::is_ascii_lowercase`]).
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct EntryType<S = String>(pub(in crate::entry) S);
 
 impl<S: AsRef<str>> EntryType<S> {
+    #[inline]
     pub fn try_new(s: S) -> Result<Self, RecordDataError> {
         let entry_type = s.as_ref();
 
@@ -24,6 +25,10 @@ impl<S: AsRef<str>> EntryType<S> {
         }
 
         Ok(Self(s))
+    }
+
+    pub fn to_owned(&self) -> EntryType {
+        EntryType(self.0.as_ref().to_owned())
     }
 }
 
@@ -46,10 +51,11 @@ impl EntryType<String> {
 ///
 /// 1. has length at least `1` and at most [`KeyHeader::MAX`].
 /// 2. composed only of ASCII lowercase letters (from [`char::is_ascii_lowercase`]).
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct FieldKey<S = String>(pub(in crate::entry) S);
 
 impl<S: AsRef<str>> FieldKey<S> {
+    #[inline]
     pub fn try_new(s: S) -> Result<Self, RecordDataError> {
         let key = s.as_ref();
 
@@ -65,6 +71,10 @@ impl<S: AsRef<str>> FieldKey<S> {
 
         Ok(Self(s))
     }
+
+    pub fn to_owned(&self) -> FieldKey {
+        FieldKey(self.0.as_ref().to_owned())
+    }
 }
 
 // the field key requirements are stricted than the field value requirements
@@ -79,7 +89,7 @@ impl<S> From<FieldKey<S>> for FieldValue<S> {
 ///
 /// 1. has length at most [`ValueHeader::MAX`].
 /// 2. satisfies the balanced `{}` rule (from [`serde_bibtex::token::is_balanced`]).
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct FieldValue<S = String>(pub(in crate::entry) S);
 
 impl<S: AsRef<str>> FieldValue<S> {
@@ -98,6 +108,10 @@ impl<S: AsRef<str>> FieldValue<S> {
         }
 
         Ok(Self(s))
+    }
+
+    pub fn to_owned(&self) -> FieldValue {
+        FieldValue(self.0.as_ref().to_owned())
     }
 }
 
@@ -132,6 +146,14 @@ macro_rules! identifier_impl {
         impl<S: AsRef<str>> PartialEq<str> for $e<S> {
             fn eq(&self, other: &str) -> bool {
                 self.0.as_ref().eq(other)
+            }
+        }
+
+        impl ::std::str::FromStr for $e {
+            type Err = RecordDataError;
+
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                Self::try_new(s.trim().to_owned())
             }
         }
     };

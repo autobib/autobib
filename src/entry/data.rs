@@ -149,7 +149,10 @@ impl RecordData {
     ///
     /// The callback `resolve_conflict` takes three arguments in the following order:
     /// the key, the existing value in `self` corresponding to the key, and the new value.
-    pub fn merge_with_callback<D: EntryData, C: FnMut(&str, &str, &str) -> ConflictResolved>(
+    pub fn merge_with_callback<
+        D: EntryData,
+        C: FnMut(FieldKey<&str>, FieldValue<&str>, FieldValue<&str>) -> ConflictResolved,
+    >(
         &mut self,
         other: &D,
         mut resolve_conflict: C,
@@ -157,7 +160,11 @@ impl RecordData {
         for (key, value) in other.fields() {
             match self.fields.get_mut(key) {
                 Some(current_value) if current_value != value => {
-                    let new_value = match resolve_conflict(key, &current_value.0, value) {
+                    let new_value = match resolve_conflict(
+                        FieldKey(key),
+                        FieldValue(&current_value.0),
+                        FieldValue(value),
+                    ) {
                         ConflictResolved::Current => continue,
                         ConflictResolved::Incoming => FieldValue(value.to_owned()),
                         ConflictResolved::New(new_value) => new_value,
@@ -249,7 +256,7 @@ impl Normalize for RecordData {
                     return false;
                 }
                 EPrintState::NeedsUpdate(val) => {
-                    self.insert(FieldKey("eprint".into()), val.clone());
+                    self.insert(FieldKey("eprint".into()), FieldValue(val.0.clone()));
                     // SAFETY: 'eprinttype' satisfies the key requirements
                     // SAFETY: `key` is already a key in the database, and the requirements for
                     // keys are stricter than the requirements for values.
