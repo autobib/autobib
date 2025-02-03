@@ -314,7 +314,25 @@ pub enum RemoteIdState<'conn> {
     Unknown(State<'conn, Missing>),
 }
 
+/// A representation of the database state beginning with an arbitrary [`RemoteId`].
+#[derive(Debug)]
+pub enum ExistsOrUnknown<'conn> {
+    /// The `Records` row exists.
+    Existent(State<'conn, RecordRow>),
+    /// The `Records` and `NullRecords` rows do not exist.
+    Unknown(State<'conn, Missing>),
+}
+
 impl<'conn> RemoteIdState<'conn> {
+    #[inline]
+    pub fn delete_null(self) -> Result<ExistsOrUnknown<'conn>, rusqlite::Error> {
+        Ok(match self {
+            RemoteIdState::Existent(state) => ExistsOrUnknown::Existent(state),
+            RemoteIdState::Null(state) => ExistsOrUnknown::Unknown(state.delete()?),
+            RemoteIdState::Unknown(state) => ExistsOrUnknown::Unknown(state),
+        })
+    }
+
     /// Determine the current state of the database, as corresponds to the provided remote record
     /// identifier.
     #[inline]

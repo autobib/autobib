@@ -17,7 +17,7 @@ use serde::Deserialize;
 
 // re-imports exposed to provider implementations
 use crate::{
-    entry::{EntryData, RecordData},
+    entry::{EntryData, EntryType, RecordData},
     error::{ProviderError, RecordDataError},
     HttpClient, MappedKey, RemoteId,
 };

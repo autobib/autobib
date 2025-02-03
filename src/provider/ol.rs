@@ -6,7 +6,7 @@ use serde::Deserialize;
 
 use crate::logger::info;
 
-use super::{HttpClient, ProviderError, RecordData, ValidationOutcome};
+use super::{EntryType, HttpClient, ProviderError, RecordData, ValidationOutcome};
 
 static OL_IDENTIFIER_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[0-9]{8}M$").unwrap());
 
@@ -67,7 +67,7 @@ pub fn get_record(id: &str, client: &HttpClient) -> Result<Option<RecordData>, P
             publishers,
             ..
         }) => {
-            let mut record_data = RecordData::try_new("book".into()).unwrap();
+            let mut record_data = RecordData::new(EntryType::book());
 
             if let Some(address) = publish_places.into_iter().next() {
                 record_data.check_and_insert("address".into(), address)?;

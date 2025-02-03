@@ -3,6 +3,7 @@ use chrono::Local;
 use super::{DatabaseId, NullRecordRow, RecordRow, State};
 use crate::{
     db::{sql, CitationKey},
+    entry::EntryData,
     logger::debug,
     RawRecordData, RemoteId,
 };
@@ -48,6 +49,17 @@ impl<'conn> State<'conn, Missing> {
         let row = unsafe { self.into_last_insert() };
         row.add_refs(refs)?;
         Ok(row)
+    }
+
+    /// A convenience wrapper around [`insert`](Self::insert) which first converts any type which
+    /// implements [`EntryData`] into a [`RawRecordData`].
+    pub fn insert_entry_data<D: EntryData>(
+        self,
+        data: &D,
+        canonical: &RemoteId,
+    ) -> Result<State<'conn, RecordRow>, rusqlite::Error> {
+        let raw_record_data = RawRecordData::from_entry_data(data);
+        self.insert(&raw_record_data, canonical)
     }
 
     /// Create the row and also insert a link in the `CitationKeys` table, converting into a [`RecordRow`].
