@@ -21,6 +21,8 @@ impl<S: Display> Input<S> {
         let mut input = String::new();
         stdin().read_line(&mut input)?;
 
+        input.truncate(input.trim_end().len());
+
         Ok(input)
     }
 }

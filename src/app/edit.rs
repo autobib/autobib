@@ -8,9 +8,9 @@ use crate::{
     db::state::{RecordRow, State},
     entry::{ConflictResolved, Entry, EntryData, RecordData},
     error::MergeError,
-    logger::{error, info, suggest, warn},
+    logger::{error, info, set_failed, suggest, warn},
     record::Alias,
-    term::{Confirm, Editor, EditorConfig},
+    term::{Editor, EditorConfig, Input},
 };
 
 /// Edit a record and update the entry corresponding to the [`RecordRow`]. Returns the edited
@@ -50,6 +50,7 @@ pub fn edit_record_and_update(
 
         data_changed
     } else {
+        set_failed();
         false
     };
 
@@ -84,17 +85,40 @@ pub fn merge_record_data<'a, D: EntryData + 'a>(
             }
         }
         UpdateMode::Prompt => {
-            // TODO: also provide `edit` option using `ConflictResolved::New`
             info!("Updating {citation_key} with new data, prompting on conflict");
             for data in new_raw_data {
                 existing_record.merge_with_callback(data, |key, current, incoming| {
                     eprintln!("Conflict for the field '{key}':");
                     eprintln!("   Current value: {current}");
                     eprintln!("  Incoming value: {incoming}");
-                    let prompt = Confirm::new("Accept incoming value?", false);
-                    match prompt.confirm() {
-                        Ok(true) => ConflictResolved::Incoming,
-                        Ok(false) => ConflictResolved::Current,
+                    let prompt = Input::new("Accept incoming value? [y]es / [N]o / [e]dit");
+                    let choice = match prompt.input() {
+                        Ok(r) => r,
+                        Err(error) => {
+                            error!("{error}");
+                            warn!("Keeping current value for '{key}'");
+                            return ConflictResolved::Current;
+                        }
+                    };
+
+                    loop {
+                        match choice.trim() {
+                            "" => return ConflictResolved::Current,
+                            c if "no".starts_with(c) || "NO".starts_with(c) => {
+                                return ConflictResolved::Current
+                            }
+                            c if "yes".starts_with(c) || "YES".starts_with(c) => {
+                                return ConflictResolved::Incoming
+                            }
+                            c if "edit".starts_with(c) || "EDIT".starts_with(c) => break,
+                            _ => warn!("Invalid selection: {choice}!"),
+                        }
+                    }
+
+                    let editor = Editor::new(EditorConfig { suffix: ".tex" });
+                    let val = incoming.to_owned();
+                    match editor.edit(&val) {
+                        Ok(new) => ConflictResolved::New(new.unwrap_or(val)),
                         Err(error) => {
                             error!("{error}");
                             warn!("Keeping current value for '{key}'");
