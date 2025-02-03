@@ -156,7 +156,7 @@ pub enum Command {
     /// command.
     Delete {
         /// The citation keys to delete.
-        citation_key: Vec<RecordId>,
+        citation_keys: Vec<RecordId>,
         /// Delete without prompting.
         ///
         /// Deletion will fail if user confirmation is required,the program is running
@@ -179,7 +179,7 @@ pub enum Command {
     ///   "eprinttype" bibtex fields from the first field key which is present in the record.
     Edit {
         /// The citation key(s) to edit.
-        citation_key: Vec<RecordId>,
+        citation_keys: Vec<RecordId>,
         /// Normalize whitespace.
         #[arg(long)]
         normalize_whitespace: bool,
@@ -217,11 +217,11 @@ pub enum Command {
     /// Retrieve records given citation keys.
     Get {
         /// The citation keys to retrieve.
-        citation_key: Vec<RecordId>,
+        citation_keys: Vec<RecordId>,
         /// Write output to file.
         #[arg(short, long, group = "output", value_name = "PATH")]
         out: Option<PathBuf>,
-        /// Append new entries to the output.
+        /// Append new entries to the output, skipping existing entries.
         #[arg(short, long, requires = "out")]
         append: bool,
         /// Retrieve records but do not output BibTeX or check the validity of citation keys.
@@ -327,7 +327,7 @@ pub enum Command {
         #[arg(long, group = "output")]
         print_keys: bool,
         /// Skip a citation key (if present).
-        #[arg(short, long, value_name = "CITATION_KEY")]
+        #[arg(short, long, value_name = "CITATION_KEYS")]
         skip: Vec<RecordId>,
         /// Skip citation keys which are present in the provided `.bib` file(s).
         #[arg(long, value_name = "PATH")]
