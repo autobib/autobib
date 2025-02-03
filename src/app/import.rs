@@ -15,6 +15,7 @@ use crate::{
     entry::{Entry, RecordData},
     error::{self, RecordError},
     logger::{info, warn},
+    normalize::{Normalization, Normalize},
     provider::{determine_remote_id_candidates, is_canonical},
     record::{
         get_record_row_remote, Alias, MappedAliasOrRemoteId, MappedKey, RecordId, RemoteId,
@@ -59,6 +60,7 @@ pub fn import_entry<F: FnOnce() -> Vec<(regex::Regex, String)>>(
             entry,
             import_config.no_interactive,
             import_config.no_alias,
+            &config.on_insert,
             |entry, record_db| {
                 let alias = match Alias::from_str(entry.key.as_ref()) {
                     Ok(alias) => alias,
@@ -74,6 +76,7 @@ pub fn import_entry<F: FnOnce() -> Vec<(regex::Regex, String)>>(
             entry,
             import_config.no_interactive,
             import_config.no_alias,
+            &config.on_insert,
             |entry, record_db| {
                 // we require a canonical identifier since we do not perform any remote resolution
                 match determine_key(entry, true, config) {
@@ -202,6 +205,7 @@ fn import_entry_impl<F>(
     mut entry: Entry<RecordData>,
     no_interactive: bool,
     no_alias: bool,
+    nl: &Normalization,
     mut determine_action: F,
 ) -> Result<ImportOutcome, anyhow::Error>
 where
@@ -213,21 +217,24 @@ where
     loop {
         match determine_action(&entry, record_db)? {
             ImportAction::Update(row, update_mode, remote_id, maybe_alias) => {
-                let mut existing_record = RecordData::from(&row.get_data()?.data);
+                entry.record_data.normalize(nl);
+                let raw_record_data = row.get_data()?.data;
+                let mut existing_record = RecordData::from_entry_data(&raw_record_data);
                 merge_record_data(
                     update_mode,
                     &mut existing_record,
-                    std::iter::once(&entry.data().into()),
+                    std::iter::once(entry.data()),
                     &remote_id,
                 )?;
                 row.save_to_changelog()?;
-                row.update_row_data(&(&existing_record).into())?;
+                row.update_entry_data(&existing_record)?;
                 create_alias(row, &remote_id, no_alias, maybe_alias)?;
                 return Ok(ImportOutcome::Success);
             }
             ImportAction::Insert(missing, remote_id, maybe_alias) => {
                 info!("Inserting new record with identifier '{remote_id}'");
-                let row = missing.insert(&(&entry.record_data).into(), &remote_id)?;
+                entry.record_data.normalize(nl);
+                let row = missing.insert_entry_data(&entry.record_data, &remote_id)?;
                 create_alias(row, remote_id.name(), no_alias, maybe_alias)?;
                 return Ok(ImportOutcome::Success);
             }
@@ -278,6 +285,7 @@ where
         entry,
         import_config.no_interactive,
         import_config.no_alias,
+        &config.on_insert,
         // we do not require a canonical identifier since we perform remote resolution
         |entry, record_db| match determine_key(entry, false, config) {
             DeterminedKey::Alias(alias) => handle_alias(alias, record_db),

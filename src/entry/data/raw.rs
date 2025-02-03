@@ -28,7 +28,7 @@ pub(crate) type EntryTypeHeader = u8;
 /// of fields, see [`RecordData`](super::RecordData).
 ///
 /// For a description of the binary format, see the [`db`](crate::db) module documentation.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct RawRecordData {
     data: Vec<u8>,
 }
@@ -40,6 +40,36 @@ impl RawRecordData {
     /// The caller must ensure that underlying data upholds the requirements of the binary representation.
     pub(crate) unsafe fn from_byte_repr_unchecked(data: Vec<u8>) -> Self {
         Self { data }
+    }
+
+    pub fn from_entry_data<D: EntryData>(entry_data: &D) -> Self {
+        let mut data = Vec::with_capacity(entry_data.raw_len());
+
+        data.push(binary_format_version());
+
+        let entry_type = entry_data.entry_type();
+        let entry_type_len = EntryTypeHeader::try_from(entry_type.len()).unwrap();
+        data.push(entry_type_len);
+        data.extend(entry_type.as_bytes());
+
+        for (key, value) in entry_data.fields() {
+            let key_len = KeyHeader::try_from(key.len()).unwrap();
+            let value_len = ValueHeader::try_from(value.len()).unwrap().to_le_bytes();
+
+            data.push(key_len);
+            data.extend(value_len);
+            data.extend(key.as_bytes());
+            data.extend(value.as_bytes());
+        }
+
+        // SAFETY: the invariants are upheld based on the
+        // `RecordData::insert` implementation.
+        unsafe { Self::from_byte_repr_unchecked(data) }
+    }
+
+    /// The representation as raw bytes.
+    pub fn to_byte_repr(&self) -> &[u8] {
+        &self.data
     }
 
     /// Construct a [`RawRecordData`] from raw bytes, checking that the underlying bytes are valid.
@@ -160,11 +190,6 @@ impl RawRecordData {
         }
     }
 
-    /// The representation as raw bytes.
-    pub fn to_byte_repr(&self) -> &[u8] {
-        &self.data
-    }
-
     /// Split into the `TYPE` and `DATA` blocks, discarding the header.
     #[inline]
     fn split_blocks(&self) -> (&[u8], &[u8]) {
@@ -176,7 +201,7 @@ impl RawRecordData {
 /// The iterator type for the fields of a [`RawRecordData`]. This cannot be constructed directly;
 /// it is constructed implicitly by the [`EntryData::fields`] implementation of [`RawRecordData`].
 #[derive(Debug)]
-struct RawRecordFieldsIter<'a> {
+pub(super) struct RawRecordFieldsIter<'a> {
     remaining: &'a [u8],
 }
 
@@ -205,7 +230,7 @@ impl<'a> Iterator for RawRecordFieldsIter<'a> {
     }
 }
 
-impl EntryData for RawRecordData {
+unsafe impl EntryData for RawRecordData {
     fn fields(&self) -> impl Iterator<Item = (&str, &str)> {
         let (_, data_blocks) = self.split_blocks();
         RawRecordFieldsIter {
@@ -216,5 +241,9 @@ impl EntryData for RawRecordData {
     fn entry_type(&self) -> &str {
         let (type_block, _) = self.split_blocks();
         from_utf8(&type_block[1..]).unwrap()
+    }
+
+    fn raw_len(&self) -> usize {
+        self.data.len()
     }
 }

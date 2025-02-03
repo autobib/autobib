@@ -7,7 +7,7 @@ use std::{
 use anyhow::bail;
 
 use crate::{
-    entry::{Entry, RawRecordData, RecordData},
+    entry::{Entry, RecordData},
     http::HttpClient,
     logger::info,
     path_hash::PathHash,
@@ -57,14 +57,12 @@ pub fn data_from_path_or_remote<P: AsRef<Path>>(
     maybe_path: Option<P>,
     remote_id: RemoteId,
     client: &HttpClient,
-) -> Result<(RawRecordData, RemoteId), anyhow::Error> {
+) -> Result<(RecordData, RemoteId), anyhow::Error> {
     if let Some(path) = maybe_path {
         Ok((data_from_path(path)?, remote_id))
     } else {
         match get_remote_response_recursive(remote_id, client)? {
-            RecursiveRemoteResponse::Exists(record_data, canonical) => {
-                Ok((RawRecordData::from(&record_data), canonical))
-            }
+            RecursiveRemoteResponse::Exists(record_data, canonical) => Ok((record_data, canonical)),
             RecursiveRemoteResponse::Null(null_remote_id) => {
                 bail!("Remote data for canonical id '{null_remote_id}' is null");
             }
@@ -75,17 +73,17 @@ pub fn data_from_path_or_remote<P: AsRef<Path>>(
 /// Either obtain data from a `.bib` file at the provided path, or return the default data.
 pub fn data_from_path_or_default<P: AsRef<Path>>(
     maybe_path: Option<P>,
-) -> Result<RawRecordData, anyhow::Error> {
+) -> Result<RecordData, anyhow::Error> {
     if let Some(path) = maybe_path {
         data_from_path(path)
     } else {
-        Ok((&RecordData::default()).into())
+        Ok(RecordData::default())
     }
 }
 
 /// Obtain data from a bibtex record at a provided path.
-fn data_from_path<P: AsRef<Path>>(path: P) -> Result<RawRecordData, anyhow::Error> {
+fn data_from_path<P: AsRef<Path>>(path: P) -> Result<RecordData, anyhow::Error> {
     let bibtex = read_to_string(path)?;
-    let entry = Entry::<RawRecordData>::from_str(&bibtex)?;
+    let entry = Entry::<RecordData>::from_str(&bibtex)?;
     Ok(entry.record_data)
 }

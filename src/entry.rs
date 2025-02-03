@@ -1,4 +1,5 @@
 mod data;
+mod deserialize;
 
 use std::{fmt, str::FromStr};
 
@@ -9,7 +10,10 @@ use serde::{
 };
 use serde_bibtex::{de::Deserializer, to_string_unchecked, token::EntryKey};
 
-pub use self::data::{binary_format_version, EntryData, RawRecordData, RecordData};
+pub use self::data::{
+    binary_format_version, ConflictResolved, EntryData, EntryType, FieldKey, FieldValue,
+    RawRecordData, RecordData,
+};
 pub(crate) use self::data::{EntryTypeHeader, KeyHeader, ValueHeader};
 
 use crate::error::BibtexDataError;
@@ -84,73 +88,26 @@ pub fn entries_from_bibtex(
     bibtex: &[u8],
 ) -> impl Iterator<Item = Result<Entry<RecordData>, BibtexDataError>> + use<'_> {
     Deserializer::from_slice(bibtex)
-        .into_iter_regular_entry::<Contents>()
-        .map(|res_entry| {
-            res_entry.map_or_else(
-                |_| Err(BibtexDataError::BibtexParseError),
-                TryInto::try_into,
-            )
-        })
-}
-
-impl<D: From<RecordData> + EntryData> TryFrom<Contents> for Entry<D> {
-    type Error = BibtexDataError;
-
-    fn try_from(
-        Contents {
-            mut entry_type,
-            entry_key,
-            fields,
-        }: Contents,
-    ) -> Result<Self, Self::Error> {
-        entry_type.make_ascii_lowercase();
-        let mut record_data = RecordData::try_new(entry_type)?;
-        for (mut key, val) in fields {
-            key.make_ascii_lowercase();
-            record_data.check_and_insert(key, val)?;
-        }
-
-        // SAFETY: the Deserializer implementation only accepts the entry if the entry key is
-        //         valid.
-        Ok(Entry::new(
-            EntryKey::new(entry_key).unwrap(),
-            record_data.into(),
-        ))
-    }
+        .into_iter_regular_entry::<Entry<RecordData>>()
+        .map(|res_entry| res_entry.map_err(Into::into))
 }
 
 impl FromStr for Entry<RecordData> {
     type Err = BibtexDataError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut de_iter = Deserializer::from_str(s).into_iter_regular_entry::<Contents>();
+        let mut de_iter = Deserializer::from_str(s).into_iter_regular_entry::<Entry<RecordData>>();
 
-        if let Some(Ok(contents)) = de_iter.next() {
-            if de_iter.next().is_none() {
-                contents.try_into()
-            } else {
-                Err(Self::Err::BibtexMultipleEntries)
+        match de_iter.next() {
+            Some(Ok(entry)) => {
+                if de_iter.next().is_none() {
+                    Ok(entry)
+                } else {
+                    Err(Self::Err::BibtexMultipleEntries)
+                }
             }
-        } else {
-            Err(Self::Err::BibtexParseError)
-        }
-    }
-}
-
-impl FromStr for Entry<RawRecordData> {
-    type Err = BibtexDataError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut de_iter = Deserializer::from_str(s).into_iter_regular_entry::<Contents>();
-
-        if let Some(Ok(contents)) = de_iter.next() {
-            if de_iter.next().is_none() {
-                contents.try_into()
-            } else {
-                Err(Self::Err::BibtexMultipleEntries)
-            }
-        } else {
-            Err(Self::Err::BibtexParseError)
+            Some(Err(err)) => Err(Self::Err::BibtexParseError(err)),
+            None => Err(Self::Err::Empty),
         }
     }
 }

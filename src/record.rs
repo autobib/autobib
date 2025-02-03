@@ -220,7 +220,7 @@ fn get_record_row_recursive<'conn>(
         missing = match get_remote_response(client, history.last())? {
             RemoteResponse::Data(mut data) => {
                 data.normalize(normalization);
-                let raw_record_data = (&data).into();
+                let raw_record_data = RawRecordData::from_entry_data(&data);
 
                 // SAFETY: the provided canonical identifier is present in the provided references
                 let row = unsafe {
@@ -239,7 +239,7 @@ fn get_record_row_recursive<'conn>(
                 break Ok(RemoteRecordRowResponse::Exists(
                     Record {
                         key,
-                        data: RawRecordData::from(&data),
+                        data: RawRecordData::from_entry_data(&data),
                         canonical,
                     },
                     row,

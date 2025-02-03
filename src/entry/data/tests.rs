@@ -1,5 +1,6 @@
 use super::*;
-use crate::error::InvalidBytesError;
+
+use crate::error::{InvalidBytesError, RecordDataError};
 
 #[test]
 fn test_normalize_whitespace() {
@@ -9,9 +10,9 @@ fn test_normalize_whitespace() {
     }
     let changed = record_data.normalize_whitespace();
     assert!(changed);
-    assert_eq!(record_data.get("a"), Some(""));
-    assert_eq!(record_data.get("b"), Some("ok"));
-    assert_eq!(record_data.get("c"), Some("a b"));
+    assert_eq!(record_data.get_str("a"), Some(""));
+    assert_eq!(record_data.get_str("b"), Some("ok"));
+    assert_eq!(record_data.get_str("c"), Some("a b"));
     assert!(!record_data.normalize_whitespace());
 }
 
@@ -29,8 +30,8 @@ fn test_normalize_eprint() {
     }
     let changed = record_data.set_eprint(["zbl", "doi"].iter());
     assert!(changed);
-    assert_eq!(record_data.get("eprint"), Some("yyy"));
-    assert_eq!(record_data.get("eprinttype"), Some("zbl"));
+    assert_eq!(record_data.get_str("eprint"), Some("yyy"));
+    assert_eq!(record_data.get_str("eprinttype"), Some("zbl"));
 
     // already ok
     let mut record_data = RecordData::try_new("article".into()).unwrap();
@@ -52,8 +53,8 @@ fn test_normalize_eprint() {
     }
     let changed = record_data.set_eprint(["zbl", "doi"].iter());
     assert!(changed);
-    assert_eq!(record_data.get("eprint"), Some("yyy"));
-    assert_eq!(record_data.get("eprinttype"), Some("zbl"));
+    assert_eq!(record_data.get_str("eprint"), Some("yyy"));
+    assert_eq!(record_data.get_str("eprinttype"), Some("zbl"));
 
     // set new partial
     let mut record_data = RecordData::try_new("article".into()).unwrap();
@@ -62,8 +63,8 @@ fn test_normalize_eprint() {
     }
     let changed = record_data.set_eprint(["zbl", "doi"].iter());
     assert!(changed);
-    assert_eq!(record_data.get("eprint"), Some("xxx"));
-    assert_eq!(record_data.get("eprinttype"), Some("doi"));
+    assert_eq!(record_data.get_str("eprint"), Some("xxx"));
+    assert_eq!(record_data.get_str("eprinttype"), Some("doi"));
 
     // skip missing without changing
     let mut record_data = RecordData::try_new("article".into()).unwrap();
@@ -80,8 +81,8 @@ fn test_normalize_eprint() {
     }
     let changed = record_data.set_eprint(["zbl", "doi"].iter());
     assert!(changed);
-    assert_eq!(record_data.get("eprint"), Some("xxx"));
-    assert_eq!(record_data.get("eprinttype"), Some("doi"));
+    assert_eq!(record_data.get_str("eprint"), Some("xxx"));
+    assert_eq!(record_data.get_str("eprinttype"), Some("doi"));
 
     // skip
     let mut record_data = RecordData::try_new("article".into()).unwrap();
@@ -125,7 +126,7 @@ fn test_data_round_trip() {
         .check_and_insert("a".into(), "b".repeat(65_535))
         .unwrap();
 
-    let raw_data = RawRecordData::from(&record_data);
+    let raw_data = RawRecordData::from_entry_data(&record_data);
 
     let mut record_data_clone = RecordData::try_new(raw_data.entry_type().into()).unwrap();
 
@@ -138,7 +139,7 @@ fn test_data_round_trip() {
     assert_eq!(record_data, record_data_clone);
     assert_eq!(
         raw_data.to_byte_repr(),
-        RawRecordData::from(&record_data_clone).to_byte_repr()
+        RawRecordData::from_entry_data(&record_data_clone).to_byte_repr()
     );
 }
 
@@ -176,7 +177,7 @@ fn test_format_manual() {
         .check_and_insert("title".into(), "The Title".into())
         .unwrap();
 
-    let data = RawRecordData::from(&record_data);
+    let data = RawRecordData::from_entry_data(&record_data);
     let expected = vec![
         0, 7, b'a', b'r', b't', b'i', b'c', b'l', b'e', 5, 9, 0, b't', b'i', b't', b'l', b'e',
         b'T', b'h', b'e', b' ', b'T', b'i', b't', b'l', b'e', 4, 4, 0, b'y', b'e', b'a', b'r',
