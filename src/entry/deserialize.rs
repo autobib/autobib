@@ -5,9 +5,7 @@ use serde::{
     Deserialize,
 };
 
-use crate::error::RecordDataError;
-
-use super::{Entry, EntryType, FieldKey, FieldValue, RecordData};
+use super::{Entry, EntryType, EntryTypeHeader, FieldKey, FieldValue, KeyHeader, RecordData};
 
 impl<'de> de::Deserialize<'de> for EntryType {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -15,19 +13,28 @@ impl<'de> de::Deserialize<'de> for EntryType {
         D: Deserializer<'de>,
     {
         let mut inner = String::deserialize(deserializer)?;
+
+        if !inner.is_ascii() {
+            return Err(D::Error::invalid_value(
+                Unexpected::Str(&inner),
+                &"an entry type composed of ASCII characters",
+            ));
+        }
+
+        if inner.len() > EntryTypeHeader::MAX as usize {
+            return Err(D::Error::invalid_value(
+                Unexpected::Str(&inner),
+                &"an entry type with at most 256 ASCII characters",
+            ));
+        }
+
         inner.make_ascii_lowercase();
 
-        Self::try_new(inner).map_err(|err| match err {
-            RecordDataError::EntryTypeNotAsciiLowercase => D::Error::invalid_value(
-                Unexpected::Other("entry type"),
-                &"an entry type with at most 256 ASCII letters",
-            ),
-            RecordDataError::EntryTypeInvalidLength(_) => D::Error::invalid_value(
-                Unexpected::Other("entry type"),
-                &"an entry type of at most 256 ASCII letters",
-            ),
-            _ => unreachable!(),
-        })
+        // SAFETY: `inner` is only accepted by the serde_bibtex deserialize impl if either it is
+        // composed of non-ASCII characters, or ASCII characters which satisfy the field key rules
+        // or also possibly capitals `A..=Z`. Therefore we only need to check that it is ASCII, and
+        // convert any possible capitals to ASCII lowercase.
+        Ok(Self(inner))
     }
 }
 
@@ -37,19 +44,28 @@ impl<'de> de::Deserialize<'de> for FieldKey {
         D: Deserializer<'de>,
     {
         let mut inner = String::deserialize(deserializer)?;
+
+        if !inner.is_ascii() {
+            return Err(D::Error::invalid_value(
+                Unexpected::Str(&inner),
+                &"a field key composed of ASCII characters",
+            ));
+        }
+
+        if inner.len() > KeyHeader::MAX as usize {
+            return Err(D::Error::invalid_value(
+                Unexpected::Str(&inner),
+                &"a field key with at most 256 ASCII characters",
+            ));
+        }
+
         inner.make_ascii_lowercase();
 
-        Self::try_new(inner).map_err(|err| match err {
-            RecordDataError::KeyInvalidLength(_) => D::Error::invalid_value(
-                Unexpected::Other("field key"),
-                &"a field key with between 1 and 256 ASCII letters",
-            ),
-            RecordDataError::KeyNotAsciiLowercase => D::Error::invalid_value(
-                Unexpected::Other("field key"),
-                &"a field key with between 1 and 256 ASCII letters",
-            ),
-            _ => unreachable!(),
-        })
+        // SAFETY: `inner` is only accepted by the serde_bibtex deserialize impl if either it is
+        // composed of non-ASCII characters, or ASCII characters which satisfy the field key rules
+        // or also possibly capitals `A..=Z`. Therefore we only need to check that it is ASCII, and
+        // convert any possible capitals to ASCII lowercase.
+        Ok(Self(inner))
     }
 }
 

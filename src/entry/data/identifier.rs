@@ -7,7 +7,8 @@ use crate::error::RecordDataError;
 /// requirements:
 ///
 /// 1. has length at least `1` and at most [`u8::MAX`].
-/// 2. composed only of ASCII lowercase letters (from [`char::is_ascii_lowercase`]).
+/// 2. composed only of ASCII printable characters with `{}(),= \t\n\\#%\"` and
+///    `A..=Z` removed.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct EntryType<S = String>(pub(in crate::entry) S);
 
@@ -16,13 +17,13 @@ impl<S: AsRef<str>> EntryType<S> {
     pub fn try_new(s: S) -> Result<Self, RecordDataError> {
         let entry_type = s.as_ref();
 
+        // Condition 1
         if entry_type.is_empty() || entry_type.len() > EntryTypeHeader::MAX as usize {
             return Err(RecordDataError::EntryTypeInvalidLength(entry_type.len()));
         }
 
-        if entry_type.bytes().any(|ch| !ch.is_ascii_lowercase()) {
-            return Err(RecordDataError::EntryTypeNotAsciiLowercase);
-        }
+        // Condition 2
+        validate_ascii_identifier(entry_type.as_bytes())?;
 
         Ok(Self(s))
     }
@@ -50,7 +51,8 @@ impl EntryType<String> {
 /// requirements:
 ///
 /// 1. has length at least `1` and at most [`KeyHeader::MAX`].
-/// 2. composed only of ASCII lowercase letters (from [`char::is_ascii_lowercase`]).
+/// 2. composed only of ASCII printable characters with `{}(),= \t\n\\#%\"` and
+///    `A..=Z` removed.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct FieldKey<S = String>(pub(in crate::entry) S);
 
@@ -59,15 +61,13 @@ impl<S: AsRef<str>> FieldKey<S> {
     pub fn try_new(s: S) -> Result<Self, RecordDataError> {
         let key = s.as_ref();
 
-        // Condition K1
+        // Condition 1
         if key.is_empty() || key.len() > KeyHeader::MAX as usize {
             return Err(RecordDataError::KeyInvalidLength(key.len()));
         }
 
-        // Condition K2
-        if key.bytes().any(|b| !b.is_ascii_lowercase()) {
-            return Err(RecordDataError::KeyNotAsciiLowercase);
-        }
+        // Condition 2
+        validate_ascii_identifier(key.as_bytes())?;
 
         Ok(Self(s))
     }
@@ -153,7 +153,9 @@ macro_rules! identifier_impl {
             type Err = RecordDataError;
 
             fn from_str(s: &str) -> Result<Self, Self::Err> {
-                Self::try_new(s.trim().to_owned())
+                let mut inner = s.trim().to_owned();
+                inner.make_ascii_lowercase();
+                Self::try_new(inner)
             }
         }
     };
@@ -162,3 +164,42 @@ macro_rules! identifier_impl {
 identifier_impl!(EntryType);
 identifier_impl!(FieldKey);
 identifier_impl!(FieldValue);
+
+/// Lookup table for bytes which could appear in an ASCII entry key or field key.
+/// This is precisely the ASCII printable characters with `{}(),= \t\n\\#%\"` and
+/// `A..=Z` removed.
+static ASCII_IDENTIFIER_ALLOWED: [bool; 256] = {
+    const PR: bool = false; // disallowed printable bytes
+    const CT: bool = false; // non-printable ascii
+    const NA: bool = false; // not ascii
+    const UC: bool = false; // uppercase alpha
+    const __: bool = true; // permitted bytes
+    [
+        //   1   2   3   4   5   6   7   8   9   A   B   C   D   E   F
+        CT, CT, CT, CT, CT, CT, CT, CT, CT, CT, CT, CT, CT, CT, CT, CT, // 0
+        CT, CT, CT, CT, CT, CT, CT, CT, CT, CT, CT, CT, CT, CT, CT, CT, // 1
+        CT, __, PR, PR, __, PR, __, __, PR, PR, __, __, PR, __, __, __, // 2
+        __, __, __, __, __, __, __, __, __, __, __, __, __, PR, __, __, // 3
+        __, UC, UC, UC, UC, UC, UC, UC, UC, UC, UC, UC, UC, UC, UC, UC, // 4
+        UC, UC, UC, UC, UC, UC, UC, UC, UC, UC, UC, __, PR, __, __, __, // 5
+        __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, // 6
+        __, __, __, __, __, __, __, __, __, __, __, PR, __, PR, __, CT, // 7
+        NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, // 8
+        NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, // 9
+        NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, // A
+        NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, // B
+        NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, // C
+        NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, // D
+        NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, // E
+        NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, // F
+    ]
+};
+
+#[inline]
+pub fn validate_ascii_identifier(s: &[u8]) -> Result<&str, RecordDataError> {
+    match s.iter().find(|&b| !ASCII_IDENTIFIER_ALLOWED[*b as usize]) {
+        Some(_) => Err(RecordDataError::KeyNotAsciiLowercase),
+        // SAFETY: the only bytes permitted by ASCII_IDENTIFIER_ALLOWED are valid ASCII
+        None => Ok(unsafe { std::str::from_utf8_unchecked(s) }),
+    }
+}

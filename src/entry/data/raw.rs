@@ -2,7 +2,7 @@ use std::str::from_utf8;
 
 use serde_bibtex::token::is_balanced;
 
-use super::EntryData;
+use super::{validate_ascii_identifier, EntryData};
 use crate::error::InvalidBytesError;
 
 /// The current version of the binary data format.
@@ -108,18 +108,13 @@ impl RawRecordData {
                             "entry type shorter than header",
                         ))?;
 
-                let entry_type = from_utf8(entry_type_bytes).map_err(|e| {
-                    InvalidBytesError::new(
-                        entry_type_start + e.valid_up_to(),
-                        "entry type has invalid utf-8 starting at position",
-                    )
-                })?;
-                if entry_type.chars().any(|ch| !ch.is_ascii_lowercase()) {
+                if validate_ascii_identifier(entry_type_bytes).is_err() {
                     return Err(InvalidBytesError::new(
                         entry_type_start,
-                        "entry type contains chars which are not ascii lowercase",
+                        "entry type contains non-ASCII chararacters or invalid ASCII characters",
                     ));
                 }
+
                 Ok(entry_type_end)
             }
             _ => Err(InvalidBytesError::new(cursor, "missing entry type")),
@@ -161,18 +156,13 @@ impl RawRecordData {
                     ));
                 }
 
-                let key = from_utf8(key_bytes).map_err(|e| {
-                    InvalidBytesError::new(
-                        key_block_start + e.valid_up_to(),
-                        "key block has invalid utf-8 starting at position",
-                    )
-                })?;
-                if key.chars().any(|ch| !ch.is_ascii_lowercase()) {
+                if validate_ascii_identifier(key_bytes).is_err() {
                     return Err(InvalidBytesError::new(
                         key_block_start,
-                        "key contains chars which are not ascii lowercase",
+                        "field key contains non-ASCII chararacters or invalid ASCII characters",
                     ));
                 }
+
                 let _value = from_utf8(value_bytes).map_err(|e| {
                     InvalidBytesError::new(
                         value_block_start + e.valid_up_to(),
