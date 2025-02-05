@@ -425,7 +425,7 @@ pub fn run_cli(cli: Cli) -> Result<()> {
             }
         }
         Command::Import {
-            target,
+            targets,
             local,
             determine_key,
             retrieve,
@@ -459,7 +459,7 @@ pub fn run_cli(cli: Cli) -> Result<()> {
 
             let mut scratch = Vec::new();
 
-            for bibfile in target {
+            for bibfile in targets {
                 scratch.clear();
                 match File::open(&bibfile).and_then(|mut file| file.read_to_end(&mut scratch)) {
                     Ok(_) => {

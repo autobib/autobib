@@ -43,7 +43,7 @@ pub enum InfoReportType {
     All,
     /// Print the canonical identifer.
     Canonical,
-    /// Check if the key is valid bibtex.
+    /// Check if the key is valid BibTeX.
     Valid,
     /// Print equivalent identifiers.
     Equivalent,
@@ -176,7 +176,7 @@ pub enum Command {
     /// `--normalize-whitespace` converts whitespace blocks into a single ASCII space.
     ///
     /// `--set-eprint` accepts a list of field keys, and sets the "eprint" and
-    ///   "eprinttype" bibtex fields from the first field key which is present in the record.
+    ///   "eprinttype" BibTeX fields from the first field key which is present in the record.
     Edit {
         /// The citation key(s) to edit.
         citation_keys: Vec<RecordId>,
@@ -231,10 +231,10 @@ pub enum Command {
         #[arg(long)]
         ignore_null: bool,
     },
-    /// Import records from a bibtex file.
+    /// Import records from a BibTeX file.
     Import {
-        /// The BibeX file(s) from which to import.
-        target: Vec<PathBuf>,
+        /// The BibTeX file(s) from which to import.
+        targets: Vec<PathBuf>,
         /// Import as `local:` records.
         #[arg(short = 'l', long, group = "import_mode")]
         local: bool,
@@ -251,7 +251,7 @@ pub enum Command {
         #[arg(short = 'A', long)]
         no_alias: bool,
         /// Replace colons in entry keys with a new string.
-        #[arg(long)]
+        #[arg(long, value_name = "STR")]
         replace_colons: Option<String>,
         /// Print entries which could not be imported
         #[arg(long)]
@@ -275,7 +275,7 @@ pub enum Command {
     Local {
         /// The name for the record.
         id: String,
-        /// Create local record from bibtex file.
+        /// Create local record from BibTeX file.
         #[arg(short, long, value_name = "PATH", group = "input")]
         from: Option<PathBuf>,
         /// Rename an existing local record.
