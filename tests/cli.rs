@@ -1163,3 +1163,127 @@ fn test_auto_alias() -> Result<()> {
 
     s.close()
 }
+
+#[test]
+fn import_local() -> Result<()> {
+    let s = TestState::init()?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["import", "tests/resources/import/file.bib"]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["get", "attainable-assouad-spectra"]);
+    cmd.assert().success().stdout(
+        predicate::path::eq_file(Path::new("tests/resources/import/stdout_local.txt"))
+            .utf8()
+            .unwrap(),
+    );
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["get", "zbmath:7937992"]);
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("zbmath = {07937992}"));
+
+    s.close()
+}
+
+#[test]
+fn import_determine_key_no_match() -> Result<()> {
+    let s = TestState::init()?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args([
+        "import",
+        "tests/resources/import/file.bib",
+        "--determine-key",
+    ]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["get", "attainable-assouad-spectra"]);
+    cmd.assert().success().stdout(
+        predicate::path::eq_file(Path::new("tests/resources/import/stdout_local.txt"))
+            .utf8()
+            .unwrap(),
+    );
+
+    // the remote record is different, since `zbmath` was not set as a preferred provider and there
+    // was no matching alias transform
+    let mut cmd = s.cmd()?;
+    cmd.args(["get", "zbmath:7937992", "local:zbMATH06346461"]);
+    cmd.assert().success().stdout(
+        predicate::path::eq_file(Path::new("tests/resources/import/stdout_remote.txt"))
+            .utf8()
+            .unwrap(),
+    );
+
+    s.close()
+}
+
+#[test]
+fn import_determine_key_match() -> Result<()> {
+    let s = TestState::init()?;
+
+    // set configuration to allow keys to be determined successfully
+    s.set_config("tests/resources/import/config.toml")?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args([
+        "import",
+        "tests/resources/import/file.bib",
+        "--determine-key",
+    ]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["get", "attainable-assouad-spectra"]);
+    cmd.assert().success().stdout(
+        predicate::path::eq_file(Path::new("tests/resources/import/stdout_local.txt"))
+            .utf8()
+            .unwrap(),
+    );
+
+    // this time, the records were successfully found locally so no remote retrieval is required
+    let mut cmd = s.cmd()?;
+    cmd.args(["get", "local:zbMATH06346461"]);
+    cmd.assert().failure();
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["get", "zbmath:07937992", "zbmath:06346461"]);
+    cmd.assert().success().stdout(
+        predicate::path::eq_file(Path::new("tests/resources/import/stdout_local_2.txt"))
+            .utf8()
+            .unwrap(),
+    );
+
+    s.close()
+}
+
+#[test]
+fn import_retrieve() -> Result<()> {
+    let s = TestState::init()?;
+
+    // set configuration to allow keys to be determined successfully
+    s.set_config("tests/resources/import/config.toml")?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args([
+        "import",
+        "tests/resources/import/file.bib",
+        "--retrieve",
+        "--prefer-incoming",
+    ]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["get", "attainable-assouad-spectra", "zbl:1337.28015"]);
+    cmd.assert().success().stdout(
+        predicate::path::eq_file(Path::new("tests/resources/import/stdout_retrieve.txt"))
+            .utf8()
+            .unwrap(),
+    );
+
+    s.close()
+}

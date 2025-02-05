@@ -1,7 +1,11 @@
+use std::fmt::Display;
+
 use reqwest::{
     blocking::{Client, ClientBuilder, Response},
     Error, IntoUrl,
 };
+
+use crate::logger::info;
 
 static APP_USER_AGENT: &str = concat!(
     env!("CARGO_PKG_NAME"),
@@ -32,7 +36,8 @@ impl HttpClient {
         })
     }
     /// Make a request to a given url.
-    pub fn get<U: IntoUrl>(&self, url: U) -> Result<Response, Error> {
+    pub fn get<U: IntoUrl + Display>(&self, url: U) -> Result<Response, Error> {
+        info!("Making request to url: {url}");
         self.client.get(url).send()
     }
 }
