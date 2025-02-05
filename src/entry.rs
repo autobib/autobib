@@ -8,7 +8,7 @@ use serde::{
     ser::{Serialize, SerializeSeq, SerializeStruct, Serializer},
     Deserialize,
 };
-use serde_bibtex::{de::Deserializer, to_string_unchecked, token::EntryKey};
+use serde_bibtex::{de::Deserializer, to_string_unchecked, token::EntryKey, MacroDictionary};
 
 pub use self::data::{
     binary_format_version, ConflictResolved, EntryData, EntryType, FieldKey, FieldValue,
@@ -87,7 +87,9 @@ struct Contents {
 pub fn entries_from_bibtex(
     bibtex: &[u8],
 ) -> impl Iterator<Item = Result<Entry<RecordData>, BibtexDataError>> + use<'_> {
-    Deserializer::from_slice(bibtex)
+    let mut dct = MacroDictionary::default();
+    dct.set_month_macros();
+    Deserializer::from_slice_with_macros(bibtex, dct)
         .into_iter_regular_entry::<Entry<RecordData>>()
         .map(|res_entry| res_entry.map_err(Into::into))
 }
