@@ -14,7 +14,7 @@ use crate::{
     },
     entry::{entries_from_bibtex, Entry, EntryKey, RecordData},
     error::{self, RecordError},
-    logger::{error, info, warn},
+    logger::{error, info, set_failed, warn},
     normalize::{Normalization, Normalize},
     provider::{determine_remote_id_candidates, is_canonical},
     record::{
@@ -63,6 +63,7 @@ pub fn from_buffer<F: FnOnce() -> Vec<(regex::Regex, String)>>(
                         if import_config.log_failures {
                             println!("% Import failed: {error}");
                             println!("{entry}");
+                            set_failed();
                         } else {
                             error!(
                                 "Failed to import entry from file '{bibfile}' with key '{}'",
