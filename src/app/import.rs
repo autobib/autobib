@@ -12,9 +12,9 @@ use crate::{
         state::{Missing, RecordRow, RemoteIdState, State},
         RecordDatabase,
     },
-    entry::{Entry, RecordData},
+    entry::{entries_from_bibtex, Entry, EntryKey, RecordData},
     error::{self, RecordError},
-    logger::{info, warn},
+    logger::{error, info, warn},
     normalize::{Normalization, Normalize},
     provider::{determine_remote_id_candidates, is_canonical},
     record::{
@@ -25,9 +25,68 @@ use crate::{
     CitationKey, HttpClient,
 };
 
+/// The configuration used to specify the behaviour when importing data.
+#[derive(Debug)]
+pub struct ImportConfig {
+    pub update_mode: UpdateMode,
+    pub import_mode: ImportMode,
+    pub no_alias: bool,
+    pub no_interactive: bool,
+    pub replace_colons: Option<EntryKey<String>>,
+    pub log_failures: bool,
+}
+
+/// Import records from the provided buffer.
+#[inline]
+pub fn from_buffer<F: FnOnce() -> Vec<(regex::Regex, String)>>(
+    scratch: &[u8],
+    import_config: &ImportConfig,
+    record_db: &mut RecordDatabase,
+    client: &HttpClient,
+    config: &Config<F>,
+    bibfile: impl std::fmt::Display,
+) -> Result<(), anyhow::Error> {
+    for res in entries_from_bibtex(scratch) {
+        match res {
+            Ok(mut entry) => {
+                // replace colons with the replacement value, if a replacement
+                // value is passed and a substitution occurs
+                if let Some(ref s) = import_config.replace_colons {
+                    if let Some(replacement) = entry.key.substitute(':', s) {
+                        entry.key = replacement;
+                    }
+                }
+
+                match import_entry(entry, import_config, record_db, client, config)? {
+                    ImportOutcome::Success => {}
+                    ImportOutcome::Failure(error, entry) => {
+                        if import_config.log_failures {
+                            println!("% Import failed: {error}");
+                            println!("{entry}");
+                        } else {
+                            error!(
+                                "Failed to import entry from file '{bibfile}' with key '{}'",
+                                entry.key().as_ref()
+                            );
+                        }
+                    }
+                    ImportOutcome::UserCancelled => {
+                        error!("Cancelled editing; entry was not imported!");
+                    }
+                }
+            }
+            Err(err) => {
+                error!("Parse error for file '{bibfile}': {err}");
+            }
+        }
+    }
+
+    Ok(())
+}
+
 /// The outcome of attempting to import the given entry.
 #[must_use]
-pub enum ImportOutcome {
+enum ImportOutcome {
     /// The import was successful.
     Success,
     /// The import failed with an error and with the provided entry.
@@ -36,18 +95,9 @@ pub enum ImportOutcome {
     UserCancelled,
 }
 
-/// The configuration used to specify the behaviour when importing data.
-#[derive(Debug)]
-pub struct ImportConfig {
-    pub update_mode: UpdateMode,
-    pub import_mode: ImportMode,
-    pub no_alias: bool,
-    pub no_interactive: bool,
-}
-
 /// Import a single entry into the record database.
 #[inline]
-pub fn import_entry<F: FnOnce() -> Vec<(regex::Regex, String)>>(
+fn import_entry<F: FnOnce() -> Vec<(regex::Regex, String)>>(
     entry: Entry<RecordData>,
     import_config: &ImportConfig,
     record_db: &mut RecordDatabase,

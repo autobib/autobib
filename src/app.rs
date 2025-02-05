@@ -18,7 +18,6 @@ use std::{
 
 use anyhow::{bail, Result};
 use etcetera::{choose_app_strategy, AppStrategy, AppStrategyArgs};
-use import::ImportOutcome;
 use itertools::Itertools;
 use serde_bibtex::token::is_entry_key;
 
@@ -30,9 +29,7 @@ use crate::{
         state::{ExistsOrUnknown, RecordIdState, RowData},
         DeleteAliasResult, EvictionConstraint, RecordDatabase, RenameAliasResult,
     },
-    entry::{
-        binary_format_version, entries_from_bibtex, Entry, EntryKey, RawRecordData, RecordData,
-    },
+    entry::{binary_format_version, Entry, EntryKey, RawRecordData, RecordData},
     error::AliasErrorKind,
     http::HttpClient,
     logger::{debug, error, info, suggest, warn},
@@ -453,7 +450,10 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                 import_mode: ImportMode::from_flags(local, determine_key, retrieve, retrieve_only),
                 no_alias,
                 no_interactive: cli.no_interactive,
+                replace_colons,
+                log_failures,
             };
+
             debug!("Using import configuration: {import_config:?}");
             let cfg = config::load(&config_path, missing_ok)?;
 
@@ -463,43 +463,14 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                 scratch.clear();
                 match File::open(&bibfile).and_then(|mut file| file.read_to_end(&mut scratch)) {
                     Ok(_) => {
-                        for res in entries_from_bibtex(&scratch) {
-                            match res {
-                                Ok(mut entry) => {
-                                    // replace colons with the replacement value, if a replacement
-                                    // value is passed and a substitution occurs
-                                    if let Some(ref s) = replace_colons {
-                                        if let Some(replacement) = entry.key.substitute(':', s) {
-                                            entry.key = replacement;
-                                        }
-                                    }
-
-                                    match import::import_entry(
-                                        entry,
-                                        &import_config,
-                                        &mut record_db,
-                                        &client,
-                                        &cfg,
-                                    )? {
-                                        ImportOutcome::Success => {}
-                                        ImportOutcome::Failure(error, entry) => {
-                                            if log_failures {
-                                                println!("% Import failed: {error}");
-                                                println!("{entry}");
-                                            } else {
-                                                error!("Failed to import entry from file '{}' with key '{}'", bibfile.display(), entry.key().as_ref());
-                                            }
-                                        }
-                                        ImportOutcome::UserCancelled => {
-                                            error!("Cancelled editing; entry was not imported!");
-                                        }
-                                    }
-                                }
-                                Err(err) => {
-                                    error!("Parse error for file '{}': {err}", bibfile.display());
-                                }
-                            }
-                        }
+                        import::from_buffer(
+                            &scratch,
+                            &import_config,
+                            &mut record_db,
+                            &client,
+                            &cfg,
+                            bibfile.display(),
+                        )?;
                     }
                     Err(err) => error!(
                         "Failed to read contents of file '{}': {err}",
@@ -507,7 +478,6 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                     ),
                 }
             }
-            // todo!()
         }
         Command::Info {
             citation_key,
