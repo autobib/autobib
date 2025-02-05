@@ -441,7 +441,7 @@ fn bibtex_key_validation() -> Result<()> {
     let mut cmd = s.cmd()?;
     cmd.args(["get", "doi:10.1016/0021-8693(89)90256-1"]);
     cmd.assert().failure().stderr(
-        predicate::str::contains("identifier contains invalid character")
+        predicate::str::contains("Identifier contains invalid character")
             .and(predicate::str::contains("cst1989")),
     );
 
@@ -468,7 +468,7 @@ fn bibtex_key_validation() -> Result<()> {
     let mut cmd = s.cmd()?;
     cmd.args(["get", "has ws"]);
     cmd.assert().failure().stderr(predicate::str::contains(
-        "identifier contains invalid character",
+        "Identifier contains invalid character",
     ));
 
     s.close()

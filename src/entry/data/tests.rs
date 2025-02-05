@@ -200,6 +200,12 @@ fn test_validate_data_ok() {
         vec![0, 7, b'a', b'r', b't', b'i', b'c', b'l', b'e'],
         // field value can have length 0
         vec![0, 1, b'a', 1, 0, 0, b'b'],
+        // usual example
+        vec![
+            0, 7, b'a', b'r', b't', b'i', b'c', b'l', b'e', 5, 9, 0, b't', b'i', b't', b'l', b'e',
+            b'T', b'h', b'e', b' ', b'T', b'i', b't', b'l', b'e', 4, 4, 0, b'y', b'e', b'a', b'r',
+            b'2', b'0', b'2', b'3',
+        ],
     ] {
         assert!(RawRecordData::from_byte_repr(data).is_ok());
     }
@@ -229,7 +235,7 @@ fn test_validate_data_err() {
         b'0', b'2', b'3',
     ];
     let parsed = RawRecordData::from_byte_repr(malformed_data);
-    assert!(matches!(parsed, Err(InvalidBytesError { position: 5, .. })));
+    assert!(matches!(parsed, Err(InvalidBytesError { position: 2, .. })));
 
     // bad length header
     let malformed_data = vec![
@@ -276,14 +282,14 @@ fn test_data_err_insert() {
 
     assert_eq!(
         RecordData::try_new("🍄".into()),
-        Err(RecordDataError::EntryTypeNotAsciiLowercase),
+        Err(RecordDataError::ContainsInvalidChar),
     );
 
     let mut record_data = RecordData::try_new("a".into()).unwrap();
 
     assert_eq!(
         record_data.check_and_insert("BAD".into(), "".into()),
-        Err(RecordDataError::KeyNotAsciiLowercase)
+        Err(RecordDataError::ContainsInvalidChar)
     );
 
     assert_eq!(

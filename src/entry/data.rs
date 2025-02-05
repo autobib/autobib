@@ -16,7 +16,7 @@ use std::{borrow::Borrow, cmp::PartialEq, collections::BTreeMap, iter::Iterator,
 use delegate::delegate;
 use regex::Regex;
 
-pub use identifier::{validate_ascii_identifier, EntryType, FieldKey, FieldValue};
+pub use identifier::{validate_ascii_identifier, EntryKey, EntryType, FieldKey, FieldValue};
 pub use raw::{binary_format_version, RawRecordData};
 pub(crate) use raw::{EntryTypeHeader, KeyHeader, ValueHeader};
 

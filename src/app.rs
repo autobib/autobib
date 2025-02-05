@@ -20,7 +20,7 @@ use anyhow::{bail, Result};
 use etcetera::{choose_app_strategy, AppStrategy, AppStrategyArgs};
 use import::ImportOutcome;
 use itertools::Itertools;
-use serde_bibtex::token::{is_entry_key, EntryKey};
+use serde_bibtex::token::is_entry_key;
 
 use crate::{
     cite_search::{get_citekeys, SourceFileType},
@@ -30,7 +30,9 @@ use crate::{
         state::{ExistsOrUnknown, RecordIdState, RowData},
         DeleteAliasResult, EvictionConstraint, RecordDatabase, RenameAliasResult,
     },
-    entry::{binary_format_version, entries_from_bibtex, Entry, RawRecordData, RecordData},
+    entry::{
+        binary_format_version, entries_from_bibtex, Entry, EntryKey, RawRecordData, RecordData,
+    },
     error::AliasErrorKind,
     http::HttpClient,
     logger::{debug, error, info, suggest, warn},
@@ -287,8 +289,8 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                 } else {
                     let mut editable_data = RecordData::from_entry_data(&data);
                     let changed = editable_data.normalize(&nl);
-                    let entry_key = EntryKey::new(key)
-                        .unwrap_or_else(|_| EntryKey::new(":not_valid_bibtex".to_owned()).unwrap());
+                    let entry_key =
+                        EntryKey::try_new(key).unwrap_or_else(|_| EntryKey::placeholder());
                     edit_record_and_update(
                         &row,
                         Entry::new(entry_key, editable_data),
@@ -429,10 +431,19 @@ pub fn run_cli(cli: Cli) -> Result<()> {
             retrieve,
             retrieve_only,
             no_alias,
+            replace_colons,
             log_failures,
             prefer_current,
             prefer_incoming,
         } => {
+            let replace_colons = match replace_colons {
+                Some(subst) => match EntryKey::try_new(subst) {
+                    Ok(new) => Some(new),
+                    Err(err) => bail!("Argument to `--replace-colons` is invalid: {err}"),
+                },
+                None => None,
+            };
+
             let import_config = self::import::ImportConfig {
                 update_mode: UpdateMode::from_flags(
                     cli.no_interactive,
@@ -454,7 +465,15 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                     Ok(_) => {
                         for res in entries_from_bibtex(&scratch) {
                             match res {
-                                Ok(entry) => {
+                                Ok(mut entry) => {
+                                    // replace colons with the replacement value, if a replacement
+                                    // value is passed and a substitution occurs
+                                    if let Some(ref s) = replace_colons {
+                                        if let Some(replacement) = entry.key.substitute(':', s) {
+                                            entry.key = replacement;
+                                        }
+                                    }
+
                                     match import::import_entry(
                                         entry,
                                         &import_config,
@@ -645,9 +664,8 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                 edit_record_and_update(
                     &row,
                     Entry {
-                        key: EntryKey::new(edit_key_candidate.into()).unwrap_or_else(|_| {
-                            EntryKey::new(":not_valid_bibtex".to_owned()).unwrap()
-                        }),
+                        key: EntryKey::try_new(edit_key_candidate.into())
+                            .unwrap_or_else(|_| EntryKey::placeholder()),
                         record_data: RecordData::from_entry_data(&raw_data),
                     },
                     false,

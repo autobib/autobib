@@ -1,7 +1,43 @@
-use serde_bibtex::token::is_balanced;
+use serde_bibtex::token::{is_balanced, is_entry_key};
 
 use super::{EntryTypeHeader, KeyHeader, ValueHeader};
 use crate::error::RecordDataError;
+
+/// A validated entry key (e.g. "key" in `@book{key, ..}`) which satisfies the following
+/// requirements:
+///
+/// 1. has length at least `1`
+/// 2. composed only of ASCII printable characters except `{}(),=\\#%\"`, or non-ASCII UTF-8.
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct EntryKey<S = String>(pub(in crate::entry) S);
+
+impl<S: AsRef<str>> EntryKey<S> {
+    #[inline]
+    pub fn try_new(s: S) -> Result<Self, RecordDataError> {
+        let entry_key = s.as_ref();
+
+        if !is_entry_key(entry_key) {
+            return Err(RecordDataError::ContainsInvalidChar);
+        }
+
+        Ok(Self(s))
+    }
+}
+
+impl EntryKey {
+    /// A placeholder value used for displaying keys which are not valid bibtex.
+    pub fn placeholder() -> Self {
+        Self(":not_valid_bibtex".to_owned())
+    }
+
+    /// Substitute a character with a different entry key.
+    #[inline]
+    pub fn substitute<S: AsRef<str>>(&self, from: char, to: &EntryKey<S>) -> Option<EntryKey> {
+        self.0
+            .find(from)
+            .map(|_| EntryKey(self.0.replace(from, to.as_ref())))
+    }
+}
 
 /// A validated entry type (e.g. "article" in `@article{...}`) which satisfies the following
 /// requirements:
@@ -162,6 +198,7 @@ macro_rules! identifier_impl {
 }
 
 identifier_impl!(EntryType);
+identifier_impl!(EntryKey);
 identifier_impl!(FieldKey);
 identifier_impl!(FieldValue);
 
@@ -198,7 +235,7 @@ static ASCII_IDENTIFIER_ALLOWED: [bool; 256] = {
 #[inline]
 pub fn validate_ascii_identifier(s: &[u8]) -> Result<&str, RecordDataError> {
     match s.iter().find(|&b| !ASCII_IDENTIFIER_ALLOWED[*b as usize]) {
-        Some(_) => Err(RecordDataError::KeyNotAsciiLowercase),
+        Some(_) => Err(RecordDataError::ContainsInvalidChar),
         // SAFETY: the only bytes permitted by ASCII_IDENTIFIER_ALLOWED are valid ASCII
         None => Ok(unsafe { std::str::from_utf8_unchecked(s) }),
     }

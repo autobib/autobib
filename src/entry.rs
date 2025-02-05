@@ -8,10 +8,10 @@ use serde::{
     ser::{Serialize, SerializeSeq, SerializeStruct, Serializer},
     Deserialize,
 };
-use serde_bibtex::{de::Deserializer, to_string_unchecked, token::EntryKey, MacroDictionary};
+use serde_bibtex::{de::Deserializer, to_string_unchecked, MacroDictionary};
 
 pub use self::data::{
-    binary_format_version, ConflictResolved, EntryData, EntryType, FieldKey, FieldValue,
+    binary_format_version, ConflictResolved, EntryData, EntryKey, EntryType, FieldKey, FieldValue,
     RawRecordData, RecordData,
 };
 pub(crate) use self::data::{EntryTypeHeader, KeyHeader, ValueHeader};
