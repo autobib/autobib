@@ -5,7 +5,9 @@ use serde::{
     Deserialize,
 };
 
-use super::{Entry, EntryType, EntryTypeHeader, FieldKey, FieldValue, KeyHeader, RecordData};
+use super::{
+    Entry, EntryKey, EntryType, EntryTypeHeader, FieldKey, FieldValue, KeyHeader, RecordData,
+};
 
 impl<'de> de::Deserialize<'de> for EntryType {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -126,7 +128,8 @@ impl<'de> de::Deserialize<'de> for Entry<RecordData> {
                     .next_element()?
                     .ok_or_else(|| de::Error::invalid_length(2, &self))?;
                 Ok(Entry {
-                    key: serde_bibtex::token::EntryKey::new(entry_key).unwrap(),
+                    key: EntryKey(entry_key), // SAFETY: serde_bibtex only returns keys satisfying
+                    // the requiremens
                     record_data: RecordData { entry_type, fields },
                 })
             }

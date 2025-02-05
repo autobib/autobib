@@ -250,6 +250,9 @@ pub enum Command {
         /// Never create aliases.
         #[arg(short = 'A', long)]
         no_alias: bool,
+        /// Replace colons in entry keys with a new string.
+        #[arg(long)]
+        replace_colons: Option<String>,
         /// Print entries which could not be imported
         #[arg(long)]
         log_failures: bool,

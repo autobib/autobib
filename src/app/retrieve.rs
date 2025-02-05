@@ -3,8 +3,6 @@ use std::collections::{
     BTreeMap, HashMap, HashSet,
 };
 
-use serde_bibtex::token::EntryKey;
-
 use nonempty::NonEmpty;
 
 use crate::{
@@ -13,7 +11,7 @@ use crate::{
         state::{NullRecordRow, RecordIdState, RecordRow, State},
         RecordDatabase,
     },
-    entry::{Entry, RawRecordData},
+    entry::{Entry, EntryKey, RawRecordData},
     error::Error,
     http::HttpClient,
     logger::{error, suggest},
@@ -162,26 +160,26 @@ fn retrieve_and_validate_single_entry<F: FnOnce() -> Vec<(regex::Regex, String)>
 
 /// Validate a BibTeX key, logging errors and suggesting fixes.
 fn validate_bibtex_key(key: String, row: &State<RecordRow>) -> Option<EntryKey<String>> {
-    match EntryKey::new(key) {
+    match EntryKey::try_new(key) {
         Ok(bibtex_key) => Some(bibtex_key),
         Err(parse_result) => {
             match row.get_valid_referencing_keys() {
                 Ok(alternative_keys) => {
                     if !alternative_keys.is_empty() {
-                        error!("{}", parse_result.error,);
+                        error!("{}", parse_result,);
                         suggest!(
                             "Use one of the following equivalent keys: {}",
                             alternative_keys.join(", ")
                         );
                     } else {
-                        error!("{}", parse_result.error);
+                        error!("{}", parse_result);
                         suggest!("Create an alias which does not contain whitespace or disallowed characters: {{}}(),=\\#%\"");
                     }
                 }
                 Err(error2) => {
                     error!(
                         "{}\n  Another error occurred while retrieving equivalent keys:",
-                        parse_result.error
+                        parse_result
                     );
                     error!("{error2}");
                 }
