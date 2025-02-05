@@ -39,6 +39,7 @@ Jump to:
 - [Assigning aliases](#assigning-aliases)
 - [Creating local records](#creating-local-records)
 - [Searching for records](#searching-for-records)
+- [Importing records](#importing-records)
 - [Shell completions](#shell-completions)
 - [Database and configuration file](#database-and-configuration-file)
 
@@ -188,6 +189,26 @@ For example,
 autobib find -f author,title
 ```
 will list all of your local records with the `author` and `title` fields available to search against.
+
+### Import records
+
+If you have an existing database of records in the `.bib`, you can import these records into your Autobib database using `autobib import`.
+There are four mutually exclusive import modes, specified with flags:
+
+- `--local` (the default behaviour):
+  Each record is added as though it were a local record, similar to `autobib local <key> --from <file>.bib`.
+  The key is determined automatically from the entry key of each record in the passed file.
+- `--determine-key`:
+  Similar to `--local`, but attempt to read a remote identifier (i.e. of the form `provider:sub_id`) from the entry key instead.
+  If you have set the `preferred_providers` configuration option and the identifier could not be determined from the entry key, use heuristics to attempt to determine the identifier from the entry fields.
+- `--retrieve`:
+  If an identifier could be determined (using the same logic as `--determine-key`), make a remote request to attempt to retrieve the data from the provider before importing the record.
+- `--retrieve-only`:
+  Do not import the data from the `.bib` file and only make a remote request to retrieve the data.
+
+Note that alias transforms, in the `[alias_transform]` section of the [configuration](src/config/default_config.toml) apply when determining the key automatically, which can be used to define a custom import pattern.
+To handle colons in entry keys, one can also use the `--replace-colons` command so specify a (possibly empty) replacement string.
+
 
 ### Shell completions
 
