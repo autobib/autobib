@@ -1287,3 +1287,22 @@ fn import_retrieve() -> Result<()> {
 
     s.close()
 }
+
+#[test]
+fn import_retrieve_only() -> Result<()> {
+    let s = TestState::init()?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args([
+        "import",
+        "tests/resources/import/file.bib",
+        "--retrieve-only",
+        "--log-failures",
+    ]);
+    cmd.assert().failure().stdout(
+        predicate::str::contains("zbMATH06346461")
+            .and(predicate::str::contains("attainable-assouad-spectra")),
+    );
+
+    s.close()
+}
