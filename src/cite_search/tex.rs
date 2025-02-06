@@ -22,7 +22,7 @@ fn comment_and_ws(buffer: &[u8], mut pos: usize) -> usize {
     buffer.len()
 }
 
-/// Try to parse a macro `\<name>` where `<name>` is ascii lowercase or starred.
+/// Try to parse a macro `\<name>` where `<name>` is ascii alphabetic or starred.
 fn ascii_macro(buffer: &[u8], mut pos: usize) -> (Option<&str>, usize) {
     // check the first char
     if buffer[pos] == b'\\' {
@@ -31,14 +31,14 @@ fn ascii_macro(buffer: &[u8], mut pos: usize) -> (Option<&str>, usize) {
         return (None, pos);
     }
 
-    // take characters as long as they are ascii lowercase or `*`
+    // take characters as long as they are ascii alphabetic or `*`
     let mut end = pos;
-    while end < buffer.len() && (buffer[end].is_ascii_lowercase() || buffer[end] == b'*') {
+    while end < buffer.len() && (buffer[end].is_ascii_alphabetic() || buffer[end] == b'*') {
         end += 1;
     }
 
     // found: cast to string
-    // SAFETY: chars are ascii lowercase or *
+    // SAFETY: chars are ascii alphabetic or *
     if pos < end {
         (
             Some(unsafe { std::str::from_utf8_unchecked(&buffer[pos..end]) }),
@@ -120,7 +120,7 @@ fn parse_cite_contents<T: Extend<RecordId>>(contents: &str, container: &mut T) {
 }
 
 static CITATION_MACRO_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(^[a-z]*cite\*?$)|(^cite[a-z]*\*?$)").unwrap());
+    LazyLock::new(|| Regex::new(r"(^[a-zA-Z]?[a-z]*cite\*?$)|(^[Cc]ite[a-z]*\*?$)").unwrap());
 
 /// Check if the macro name is an expected citation macro.
 fn is_citation_macro_name(cmd: &str) -> bool {
@@ -169,11 +169,27 @@ mod test {
     use crate::CitationKey;
 
     #[test]
+    fn test_citation_macro() {
+        assert!(is_citation_macro_name("Cite"));
+        assert!(is_citation_macro_name("Cite*"));
+        assert!(is_citation_macro_name("autocite"));
+        assert!(is_citation_macro_name("Parencite"));
+        assert!(is_citation_macro_name("Citetwo"));
+
+        assert!(!is_citation_macro_name("citE"));
+        assert!(!is_citation_macro_name("cit"));
+        assert!(!is_citation_macro_name(" cite"));
+        assert!(!is_citation_macro_name(""));
+        assert!(!is_citation_macro_name("cite**"));
+    }
+
+    #[test]
     fn test_get_citekeys_tex() {
         let contents = r"
             An explanation can be found in \cite[§2]{ref2} (see also \cite{ref1,
             ref3}).
 \autocite{contains space}.
+\Cite{ref4}
             "
         .as_bytes();
 
@@ -181,7 +197,8 @@ mod test {
 
         get_citekeys(contents, &mut container);
 
-        let expected = ["ref1", "ref2", "ref3"];
+        let expected = ["ref1", "ref2", "ref3", "ref4"];
+        assert_eq!(container.len(), expected.len());
         for (exp, rec) in zip(expected.iter(), container.iter()) {
             assert_eq!(*exp, rec.name());
         }
