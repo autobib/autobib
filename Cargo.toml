@@ -49,6 +49,10 @@ predicates = "3.1"
 [profile.release]
 lto = true
 
+[profile.profiling]
+inherits = "release"
+debug = true
+
 [lints.clippy]
 redundant_closure_for_method_calls = "warn"
 same_functions_in_if_condition = "warn"
