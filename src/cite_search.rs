@@ -26,7 +26,7 @@ pub mod bib;
 pub mod tex;
 pub mod tex_auxfile;
 
-use std::{ffi::OsStr, iter::Extend, path::Path, str::FromStr};
+use std::{ffi::OsStr, path::Path, str::FromStr};
 
 use crate::{error::Error, RecordId};
 

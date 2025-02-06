@@ -1,4 +1,4 @@
-use std::{iter::Extend, sync::LazyLock};
+use std::sync::LazyLock;
 
 use memchr::{memchr, memchr2, memchr3};
 use regex::Regex;
