@@ -15,25 +15,25 @@ use crate::{
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 pub struct Cli {
+    #[command(subcommand)]
+    pub command: Command,
+
     /// Use record database.
     #[arg(short, long, value_name = "PATH", env = "AUTOBIB_DATABASE_PATH")]
     pub database: Option<PathBuf>,
     /// Use configuration file.
     #[arg(short, long, value_name = "PATH", env = "AUTOBIB_CONFIG_PATH")]
     pub config: Option<PathBuf>,
+    /// Use directory for attachments.
+    #[arg(long, value_name = "PATH", env = "AUTOBIB_ATTACHMENTS_DIRECTORY")]
+    pub attachments_dir: Option<PathBuf>,
     /// Do not require user action.
     ///
     /// This option is set automatically if the standard input is not a terminal.
     #[arg(short = 'I', long, global = true)]
     pub no_interactive: bool,
-    /// Use directory for attachments.
-    #[arg(long, value_name = "PATH", env = "AUTOBIB_ATTACHMENTS_DIRECTORY")]
-    pub attachments_dir: Option<PathBuf>,
     #[command(flatten)]
     pub verbose: Verbosity<WarnLevel>,
-
-    #[command(subcommand)]
-    pub command: Command,
 }
 
 #[derive(Debug, Copy, Clone, ValueEnum, Default)]
@@ -43,7 +43,7 @@ pub enum InfoReportType {
     All,
     /// Print the canonical identifer.
     Canonical,
-    /// Check if the key is valid bibtex.
+    /// Check if the key is valid BibTeX.
     Valid,
     /// Print equivalent identifiers.
     Equivalent,
@@ -63,6 +63,33 @@ impl FindMode {
             FindMode::Attachments
         } else {
             FindMode::CanonicalId
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub enum ImportMode {
+    Local,
+    DetermineKey,
+    Retrieve,
+    RetrieveOnly,
+}
+
+impl ImportMode {
+    pub fn from_flags(
+        _local: bool,
+        determine_key: bool,
+        retrieve: bool,
+        retrieve_only: bool,
+    ) -> Self {
+        if determine_key {
+            Self::DetermineKey
+        } else if retrieve {
+            Self::Retrieve
+        } else if retrieve_only {
+            Self::RetrieveOnly
+        } else {
+            Self::Local
         }
     }
 }
@@ -129,7 +156,7 @@ pub enum Command {
     /// command.
     Delete {
         /// The citation keys to delete.
-        citation_key: Vec<RecordId>,
+        citation_keys: Vec<RecordId>,
         /// Delete without prompting.
         ///
         /// Deletion will fail if user confirmation is required,the program is running
@@ -149,10 +176,10 @@ pub enum Command {
     /// `--normalize-whitespace` converts whitespace blocks into a single ASCII space.
     ///
     /// `--set-eprint` accepts a list of field keys, and sets the "eprint" and
-    ///   "eprinttype" bibtex fields from the first field key which is present in the record.
+    ///   "eprinttype" BibTeX fields from the first field key which is present in the record.
     Edit {
         /// The citation key(s) to edit.
-        citation_key: Vec<RecordId>,
+        citation_keys: Vec<RecordId>,
         /// Normalize whitespace.
         #[arg(long)]
         normalize_whitespace: bool,
@@ -186,15 +213,18 @@ pub enum Command {
         /// Search records and print the selected canonical identifier.
         #[arg(long, group = "find_mode")]
         records: bool,
+        /// Only search records which contain all of the provided fields.
+        #[arg(long)]
+        all_fields: bool,
     },
     /// Retrieve records given citation keys.
     Get {
         /// The citation keys to retrieve.
-        citation_key: Vec<RecordId>,
+        citation_keys: Vec<RecordId>,
         /// Write output to file.
         #[arg(short, long, group = "output", value_name = "PATH")]
         out: Option<PathBuf>,
-        /// Append new entries to the output.
+        /// Append new entries to the output, skipping existing entries.
         #[arg(short, long, requires = "out")]
         append: bool,
         /// Retrieve records but do not output BibTeX or check the validity of citation keys.
@@ -203,6 +233,38 @@ pub enum Command {
         /// Ignore null records and aliases.
         #[arg(long)]
         ignore_null: bool,
+    },
+    /// Import records from a BibTeX file.
+    Import {
+        /// The BibTeX file(s) from which to import.
+        targets: Vec<PathBuf>,
+        /// Import as `local:` records.
+        #[arg(short = 'l', long, group = "import_mode")]
+        local: bool,
+        /// Import with automatically determined keys.
+        #[arg(short = 'k', long, group = "import_mode")]
+        determine_key: bool,
+        /// Import with automatically determined keys, first retrieving from remote.
+        #[arg(short = 'r', long, group = "import_mode")]
+        retrieve: bool,
+        /// Only determine the key and retrieve from remote.
+        #[arg(short = 'R', long, group = "import_mode")]
+        retrieve_only: bool,
+        /// Never create aliases.
+        #[arg(short = 'A', long)]
+        no_alias: bool,
+        /// Replace colons in entry keys with a new string.
+        #[arg(long, value_name = "STR")]
+        replace_colons: Option<String>,
+        /// Print entries which could not be imported
+        #[arg(long)]
+        log_failures: bool,
+        /// Keep the current value without prompting in the event of a conflict.
+        #[arg(long, group = "on-conflict")]
+        prefer_current: bool,
+        /// Update with the incoming value without prompting in the event of a conflict.
+        #[arg(long, group = "on-conflict")]
+        prefer_incoming: bool,
     },
     /// Show metadata for citation key.
     Info {
@@ -216,14 +278,14 @@ pub enum Command {
     Local {
         /// The name for the record.
         id: String,
-        /// Create local record from bibtex file.
+        /// Create local record from BibTeX file.
         #[arg(short, long, value_name = "PATH", group = "input")]
         from: Option<PathBuf>,
         /// Rename an existing local record.
         #[arg(long, value_name = "EXISTING_ID", group = "input")]
         rename_from: Option<String>,
         /// Do not create the alias `<ID>` for `local:<ID>`.
-        #[arg(long)]
+        #[arg(short = 'A', long)]
         no_alias: bool,
     },
     /// Combine multiple records.
@@ -271,7 +333,7 @@ pub enum Command {
         #[arg(long, group = "output")]
         print_keys: bool,
         /// Skip a citation key (if present).
-        #[arg(short, long, value_name = "CITATION_KEY")]
+        #[arg(short, long, value_name = "CITATION_KEYS")]
         skip: Vec<RecordId>,
         /// Skip citation keys which are present in the provided `.bib` file(s).
         #[arg(long, value_name = "PATH")]
@@ -288,8 +350,7 @@ pub enum Command {
     /// By default, you will be prompted if there is a conflict between the current and incoming
     /// records.
     ///
-    /// To override this behaviour, use the `--prefer-current` or `--prefer-incoming`
-    /// option; `--prefer-incoming` takes precedence over `--prefer-current`.
+    /// To override this behaviour, use `--prefer-current` or `--prefer-incoming`.
     /// The `--no-interactive` global option implies `--prefer-current`.
     Update {
         /// The citation key to update.

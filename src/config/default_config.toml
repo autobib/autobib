@@ -1,3 +1,8 @@
+# Preferred providers for various operations:
+# - the printed key when selecting an option with `autobib find`
+# - the provider used to attempt remote resolution of imported bibtex entries
+preferred_providers = []
+
 # Actions to perform when adding a new item to the database from a remote provider.
 # These actions are not run for local operations, such as `autobib local`.
 [on_insert]

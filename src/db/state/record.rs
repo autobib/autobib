@@ -3,6 +3,7 @@ use serde_bibtex::token::is_entry_key;
 
 use crate::{
     db::{flatten_constraint_violation, get_row_id, sql, CitationKey, Constraint, RowId},
+    entry::EntryData,
     logger::debug,
     Alias, RawRecordData, RemoteId,
 };
@@ -108,12 +109,28 @@ impl State<'_, RecordRow> {
 
     /// Get every key in the `CitationKeys` table which references the [`RecordRow`].
     pub fn get_referencing_keys(&self) -> Result<Vec<String>, rusqlite::Error> {
+        self.get_referencing_keys_impl(Some)
+    }
+
+    /// Get every remote id in the `CitationKeys` table which references the [`RecordRow`].
+    pub fn get_referencing_remote_ids(&self) -> Result<Vec<RemoteId>, rusqlite::Error> {
+        self.get_referencing_keys_impl(RemoteId::from_alias_or_remote_id_unchecked)
+    }
+
+    /// Get a transformed version of every key in the `CitationKeys` table which references
+    /// the [`RecordRow`] for which the provided `filter_map` does not return `None`.
+    fn get_referencing_keys_impl<T, F: FnMut(String) -> Option<T>>(
+        &self,
+        mut filter_map: F,
+    ) -> Result<Vec<T>, rusqlite::Error> {
         debug!("Getting referencing keys for '{}'.", self.row_id());
         let mut selector = self.prepare(sql::get_all_referencing_citation_keys())?;
         let rows = selector.query_map((self.row_id(),), |row| row.get(0))?;
         let mut referencing = Vec::with_capacity(1);
         for name_res in rows {
-            referencing.push(name_res?);
+            if let Some(mapped) = filter_map(name_res?) {
+                referencing.push(mapped);
+            }
         }
         Ok(referencing)
     }
@@ -141,8 +158,14 @@ impl State<'_, RecordRow> {
         Ok(modified)
     }
 
+    /// A convenience wrapper around [`update`](Self::update) which first converts any type which
+    /// implements [`EntryData`] into a [`RawRecordData`].
+    pub fn update_entry_data<D: EntryData>(&self, data: &D) -> Result<(), rusqlite::Error> {
+        self.update(&RawRecordData::from_entry_data(data))
+    }
+
     /// Replace the row data with new data.
-    pub fn update_row_data(&self, data: &RawRecordData) -> Result<(), rusqlite::Error> {
+    pub fn update(&self, data: &RawRecordData) -> Result<(), rusqlite::Error> {
         debug!("Updating row data for row '{}'", self.row_id());
         let mut updater = self.prepare(sql::update_cached_data())?;
         updater.execute((self.row_id(), &Local::now(), data.to_byte_repr()))?;

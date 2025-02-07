@@ -1,0 +1,6 @@
+@article{attainable-assouad-spectra,
+  author = {Rutar, A.},
+  journal = {Indiana Univ. Math. J.},
+  title = {Attainable forms of {Assouad} spectra},
+  zbmath = {7937992},
+}

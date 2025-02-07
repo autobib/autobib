@@ -1,0 +1,22 @@
+@article{local:zbMATH06346461,
+  author = {Hochman, Michael},
+  doi = {10.4007/annals.2014.180.2.7},
+  fjournal = {Annals of Mathematics. Second Series},
+  journal = {Ann. Math. (2)},
+  keywords = {28A80,37L40,37C35,28D20},
+  title = {On self-similar sets with overlaps and inverse theorems for entropy},
+  zbl = {1337.28015},
+  zbmath = {6346461},
+}
+
+@article{zbmath:7937992,
+  author = {Rutar, Alex},
+  doi = {10.1512/iumj.2024.73.9928},
+  journal = {Indiana Univ. Math. J.},
+  language = {English},
+  pages = {1331--1356},
+  title = {Attainable forms of {Assouad} spectra},
+  volume = {73},
+  year = {2024},
+  zbmath = {07937992},
+}

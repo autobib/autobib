@@ -1,33 +1,41 @@
-use std::io::{stdin, stdout, Result, Write};
+use std::{fmt::Display, io::Result};
 
-pub struct Confirm {
+use super::Input;
+
+struct ConfirmPrompt<S> {
     /// The message to display before the prompt text.
-    message: &'static str,
+    message: S,
     /// The default value for confirmation.
     default: bool,
 }
 
-impl Confirm {
-    pub fn new(message: &'static str, default: bool) -> Self {
-        Self { message, default }
+impl<S: Display> Display for ConfirmPrompt<S> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.message.fmt(f)?;
+        f.write_str(" ")?;
+        if self.default {
+            f.write_str("[Y]/n")
+        } else {
+            f.write_str("y/[N]")
+        }
+    }
+}
+
+pub struct Confirm<S> {
+    inner: Input<ConfirmPrompt<S>>,
+    default: bool,
+}
+
+impl<S: Display> Confirm<S> {
+    pub fn new(message: S, default: bool) -> Self {
+        Self {
+            inner: Input::new(ConfirmPrompt { message, default }),
+            default,
+        }
     }
 
     pub fn confirm(&self) -> Result<bool> {
-        let mut stdout = stdout();
-        write!(stdout, "{}", self.message)?;
-        write!(stdout, " ")?;
-        if self.default {
-            write!(stdout, "[Y]/n")?;
-        } else {
-            write!(stdout, "y/[N]")?;
-        }
-        write!(stdout, " ")?;
-        stdout.flush()?;
-
-        let mut input = String::new();
-        stdin().read_line(&mut input)?;
-
-        Ok(match input.trim() {
+        Ok(match self.inner.input()?.trim() {
             "y" | "Y" => true,
             "n" | "N" => false,
             "" => self.default,

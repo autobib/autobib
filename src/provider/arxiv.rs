@@ -6,7 +6,7 @@ use regex::Regex;
 use reqwest::StatusCode;
 use serde::Deserialize;
 
-use super::{HttpClient, ProviderError, RecordData, RecordDataError, ValidationOutcome};
+use super::{EntryType, HttpClient, ProviderError, RecordData, RecordDataError, ValidationOutcome};
 
 static ARXIV_IDENTIFIER_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(concat!(
@@ -147,7 +147,7 @@ impl TryFrom<ArxivResponse> for RecordData {
     type Error = RecordDataError;
 
     fn try_from(arxiv_response: ArxivResponse) -> Result<Self, Self::Error> {
-        let mut record_data = RecordData::try_new("preprint".into()).unwrap();
+        let mut record_data = RecordData::new(EntryType::preprint());
 
         let ArxivResponse {
             record:

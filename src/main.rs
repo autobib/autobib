@@ -22,7 +22,8 @@ use clap_complete::aot::generate;
 
 use self::{
     app::{run_cli, Cli, Command},
-    db::{CitationKey, RawRecordData},
+    db::CitationKey,
+    entry::RawRecordData,
     logger::{error, info, Logger},
 };
 

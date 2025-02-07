@@ -19,6 +19,14 @@ pub use self::{
     record_data::{InvalidBytesError, RecordDataError},
 };
 
+#[derive(Error, Debug)]
+pub enum MergeError {
+    #[error("Database error: {0}")]
+    DatabaseError(#[from] DatabaseError),
+    #[error("Error adding data: {0}")]
+    RecordError(#[from] RecordDataError),
+}
+
 /// A trait for errors which have a representation which only depends on the variant, and not on
 /// particular data associated with the error.
 pub trait ShortError {

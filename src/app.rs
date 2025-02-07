@@ -1,5 +1,6 @@
 mod cli;
 mod edit;
+mod import;
 mod path;
 mod picker;
 mod retrieve;
@@ -24,21 +25,22 @@ use crate::{
     cite_search::{get_citekeys, SourceFileType},
     config,
     db::{
-        binary_format_version, schema_version,
-        state::{RecordIdState, RemoteIdState, RowData},
-        DeleteAliasResult, EvictionConstraint, RecordData, RecordDatabase, RenameAliasResult,
+        schema_version,
+        state::{ExistsOrUnknown, RecordIdState, RowData},
+        DeleteAliasResult, EvictionConstraint, RecordDatabase, RenameAliasResult,
     },
+    entry::{binary_format_version, Entry, EntryKey, RawRecordData, RecordData},
     error::AliasErrorKind,
     http::HttpClient,
-    logger::{error, info, suggest, warn},
-    normalize::Normalize,
-    record::Record,
-    record::{get_record_row, Alias, RecordId, RemoteId},
+    logger::{debug, error, info, suggest, warn},
+    normalize::{Normalization, Normalize},
+    record::{get_record_row, Alias, Record, RecordId, RemoteId},
     term::Confirm,
+    CitationKey,
 };
 
 use self::{
-    cli::{AliasCommand, FindMode, InfoReportType, UpdateMode, UtilCommand},
+    cli::{AliasCommand, FindMode, ImportMode, InfoReportType, UpdateMode, UtilCommand},
     edit::{edit_record_and_update, merge_record_data},
     path::{
         data_from_path_or_default, data_from_path_or_remote, get_attachment_dir,
@@ -183,12 +185,12 @@ pub fn run_cli(cli: Cli) -> Result<()> {
             config::write_default(&mut std::io::stdout())?;
         }
         Command::Delete {
-            citation_key,
+            citation_keys,
             force,
         } => {
             let cfg = config::load(&config_path, missing_ok)?;
             let deduplicated = filter_and_deduplicate_by_canonical(
-                citation_key.into_iter(),
+                citation_keys.into_iter(),
                 &mut record_db,
                 force,
                 |remote_id, null_row| {
@@ -244,60 +246,78 @@ pub fn run_cli(cli: Cli) -> Result<()> {
             }
         }
         Command::Edit {
-            citation_key,
+            citation_keys,
             normalize_whitespace,
             set_eprint,
             strip_journal_series,
         } => {
             let cfg = config::load(&config_path, missing_ok)?;
-            let nl = crate::normalize::Normalization {
+            let nl = Normalization {
                 normalize_whitespace,
                 set_eprint,
                 strip_journal_series,
             };
 
-            for key in citation_key {
-                let (mut record, row) = get_record_row(&mut record_db, key, &client, &cfg)?
+            for key in citation_keys {
+                let (
+                    Record {
+                        key,
+                        data,
+                        canonical,
+                    },
+                    row,
+                ) = get_record_row(&mut record_db, key, &client, &cfg)?
                     .exists_or_commit_null("Cannot edit")?;
 
-                if !nl.is_identity() {
-                    let mut data: RecordData = (&record.data).into();
-                    if data.normalize(&nl) {
-                        let new_data = (&data).into();
-                        row.save_to_changelog()?;
-                        row.update_row_data(&new_data)?;
-
-                        record.data = new_data;
+                if cli.no_interactive {
+                    if nl.is_identity() {
+                        warn!("Terminal is non-interactive and no edit action specified!");
+                        row.commit()?;
+                    } else {
+                        // non-interactive so we only apply the normalizations and update the data
+                        // if anything changed
+                        let mut editable_data = RecordData::from_entry_data(&data);
+                        if editable_data.normalize(&nl) {
+                            row.save_to_changelog()?;
+                            row.update_entry_data(&editable_data)?;
+                        }
+                        row.commit()?;
                     }
+                } else {
+                    let mut editable_data = RecordData::from_entry_data(&data);
+                    let changed = editable_data.normalize(&nl);
+                    let entry_key =
+                        EntryKey::try_new(key).unwrap_or_else(|_| EntryKey::placeholder());
+                    edit_record_and_update(
+                        &row,
+                        Entry::new(entry_key, editable_data),
+                        changed,
+                        canonical,
+                    )?;
+                    row.commit()?;
                 }
-
-                if !cli.no_interactive {
-                    edit_record_and_update(&row, record)?;
-                }
-                row.commit()?;
             }
         }
         Command::Find {
             fields,
             entry_type,
             attachments,
-            records: id,
+            records,
+            all_fields,
         } => {
-            let find_mode = FindMode::from_flags(attachments, id);
+            let find_mode = FindMode::from_flags(attachments, records);
 
             if cli.no_interactive {
                 bail!("`autobib find` cannot run in non-interactive mode");
             }
 
-            let fields_to_search: HashSet<String> =
-                fields.iter().map(|f| f.to_lowercase()).collect();
-
             match find_mode {
                 FindMode::Attachments => {
                     let mut picker = choose_attachment_path(
                         record_db,
-                        fields_to_search,
+                        fields,
                         entry_type,
+                        all_fields,
                         get_attachment_root(&data_dir, cli.attachments_dir)?,
                         Path::is_file,
                     );
@@ -318,26 +338,53 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                                     None => error!("No attachment selected."),
                                 }
                             } else {
-                                // there has to be at least one attachment since the
-                                // `choose_attachment_path` method only returns a non-empty list of
-                                // attachments
-                                println!("{}", data.attachments[0].path().display());
+                                println!("{}", data.attachments.first().path().display());
                             };
                         }
                         None => error!("No record selected."),
                     }
                 }
                 FindMode::CanonicalId => {
-                    let mut picker = choose_canonical_id(record_db, fields_to_search, entry_type);
+                    let (mut picker, handle) =
+                        choose_canonical_id(record_db, fields, entry_type, all_fields);
                     match picker.pick()? {
-                        Some(row_data) => println!("{}", row_data.canonical),
+                        Some(row_data) => {
+                            let cfg = config::load(&config_path, missing_ok)?;
+                            if !cfg.preferred_providers.is_empty() {
+                                // get a key from the preferred provider if possible
+                                let mut record_db =
+                                    handle.join().expect("Thread should not have panicked")?;
+                                if let Some(row) = record_db
+                                    .state_from_remote_id(&row_data.canonical)?
+                                    .exists()
+                                {
+                                    // try to find a referencing key with the expected provider
+                                    let referencing_ids = row.get_referencing_remote_ids()?;
+                                    for provider in cfg.preferred_providers {
+                                        if let Some(remote_id) = referencing_ids
+                                            .iter()
+                                            .find(|id| id.provider() == provider)
+                                        {
+                                            println!("{remote_id}");
+                                            return Ok(());
+                                        }
+                                    }
+                                } else {
+                                    bail!("Record deleted while picker was running!");
+                                };
+
+                                // if there are no preferred providers or none matched, just print
+                                // the canonical identifier
+                                println!("{}", row_data.canonical);
+                            }
+                        }
                         None => error!("No item selected."),
                     }
                 }
             }
         }
         Command::Get {
-            citation_key,
+            citation_keys,
             out,
             append,
             retrieve_only,
@@ -359,7 +406,7 @@ pub fn run_cli(cli: Cli) -> Result<()> {
             // Collect all entries which are not null, excluding those which should be skipped
             let cfg = config::load(&config_path, missing_ok)?;
             let valid_entries = retrieve_and_validate_entries(
-                citation_key
+                citation_keys
                     .into_iter()
                     .filter(|k| !skipped_keys.contains(k)),
                 &mut record_db,
@@ -371,6 +418,64 @@ pub fn run_cli(cli: Cli) -> Result<()> {
 
             if !retrieve_only {
                 output_entries(outfile, append, valid_entries)?;
+            }
+        }
+        Command::Import {
+            targets,
+            local,
+            determine_key,
+            retrieve,
+            retrieve_only,
+            no_alias,
+            replace_colons,
+            log_failures,
+            prefer_current,
+            prefer_incoming,
+        } => {
+            let replace_colons = match replace_colons {
+                Some(subst) => match EntryKey::try_new(subst) {
+                    Ok(new) => Some(new),
+                    Err(err) => bail!("Argument to `--replace-colons` is invalid: {err}"),
+                },
+                None => None,
+            };
+
+            let import_config = self::import::ImportConfig {
+                update_mode: UpdateMode::from_flags(
+                    cli.no_interactive,
+                    prefer_current,
+                    prefer_incoming,
+                ),
+                import_mode: ImportMode::from_flags(local, determine_key, retrieve, retrieve_only),
+                no_alias,
+                no_interactive: cli.no_interactive,
+                replace_colons,
+                log_failures,
+            };
+
+            debug!("Using import configuration: {import_config:?}");
+            let cfg = config::load(&config_path, missing_ok)?;
+
+            let mut scratch = Vec::new();
+
+            for bibfile in targets {
+                scratch.clear();
+                match File::open(&bibfile).and_then(|mut file| file.read_to_end(&mut scratch)) {
+                    Ok(_) => {
+                        import::from_buffer(
+                            &scratch,
+                            &import_config,
+                            &mut record_db,
+                            &client,
+                            &cfg,
+                            bibfile.display(),
+                        )?;
+                    }
+                    Err(err) => error!(
+                        "Failed to read contents of file '{}': {err}",
+                        bibfile.display()
+                    ),
+                }
             }
         }
         Command::Info {
@@ -465,14 +570,17 @@ pub fn run_cli(cli: Cli) -> Result<()> {
             };
             let remote_id = RemoteId::local(&alias);
 
-            let (row, data) = if let Some(old_id) = rename_from {
+            let (row, raw_data) = if let Some(old_id) = rename_from {
                 // Allowing for arbitrary `old_id` without validation and trimming
                 // so that local ids that were valid in an older version can be renamed.
                 // SAFETY: This is safe as a colon is present in the `full_id`.
                 let old_remote_id =
                     unsafe { RemoteId::from_string_unchecked("local:".to_owned() + &old_id) };
-                match record_db.state_from_remote_id(&old_remote_id)? {
-                    RemoteIdState::Existent(row) => {
+                match record_db
+                    .state_from_remote_id(&old_remote_id)?
+                    .delete_null()?
+                {
+                    ExistsOrUnknown::Existent(row) => {
                         if !row.change_canonical_id(&remote_id)? {
                             bail!("Local record '{remote_id}' already exists")
                         }
@@ -484,19 +592,14 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                         let raw_record_data = row.get_data()?.data;
                         (row, raw_record_data)
                     }
-                    RemoteIdState::Null(null_row) => {
-                        null_row.commit()?;
-                        error!("'{remote_id}' was found in the 'NullRecords' table. A local record should not be present in the 'NullRecords' table.");
-                        return Ok(());
-                    }
-                    RemoteIdState::Unknown(missing) => {
+                    ExistsOrUnknown::Unknown(missing) => {
                         missing.commit()?;
                         bail!("Local record '{old_remote_id}' does not exist");
                     }
                 }
             } else {
-                match record_db.state_from_remote_id(&remote_id)? {
-                    RemoteIdState::Existent(row) => {
+                match record_db.state_from_remote_id(&remote_id)?.delete_null()? {
+                    ExistsOrUnknown::Existent(row) => {
                         if from.is_some() {
                             row.commit()?;
                             bail!("Local record '{remote_id}' already exists")
@@ -505,36 +608,40 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                             (row, raw_record_data)
                         }
                     }
-                    RemoteIdState::Unknown(missing) => {
+                    ExistsOrUnknown::Unknown(missing) => {
                         let data = data_from_path_or_default(from.as_ref())?;
-                        let row = missing.insert_and_ref(&data, &remote_id)?;
-                        (row, data)
-                    }
-                    RemoteIdState::Null(null_row) => {
-                        null_row.commit()?;
-                        error!("'{remote_id}' was found in the 'NullRecords' table. A local record should not be present in the 'NullRecords' table.");
-                        return Ok(());
+                        let raw_record_data = RawRecordData::from_entry_data(&data);
+                        let row = missing.insert(&raw_record_data, &remote_id)?;
+                        (row, raw_record_data)
                     }
                 }
             };
 
-            if !no_alias {
+            let edit_key_candidate = if no_alias {
+                remote_id.name()
+            } else {
                 info!("Creating alias '{alias}' for '{remote_id}'");
                 if let Some(other_remote_id) = row.ensure_alias(&alias)? {
                     warn!("Alias '{alias}' already exists and refers to '{other_remote_id}'. '{remote_id}' will be a different record.");
+                    remote_id.name()
+                } else {
+                    alias.name()
                 }
-            }
+            };
 
             if !cli.no_interactive {
                 edit_record_and_update(
                     &row,
-                    Record {
-                        key: remote_id.to_string(),
-                        data,
-                        canonical: remote_id,
+                    Entry {
+                        key: EntryKey::try_new(edit_key_candidate.into())
+                            .unwrap_or_else(|_| EntryKey::placeholder()),
+                        record_data: RecordData::from_entry_data(&raw_data),
                     },
+                    false,
+                    &remote_id,
                 )?;
             }
+
             row.commit()?;
         }
         Command::Merge {
@@ -562,7 +669,7 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                 .collect::<Result<_, rusqlite::Error>>()?;
 
             // merge data
-            let mut existing_record = RecordData::from(&existing.data);
+            let mut existing_record = RecordData::from_entry_data(&existing.data);
             merge_record_data(
                 UpdateMode::from_flags(cli.no_interactive, prefer_current, prefer_incoming),
                 &mut existing_record,
@@ -572,7 +679,7 @@ pub fn run_cli(cli: Cli) -> Result<()> {
 
             // update the row data with the modified data
             row.save_to_changelog()?;
-            row.update_row_data(&(&existing_record).into())?;
+            row.update(&RawRecordData::from_entry_data(&existing_record))?;
             row.commit()?;
         }
         Command::Path {
@@ -705,7 +812,7 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                             bail!(err);
                         }
                     };
-                    let mut existing_record = RecordData::from(&existing_raw_data);
+                    let mut existing_record = RecordData::from_entry_data(&existing_raw_data);
                     merge_record_data(
                         UpdateMode::from_flags(cli.no_interactive, prefer_current, prefer_incoming),
                         &mut existing_record,
@@ -713,14 +820,14 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                         &citation_key,
                     )?;
                     row.save_to_changelog()?;
-                    row.update_row_data(&(&existing_record).into())?;
+                    row.update(&RawRecordData::from_entry_data(&existing_record))?;
                     row.commit()?;
                 }
                 RecordIdState::NullRemoteId(mapped_remote_id, null_row) => {
                     match data_from_path_or_remote(from, mapped_remote_id.mapped, &client) {
                         Ok((data, canonical)) => {
                             info!("Existing row was null; inserting new data.");
-                            let row = null_row.delete()?.insert(&data, &canonical)?;
+                            let row = null_row.delete()?.insert_entry_data(&data, &canonical)?;
                             row.commit()?;
                         }
                         Err(err) => {
@@ -757,6 +864,7 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                 config::validate(&config_path)?;
             }
             UtilCommand::Optimize => {
+                info!("Optimizing database.");
                 record_db.vacuum()?;
             }
             UtilCommand::Evict {

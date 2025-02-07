@@ -1,0 +1,6 @@
+preferred_providers = ["zbl", "zbmath"]
+
+[alias_transform]
+rules = [
+    ["^zbMATH([0-9]{7,8})$", "zbmath"],
+]

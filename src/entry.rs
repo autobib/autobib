@@ -1,20 +1,26 @@
-use std::{collections::BTreeMap, fmt, str::FromStr};
+mod data;
+mod deserialize;
+
+use std::{fmt, str::FromStr};
 
 use delegate::delegate;
 use serde::{
     ser::{Serialize, SerializeSeq, SerializeStruct, Serializer},
     Deserialize,
 };
-use serde_bibtex::{de::Deserializer, to_string_unchecked, token::EntryKey};
+use serde_bibtex::{de::Deserializer, to_string_unchecked, MacroDictionary};
 
-use crate::{
-    db::{EntryData, RawRecordData, RecordData},
-    error::BibtexDataError,
+pub use self::data::{
+    binary_format_version, ConflictResolved, EntryData, EntryKey, EntryType, FieldKey, FieldValue,
+    RawRecordData, RecordData,
 };
+pub(crate) use self::data::{EntryTypeHeader, KeyHeader, ValueHeader};
+
+use crate::error::BibtexDataError;
 
 /// A single regular entry in a BibTeX bibliography.
 #[derive(Debug, PartialEq)]
-pub struct Entry<D: EntryData> {
+pub struct Entry<D> {
     pub key: EntryKey<String>,
     pub record_data: D,
 }
@@ -75,40 +81,35 @@ impl<D: EntryData> Serialize for Entry<D> {
 struct Contents {
     entry_type: String,
     entry_key: String,
-    fields: BTreeMap<String, String>,
+    fields: Vec<(String, String)>,
 }
 
-impl FromStr for Entry<RawRecordData> {
+pub fn entries_from_bibtex(
+    bibtex: &[u8],
+) -> impl Iterator<Item = Result<Entry<RecordData>, BibtexDataError>> + use<'_> {
+    let mut dct = MacroDictionary::default();
+    dct.set_month_macros();
+    Deserializer::from_slice_with_macros(bibtex, dct)
+        .into_iter_regular_entry::<Entry<RecordData>>()
+        .map(|res_entry| res_entry.map_err(Into::into))
+}
+
+impl FromStr for Entry<RecordData> {
     type Err = BibtexDataError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut de_iter = Deserializer::from_str(s).into_iter_regular_entry();
+        let mut de_iter = Deserializer::from_str(s).into_iter_regular_entry::<Entry<RecordData>>();
 
-        if let Some(Ok(Contents {
-            mut entry_type,
-            entry_key,
-            mut fields,
-        })) = de_iter.next()
-        {
-            if de_iter.next().is_none() {
-                entry_type.make_ascii_lowercase();
-                let mut record_data = RecordData::try_new(entry_type)?;
-                while let Some((mut key, val)) = fields.pop_first() {
-                    key.make_ascii_lowercase();
-                    record_data.check_and_insert(key, val)?;
+        match de_iter.next() {
+            Some(Ok(entry)) => {
+                if de_iter.next().is_none() {
+                    Ok(entry)
+                } else {
+                    Err(Self::Err::BibtexMultipleEntries)
                 }
-
-                // SAFETY: the Deserializer implementation only accepts the entry if the entry key is
-                //         valid.
-                Ok(Entry::new(
-                    EntryKey::new(entry_key).unwrap(),
-                    (&record_data).into(),
-                ))
-            } else {
-                Err(Self::Err::BibtexMultipleEntries)
             }
-        } else {
-            Err(Self::Err::BibtexParseError)
+            Some(Err(err)) => Err(Self::Err::BibtexParseError(err)),
+            None => Err(Self::Err::Empty),
         }
     }
 }

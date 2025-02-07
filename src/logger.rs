@@ -52,7 +52,7 @@ pub(crate) use suggest;
 pub struct Logger {}
 
 pub fn set_failed() {
-    HAS_ERROR.store(true, Ordering::Relaxed);
+    HAS_ERROR.store(true, Ordering::Release);
 }
 
 #[inline]
@@ -79,7 +79,7 @@ fn level_formatter(level: Level) -> fn(&'static str) -> StyledContent<&'static s
 
 impl Logger {
     pub fn has_error() -> bool {
-        HAS_ERROR.load(Ordering::Relaxed)
+        HAS_ERROR.load(Ordering::Acquire)
     }
 }
 
