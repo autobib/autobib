@@ -213,6 +213,9 @@ pub enum Command {
         /// Search records and print the selected canonical identifier.
         #[arg(long, group = "find_mode")]
         records: bool,
+        /// Only search records which contain all of the provided fields.
+        #[arg(long)]
+        all_fields: bool,
     },
     /// Retrieve records given citation keys.
     Get {
