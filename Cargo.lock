@@ -164,6 +164,7 @@ dependencies = [
  "edit",
  "etcetera",
  "itertools",
+ "lockstep",
  "log",
  "memchr",
  "nonempty",
@@ -1133,6 +1134,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "lockstep"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fd6d827638e371015a4e8ada4a873fd5aa97641d90450cf5cdf8df696cd980ac"
+
+[[package]]
 name = "log"
 version = "0.4.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1223,9 +1230,9 @@ dependencies = [
 
 [[package]]
 name = "nucleo-picker"
-version = "0.8.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "93d66059d34c5deaec6b3e36659249c8b4ac8d8c5fa78f0826823ec25db0bc98"
+checksum = "2c888de8c3322339aa9057c44752c3549179a6ca3a59a6e0b8ae8c54238e75a2"
 dependencies = [
  "crossterm",
  "memchr",

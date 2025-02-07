@@ -303,6 +303,7 @@ pub fn run_cli(cli: Cli) -> Result<()> {
             entry_type,
             attachments,
             records,
+            all_fields,
         } => {
             let find_mode = FindMode::from_flags(attachments, records);
 
@@ -310,15 +311,13 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                 bail!("`autobib find` cannot run in non-interactive mode");
             }
 
-            let fields_to_search: HashSet<String> =
-                fields.iter().map(|f| f.to_lowercase()).collect();
-
             match find_mode {
                 FindMode::Attachments => {
                     let mut picker = choose_attachment_path(
                         record_db,
-                        fields_to_search,
+                        fields,
                         entry_type,
+                        all_fields,
                         get_attachment_root(&data_dir, cli.attachments_dir)?,
                         Path::is_file,
                     );
@@ -347,7 +346,7 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                 }
                 FindMode::CanonicalId => {
                     let (mut picker, handle) =
-                        choose_canonical_id(record_db, fields_to_search, entry_type);
+                        choose_canonical_id(record_db, fields, entry_type, all_fields);
                     match picker.pick()? {
                         Some(row_data) => {
                             let cfg = config::load(&config_path, missing_ok)?;
