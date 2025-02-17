@@ -24,15 +24,19 @@ strip_journal_series = false
 
 # Automatically convert aliases to provider:sub_id pairs, based on regex match rules.
 [alias_transform]
-# A list of [pattern, provider] pairs. The first capture group which matches is used
-# to create a corresponding citation key of the form `provider:captured`.
+
+# A list of [pattern, provider] pairs. Each matching pattern must have exactly one
+# capture group. The matching capture group matches is used to create a corresponding
+# citation key of the form `provider:captured`. You can validate your configuration with
+# `autobib util check`.
 #
 # The regex syntax is documented at https://docs.rs/regex/latest/regex/#syntax
 # 
-# Here are some suggested match groups for various identifiers.
+# Here are some suggested capture groups for various identifiers.
+# 
 # - arxiv (new style only): ([0-9][0-9](?:0[1-9]|1[0-2])[.][0-9]{4,5})
 # - doi: (10.\d{4,9}/[-._;()/:a-zA-Z0-9]+)|(10.1002/[^\s]+)
-# - isbn: ([0-9]{10}|[0-9]{13})
+# - isbn: ([0-9]{10}(?:[0-9]{3})
 # - jfm: ([0-9]{2}\.[0-9]{4}\.[0-9]{2})
 # - mr: ([0-9]{7})
 # - ol: ([0-9]{8}M)
