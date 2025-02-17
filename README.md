@@ -1,13 +1,12 @@
-# WARNING
-
-Autobib is **alpha software**.
-
-- Things might be broken.
-- All of your data might be deleted.
-- The interface may change without warning in unexpected ways.
-
-On the other hand, Autobib is currently usable, and you are welcome to try it out with these caveats in mind.
-Please report any issues in the [issues page](https://github.com/autobib/autobib/issues).
+> [!CAUTION]
+> Autobib is **alpha software**.
+> 
+> - Things might be broken.
+> - All of your data might be deleted.
+> - The interface may change without warning in unexpected ways.
+> 
+> On the other hand, Autobib is currently usable, and you are welcome to try it out with these caveats in mind.
+> Please report any issues in the [issues page](https://github.com/autobib/autobib/issues).
 
 # Autobib
 
