@@ -212,6 +212,8 @@ mod tests {
         assert_caps("(a)|(b|c)", Outcome::OneCapture);
         assert_caps("(a)|(?:(b)|c(d))", Outcome::OneCapture);
         assert_caps("a(?:(b)|c(d))", Outcome::OneCapture);
+        assert_caps("(?i)a+((?-i)b+)", Outcome::OneCapture);
+        assert_caps("((?i)a+(?-i)b+)", Outcome::OneCapture);
 
         assert_caps("a", Outcome::NoCapture);
         assert_caps("a(?:b|c|d)", Outcome::NoCapture);
