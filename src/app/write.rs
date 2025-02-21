@@ -1,5 +1,6 @@
 use std::{
     collections::BTreeMap,
+    fs::OpenOptions,
     io::{self, IsTerminal, Write},
     path::Path,
 };
@@ -21,19 +22,24 @@ pub fn init_outfile<P: AsRef<Path>>(
     append: bool,
 ) -> Result<Option<std::fs::File>, anyhow::Error> {
     match out.as_ref() {
-        Some(path) => match std::fs::OpenOptions::new()
-            .read(true)
-            .create(true)
-            .write(true)
-            .append(append)
-            .open(path)
-        {
-            Ok(file) => Ok(Some(file)),
-            Err(e) => anyhow::bail!(
-                "Failed to open output file '{}': {e}",
-                path.as_ref().display()
-            ),
-        },
+        Some(path) => {
+            let mut opts = OpenOptions::new();
+            opts.read(true).create(true);
+
+            if append {
+                opts.append(true);
+            } else {
+                opts.write(true).truncate(true);
+            }
+
+            match opts.open(path) {
+                Ok(file) => Ok(Some(file)),
+                Err(e) => anyhow::bail!(
+                    "Failed to open output file '{}': {e}",
+                    path.as_ref().display()
+                ),
+            }
+        }
         None => Ok(None),
     }
 }
