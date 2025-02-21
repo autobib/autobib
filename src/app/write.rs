@@ -24,10 +24,10 @@ pub fn init_outfile<P: AsRef<Path>>(
     match out.as_ref() {
         Some(path) => {
             let mut opts = OpenOptions::new();
-            opts.read(true).create(true);
+            opts.create(true);
 
             if append {
-                opts.append(true);
+                opts.read(true).append(true);
             } else {
                 opts.write(true).truncate(true);
             }

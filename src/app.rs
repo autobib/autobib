@@ -10,7 +10,7 @@ mod write;
 use std::{
     collections::{BTreeSet, HashSet},
     fs::{create_dir_all, File, OpenOptions},
-    io::{copy, Read},
+    io::{copy, Read, Seek},
     iter::once,
     path::Path,
     str::FromStr,
@@ -735,6 +735,9 @@ pub fn run_cli(cli: Cli) -> Result<()> {
             }
             if let Some(file) = outfile.as_mut() {
                 if append {
+                    // must call `rewind` here since the `append` open option may set the 'read'
+                    // cursor position to the end of the file, depending on the platform
+                    file.rewind()?;
                     // read the file into the buffer
                     file.read_to_end(&mut scratch)?;
                     get_citekeys(SourceFileType::Bib, &scratch, &mut skipped_keys);
