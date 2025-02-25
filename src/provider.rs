@@ -243,6 +243,8 @@ struct ProviderBibtexFields {
     pub author: Option<String>,
     #[serde(alias = "DOI")]
     pub doi: Option<String>,
+    #[serde(alias = "Editor")]
+    pub editor: Option<String>,
     #[serde(alias = "Journal", alias = "JOURNAL")]
     pub journal: Option<String>,
     #[serde(alias = "Language", alias = "LANGUAGE")]
@@ -289,6 +291,7 @@ impl TryFrom<ProviderBibtex> for RecordData {
             fields,
             record_data,
             author,
+            editor,
             doi,
             journal,
             language,
