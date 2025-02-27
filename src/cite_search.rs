@@ -28,7 +28,7 @@ pub mod tex_auxfile;
 
 use std::{ffi::OsStr, path::Path, str::FromStr};
 
-use crate::{error::Error, RecordId};
+use crate::{RecordId, error::Error};
 
 /// The file type of a source from which citation keys can be read.
 #[derive(Debug, Clone, Copy)]

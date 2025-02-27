@@ -5,14 +5,14 @@ use std::{fmt, str::FromStr};
 
 use delegate::delegate;
 use serde::{
-    ser::{Serialize, SerializeSeq, SerializeStruct, Serializer},
     Deserialize,
+    ser::{Serialize, SerializeSeq, SerializeStruct, Serializer},
 };
-use serde_bibtex::{de::Deserializer, to_string_unchecked, MacroDictionary};
+use serde_bibtex::{MacroDictionary, de::Deserializer, to_string_unchecked};
 
 pub use self::data::{
-    binary_format_version, ConflictResolved, EntryData, EntryKey, EntryType, FieldKey, FieldValue,
-    RawRecordData, RecordData,
+    ConflictResolved, EntryData, EntryKey, EntryType, FieldKey, FieldValue, RawRecordData,
+    RecordData, binary_format_version,
 };
 pub(crate) use self::data::{EntryTypeHeader, KeyHeader, ValueHeader};
 

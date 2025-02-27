@@ -16,11 +16,11 @@ use std::{borrow::Borrow, cmp::PartialEq, collections::BTreeMap, iter::Iterator,
 use delegate::delegate;
 use regex::Regex;
 
-pub use identifier::{validate_ascii_identifier, EntryKey, EntryType, FieldKey, FieldValue};
-pub use raw::{binary_format_version, RawRecordData};
+pub use identifier::{EntryKey, EntryType, FieldKey, FieldValue, validate_ascii_identifier};
 pub(crate) use raw::{EntryTypeHeader, KeyHeader, ValueHeader};
+pub use raw::{RawRecordData, binary_format_version};
 
-use crate::normalize::{normalize_whitespace_str, Normalize};
+use crate::normalize::{Normalize, normalize_whitespace_str};
 
 /// This trait represents types which encapsulate the data content of a single BibTeX entry.
 ///

@@ -11,7 +11,7 @@ use crate::{
     http::HttpClient,
     logger::info,
     path_hash::PathHash,
-    record::{get_remote_response_recursive, RecursiveRemoteResponse, RemoteId},
+    record::{RecursiveRemoteResponse, RemoteId, get_remote_response_recursive},
 };
 
 /// Get the attachment root directory, either as a default from the data directory or using the
@@ -58,15 +58,14 @@ pub fn data_from_path_or_remote<P: AsRef<Path>>(
     remote_id: RemoteId,
     client: &HttpClient,
 ) -> Result<(RecordData, RemoteId), anyhow::Error> {
-    if let Some(path) = maybe_path {
-        Ok((data_from_path(path)?, remote_id))
-    } else {
-        match get_remote_response_recursive(remote_id, client)? {
+    match maybe_path {
+        Some(path) => Ok((data_from_path(path)?, remote_id)),
+        _ => match get_remote_response_recursive(remote_id, client)? {
             RecursiveRemoteResponse::Exists(record_data, canonical) => Ok((record_data, canonical)),
             RecursiveRemoteResponse::Null(null_remote_id) => {
                 bail!("Remote data for canonical id '{null_remote_id}' is null");
             }
-        }
+        },
     }
 }
 
@@ -74,10 +73,9 @@ pub fn data_from_path_or_remote<P: AsRef<Path>>(
 pub fn data_from_path_or_default<P: AsRef<Path>>(
     maybe_path: Option<P>,
 ) -> Result<RecordData, anyhow::Error> {
-    if let Some(path) = maybe_path {
-        data_from_path(path)
-    } else {
-        Ok(RecordData::default())
+    match maybe_path {
+        Some(path) => data_from_path(path),
+        _ => Ok(RecordData::default()),
     }
 }
 

@@ -199,10 +199,8 @@ pub fn get_record(id: &str, client: &HttpClient) -> Result<Option<RecordData>, P
             ArxivXML::Response(response) => Ok(Some(response.try_into()?)),
             ArxivXML::Error(_) => Ok(None),
         },
-        Err(err) => {
-            Err(ProviderError::Unexpected(format!(
-                "arXiv XML response had an unexpected format! Response body:\n{body}\nError message:\n{err}"
-            )))
-        }
+        Err(err) => Err(ProviderError::Unexpected(format!(
+            "arXiv XML response had an unexpected format! Response body:\n{body}\nError message:\n{err}"
+        ))),
     }
 }

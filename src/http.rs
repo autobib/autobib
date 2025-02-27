@@ -1,8 +1,8 @@
 use std::fmt::Display;
 
 use reqwest::{
-    blocking::{Client, ClientBuilder, Response},
     Error, IntoUrl,
+    blocking::{Client, ClientBuilder, Response},
 };
 
 use crate::logger::info;

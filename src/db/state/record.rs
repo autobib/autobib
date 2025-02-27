@@ -2,10 +2,10 @@ use chrono::{DateTime, Local};
 use serde_bibtex::token::is_entry_key;
 
 use crate::{
-    db::{flatten_constraint_violation, get_row_id, sql, CitationKey, Constraint, RowId},
+    Alias, RawRecordData, RemoteId,
+    db::{CitationKey, Constraint, RowId, flatten_constraint_violation, get_row_id, sql},
     entry::EntryData,
     logger::debug,
-    Alias, RawRecordData, RemoteId,
 };
 
 use super::{DatabaseId, InDatabase, State};

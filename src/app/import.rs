@@ -3,26 +3,26 @@ use std::str::FromStr;
 use anyhow::anyhow;
 
 use crate::{
+    CitationKey, HttpClient,
     app::{
         cli::{ImportMode, UpdateMode},
         edit::merge_record_data,
     },
     config::Config,
     db::{
-        state::{Missing, RecordRow, RemoteIdState, State},
         RecordDatabase,
+        state::{Missing, RecordRow, RemoteIdState, State},
     },
-    entry::{entries_from_bibtex, Entry, EntryKey, RecordData},
+    entry::{Entry, EntryKey, RecordData, entries_from_bibtex},
     error::{self, RecordError},
     logger::{error, info, set_failed, warn},
     normalize::{Normalization, Normalize},
     provider::{determine_remote_id_candidates, is_canonical},
     record::{
-        get_record_row_remote, Alias, MappedAliasOrRemoteId, MappedKey, RecordId, RemoteId,
-        RemoteRecordRowResponse,
+        Alias, MappedAliasOrRemoteId, MappedKey, RecordId, RemoteId, RemoteRecordRowResponse,
+        get_record_row_remote,
     },
     term::{Confirm, Editor, EditorConfig},
-    CitationKey, HttpClient,
 };
 
 /// The configuration used to specify the behaviour when importing data.
@@ -116,7 +116,7 @@ fn import_entry<F: FnOnce() -> Vec<(regex::Regex, String)>>(
                 let alias = match Alias::from_str(entry.key.as_ref()) {
                     Ok(alias) => alias,
                     Err(alias_conversion_error) => {
-                        return Ok(ImportAction::PromptNewKey(anyhow!(alias_conversion_error,)))
+                        return Ok(ImportAction::PromptNewKey(anyhow!(alias_conversion_error,)));
                     }
                 };
                 handle_local_alias(alias, record_db)

@@ -2,10 +2,10 @@ use chrono::Local;
 
 use super::{DatabaseId, NullRecordRow, RecordRow, State};
 use crate::{
-    db::{sql, CitationKey},
+    RawRecordData, RemoteId,
+    db::{CitationKey, sql},
     entry::EntryData,
     logger::debug,
-    RawRecordData, RemoteId,
 };
 
 /// A database id which is missing.

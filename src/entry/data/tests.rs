@@ -162,9 +162,11 @@ fn test_insert_len() {
         Err(RecordDataError::KeyInvalidLength(0))
     );
 
-    assert!(record_data
-        .check_and_insert("a".repeat(255), "".into())
-        .is_ok(),);
+    assert!(
+        record_data
+            .check_and_insert("a".repeat(255), "".into())
+            .is_ok(),
+    );
 }
 
 #[test]

@@ -2,8 +2,8 @@ use std::{fmt, num::NonZero, str::FromStr};
 
 use rusqlite::types::ValueRef;
 
-use super::{get_row_id, sql, Transaction};
-use crate::{error::InvalidBytesError, logger::debug, RawRecordData, RemoteId};
+use super::{Transaction, get_row_id, sql};
+use crate::{RawRecordData, RemoteId, error::InvalidBytesError, logger::debug};
 
 /// A possible fault that could occurr inside the database.
 #[derive(Debug)]

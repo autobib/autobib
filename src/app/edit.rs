@@ -105,10 +105,10 @@ pub fn merge_record_data<'a, D: EntryData + 'a>(
                         match choice.trim() {
                             "" => return ConflictResolved::Current,
                             c if "no".starts_with(c) || "NO".starts_with(c) => {
-                                return ConflictResolved::Current
+                                return ConflictResolved::Current;
                             }
                             c if "yes".starts_with(c) || "YES".starts_with(c) => {
-                                return ConflictResolved::Incoming
+                                return ConflictResolved::Incoming;
                             }
                             c if "edit".starts_with(c) || "EDIT".starts_with(c) => break,
                             _ => warn!("Invalid selection: {choice}!"),

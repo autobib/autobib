@@ -21,10 +21,10 @@ use clap::{CommandFactory, Parser};
 use clap_complete::aot::generate;
 
 use self::{
-    app::{run_cli, Cli, Command},
+    app::{Cli, Command, run_cli},
     db::CitationKey,
     entry::RawRecordData,
-    logger::{error, info, Logger},
+    logger::{Logger, error, info},
 };
 
 pub use self::{
@@ -32,7 +32,7 @@ pub use self::{
     entry::Entry,
     http::HttpClient,
     normalize::{Normalization, Normalize},
-    record::{get_record_row, Alias, AliasOrRemoteId, MappedKey, RecordId, RemoteId},
+    record::{Alias, AliasOrRemoteId, MappedKey, RecordId, RemoteId, get_record_row},
     term::{Confirm, Editor, EditorConfig},
 };
 

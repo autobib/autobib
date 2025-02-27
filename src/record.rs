@@ -6,20 +6,20 @@ use nonempty::NonEmpty;
 
 pub use self::key::{Alias, AliasOrRemoteId, MappedAliasOrRemoteId, MappedKey, RecordId, RemoteId};
 use crate::{
+    Config, HttpClient,
     config::AliasTransform,
     db::{
+        RecordDatabase,
         state::{
             Missing, NullRecordRow, RecordIdState, RecordRow, RemoteIdState, RowData, State,
             Unknown,
         },
-        RecordDatabase,
     },
     entry::{RawRecordData, RecordData},
     error::{Error, ProviderError, RecordError},
     logger::info,
     normalize::{Normalization, Normalize},
-    provider::{get_remote_response, RemoteResponse},
-    Config, HttpClient,
+    provider::{RemoteResponse, get_remote_response},
 };
 
 /// The fundamental record type.

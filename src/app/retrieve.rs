@@ -1,6 +1,6 @@
 use std::collections::{
-    btree_map::Entry::{Occupied, Vacant},
     BTreeMap, HashMap, HashSet,
+    btree_map::Entry::{Occupied, Vacant},
 };
 
 use nonempty::NonEmpty;
@@ -8,15 +8,15 @@ use nonempty::NonEmpty;
 use crate::{
     config::Config,
     db::{
-        state::{NullRecordRow, RecordIdState, RecordRow, State},
         RecordDatabase,
+        state::{NullRecordRow, RecordIdState, RecordRow, State},
     },
     entry::{Entry, EntryKey, RawRecordData},
     error::Error,
     http::HttpClient,
     logger::{error, suggest},
-    record::{get_record_row, RecordId, RemoteId},
     record::{Record, RecordRowResponse},
+    record::{RecordId, RemoteId, get_record_row},
 };
 
 /// Lookup citation keys from the database, filtering out unknown and invalid remote ids and
@@ -173,7 +173,9 @@ fn validate_bibtex_key(key: String, row: &State<RecordRow>) -> Option<EntryKey<S
                         );
                     } else {
                         error!("{}", parse_result);
-                        suggest!("Create an alias which does not contain whitespace or disallowed characters: {{}}(),=\\#%\"");
+                        suggest!(
+                            "Create an alias which does not contain whitespace or disallowed characters: {{}}(),=\\#%\""
+                        );
                     }
                 }
                 Err(error2) => {
