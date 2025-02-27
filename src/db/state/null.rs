@@ -2,7 +2,7 @@ use chrono::{DateTime, Local};
 
 use super::{DatabaseId, InDatabase, State};
 use crate::{
-    db::{sql, RowId},
+    db::{RowId, sql},
     logger::debug,
 };
 

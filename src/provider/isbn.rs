@@ -15,11 +15,7 @@ fn ascii_digit_to_u8(b: u8) -> Option<u8> {
 /// Convert an ISBN10 checksum to the the corresponding ascii byte.
 fn checksum_10_to_ascii(ck: u8) -> u8 {
     let ck = 11 - (ck % 11);
-    if ck == 10 {
-        b'X'
-    } else {
-        ck + b'0'
-    }
+    if ck == 10 { b'X' } else { ck + b'0' }
 }
 
 /// Convert an ISBN13 checksum to the the corresponding ascii byte.

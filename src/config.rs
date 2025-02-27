@@ -2,15 +2,15 @@ mod validate;
 
 use std::{fs::read_to_string, io, path::Path, sync::LazyLock};
 
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use regex::Regex;
 use serde::Deserialize;
 use toml::from_str;
 
 use crate::{
+    Alias, CitationKey,
     logger::{debug, info},
     normalize::Normalization,
-    Alias, CitationKey,
 };
 pub use validate::report_config_errors as validate;
 

@@ -11,10 +11,10 @@ use serde::Serializer as _;
 use serde_bibtex::ser::Serializer;
 
 use crate::{
+    CitationKey,
     entry::{Entry, EntryData},
     logger::warn,
     record::RemoteId,
-    CitationKey,
 };
 
 pub fn init_outfile<P: AsRef<Path>>(
@@ -59,22 +59,25 @@ pub fn output_entries<D: EntryData>(
     append: bool,
     grouped_entries: BTreeMap<RemoteId, NonEmpty<Entry<D>>>,
 ) -> Result<(), serde_bibtex::Error> {
-    if let Some(file) = out {
-        let mut writer = io::BufWriter::new(file);
-        if append && !grouped_entries.is_empty() {
-            writer.write_all(b"\n")?;
-        }
-        write_entries(writer, grouped_entries)?;
-    } else {
-        let stdout = io::stdout();
-        if stdout.is_terminal() {
-            // do not write an extra newline if interactive and there is nothing to write
-            if !grouped_entries.is_empty() {
-                write_entries(stdout, grouped_entries)?;
+    match out {
+        Some(file) => {
+            let mut writer = io::BufWriter::new(file);
+            if append && !grouped_entries.is_empty() {
+                writer.write_all(b"\n")?;
             }
-        } else {
-            let writer = io::BufWriter::new(stdout);
             write_entries(writer, grouped_entries)?;
+        }
+        _ => {
+            let stdout = io::stdout();
+            if stdout.is_terminal() {
+                // do not write an extra newline if interactive and there is nothing to write
+                if !grouped_entries.is_empty() {
+                    write_entries(stdout, grouped_entries)?;
+                }
+            } else {
+                let writer = io::BufWriter::new(stdout);
+                write_entries(writer, grouped_entries)?;
+            }
         }
     };
 

@@ -3,9 +3,9 @@ use std::{fs::File, io::Read};
 use anyhow::bail;
 
 use crate::{
-    cite_search::{get_citekeys_filter, SourceFileType},
-    logger::{error, info},
     RecordId,
+    cite_search::{SourceFileType, get_citekeys_filter},
+    logger::{error, info},
 };
 
 pub fn get_citekeys_from_file<T: Extend<RecordId>, P: AsRef<std::path::Path>>(

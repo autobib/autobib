@@ -73,16 +73,16 @@ use delegate::delegate;
 use nucleo_picker::{Injector, Render};
 use regex::Regex;
 use rusqlite::{
-    functions::FunctionFlags, types::ValueRef, Connection, DropBehavior, OptionalExtension, ToSql,
+    Connection, DropBehavior, OptionalExtension, ToSql, functions::FunctionFlags, types::ValueRef,
 };
 
 use self::state::{RecordIdState, RemoteIdState, RowData};
 use self::validate::{DatabaseFault, DatabaseValidator};
 use crate::{
+    Alias, RecordId, RemoteId,
     config::AliasTransform,
     error::DatabaseError,
     logger::{debug, error, info, warn},
-    Alias, RecordId, RemoteId,
 };
 
 /// The current version of the database table schema.
@@ -375,7 +375,9 @@ impl RecordDatabase {
         match fault {
             DatabaseFault::RowHasInvalidCanonicalId(_, _) => Ok(false),
             DatabaseFault::DanglingRecord(key, canonical) => {
-                warn!("Repairing dangling record by inserting or overwriting existing citation key with name {canonical}");
+                warn!(
+                    "Repairing dangling record by inserting or overwriting existing citation key with name {canonical}"
+                );
                 tx.prepare(sql::set_citation_key_overwrite())?
                     .execute((canonical, key))?;
                 Ok(true)

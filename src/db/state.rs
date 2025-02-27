@@ -46,10 +46,10 @@ mod record;
 use rusqlite::{CachedStatement, Error, Statement};
 
 pub use self::{missing::*, null::*, record::*};
-use super::{get_null_row_id, get_row_id, RowId, Transaction};
+use super::{RowId, Transaction, get_null_row_id, get_row_id};
 use crate::{
-    config::AliasTransform, error::RecordError, logger::debug, Alias, AliasOrRemoteId, MappedKey,
-    RecordId, RemoteId,
+    Alias, AliasOrRemoteId, MappedKey, RecordId, RemoteId, config::AliasTransform,
+    error::RecordError, logger::debug,
 };
 
 /// A representation of the current database state corresponding to a [`RecordId`].
@@ -345,18 +345,18 @@ impl<'conn> RemoteIdState<'conn> {
                 debug!("Beginning new transaction for row '{row_id}' in the `Records` table.");
                 Self::Existent(State::init(tx, RecordRow::from_row_id(row_id)))
             }
-            None => {
-                match get_null_row_id(&tx, remote_id)? {
-                    Some(row_id) => {
-                        debug!("Beginning new transaction for row '{row_id}' in the `NullRecords` table.");
-                        Self::Null(State::init(tx, NullRecordRow::from_row_id(row_id)))
-                    }
-                    None => {
-                        debug!("Beginning new transaction for unknown remote id.");
-                        Self::Unknown(State::init(tx, Missing {}))
-                    }
+            None => match get_null_row_id(&tx, remote_id)? {
+                Some(row_id) => {
+                    debug!(
+                        "Beginning new transaction for row '{row_id}' in the `NullRecords` table."
+                    );
+                    Self::Null(State::init(tx, NullRecordRow::from_row_id(row_id)))
                 }
-            }
+                None => {
+                    debug!("Beginning new transaction for unknown remote id.");
+                    Self::Unknown(State::init(tx, Missing {}))
+                }
+            },
         })
     }
 

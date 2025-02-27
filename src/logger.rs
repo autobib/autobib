@@ -1,7 +1,7 @@
 use crossterm::style::{StyledContent, Stylize};
+use log::{Level, Log, Metadata, Record};
 #[allow(unused_imports)]
 pub use log::{debug, info, trace, warn};
-use log::{Level, Log, Metadata, Record};
 use std::{
     io::{self, IsTerminal},
     sync::atomic::{AtomicBool, Ordering},

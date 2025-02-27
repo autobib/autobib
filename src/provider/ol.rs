@@ -99,7 +99,7 @@ pub fn get_record(id: &str, client: &HttpClient) -> Result<Option<RecordData>, P
                         Err(err) => {
                             return Err(ProviderError::Unexpected(format!(
                                 "Unexpected author data in Open Library record: {err}"
-                            )))
+                            )));
                         }
                     }
                 }

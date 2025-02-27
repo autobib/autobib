@@ -1,8 +1,8 @@
 use std::fmt;
 
 use serde::{
-    de::{self, Deserializer, Error, SeqAccess, Unexpected, Visitor},
     Deserialize,
+    de::{self, Deserializer, Error, SeqAccess, Unexpected, Visitor},
 };
 
 use super::{

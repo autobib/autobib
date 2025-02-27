@@ -17,9 +17,9 @@ use serde::Deserialize;
 
 // re-imports exposed to provider implementations
 use crate::{
+    HttpClient, MappedKey, RemoteId,
     entry::{EntryData, EntryType, RecordData},
     error::{ProviderError, RecordDataError},
-    HttpClient, MappedKey, RemoteId,
 };
 
 /// A resolver, which converts a `sub_id` into [`RecordData`].
@@ -50,7 +50,9 @@ fn lookup_provider(provider: &str) -> Provider {
         "ol" => Provider::Resolver(ol::get_record),
         "zbmath" => Provider::Resolver(zbmath::get_record),
         "zbl" => Provider::Referrer(zbl::get_canonical),
-        _ => unreachable!("Invalid provider '{provider}: an invalid provider should have been caught by a call to `lookup_validator`'!"),
+        _ => unreachable!(
+            "Invalid provider '{provider}: an invalid provider should have been caught by a call to `lookup_validator`'!"
+        ),
     }
 }
 

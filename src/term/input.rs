@@ -1,6 +1,6 @@
 use std::{
     fmt::Display,
-    io::{stdin, stdout, Result, Write},
+    io::{Result, Write, stdin, stdout},
 };
 
 pub struct Input<S> {

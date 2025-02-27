@@ -4,7 +4,7 @@
 
 /// A convenience macro for generating the function and the corresponding documentation.
 macro_rules! sql {
-    ($name:ident, $desc:expr) => {
+    ($name:ident, $desc:expr_2021) => {
         #[doc = concat!($desc, ".")]
         ///
         /// Returns the following statement as a string:

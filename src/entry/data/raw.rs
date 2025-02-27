@@ -2,7 +2,7 @@ use std::str::from_utf8;
 
 use serde_bibtex::token::is_balanced;
 
-use super::{validate_ascii_identifier, EntryData};
+use super::{EntryData, validate_ascii_identifier};
 use crate::error::InvalidBytesError;
 
 /// The current version of the binary data format.

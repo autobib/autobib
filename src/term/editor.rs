@@ -1,6 +1,6 @@
 use std::{cmp::PartialEq, fmt::Display, io::Result, str::FromStr};
 
-use edit::{edit_with_builder, Builder};
+use edit::{Builder, edit_with_builder};
 
 use super::Confirm;
 

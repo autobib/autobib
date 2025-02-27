@@ -5,13 +5,13 @@ use std::{fmt, str::FromStr};
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    CitationKey,
     config::AliasTransform,
     error::{
         AliasConversionError, AliasErrorKind, RecordError, RecordErrorKind,
         RemoteIdConversionError, RemoteIdErrorKind,
     },
-    provider::{validate_provider_sub_id, ValidationOutcomeExtended},
-    CitationKey,
+    provider::{ValidationOutcomeExtended, validate_provider_sub_id},
 };
 pub use mapped::{MappedAliasOrRemoteId, MappedKey};
 

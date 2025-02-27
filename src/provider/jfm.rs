@@ -1,6 +1,6 @@
 use std::sync::LazyLock;
 
-use regex::{bytes::Regex as BytesRegex, Regex};
+use regex::{Regex, bytes::Regex as BytesRegex};
 use reqwest::StatusCode;
 
 use super::{HttpClient, ProviderError, RemoteId, ValidationOutcome};

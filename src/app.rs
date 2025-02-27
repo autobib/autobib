@@ -9,34 +9,33 @@ mod write;
 
 use std::{
     collections::{BTreeSet, HashSet},
-    fs::{create_dir_all, File, OpenOptions},
-    io::{copy, Read, Seek},
+    fs::{File, OpenOptions, create_dir_all},
+    io::{Read, Seek, copy},
     iter::once,
     path::Path,
     str::FromStr,
 };
 
-use anyhow::{bail, Result};
-use etcetera::{choose_app_strategy, AppStrategy, AppStrategyArgs};
+use anyhow::{Result, bail};
+use etcetera::{AppStrategy, AppStrategyArgs, choose_app_strategy};
 use itertools::Itertools;
 use serde_bibtex::token::is_entry_key;
 
 use crate::{
-    cite_search::{get_citekeys, SourceFileType},
+    CitationKey,
+    cite_search::{SourceFileType, get_citekeys},
     config,
     db::{
-        schema_version,
+        DeleteAliasResult, EvictionConstraint, RecordDatabase, RenameAliasResult, schema_version,
         state::{ExistsOrUnknown, RecordIdState, RowData},
-        DeleteAliasResult, EvictionConstraint, RecordDatabase, RenameAliasResult,
     },
-    entry::{binary_format_version, Entry, EntryKey, RawRecordData, RecordData},
+    entry::{Entry, EntryKey, RawRecordData, RecordData, binary_format_version},
     error::AliasErrorKind,
     http::HttpClient,
     logger::{debug, error, info, suggest, warn},
     normalize::{Normalization, Normalize},
-    record::{get_record_row, Alias, Record, RecordId, RemoteId},
+    record::{Alias, Record, RecordId, RemoteId, get_record_row},
     term::Confirm,
-    CitationKey,
 };
 
 use self::{
@@ -179,7 +178,9 @@ pub fn run_cli(cli: Cli) -> Result<()> {
             copy(&mut source_file, &mut target_file)?;
         }
         Command::Completions { shell: _ } => {
-            unreachable!("Request for completions script should have been handled earlier and the program should have exited then.");
+            unreachable!(
+                "Request for completions script should have been handled earlier and the program should have exited then."
+            );
         }
         Command::DefaultConfig => {
             config::write_default(&mut std::io::stdout())?;
@@ -203,45 +204,54 @@ pub fn run_cli(cli: Cli) -> Result<()> {
             )?;
 
             for (canonical, to_delete) in deduplicated {
-                if let Some(row) = record_db.state_from_remote_id(&canonical)?.exists() {
-                    if !force {
-                        let mut unreferenced = row
-                            .get_referencing_keys()?
-                            .into_iter()
-                            .filter(|key| !to_delete.contains(key))
-                            .peekable();
+                match record_db.state_from_remote_id(&canonical)?.exists() {
+                    Some(row) => {
+                        if !force {
+                            let mut unreferenced = row
+                                .get_referencing_keys()?
+                                .into_iter()
+                                .filter(|key| !to_delete.contains(key))
+                                .peekable();
 
-                        // there are associated keys which are not present in the deletion list
-                        if unreferenced.peek().is_some() {
-                            if cli.no_interactive {
-                                // non-interactive: skip the key
-                                row.commit()?;
-                                error!("Record with canonical identifier '{canonical}' has associated keys which are not requested for deletion: {}",
-                                    unreferenced.join(", "));
-                                suggest!("Re-run with `--force` to delete anyway.");
-                                continue;
-                            } else {
-                                // interactive: prompt for deletion
-                                eprintln!("Deleting record with canonical identifier '{canonical}' will also delete associated keys:");
-                                for key in unreferenced {
-                                    eprintln!("  {key}");
-                                }
-                                let prompt = Confirm::new("Delete anyway?", false);
-                                if !prompt.confirm()? {
+                            // there are associated keys which are not present in the deletion list
+                            if unreferenced.peek().is_some() {
+                                if cli.no_interactive {
+                                    // non-interactive: skip the key
                                     row.commit()?;
                                     error!(
-                                        "Aborted deletion of '{canonical}' via keys: '{}'",
-                                        to_delete.iter().join(", ")
+                                        "Record with canonical identifier '{canonical}' has associated keys which are not requested for deletion: {}",
+                                        unreferenced.join(", ")
                                     );
+                                    suggest!("Re-run with `--force` to delete anyway.");
                                     continue;
+                                } else {
+                                    // interactive: prompt for deletion
+                                    eprintln!(
+                                        "Deleting record with canonical identifier '{canonical}' will also delete associated keys:"
+                                    );
+                                    for key in unreferenced {
+                                        eprintln!("  {key}");
+                                    }
+                                    let prompt = Confirm::new("Delete anyway?", false);
+                                    if !prompt.confirm()? {
+                                        row.commit()?;
+                                        error!(
+                                            "Aborted deletion of '{canonical}' via keys: '{}'",
+                                            to_delete.iter().join(", ")
+                                        );
+                                        continue;
+                                    }
                                 }
                             }
                         }
+                        row.save_to_changelog()?;
+                        row.delete()?.commit()?;
                     }
-                    row.save_to_changelog()?;
-                    row.delete()?.commit()?;
-                } else {
-                    error!("Database changed during deletion operation! Record {canonical} is no longer present in the database.");
+                    _ => {
+                        error!(
+                            "Database changed during deletion operation! Record {canonical} is no longer present in the database."
+                        );
+                    }
                 }
             }
         }
@@ -354,23 +364,26 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                                 // get a key from the preferred provider if possible
                                 let mut record_db =
                                     handle.join().expect("Thread should not have panicked")?;
-                                if let Some(row) = record_db
+                                match record_db
                                     .state_from_remote_id(&row_data.canonical)?
                                     .exists()
                                 {
-                                    // try to find a referencing key with the expected provider
-                                    let referencing_ids = row.get_referencing_remote_ids()?;
-                                    for provider in cfg.preferred_providers {
-                                        if let Some(remote_id) = referencing_ids
-                                            .iter()
-                                            .find(|id| id.provider() == provider)
-                                        {
-                                            println!("{remote_id}");
-                                            return Ok(());
+                                    Some(row) => {
+                                        // try to find a referencing key with the expected provider
+                                        let referencing_ids = row.get_referencing_remote_ids()?;
+                                        for provider in cfg.preferred_providers {
+                                            if let Some(remote_id) = referencing_ids
+                                                .iter()
+                                                .find(|id| id.provider() == provider)
+                                            {
+                                                println!("{remote_id}");
+                                                return Ok(());
+                                            }
                                         }
                                     }
-                                } else {
-                                    bail!("Record deleted while picker was running!");
+                                    _ => {
+                                        bail!("Record deleted while picker was running!");
+                                    }
                                 };
 
                                 // if there are no preferred providers or none matched, just print
@@ -621,11 +634,14 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                 remote_id.name()
             } else {
                 info!("Creating alias '{alias}' for '{remote_id}'");
-                if let Some(other_remote_id) = row.ensure_alias(&alias)? {
-                    warn!("Alias '{alias}' already exists and refers to '{other_remote_id}'. '{remote_id}' will be a different record.");
-                    remote_id.name()
-                } else {
-                    alias.name()
+                match row.ensure_alias(&alias)? {
+                    Some(other_remote_id) => {
+                        warn!(
+                            "Alias '{alias}' already exists and refers to '{other_remote_id}'. '{remote_id}' will be a different record."
+                        );
+                        remote_id.name()
+                    }
+                    _ => alias.name(),
                 }
             };
 
@@ -854,7 +870,9 @@ pub fn run_cli(cli: Cli) -> Result<()> {
         }
         Command::Util { util_command } => match util_command {
             UtilCommand::Check { fix } => {
-                info!("Validating record binary data and consistency, and checking for dangling records.");
+                info!(
+                    "Validating record binary data and consistency, and checking for dangling records."
+                );
                 let faults = record_db.recover(fix)?;
                 if !faults.is_empty() {
                     error!("Erroneous data found in the database.");

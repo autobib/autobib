@@ -4,13 +4,13 @@ use std::{
     thread,
 };
 
-use lockstep::{lockstep, Control};
+use lockstep::{Control, lockstep};
 use nonempty::NonEmpty;
 use nucleo_picker::{Picker, PickerOptions, Render};
 use walkdir::{DirEntry, WalkDir};
 
 use crate::{
-    db::{state::RowData, RecordDatabase},
+    db::{RecordDatabase, state::RowData},
     entry::EntryData,
     path_hash::PathHash,
 };

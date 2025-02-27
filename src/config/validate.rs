@@ -1,7 +1,7 @@
 use std::{fmt, path::Path};
 
 use anyhow::Error;
-use regex_syntax::ast::{parse::Parser, Ast, GroupKind, Span};
+use regex_syntax::ast::{Ast, GroupKind, Span, parse::Parser};
 
 use super::RawConfig;
 use crate::{logger::error, provider::is_valid_provider};
@@ -107,7 +107,7 @@ fn eval_ast(ast: &Ast) -> Outcome {
                                     return Outcome::invalid(
                                         CapturesErrorKind::Missing,
                                         alternation.span,
-                                    )
+                                    );
                                 }
                                 e => return e,
                             }
@@ -122,7 +122,7 @@ fn eval_ast(ast: &Ast) -> Outcome {
                                     return Outcome::invalid(
                                         CapturesErrorKind::Missing,
                                         alternation.span,
-                                    )
+                                    );
                                 }
                                 e => return e,
                             }
@@ -146,7 +146,7 @@ fn eval_ast(ast: &Ast) -> Outcome {
                         outcome = Outcome::OneCapture;
                     }
                     (Outcome::OneCapture, Outcome::OneCapture) => {
-                        return Outcome::invalid(CapturesErrorKind::TooMany, concat.span)
+                        return Outcome::invalid(CapturesErrorKind::TooMany, concat.span);
                     }
                     // the pattern guarantees that e is a `Outcome::Invalid`
                     (_, e) => return e,
@@ -175,7 +175,9 @@ fn validate_alias_transform_rules<S: AsRef<str>, T: AsRef<str>>(
         match Parser::new().parse(re) {
             Ok(ast) => match eval_ast(&ast) {
                 Outcome::NoCapture => {
-                    error!("Config 'alias_transform.rules' rule [\"{re}\", \"{provider}\"]: regex does not contain any capture groups");
+                    error!(
+                        "Config 'alias_transform.rules' rule [\"{re}\", \"{provider}\"]: regex does not contain any capture groups"
+                    );
                 }
                 Outcome::Invalid(kind, start, end) => {
                     error!(

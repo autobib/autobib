@@ -58,10 +58,9 @@ impl MappedKey {
 
 impl<T: Into<String>> From<MappedKey<T>> for String {
     fn from(value: MappedKey<T>) -> Self {
-        if let Some(original) = value.original {
-            original.into()
-        } else {
-            value.mapped.into()
+        match value.original {
+            Some(original) => original.into(),
+            _ => value.mapped.into(),
         }
     }
 }
