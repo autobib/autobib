@@ -191,7 +191,7 @@ will list all of your local records with the `author` and `title` fields availab
 
 ### Import records
 
-If you have an existing database of records in the `.bib`, you can import these records into your Autobib database using `autobib import`.
+You can import existing records from BibTeX files using `autobib import`.
 There are four mutually exclusive import modes, specified with flags:
 
 - `--local` (the default behaviour):
@@ -205,8 +205,9 @@ There are four mutually exclusive import modes, specified with flags:
 - `--retrieve-only`:
   Do not import the data from the `.bib` file and only make a remote request to retrieve the data.
 
-Note that alias transforms, in the `[alias_transform]` section of the [configuration](src/config/default_config.toml) apply when determining the key automatically, which can be used to define a custom import pattern.
-To handle colons in entry keys, one can also use the `--replace-colons` command so specify a (possibly empty) replacement string.
+Note that the `[alias_transform]` section of the [configuration](src/config/default_config.toml) applies when determining the key automatically.
+This can be used to define a custom import pattern.
+To handle colons in entry keys, use the `--replace-colons` option to specify a (possibly empty) replacement string.
 
 
 ### Shell completions
