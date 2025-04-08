@@ -140,7 +140,7 @@ pub fn get_record_row<'conn, F: FnOnce() -> Vec<(regex::Regex, String)>>(
 ) -> Result<RecordRowResponse<'conn>, Error> {
     match db.extended_state_from_record_id(record_id, &config.alias_transform)? {
         RecordIdState::Existent(key, row) => {
-            info!("Found existing data for key {}", key);
+            info!("Found existing data for key {key}");
             row_to_response(key, row)
         }
         RecordIdState::NullRemoteId(remote_id, null_row) => {
@@ -180,7 +180,7 @@ pub fn get_record_row_remote<'conn, F: FnOnce() -> Vec<(regex::Regex, String)>>(
 ) -> Result<RemoteRecordRowResponse<'conn>, Error> {
     match db.state_from_remote_id(&remote_id)? {
         RemoteIdState::Existent(row) => {
-            info!("Found existing data for key {}", remote_id);
+            info!("Found existing data for key {remote_id}");
             row_to_response(remote_id, row)
         }
         RemoteIdState::Null(null_row) => Ok(RemoteRecordRowResponse::Null(remote_id, null_row)),
@@ -214,7 +214,7 @@ fn get_record_row_recursive<'conn>(
     normalization: &Normalization,
     exists_callback: impl FnOnce(&State<'conn, RecordRow>) -> Result<Option<String>, rusqlite::Error>,
 ) -> Result<RemoteRecordRowResponse<'conn>, Error> {
-    info!("Resolving remote record for {}", remote_id);
+    info!("Resolving remote record for {remote_id}");
     let mut history = NonEmpty::singleton(remote_id);
     loop {
         missing = match get_remote_response(client, history.last())? {

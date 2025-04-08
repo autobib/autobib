@@ -76,7 +76,8 @@ fn test_normalize_eprint() {
 
     // set new skip
     let mut record_data = RecordData::try_new("article".into()).unwrap();
-    for (k, v) in [("doi", "xxx")] {
+    {
+        let (k, v) = ("doi", "xxx");
         record_data.check_and_insert(k.into(), v.into()).unwrap();
     }
     let changed = record_data.set_eprint(["zbl", "doi"].iter());
