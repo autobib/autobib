@@ -35,10 +35,12 @@ pub fn get_canonical(id: &str, client: &HttpClient) -> Result<Option<RemoteId>, 
 
     match &identifiers[..] {
         [] => Ok(None),
-        [identifier] => Ok(Some(RemoteId::from_parts("zbmath", identifier)?)),
-        _ => Err(ProviderError::Unexpected(format!(
-            "Request to '{url}' returned multiple identifiers: {}",
-            identifiers.join(", ")
-        ))),
+        [identifier, ..] => Ok(Some(RemoteId::from_parts("zbmath", identifier)?)),
+        // TODO: maybe do something better than just taking the first identifier
+        //       e.g. jfm:60.0017.02 has multiple associated identifiers
+        // _ => Err(ProviderError::Unexpected(format!(
+        //     "Request to '{url}' returned multiple identifiers: {}",
+        //     identifiers.join(", ")
+        // ))),
     }
 }
