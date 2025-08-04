@@ -385,11 +385,11 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                                         bail!("Record deleted while picker was running!");
                                     }
                                 };
-
-                                // if there are no preferred providers or none matched, just print
-                                // the canonical identifier
-                                println!("{}", row_data.canonical);
                             }
+
+                            // if there are no preferred providers or none matched, just print
+                            // the canonical identifier
+                            println!("{}", row_data.canonical);
                         }
                         None => error!("No item selected."),
                     }
