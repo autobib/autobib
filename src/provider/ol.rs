@@ -8,7 +8,7 @@ use crate::logger::info;
 
 use super::{EntryType, HttpClient, ProviderError, RecordData, ValidationOutcome};
 
-static OL_IDENTIFIER_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[0-9]{8}M$").unwrap());
+static OL_IDENTIFIER_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[0-9]{7,8}M$").unwrap());
 
 pub fn is_valid_id(id: &str) -> ValidationOutcome {
     OL_IDENTIFIER_RE.is_match(id).into()
