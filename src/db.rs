@@ -628,10 +628,10 @@ impl Transaction<'_> {
             where
                 P: rusqlite::Params;
             pub fn last_insert_rowid(&self) -> i64;
-            pub fn pragma_query<F>(&self, schema_name: Option<rusqlite::DatabaseName<'_>>, pragma_name: &str, f: F) -> rusqlite::Result<()>
+            pub fn pragma_query<F>(&self, schema_name: Option<&str>, pragma_name: &str, f: F) -> rusqlite::Result<()>
             where
                 F: FnMut(&rusqlite::Row<'_>) -> rusqlite::Result<()>;
-            pub fn pragma_query_value<T, F>(&self, schema_name: Option<rusqlite::DatabaseName<'_>>, pragma_name: &str, f: F) -> rusqlite::Result<T>
+            pub fn pragma_query_value<T, F>(&self, schema_name: Option<&str>, pragma_name: &str, f: F) -> rusqlite::Result<T>
             where
                 F: FnOnce(&rusqlite::Row<'_>) -> rusqlite::Result<T>;
             pub fn prepare(&self, sql: &str) -> rusqlite::Result<rusqlite::Statement<'_>>;
