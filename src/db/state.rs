@@ -117,7 +117,7 @@ impl<'conn, I: DatabaseId> State<'conn, I> {
     }
 
     /// Prepare the SQL statement for execution.
-    fn prepare(&self, sql: &'static str) -> Result<Statement, Error> {
+    fn prepare(&self, sql: &'static str) -> Result<Statement<'_>, Error> {
         self.tx.prepare(sql)
     }
 
@@ -131,7 +131,7 @@ impl<'conn, I: DatabaseId> State<'conn, I> {
     /// are called many times in a single program run.
     ///
     /// Unfortunately, rusqlite does not support compile-time pre-caching of SQLite statements.
-    fn prepare_cached(&self, sql: &'static str) -> Result<CachedStatement, Error> {
+    fn prepare_cached(&self, sql: &'static str) -> Result<CachedStatement<'_>, Error> {
         self.tx.prepare_cached(sql)
     }
 }
@@ -254,10 +254,10 @@ impl<'conn> RecordIdState<'conn> {
         match record_id.resolve(alias_transform) {
             Ok(AliasOrRemoteId::RemoteId(mapped_remote_id)) => {
                 // check the normalized value, if normalized
-                if mapped_remote_id.is_mapped() {
-                    if let Some(row_id) = get_row_id(&tx, &mapped_remote_id)? {
-                        return Self::existent(tx, row_id, move |_| Ok(mapped_remote_id.into()));
-                    }
+                if mapped_remote_id.is_mapped()
+                    && let Some(row_id) = get_row_id(&tx, &mapped_remote_id)?
+                {
+                    return Self::existent(tx, row_id, move |_| Ok(mapped_remote_id.into()));
                 }
 
                 Self::null_or_missing(

@@ -289,16 +289,15 @@ impl Normalize for RecordData {
     }
 
     fn strip_journal_series(&mut self) -> bool {
-        if let Some(journal) = self.fields.get_mut("journal") {
-            if let Some(truncate_offset) = TRAILING_JOURNAL_SERIES_RE
+        if let Some(journal) = self.fields.get_mut("journal")
+            && let Some(truncate_offset) = TRAILING_JOURNAL_SERIES_RE
                 .find(journal.0.as_ref())
                 .map(|m| m.start())
-            {
-                // SAFETY: the new value is a prefix of the previous value, and the regex
-                // guarantees that it will not result in unbalanced {}
-                journal.0.truncate(truncate_offset);
-                return true;
-            }
+        {
+            // SAFETY: the new value is a prefix of the previous value, and the regex
+            // guarantees that it will not result in unbalanced {}
+            journal.0.truncate(truncate_offset);
+            return true;
         }
         false
     }

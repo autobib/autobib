@@ -51,10 +51,10 @@ pub fn from_buffer<F: FnOnce() -> Vec<(regex::Regex, String)>>(
             Ok(mut entry) => {
                 // replace colons with the replacement value, if a replacement
                 // value is passed and a substitution occurs
-                if let Some(ref s) = import_config.replace_colons {
-                    if let Some(replacement) = entry.key.substitute(':', s) {
-                        entry.key = replacement;
-                    }
+                if let Some(ref s) = import_config.replace_colons
+                    && let Some(replacement) = entry.key.substitute(':', s)
+                {
+                    entry.key = replacement;
                 }
 
                 match import_entry(entry, import_config, record_db, client, config)? {
@@ -230,18 +230,16 @@ fn create_alias(
     no_alias: bool,
     maybe_alias: Option<Alias>,
 ) -> Result<(), rusqlite::Error> {
-    if !no_alias {
-        if let Some(alias) = maybe_alias {
-            info!("Creating alias '{alias}' for '{remote_id}'");
-            if let Some(other_remote_id) = row.ensure_alias(&alias)? {
-                warn!(
-                    concat!(
-                        "Alias '{}' already exists and refers to '{}'. ",
-                        "'{}' will be a different record."
-                    ),
-                    alias, other_remote_id, remote_id,
-                );
-            }
+    if !no_alias && let Some(alias) = maybe_alias {
+        info!("Creating alias '{alias}' for '{remote_id}'");
+        if let Some(other_remote_id) = row.ensure_alias(&alias)? {
+            warn!(
+                concat!(
+                    "Alias '{}' already exists and refers to '{}'. ",
+                    "'{}' will be a different record."
+                ),
+                alias, other_remote_id, remote_id,
+            );
         }
     }
     row.commit()?;

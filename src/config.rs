@@ -140,10 +140,10 @@ impl<F: FnOnce() -> Vec<(Regex, String)>> AliasTransform for LazyAliasTransform<
     fn map_alias<'a>(&'a self, alias: &'a Alias) -> Option<(&'a str, &'a str)> {
         for (re, provider) in self.rules.iter() {
             // TODO: replace with if-let chain when stabilized in 2024 edition
-            if let Some(cap) = re.captures(alias.name()) {
-                if let Some(res) = cap.get(1) {
-                    return Some((provider, res.as_str()));
-                }
+            if let Some(cap) = re.captures(alias.name())
+                && let Some(res) = cap.get(1)
+            {
+                return Some((provider, res.as_str()));
             }
         }
 

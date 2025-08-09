@@ -239,11 +239,11 @@ impl State<'_, RecordRow> {
             "Checking if alias '{alias}' refers to row_id '{}' and deleting the alias if yes",
             self.row_id()
         );
-        if let Some(row_id) = get_row_id(&self.tx, alias)? {
-            if row_id == self.row_id() {
-                self.prepare(sql::delete_citation_key())?
-                    .execute((alias.name(),))?;
-            }
+        if let Some(row_id) = get_row_id(&self.tx, alias)?
+            && row_id == self.row_id()
+        {
+            self.prepare(sql::delete_citation_key())?
+                .execute((alias.name(),))?;
         }
         Ok(())
     }
