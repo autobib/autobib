@@ -140,13 +140,13 @@ pub fn get_citekeys<T: Extend<RecordId>>(buffer: &[u8], container: &mut T) {
             b'\\' => {
                 let (opt_cmd, next) = ascii_macro(buffer, pos);
                 pos = next;
-                if let Some(cmd) = opt_cmd {
-                    if is_citation_macro_name(cmd) {
-                        let (opt_contents, next) = macro_argument(buffer, pos);
-                        pos = next;
-                        if let Some(contents) = opt_contents {
-                            parse_cite_contents(&contents, container);
-                        }
+                if let Some(cmd) = opt_cmd
+                    && is_citation_macro_name(cmd)
+                {
+                    let (opt_contents, next) = macro_argument(buffer, pos);
+                    pos = next;
+                    if let Some(contents) = opt_contents {
+                        parse_cite_contents(&contents, container);
                     }
                 }
             }

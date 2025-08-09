@@ -124,10 +124,10 @@ fn push_remote_id_if_valid<T, F: FnOnce(&str) -> Option<T>, G: FnOnce(MappedKey,
     preprocess: F,
     push: G,
 ) {
-    if let Some(filtered) = preprocess(provider) {
-        if let Ok(remote_id) = MappedKey::mapped_from_parts(provider, sub_id) {
-            push(remote_id, filtered);
-        }
+    if let Some(filtered) = preprocess(provider)
+        && let Ok(remote_id) = MappedKey::mapped_from_parts(provider, sub_id)
+    {
+        push(remote_id, filtered);
     }
 }
 
@@ -152,10 +152,10 @@ pub fn determine_remote_id_candidates<
     }
 
     // next, determine candidates using the `eprint` and `eprinttype` fields
-    if let Some(provider) = data.get_field("eprinttype") {
-        if let Some(sub_id) = data.get_field("eprint") {
-            push_remote_id_if_valid(provider, sub_id, &mut preprocess, &mut push);
-        }
+    if let Some(provider) = data.get_field("eprinttype")
+        && let Some(sub_id) = data.get_field("eprint")
+    {
+        push_remote_id_if_valid(provider, sub_id, &mut preprocess, &mut push);
     }
 }
 

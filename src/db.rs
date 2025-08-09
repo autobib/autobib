@@ -301,7 +301,7 @@ impl RecordDatabase {
         &mut self,
         record_id: RecordId,
         alias_transform: &A,
-    ) -> Result<RecordIdState, rusqlite::Error> {
+    ) -> Result<RecordIdState<'_>, rusqlite::Error> {
         RecordIdState::determine(self.conn.transaction()?.into(), record_id, alias_transform)
     }
 
@@ -311,7 +311,7 @@ impl RecordDatabase {
         &mut self,
         record_id: RecordId,
         alias_transform: &A,
-    ) -> Result<RecordIdState, rusqlite::Error> {
+    ) -> Result<RecordIdState<'_>, rusqlite::Error> {
         RecordIdState::determine(self.conn.transaction()?.into(), record_id, alias_transform)
     }
 
@@ -320,7 +320,7 @@ impl RecordDatabase {
     pub fn state_from_remote_id(
         &mut self,
         remote_id: &RemoteId,
-    ) -> Result<RemoteIdState, rusqlite::Error> {
+    ) -> Result<RemoteIdState<'_>, rusqlite::Error> {
         RemoteIdState::determine(self.conn.transaction()?.into(), remote_id)
     }
 

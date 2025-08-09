@@ -408,12 +408,12 @@ pub fn run_cli(cli: Cli) -> Result<()> {
             // Initialize the skipped keys to contain keys already present in the outfile (if
             // appending)
             let mut skipped_keys: HashSet<RecordId> = HashSet::new();
-            if let Some(file) = outfile.as_mut() {
-                if append {
-                    let mut scratch = Vec::new();
-                    file.read_to_end(&mut scratch)?;
-                    get_citekeys(SourceFileType::Bib, &scratch, &mut skipped_keys);
-                }
+            if let Some(file) = outfile.as_mut()
+                && append
+            {
+                let mut scratch = Vec::new();
+                file.read_to_end(&mut scratch)?;
+                get_citekeys(SourceFileType::Bib, &scratch, &mut skipped_keys);
             }
 
             // Collect all entries which are not null, excluding those which should be skipped
@@ -749,15 +749,15 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                     "--skip-file-type",
                 )?;
             }
-            if let Some(file) = outfile.as_mut() {
-                if append {
-                    // must call `rewind` here since the `append` open option may set the 'read'
-                    // cursor position to the end of the file, depending on the platform
-                    file.rewind()?;
-                    // read the file into the buffer
-                    file.read_to_end(&mut scratch)?;
-                    get_citekeys(SourceFileType::Bib, &scratch, &mut skipped_keys);
-                }
+            if let Some(file) = outfile.as_mut()
+                && append
+            {
+                // must call `rewind` here since the `append` open option may set the 'read'
+                // cursor position to the end of the file, depending on the platform
+                file.rewind()?;
+                // read the file into the buffer
+                file.read_to_end(&mut scratch)?;
+                get_citekeys(SourceFileType::Bib, &scratch, &mut skipped_keys);
             }
 
             if print_keys {
