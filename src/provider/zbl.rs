@@ -24,6 +24,11 @@ pub fn get_canonical(id: &str, client: &HttpClient) -> Result<Option<RemoteId>, 
 
     let body = match response.status() {
         StatusCode::OK => response.bytes()?,
+        StatusCode::FORBIDDEN => {
+            return Err(ProviderError::Unexpected(
+                "zbMATH server is temporarily inaccessible; try again later.".into(),
+            ));
+        }
         StatusCode::NOT_FOUND => {
             return Ok(None);
         }
