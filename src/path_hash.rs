@@ -1,7 +1,7 @@
-use std::{hash::Hasher, path::PathBuf, str::from_utf8_unchecked};
+use std::{path::PathBuf, str::from_utf8_unchecked};
 
 use data_encoding::BASE32;
-use rapidhash::RapidInlineHasher;
+use rapidhash::v1::rapidhash_v1;
 
 use crate::RemoteId;
 
@@ -18,7 +18,7 @@ impl PathHash for RemoteId {
     /// ```text
     /// provider/xx/xx/xx/base32-encoding-of-sub-id/
     /// ```
-    /// The 30 bit header is formed by converting the u64 output of the [rapidhash] hashing
+    /// The 30 bit header is formed by converting the u64 output of the [rapidhash::v1] hashing
     /// algorithm applied to the sub-id into little endian bytes, then taking the four most
     /// significant bytes (in decreasing order), encoding using BASE32 into 8 ASCII characters,
     /// and then taking the first 6.
@@ -27,9 +27,7 @@ impl PathHash for RemoteId {
     /// sub-directories.
     fn extend_attachments_path(&self, path_buf: &mut PathBuf) {
         let sub_id_bytes = self.sub_id().as_bytes();
-        let mut hasher = RapidInlineHasher::default();
-        hasher.write(sub_id_bytes);
-        let sub_id_hash: [u8; 8] = hasher.finish().to_le_bytes();
+        let sub_id_hash: [u8; 8] = rapidhash_v1(sub_id_bytes).to_le_bytes();
 
         let mut buffer = [0; 8];
         BASE32.encode_mut(&sub_id_hash[..4], &mut buffer);

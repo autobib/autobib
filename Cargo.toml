@@ -30,7 +30,7 @@ memchr = "2.7"
 nonempty = "0.12"
 nucleo-picker = "0.8.1"
 quick-xml = { version = "0.38", features = ["serialize"] }
-rapidhash = "1.1"
+rapidhash = "3.1"
 regex = "1.11"
 regex-syntax = "0.8"
 reqwest = { version = "0.12", features = ["rustls-tls", "blocking", "gzip"] }
