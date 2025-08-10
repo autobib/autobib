@@ -1598,9 +1598,9 @@ dependencies = [
 
 [[package]]
 name = "rapidhash"
-version = "1.4.0"
+version = "3.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9813f789f95ee4fe6b4d01834404d7cccacbc3f6c029343af910b3c2835eb9f1"
+checksum = "efee4b7317469c6c6e7fdeee3d094313af846a97678d6ed971d83a852d730083"
 
 [[package]]
 name = "rayon"
