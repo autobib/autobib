@@ -181,6 +181,35 @@ impl TryFrom<ArxivResponse> for RecordData {
     }
 }
 
+/// Given a valid arxiv identifier, determine the month and year associated with the original
+/// submission.
+fn month_year_from_arxiv_sub_id(
+    id: &str,
+    record_data: &mut RecordData,
+) -> Result<(), RecordDataError> {
+    let month;
+    let year;
+    match id.find('/') {
+        Some(pos) => {
+            // old style: conditionally append a '19' or a '20'
+            month = id[pos + 2..pos + 4].into();
+            year = if id.as_bytes()[0] == b'0' {
+                "20".to_string() + &id[pos..pos + 2]
+            } else {
+                "19".to_string() + &id[pos..pos + 2]
+            };
+        }
+        None => {
+            // new style: always '20'
+            month = id[2..4].into();
+            year = "20".to_string() + &id[0..2];
+        }
+    }
+    record_data.check_and_insert("month".into(), month)?;
+    record_data.check_and_insert("year".into(), year)?;
+    Ok(())
+}
+
 pub fn get_record(id: &str, client: &HttpClient) -> Result<Option<RecordData>, ProviderError> {
     let response = client.get(format!(
         "https://export.arxiv.org/oai2?verb=GetRecord&identifier=oai:arXiv.org:{id}&metadataPrefix=arXiv"
@@ -196,7 +225,11 @@ pub fn get_record(id: &str, client: &HttpClient) -> Result<Option<RecordData>, P
 
     match quick_xml::de::from_str::<ArxivXMLDe>(&body) {
         Ok(parsed) => match parsed.try_into()? {
-            ArxivXML::Response(response) => Ok(Some(response.try_into()?)),
+            ArxivXML::Response(response) => {
+                let mut record_data = response.try_into()?;
+                month_year_from_arxiv_sub_id(id, &mut record_data)?;
+                Ok(Some(record_data))
+            }
             ArxivXML::Error(_) => Ok(None),
         },
         Err(err) => Err(ProviderError::Unexpected(format!(
