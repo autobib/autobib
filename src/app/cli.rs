@@ -1,7 +1,6 @@
 use std::{path::PathBuf, str::FromStr};
 
 use anyhow::Result;
-use chrono::{DateTime, Local};
 use clap::{Parser, Subcommand, ValueEnum};
 use clap_complete::aot::Shell;
 use clap_verbosity_flag::{Verbosity, WarnLevel};
@@ -424,19 +423,11 @@ pub enum UtilCommand {
     },
     /// Optimize database to (potentially) reduce storage size.
     Optimize,
-    /// Clear caches which match all of the provided conditions.
+    /// Clear all local caches.
     Evict {
-        /// Clear cached items with citation keys matching this regex.
-        ///
-        /// The regex syntax is documented at <https://docs.rs/regex/latest/regex/#syntax>
-        #[arg(short, long)]
-        regex: Option<String>,
-        /// Clear cached items predating the provided time.
-        #[arg(short, long)]
-        before: Option<DateTime<Local>>,
-        /// Clear cached items following the provided time.
-        #[arg(short, long)]
-        after: Option<DateTime<Local>>,
+        /// Clear cached items which are at least `seconds` old.
+        #[arg(long)]
+        max_age: Option<u32>,
     },
     /// List all valid keys.
     List {

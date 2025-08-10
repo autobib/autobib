@@ -45,6 +45,13 @@ sql!(get_null_record_data, "Get cached null data");
 
 sql!(set_cached_null, "Set cached null data");
 
+sql!(clear_null_records, "Delete all cached null data");
+
+sql!(
+    clear_null_records_before,
+    "Delete all cached null data before a given datetime"
+);
+
 sql!(get_all_records, "Get all record data");
 
 sql!(get_all_citation_keys, "Get all citation keys");
