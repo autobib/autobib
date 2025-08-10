@@ -1065,7 +1065,13 @@ fn test_cache_evict() -> Result<()> {
     cmd.assert().failure();
 
     let mut cmd = s.cmd()?;
-    cmd.args(["-v", "util", "evict", "--regex", "^zbmath:*"]);
+    cmd.args(["-v", "util", "evict", "--max-age", "10000"]);
+    cmd.assert()
+        .success()
+        .stderr(predicate::str::contains("Removed 0 cached null"));
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["-v", "util", "evict"]);
     cmd.assert()
         .success()
         .stderr(predicate::str::contains("Removed 1 cached null"));

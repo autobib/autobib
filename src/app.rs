@@ -26,7 +26,7 @@ use crate::{
     cite_search::{SourceFileType, get_citekeys},
     config,
     db::{
-        DeleteAliasResult, EvictionConstraint, RecordDatabase, RenameAliasResult, schema_version,
+        DeleteAliasResult, RecordDatabase, RenameAliasResult, schema_version,
         state::{ExistsOrUnknown, RecordIdState, RowData},
     },
     entry::{Entry, EntryKey, RawRecordData, RecordData, binary_format_version},
@@ -888,18 +888,14 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                 info!("Optimizing database.");
                 record_db.vacuum()?;
             }
-            UtilCommand::Evict {
-                regex,
-                before,
-                after,
-            } => {
-                let constraints = EvictionConstraint::default()
-                    .regex(&regex)
-                    .before(&before)
-                    .after(&after);
-
-                record_db.evict_cache(&constraints)?;
-            }
+            UtilCommand::Evict { max_age } => match max_age {
+                Some(seconds) => {
+                    record_db.evict_cache_max_age(seconds)?;
+                }
+                None => {
+                    record_db.evict_cache()?;
+                }
+            },
             UtilCommand::List { canonical } => {
                 record_db.map_citation_keys(canonical, |key_str| {
                     println!("{key_str}");
