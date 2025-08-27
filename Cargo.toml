@@ -29,11 +29,11 @@ lockstep = "0.3"
 memchr = "2.7"
 nonempty = "0.12"
 nucleo-picker = "0.8.1"
-quick-xml = { version = "0.38", features = ["serialize"] }
 rapidhash = "3.1"
 regex = "1.11"
 regex-syntax = "0.8"
 reqwest = { version = "0.12", features = ["rustls-tls", "blocking", "gzip"] }
+rsxiv = { version = "0.3.0", features = ["serde"] }
 rusqlite = { version = "0.37", features = ["bundled", "chrono", "functions"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_bibtex = "0.6.0"
