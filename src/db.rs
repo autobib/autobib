@@ -256,8 +256,10 @@ impl RecordDatabase {
         };
 
         // check if the application id belongs to some other application
-        // the second check is needed since db_application_id == 0  for v0
-        if db_application_id != application_id() && db_application_id != 0 {
+        if db_user_version < 0
+            || (db_user_version == 0 && db_application_id != 0)
+            || (db_user_version > 0 && db_application_id != application_id())
+        {
             return Err(DatabaseError::InvalidDatabase);
         }
 
