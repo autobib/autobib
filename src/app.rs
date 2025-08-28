@@ -26,10 +26,11 @@ use crate::{
     cite_search::{SourceFileType, get_citekeys},
     config,
     db::{
-        DeleteAliasResult, RecordDatabase, RenameAliasResult, schema_version,
+        DeleteAliasResult, RecordDatabase, RenameAliasResult,
         state::{ExistsOrUnknown, RecordIdState, RowData},
+        user_version,
     },
-    entry::{Entry, EntryKey, RawRecordData, RecordData, binary_format_version},
+    entry::{Entry, EntryKey, RawRecordData, RecordData},
     error::AliasErrorKind,
     http::HttpClient,
     logger::{debug, error, info, suggest, warn},
@@ -55,9 +56,11 @@ pub use self::cli::{Cli, Command};
 /// Run the CLI.
 pub fn run_cli(cli: Cli) -> Result<()> {
     info!("SQLite version: {}", rusqlite::version());
-    info!("Autobib version: {}", env!("CARGO_PKG_VERSION"));
-    info!("Database binary data version: {}", binary_format_version());
-    info!("Database schema version: {}", schema_version());
+    info!(
+        "Autobib version: {} (database version: {}), ",
+        env!("CARGO_PKG_VERSION"),
+        user_version()
+    );
 
     let strategy = choose_app_strategy(AppStrategyArgs {
         top_level_domain: "org".to_owned(),
