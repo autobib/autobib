@@ -50,6 +50,7 @@ pub fn choose_attachment_path<F: FnMut(&Path) -> bool + Send + 'static>(
     entry_type: bool,
     all_fields: bool,
     attachment_root: PathBuf,
+    ignore_hidden_files: bool,
     mut filter: F,
 ) -> Picker<AttachmentData, FieldFilterRenderer> {
     // initialize picker
@@ -76,13 +77,31 @@ pub fn choose_attachment_path<F: FnMut(&Path) -> bool + Send + 'static>(
                 .extend_attachments_path(&mut attachment_root);
 
             // walk through all of the entries in the attachment path
-            NonEmpty::collect(
-                WalkDir::new(&attachment_root)
-                    .into_iter()
-                    .flatten()
-                    .filter(|dir_entry| filter(dir_entry.path())),
-            )
-            .map(|attachments| AttachmentData {
+            let paths = if ignore_hidden_files {
+                fn is_hidden(entry: &DirEntry) -> bool {
+                    entry
+                        .file_name()
+                        .to_str()
+                        .map(|s| s.starts_with("."))
+                        .unwrap_or(false)
+                }
+
+                NonEmpty::collect(
+                    WalkDir::new(&attachment_root)
+                        .into_iter()
+                        .filter_entry(|e| !is_hidden(e))
+                        .flatten()
+                        .filter(|dir_entry| filter(dir_entry.path())),
+                )
+            } else {
+                NonEmpty::collect(
+                    WalkDir::new(&attachment_root)
+                        .into_iter()
+                        .flatten()
+                        .filter(|dir_entry| filter(dir_entry.path())),
+                )
+            };
+            paths.map(|attachments| AttachmentData {
                 row_data,
                 attachments,
                 attachment_root,
