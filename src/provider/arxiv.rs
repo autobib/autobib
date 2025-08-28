@@ -25,7 +25,7 @@ pub fn is_valid_id(id: &str) -> ValidationOutcome {
 struct Entry {
     id: ArticleId,
     updated: DateTime<FixedOffset>,
-    // published: DateTime<FixedOffset>,
+    published: DateTime<FixedOffset>,
     authors: Vec<AuthorName>,
     title: String,
     doi: Option<String>,
@@ -40,6 +40,7 @@ impl TryFrom<Entry> for RecordData {
         let Entry {
             id,
             updated,
+            published,
             authors,
             title,
             doi,
@@ -68,7 +69,7 @@ impl TryFrom<Entry> for RecordData {
             }
         }
 
-        // TODO: capture `published` data here, as well as date handling, but this should wait
+        // TODO: capture `updated` data here in date as well as date handling, but this should wait
         // until `date` normalization exists
         record_data.check_and_insert("arxiv".into(), id.to_string())?;
         record_data.check_and_insert("author".into(), author_buf)?;
@@ -77,8 +78,8 @@ impl TryFrom<Entry> for RecordData {
             record_data.check_and_insert("doi".into(), s.trim().to_owned())?;
         }
         record_data.check_and_insert("month".into(), updated.format("%m").to_string())?;
-        // record_data
-        //     .check_and_insert("origdate".into(), published.format("%Y-%m-%d").to_string())?;
+        record_data
+            .check_and_insert("origdate".into(), published.format("%Y-%m-%d").to_string())?;
         record_data.check_and_insert("title".into(), title.trim().to_owned())?;
         if let Some(v) = id.version() {
             record_data.check_and_insert("version".into(), v.to_string())?;

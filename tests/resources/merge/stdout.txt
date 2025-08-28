@@ -6,6 +6,7 @@
   language = {English},
   month = {01},
   mrnumber = {3224722},
+  origdate = {2012-12-09},
   pages = {773--822},
   title = {On self-similar sets with overlaps and inverse theorems for
               entropy},
