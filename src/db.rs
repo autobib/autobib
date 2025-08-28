@@ -386,8 +386,8 @@ impl RecordDatabase {
                 let mut invalid_keys: Vec<String> = Vec::new();
                 {
                     let mut stmt = tx.prepare(
-                        "SELECT name FROM CitationKeys WHERE record_key NOT IN (SELECT key FROM Records)",
-                    )?;
+                                "SELECT name FROM CitationKeys WHERE record_key NOT IN (SELECT key FROM Records)",
+                            )?;
                     let mut rows = stmt.query(())?;
                     while let Some(row) = rows.next()? {
                         invalid_keys.push(row.get("name")?);
@@ -406,6 +406,9 @@ impl RecordDatabase {
             }
             DatabaseFault::IntegrityError(_) => Ok(false),
             DatabaseFault::InvalidRecordData(_, _, _) => Ok(false),
+            DatabaseFault::RowHasNonNormalizedCanonicalId(_, _, _) => Ok(false),
+            DatabaseFault::InvalidCitationKey(_) => Ok(false),
+            DatabaseFault::NonNormalizedCitationKey(_, _) => Ok(false),
         }
     }
 
