@@ -17,8 +17,8 @@ use delegate::delegate;
 use regex::Regex;
 
 pub use identifier::{EntryKey, EntryType, FieldKey, FieldValue, validate_ascii_identifier};
+pub use raw::RawRecordData;
 pub(crate) use raw::{EntryTypeHeader, KeyHeader, ValueHeader};
-pub use raw::{RawRecordData, binary_format_version};
 
 use crate::normalize::{Normalize, normalize_whitespace_str};
 

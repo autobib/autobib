@@ -4,7 +4,7 @@
 
 /// A convenience macro for generating the function and the corresponding documentation.
 macro_rules! sql {
-    ($name:ident, $desc:expr_2021) => {
+    ($name:ident, $desc:expr) => {
         #[doc = concat!($desc, ".")]
         ///
         /// Returns the following statement as a string:
@@ -17,17 +17,7 @@ macro_rules! sql {
     };
 }
 
-sql!(init_changelog, "Create the changelog table");
-
-sql!(init_records, "Create the records table");
-
-sql!(init_citation_keys, "Create the citation keys table");
-
-sql!(init_null_records, "Create the null records table");
-
 sql!(optimize, "Optimize the database");
-
-sql!(get_table_schema, "Get the table schema");
 
 sql!(get_record_data, "Get cached record data");
 

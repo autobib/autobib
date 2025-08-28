@@ -62,6 +62,8 @@
 //! ];
 //! # assert_eq!(expected_byte_repr, byte_repr);
 //! ```
+mod migrate;
+mod schema;
 mod sql;
 pub mod state;
 mod validate;
@@ -85,14 +87,21 @@ use crate::{
     logger::{debug, error, info, warn},
 };
 
-/// The current version of the database table schema.
-pub const fn schema_version() -> u8 {
-    0
+/// The current database version expected by the application.
+pub const fn user_version() -> i32 {
+    1
+}
+
+/// The unique application id used to determine if the opened database matches one used by this
+/// application.
+pub const fn application_id() -> i32 {
+    // sha256 hash of "Autobib"
+    0x48a420c4
 }
 
 /// An alias for the internal row ID used by SQLite for the `Records` and the `NullRecords` table. This is
-/// the `key` column in the table schema defined in [`init_records`](sql::init_records), and the
-/// implicit `rowid` column in the table schema defined in [`init_null_records`](sql::init_null_records)
+/// the `key` column in the table schema defined in [`schema::records`], and the
+/// implicit `rowid` column in the table schema defined in [`schema::null_records`]
 type RowId = i64;
 
 /// Determine the [`RowId`] in the `Records` table corresponding to a [`CitationKey`].
@@ -138,14 +147,14 @@ mod private {
 ///
 /// 1. `Records`. This is the primary table used to store records. The integer primary key
 ///    `key` is used as the internal unambiguous reference for each record and is used for
-///    de-duplication. The table schema is documented in [`init_records`](sql::init_records).
+///    de-duplication. The table schema is documented in [`schema::records`].
 /// 2. `CitationKeys`. This is the table used to store any citation key which is inserted into
 ///    a table. Since multiple citation keys may refer to the same underlying record, this is
 ///    simply a lookup table for the corresponding record, and the corresponding rows are
 ///    automatically deleted when the record is deleted. The table schema is documented in
-///    [`init_citation_keys`](sql::init_citation_keys).
+///    [`schema::citation_keys`].
 /// 3. `NullRecords`. This is a cache table used to keep track of records which are known to
-///    not exist. The table schema is documented in [`init_null_records`](sql::init_null_records).
+///    not exist. The table schema is documented in [`schema::null_records`].
 ///
 /// For a [`RemoteId`], there are two variants depending on the value returned by [`get_remote_response`](crate::provider::get_remote_response):
 ///
@@ -182,12 +191,11 @@ impl RecordDatabase {
             db_path.as_ref().display()
         );
         let mut conn = Connection::open(db_path)?;
+
         debug!("Enabling write-ahead log");
         conn.pragma_update(None, "journal_mode", "WAL")?;
 
-        let tx = conn.transaction()?.into();
-        Self::initialize(&tx)?;
-        tx.commit()?;
+        Self::initialize(&mut conn)?;
 
         debug!("Registering regexp function");
         Self::add_regexp_function(&conn)?;
@@ -195,29 +203,84 @@ impl RecordDatabase {
         Ok(RecordDatabase { conn })
     }
 
-    /// Check the current schema version.
-    pub fn schema_version(tx: &Transaction) -> Result<i64, rusqlite::Error> {
-        tx.pragma_query_value(None, "user_version", |row| row.get(0))
+    /// Read the user version from the database connection.
+    fn read_user_version(conn: &mut Connection) -> Result<i32, rusqlite::Error> {
+        conn.pragma_query_value(None, "user_version", |row| row.get(0))
+    }
+
+    /// Read the application id from the database connection.
+    fn read_application_id(conn: &mut Connection) -> Result<i32, rusqlite::Error> {
+        conn.pragma_query_value(None, "application_id", |row| row.get(0))
+    }
+
+    /// Check if the database at the provided connection is empty by checking that it contains no
+    /// on-disk tables.
+    fn is_empty_database(conn: &mut Connection) -> Result<bool, DatabaseError> {
+        debug!("Checking if database is empty");
+        let mut stmt = conn.prepare("SELECT name FROM sqlite_master")?;
+        let mut rows = stmt.query([])?;
+        Ok(rows.next()?.is_none())
     }
 
     /// Initialize the relevant tables, or migrate from an older schema if necessary.
-    fn initialize(tx: &Transaction) -> Result<(), DatabaseError> {
-        debug!("Checking schema version");
-        let db_schema_version = Self::schema_version(tx)?;
+    fn initialize(conn: &mut Connection) -> Result<(), DatabaseError> {
+        let db_user_version = Self::read_user_version(conn)?;
+        let db_application_id = Self::read_application_id(conn)?;
+        debug!(
+            "Database has user version '{db_user_version}' and application id '{db_application_id}'"
+        );
 
-        if db_schema_version == schema_version() as i64 {
-            Self::initialize_table(tx, "Records", sql::init_records())?;
-            Self::initialize_table(tx, "CitationKeys", sql::init_citation_keys())?;
-            Self::initialize_table(tx, "NullRecords", sql::init_null_records())?;
-            Self::initialize_table(tx, "Changelog", sql::init_changelog())?;
-            Ok(())
-        } else {
-            #[allow(clippy::match_single_binding)]
-            match db_schema_version {
-                // call a migration function here, if there are more valid versions
-                _ => Err(DatabaseError::InvalidSchemaVersion(db_schema_version)),
-            }
+        // fast path: `user_version` and `application_id` are both set and equal to the
+        // versions for this binary
+        if db_user_version == user_version() && db_application_id == application_id() {
+            return Ok(());
         }
+
+        // next most likely path: initializing a new database
+        if Self::is_empty_database(conn)? && db_user_version == 0 && db_application_id == 0 {
+            info!("Creating new database");
+            let tx = conn.transaction()?;
+
+            debug!("Setting `application_id` and `user_version`");
+            tx.pragma_update(None, "application_id", application_id())?;
+            tx.pragma_update(None, "user_version", user_version())?;
+
+            debug!("Initializing database tables");
+            tx.execute(schema::records(), ())?;
+            tx.execute(schema::citation_keys(), ())?;
+            tx.execute(schema::null_records(), ())?;
+            tx.execute(schema::changelog(), ())?;
+            tx.commit()?;
+
+            return Ok(());
+        };
+
+        // check if the application id belongs to some other application
+        // the second check is needed since db_application_id == 0  for v0
+        if db_application_id != application_id() && db_application_id != 0 {
+            return Err(DatabaseError::InvalidDatabase);
+        }
+
+        // check if the database version is too new
+        if db_user_version > user_version() {
+            return Err(DatabaseError::DatabaseVersionNewerThanBinary(
+                db_user_version,
+                user_version(),
+            ));
+        }
+
+        // by now, we have checked that:
+        // - the database is non-empty
+        // - the `application_id` is equal to the one for this program
+        // - the `user_version` is strictly less than the user version of this binary
+        for v in db_user_version..user_version() {
+            // apply the migration code for each previous version
+            //
+            // note that the migration code for `v0` automatically checks the database for validity
+            // of tables
+            migrate::migrate(conn, v)?;
+        }
+        Ok(())
     }
 
     /// Execute [sqlite VACUUM](https://www.sqlite.org/lang_vacuum.html).
@@ -251,48 +314,6 @@ impl RecordDatabase {
                 Ok(is_match)
             },
         )
-    }
-
-    /// Initialize a table inside a transaction.
-    fn initialize_table(
-        tx: &Transaction,
-        table_name: &str,
-        schema: &str,
-    ) -> Result<(), DatabaseError> {
-        debug!("Initializing new or validating existing table '{table_name}'");
-        match Self::check_table_schema(tx, table_name, schema) {
-            Ok(()) => Ok(()),
-            Err(DatabaseError::TableMissing(_)) => {
-                tx.execute(schema, ())?;
-                Ok(())
-            }
-            Err(e) => Err(e),
-        }
-    }
-
-    /// Validate the schema of an existing table, or return an appropriate error.
-    fn check_table_schema(
-        tx: &Transaction,
-        table_name: &str,
-        expected_schema: &str,
-    ) -> Result<(), DatabaseError> {
-        let mut table_selector = tx.prepare(sql::get_table_schema())?;
-        let mut record_rows = table_selector.query([table_name])?;
-        match record_rows.next() {
-            Ok(Some(row)) => {
-                let table_schema: String = row.get("sql")?;
-                if table_schema == expected_schema {
-                    Ok(())
-                } else {
-                    Err(DatabaseError::TableIncorrectSchema(
-                        table_name.into(),
-                        table_schema,
-                    ))
-                }
-            }
-            Ok(None) => Err(DatabaseError::TableMissing(table_name.into())),
-            Err(why) => Err(why.into()),
-        }
     }
 
     /// Get the [`RecordIdState`] associated with a [`RecordId`].
