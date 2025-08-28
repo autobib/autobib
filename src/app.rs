@@ -324,6 +324,8 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                 bail!("`autobib find` cannot run in non-interactive mode");
             }
 
+            let cfg = config::load(&config_path, missing_ok)?;
+
             match find_mode {
                 FindMode::Attachments => {
                     let mut picker = choose_attachment_path(
@@ -332,6 +334,7 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                         entry_type,
                         all_fields,
                         get_attachment_root(&data_dir, cli.attachments_dir)?,
+                        cfg.picker.ignore_hidden_files,
                         Path::is_file,
                     );
                     match picker.pick()? {
