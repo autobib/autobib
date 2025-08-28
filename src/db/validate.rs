@@ -3,13 +3,21 @@ use std::{fmt, num::NonZero, str::FromStr};
 use rusqlite::types::ValueRef;
 
 use super::{Transaction, get_row_id, sql};
-use crate::{RawRecordData, RemoteId, error::InvalidBytesError, logger::debug};
+use crate::{
+    CitationKey, RawRecordData, RecordId, RemoteId, error::InvalidBytesError, logger::debug,
+};
 
 /// A possible fault that could occurr inside the database.
 #[derive(Debug)]
 pub enum DatabaseFault {
     /// A row has an invalid canonical id.
     RowHasInvalidCanonicalId(i64, String),
+    /// A row has a canonical id which has not been normalized.
+    RowHasNonNormalizedCanonicalId(i64, String, String),
+    /// A row has an invalid canonical id.
+    InvalidCitationKey(String),
+    /// A row has a canonical id which has not been normalized.
+    NonNormalizedCitationKey(String, String),
     /// A row does not correspond to a row in the `CitationKeys` table.
     DanglingRecord(i64, String),
     /// There are `NonZero<usize>` rows in the `CitationKeys` table which point to a `Records` row which does not exist.
@@ -26,7 +34,25 @@ impl fmt::Display for DatabaseFault {
             DatabaseFault::RowHasInvalidCanonicalId(row_id, name) => {
                 write!(
                     f,
-                    "Record row '{row_id}' contains record id '{name}' which is not a valid canonical id."
+                    "Record row '{row_id}' contains record id '{name}' which is not a valid canonical id"
+                )
+            }
+            DatabaseFault::RowHasNonNormalizedCanonicalId(row_id, name, expected) => {
+                write!(
+                    f,
+                    "Record row '{row_id}' contains record id '{name}' which is not normalized: expected '{expected}'"
+                )
+            }
+            DatabaseFault::InvalidCitationKey(name) => {
+                write!(
+                    f,
+                    "CitationKeys table contains record id '{name}' which is not a valid canonical id"
+                )
+            }
+            DatabaseFault::NonNormalizedCitationKey(name, expected) => {
+                write!(
+                    f,
+                    "CitationKeys table contains record id '{name}' which is not normalized: expected '{expected}'"
                 )
             }
             DatabaseFault::DanglingRecord(row_id, name) => {
@@ -86,6 +112,15 @@ impl<'conn> DatabaseValidator<'conn> {
                 }
             };
 
+            if name != canonical_id.name() {
+                faults.push(DatabaseFault::RowHasNonNormalizedCanonicalId(
+                    row_id,
+                    name,
+                    canonical_id.name().to_string(),
+                ));
+                continue;
+            }
+
             // then check that the corresponding record is in the `CitationKeys` table
             if get_row_id(&self.tx, &canonical_id)?.is_none() {
                 faults.push(DatabaseFault::DanglingRecord(row_id, name));
@@ -125,6 +160,27 @@ impl<'conn> DatabaseValidator<'conn> {
 
         if let Some(nz) = NonZero::new(num_faults) {
             faults.push(DatabaseFault::NullCitationKeys(nz));
+        }
+
+        debug!("Checking citation key table for non-normalized identifiers");
+        let mut retriever = self.tx.prepare("SELECT * FROM CitationKeys")?;
+        let mut rows = retriever.query([])?;
+
+        while let Some(row) = rows.next()? {
+            let name: String = row.get("name")?;
+
+            let id: String = match RecordId::from(name.as_ref()).resolve(&()) {
+                Ok(alias_or_remote_id) => alias_or_remote_id.into(),
+                Err(_) => {
+                    faults.push(DatabaseFault::InvalidCitationKey(name));
+                    continue;
+                }
+            };
+
+            if name != id {
+                faults.push(DatabaseFault::NonNormalizedCitationKey(name, id));
+                continue;
+            }
         }
 
         Ok(())
