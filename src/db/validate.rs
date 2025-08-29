@@ -2,7 +2,7 @@ use std::{fmt, num::NonZero, str::FromStr};
 
 use rusqlite::types::ValueRef;
 
-use super::{Transaction, get_row_id, sql};
+use super::{Transaction, get_row_id, schema, sql};
 use crate::{
     CitationKey, RawRecordData, RecordId, RemoteId, error::InvalidBytesError, logger::debug,
 };
@@ -26,6 +26,10 @@ pub enum DatabaseFault {
     IntegrityError(String),
     /// A row in the `Records` table contains invalid binary data.
     InvalidRecordData(i64, String, InvalidBytesError),
+    /// A table is missing.
+    MissingTable(String),
+    /// A table has the incorrect schema.
+    InvalidTableSchema(String, String),
 }
 
 impl fmt::Display for DatabaseFault {
@@ -79,7 +83,36 @@ impl fmt::Display for DatabaseFault {
                 f,
                 "Record row '{row_id}' with record id '{name}' has invalid binary data: {err}"
             ),
+            DatabaseFault::MissingTable(table_name) => write!(f, "Missing table '{table_name}'"),
+            DatabaseFault::InvalidTableSchema(table_name, table_schema) => write!(
+                f,
+                "Table '{table_name}' has invalid schema:\n{table_schema}",
+            ),
         }
+    }
+}
+
+/// Validate the schema of an existing table, or return an appropriate error.
+pub fn check_table_schema(
+    tx: &Transaction,
+    table_name: &str,
+    expected_schema: &str,
+) -> Result<Option<DatabaseFault>, rusqlite::Error> {
+    let mut table_selector = tx.prepare(super::sql::get_table_schema())?;
+    let mut record_rows = table_selector.query([table_name])?;
+    match record_rows.next()? {
+        Some(row) => {
+            let table_schema: String = row.get("sql")?;
+            if table_schema == expected_schema {
+                Ok(None)
+            } else {
+                Ok(Some(DatabaseFault::InvalidTableSchema(
+                    table_name.into(),
+                    table_schema,
+                )))
+            }
+        }
+        None => Ok(Some(DatabaseFault::MissingTable(table_name.into()))),
     }
 }
 
@@ -90,6 +123,23 @@ pub struct DatabaseValidator<'conn> {
 impl<'conn> DatabaseValidator<'conn> {
     pub fn into_tx(self) -> Transaction<'conn> {
         self.tx
+    }
+
+    /// Check that all of the expected tables exist and have the correct schema.
+    pub fn table_schema(&self, faults: &mut Vec<DatabaseFault>) -> Result<(), rusqlite::Error> {
+        for (tbl_name, schema) in [
+            ("Records", schema::records()),
+            ("CitationKeys", schema::citation_keys()),
+            ("NullRecords", schema::null_records()),
+            ("Changelog", schema::changelog()),
+        ] {
+            debug!("Checking schema for table '{tbl_name}'.");
+            if let Some(fault) = check_table_schema(&self.tx, tbl_name, schema)? {
+                faults.push(fault);
+            }
+        }
+
+        Ok(())
     }
 
     /// Check the contents of the `Records` table for the following errors:

@@ -17,6 +17,8 @@ macro_rules! sql {
     };
 }
 
+sql!(get_table_schema, "Get the schema of the provided table");
+
 sql!(optimize, "Optimize the database");
 
 sql!(get_record_data, "Get cached record data");
