@@ -26,7 +26,21 @@ impl fmt::Display for RecordError {
             RecordErrorKind::InvalidMappedAlias(kind) => {
                 write!(f, "auto-aliased to invalid remote id: {}", kind.msg())
             }
-        }
+        }?;
+
+        // compute and print alternative keys
+        if let Some((_, sub_id)) = self.input.split_once(':') {
+            let mut first = true;
+            crate::provider::suggest_valid_remote_identifiers(sub_id, |remote_id| {
+                if first {
+                    first = false;
+                    write!(f, "\n       Maybe you meant: '{remote_id}'")
+                } else {
+                    write!(f, ", '{remote_id}'")
+                }
+            })?;
+        };
+        Ok(())
     }
 }
 
