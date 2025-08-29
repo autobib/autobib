@@ -1,22 +1,13 @@
 use rusqlite::{Connection, functions::FunctionFlags};
 
 /// The available application functions.
-///
-/// Function descriptions:
-///
-/// - [`Regexp`](AppFunction::Regexp): `regexp(re: TEXT, value: TEXT) -> BOOL` returns if `value`
-///   matches the regex defined in `re`
-/// - [`ContainsField`](AppFunction::ContainsField): `contains_field(field: TEXT, data: BLOB) -> BOOL`
-///   returns if `data` (interpreted as record data) contains the provided field
-/// - [`GetField`](AppFunction::GetField): `get_field(field: TEXT, data: BLOB) -> TEXT or NULL`
-///   returns the field value if it exists, or null.
 #[derive(Debug)]
 pub enum AppFunction {
-    /// Checks if a string matches a given regex.
+    /// `regexp(re: TEXT, value: TEXT) -> BOOL` returns if `value` matches the regex defined in `re`
     Regexp,
-    /// Checks if record data contains a field.
+    /// `contains_field(field: TEXT, data: BLOB) -> BOOL` returns if the record data contains the provided field
     ContainsField,
-    /// Returns the field value from the record data.
+    ///`get_field(field: TEXT, data: BLOB) -> TEXT or NULL` returns the field value if it exists, or null.
     GetField,
 }
 
