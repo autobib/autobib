@@ -62,21 +62,20 @@
 //! ];
 //! # assert_eq!(expected_byte_repr, byte_repr);
 //! ```
+mod functions;
 mod migrate;
 mod schema;
 mod sql;
 pub mod state;
 mod validate;
 
-use std::{path::Path, sync::Arc};
+use std::path::Path;
 
 use chrono::{Local, TimeDelta};
 use delegate::delegate;
+use functions::{AppFunction, register_application_function};
 use nucleo_picker::{Injector, Render};
-use regex::Regex;
-use rusqlite::{
-    Connection, DropBehavior, OptionalExtension, functions::FunctionFlags, types::ValueRef,
-};
+use rusqlite::{Connection, DropBehavior, OptionalExtension, types::ValueRef};
 
 use self::state::{RecordIdState, RemoteIdState, RowData};
 use self::validate::{DatabaseFault, DatabaseValidator};
@@ -197,10 +196,14 @@ impl RecordDatabase {
 
         Self::initialize(&mut conn)?;
 
-        debug!("Registering regexp function");
-        Self::add_regexp_function(&conn)?;
-
         Ok(RecordDatabase { conn })
+    }
+
+    /// Enable an application function for use in subsequent SQL queries.
+    pub fn register_application_function(&self, fun: AppFunction) -> Result<(), DatabaseError> {
+        debug!("Enabling application function: {}", fun.name());
+        register_application_function(&self.conn, fun)?;
+        Ok(())
     }
 
     /// Read the user version from the database connection.
@@ -288,34 +291,6 @@ impl RecordDatabase {
     /// Execute [sqlite VACUUM](https://www.sqlite.org/lang_vacuum.html).
     pub fn vacuum(&mut self) -> Result<(), rusqlite::Error> {
         self.conn.execute("VACUUM", ()).map(|_| ())
-    }
-
-    /// Register a regex callback for use by the SQLITE `regexp` command.
-    fn add_regexp_function(conn: &Connection) -> Result<(), rusqlite::Error> {
-        conn.create_scalar_function(
-            "regexp",
-            2,
-            FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
-            move |ctx| {
-                assert_eq!(ctx.len(), 2, "called with unexpected number of arguments");
-                let regexp: Arc<Regex> = ctx.get_or_create_aux(
-                    0,
-                    |vr| -> Result<_, Box<dyn std::error::Error + Send + Sync + 'static>> {
-                        Ok(Regex::new(vr.as_str()?)?)
-                    },
-                )?;
-                let is_match = {
-                    let text = ctx
-                        .get_raw(1)
-                        .as_str()
-                        .map_err(|e| rusqlite::Error::UserFunctionError(e.into()))?;
-
-                    regexp.is_match(text)
-                };
-
-                Ok(is_match)
-            },
-        )
     }
 
     /// Get the [`RecordIdState`] associated with a [`RecordId`].
