@@ -95,8 +95,8 @@ pub const fn user_version() -> i32 {
 /// The unique application id used to determine if the opened database matches one used by this
 /// application.
 pub const fn application_id() -> i32 {
-    // sha256 hash of "Autobib"
-    0x48a420c4
+    // first 32 bits of sha256 hash of "Autobib"
+    0x16611f2f
 }
 
 /// An alias for the internal row ID used by SQLite for the `Records` and the `NullRecords` table. This is

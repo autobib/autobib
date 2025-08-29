@@ -4,11 +4,11 @@
 preferred_providers = []
 
 # Actions related to the picker interface, for example when running `autobib find`
-[picker]
+[find]
 
 # Whether or not to ignore hidden files and directories in the attachment directories.
 # Note that if `true` will skip non-hidden files inside hidden directories.
-ignore_hidden_files = false
+ignore_hidden = false
 
 # Actions to perform when adding a new item to the database from a remote provider.
 # These actions are not run for local operations, such as `autobib local`.
