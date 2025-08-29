@@ -24,6 +24,29 @@ use crate::normalize::{Normalize, normalize_whitespace_str};
 
 /// This trait represents types which encapsulate the data content of a single BibTeX entry.
 ///
+/// In addition to the methods provided by [`EntryData`], this field also allows obtaining the
+/// field value by borrowing against an alternative lifetime 'r
+pub trait BorrowedEntryData<'r>: EntryData {
+    /// Iterate over `(key, value)` pairs in order.
+    fn fields_borrowed(&self) -> impl Iterator<Item = (&'r str, &'r str)>;
+
+    /// Get the value of the field, borrowing from an underlying data buffer.
+    fn get_field_borrowed(&self, field_name: &str) -> Option<&'r str> {
+        for (key, val) in self.fields_borrowed() {
+            if field_name > key {
+                return None;
+            }
+
+            if field_name == key {
+                return Some(val);
+            }
+        }
+        None
+    }
+}
+
+/// This trait represents types which encapsulate the data content of a single BibTeX entry.
+///
 /// # Safety
 /// The caller is required to guarantee that:
 ///
@@ -54,7 +77,7 @@ pub unsafe trait EntryData: PartialEq {
     /// Get the value of the field.
     ///
     /// The default implementation iterates over all fields and returns the first match.
-    fn get_field(&self, field_name: &str) -> Option<&str> {
+    fn get_field<'r>(&'r self, field_name: &str) -> Option<&'r str> {
         for (key, val) in self.fields() {
             if field_name > key {
                 return None;
@@ -65,6 +88,13 @@ pub unsafe trait EntryData: PartialEq {
             }
         }
         None
+    }
+
+    /// Check if the field exists.
+    ///
+    /// The default implementation checks that `get_field` returns `Some(_)`.
+    fn contains_field(&self, field_name: &str) -> bool {
+        self.get_field(field_name).is_some()
     }
 }
 
