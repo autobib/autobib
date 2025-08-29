@@ -2,7 +2,7 @@ use std::str::from_utf8;
 
 use serde_bibtex::token::is_balanced;
 
-use super::{EntryData, validate_ascii_identifier};
+use super::{BorrowedEntryData, EntryData, validate_ascii_identifier};
 use crate::error::InvalidBytesError;
 
 /// The current version of the binary data format.
@@ -28,7 +28,7 @@ pub(crate) type EntryTypeHeader = u8;
 /// of fields, see [`RecordData`](super::RecordData).
 ///
 /// For a description of the binary format, see the [`db`](crate::db) module documentation.
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, Clone)]
 pub struct RawRecordData<T = Vec<u8>> {
     data: T,
 }
@@ -59,6 +59,14 @@ impl RawRecordData {
         Self::from_byte_repr_unchecked(data)
     }
 }
+
+impl<T: AsRef<[u8]>> PartialEq for RawRecordData<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.data.as_ref().eq(other.data.as_ref())
+    }
+}
+
+impl<T: AsRef<[u8]>> Eq for RawRecordData<T> {}
 
 impl<T: AsRef<[u8]>> RawRecordData<T> {
     /// Construct a [`RawRecordData`] from raw bytes without performing any consistency checks.
@@ -191,6 +199,14 @@ impl<T: AsRef<[u8]>> RawRecordData<T> {
     }
 }
 
+impl<'r> RawRecordData<&'r [u8]> {
+    #[inline]
+    fn split_blocks_borrowed(&self) -> (&'r [u8], &'r [u8]) {
+        let contents = &self.data[DATA_HEADER_SIZE..];
+        contents.split_at(contents[0] as usize + 1)
+    }
+}
+
 /// The iterator type for the fields of a [`RawRecordData`]. This cannot be constructed directly;
 /// it is constructed implicitly by the [`EntryData::fields`] implementation of [`RawRecordData`].
 #[derive(Debug)]
@@ -223,7 +239,16 @@ impl<'a> Iterator for RawRecordFieldsIter<'a> {
     }
 }
 
-unsafe impl EntryData for RawRecordData {
+impl<'r> BorrowedEntryData<'r> for RawRecordData<&'r [u8]> {
+    fn fields_borrowed(&self) -> impl Iterator<Item = (&'r str, &'r str)> {
+        let (_, data_blocks) = self.split_blocks_borrowed();
+        RawRecordFieldsIter {
+            remaining: data_blocks,
+        }
+    }
+}
+
+unsafe impl<T: AsRef<[u8]>> EntryData for RawRecordData<T> {
     fn fields(&self) -> impl Iterator<Item = (&str, &str)> {
         let (_, data_blocks) = self.split_blocks();
         RawRecordFieldsIter {
@@ -237,6 +262,6 @@ unsafe impl EntryData for RawRecordData {
     }
 
     fn raw_len(&self) -> usize {
-        self.data.len()
+        self.data.as_ref().len()
     }
 }
