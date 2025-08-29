@@ -243,7 +243,7 @@ impl<'conn> DatabaseValidator<'conn> {
         let mut rows = retriever.query([])?;
 
         while let Some(row) = rows.next()? {
-            if let Err(err) = RawRecordData::from_byte_repr(row.get("data")?) {
+            if let Err(err) = RawRecordData::<Vec<u8>>::from_byte_repr(row.get("data")?) {
                 faults.push(DatabaseFault::InvalidRecordData(
                     row.get("key")?,
                     row.get("record_id")?,

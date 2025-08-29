@@ -287,7 +287,7 @@ impl RemoteId {
     /// 3. The `full_id` has a non-empty `sub_id` part, i.e. the first ':' is not at the end; and
     /// 4. [`validate_provider_sub_id`] is valid.
     #[inline]
-    pub(crate) unsafe fn from_string_unchecked(full_id: String) -> Self {
+    pub(crate) fn from_string_unchecked(full_id: String) -> Self {
         Self::from_alias_or_remote_id_unchecked(full_id).unwrap()
     }
 

@@ -32,8 +32,8 @@ impl TryFrom<&rusqlite::Row<'_>> for RowData {
     fn try_from(row: &rusqlite::Row<'_>) -> Result<Self, Self::Error> {
         Ok(Self {
             // SAFETY: we assume that the underlying database is correctly formatted
-            data: unsafe { RawRecordData::from_byte_repr_unchecked(row.get("data")?) },
-            canonical: unsafe { RemoteId::from_string_unchecked(row.get("record_id")?) },
+            data: RawRecordData::from_byte_repr_unchecked(row.get("data")?),
+            canonical: RemoteId::from_string_unchecked(row.get("record_id")?),
             modified: row.get("modified")?,
         })
     }

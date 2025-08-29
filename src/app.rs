@@ -593,8 +593,7 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                 // Allowing for arbitrary `old_id` without validation and trimming
                 // so that local ids that were valid in an older version can be renamed.
                 // SAFETY: This is safe as a colon is present in the `full_id`.
-                let old_remote_id =
-                    unsafe { RemoteId::from_string_unchecked("local:".to_owned() + &old_id) };
+                let old_remote_id = RemoteId::from_string_unchecked("local:".to_owned() + &old_id);
                 match record_db
                     .state_from_remote_id(&old_remote_id)?
                     .delete_null()?
