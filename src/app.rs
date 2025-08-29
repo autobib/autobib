@@ -334,7 +334,7 @@ pub fn run_cli(cli: Cli) -> Result<()> {
                         entry_type,
                         all_fields,
                         get_attachment_root(&data_dir, cli.attachments_dir)?,
-                        cfg.picker.ignore_hidden_files,
+                        cfg.find.ignore_hidden,
                         Path::is_file,
                     );
                     match picker.pick()? {

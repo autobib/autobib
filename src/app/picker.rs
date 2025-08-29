@@ -50,7 +50,7 @@ pub fn choose_attachment_path<F: FnMut(&Path) -> bool + Send + 'static>(
     entry_type: bool,
     all_fields: bool,
     attachment_root: PathBuf,
-    ignore_hidden_files: bool,
+    ignore_hidden: bool,
     mut filter: F,
 ) -> Picker<AttachmentData, FieldFilterRenderer> {
     // initialize picker
@@ -77,7 +77,7 @@ pub fn choose_attachment_path<F: FnMut(&Path) -> bool + Send + 'static>(
                 .extend_attachments_path(&mut attachment_root);
 
             // walk through all of the entries in the attachment path
-            let paths = if ignore_hidden_files {
+            let paths = if ignore_hidden {
                 fn is_hidden(entry: &DirEntry) -> bool {
                     entry
                         .file_name()

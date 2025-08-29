@@ -20,7 +20,7 @@ pub use validate::report_config_errors as validate;
 #[serde(deny_unknown_fields)]
 struct RawConfig {
     #[serde(default)]
-    pub picker: RawPickerConfig,
+    pub find: RawFindConfig,
     #[serde(default)]
     pub preferred_providers: Vec<String>,
     #[serde(default)]
@@ -29,12 +29,12 @@ struct RawConfig {
     pub on_insert: Normalization,
 }
 
-/// A direct representation of the `[picker]` section of the configuration.
+/// A direct representation of the `[find]` section of the configuration.
 #[derive(Debug, Default, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
-pub struct RawPickerConfig {
+pub struct RawFindConfig {
     #[serde(default)]
-    pub ignore_hidden_files: bool,
+    pub ignore_hidden: bool,
 }
 
 /// A direct representation of the `[auto_alias]` section of the configuration.
@@ -78,7 +78,7 @@ impl RawConfig {
 
 #[derive(Debug)]
 pub struct Config<F> {
-    pub picker: RawPickerConfig,
+    pub find: RawFindConfig,
     pub preferred_providers: Vec<String>,
     pub alias_transform: LazyAliasTransform<F>,
     pub on_insert: Normalization,
@@ -105,7 +105,7 @@ pub fn load<P: AsRef<Path>>(
     missing_ok: bool,
 ) -> Result<Config<impl FnOnce() -> Vec<(Regex, String)>>, Error> {
     let RawConfig {
-        picker,
+        find,
         preferred_providers,
         alias_transform: RawAutoAlias {
             rules,
@@ -127,7 +127,7 @@ pub fn load<P: AsRef<Path>>(
     };
 
     Ok(Config {
-        picker,
+        find,
         preferred_providers,
         alias_transform,
         on_insert,
