@@ -61,6 +61,19 @@ fn runs_help() -> Result<()> {
     s.close()
 }
 
+/// Check that we correctly suggest alternative keys
+#[test]
+fn suggest_alternatives() -> Result<()> {
+    let s = TestState::init()?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["get", "zbl:math/0001001"]);
+    cmd.assert()
+        .failure()
+        .stderr(predicate::str::contains("arxiv:math/0001001"));
+    Ok(())
+}
+
 /// Check that `autobib get` returns what is expected.
 #[test]
 fn get() -> Result<()> {

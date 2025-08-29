@@ -37,6 +37,9 @@ enum Provider {
     Referrer(Referrer),
 }
 
+pub const REMOTE_PROVIDERS: [&str; 8] =
+    ["arxiv", "doi", "isbn", "jfm", "mr", "ol", "zbmath", "zbl"];
+
 /// Map the `provider` part of a [`RemoteId`] to a [`Resolver`] or [`Referrer`].
 #[inline]
 fn lookup_provider(provider: &str) -> Provider {
@@ -170,6 +173,19 @@ pub fn validate_provider_sub_id(provider: &str, sub_id: &str) -> ValidationOutco
         },
         None => ValidationOutcomeExtended::InvalidProvider,
     }
+}
+
+/// Given a sub-id, determine valid [`RemoteId`]s with the given `sub_id` which are also valid.
+pub fn suggest_valid_remote_identifiers<E, F>(sub_id: &str, mut cb: F) -> Result<(), E>
+where
+    F: FnMut(RemoteId) -> Result<(), E>,
+{
+    for provider in REMOTE_PROVIDERS {
+        if let Ok(new) = RemoteId::from_parts(provider, sub_id) {
+            cb(new)?;
+        }
+    }
+    Ok(())
 }
 
 /// Check if the given string corresponds to a valid provider.
