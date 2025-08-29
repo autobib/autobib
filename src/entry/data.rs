@@ -55,8 +55,16 @@ pub unsafe trait EntryData: PartialEq {
     ///
     /// The default implementation iterates over all fields and returns the first match.
     fn get_field(&self, field_name: &str) -> Option<&str> {
-        self.fields()
-            .find_map(|(key, val)| if field_name == key { Some(val) } else { None })
+        for (key, val) in self.fields() {
+            if field_name > key {
+                return None;
+            }
+
+            if field_name == key {
+                return Some(val);
+            }
+        }
+        None
     }
 }
 
