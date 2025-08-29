@@ -29,19 +29,11 @@ pub(crate) type EntryTypeHeader = u8;
 ///
 /// For a description of the binary format, see the [`db`](crate::db) module documentation.
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct RawRecordData {
-    data: Vec<u8>,
+pub struct RawRecordData<T = Vec<u8>> {
+    data: T,
 }
 
 impl RawRecordData {
-    /// Construct a [`RawRecordData`] from raw bytes without performing any consistency checks.
-    ///
-    /// # Safety
-    /// The caller must ensure that underlying data upholds the requirements of the binary representation.
-    pub(crate) unsafe fn from_byte_repr_unchecked(data: Vec<u8>) -> Self {
-        Self { data }
-    }
-
     pub fn from_entry_data<D: EntryData>(entry_data: &D) -> Self {
         let mut data = Vec::with_capacity(entry_data.raw_len());
 
@@ -64,25 +56,36 @@ impl RawRecordData {
 
         // SAFETY: the invariants are upheld based on the
         // `RecordData::insert` implementation.
-        unsafe { Self::from_byte_repr_unchecked(data) }
+        Self::from_byte_repr_unchecked(data)
+    }
+}
+
+impl<T: AsRef<[u8]>> RawRecordData<T> {
+    /// Construct a [`RawRecordData`] from raw bytes without performing any consistency checks.
+    ///
+    /// # Panics
+    /// The caller must ensure that underlying data upholds the requirements of the binary representation. Otherwise, calling this function will result in a panic or downstream corrupted data.
+    pub(crate) fn from_byte_repr_unchecked(data: T) -> Self {
+        Self { data }
     }
 
     /// The representation as raw bytes.
     pub fn to_byte_repr(&self) -> &[u8] {
-        &self.data
+        self.data.as_ref()
     }
 
     /// Construct a [`RawRecordData`] from raw bytes, checking that the underlying bytes are valid.
-    pub fn from_byte_repr(data: Vec<u8>) -> Result<Self, InvalidBytesError> {
-        match data[..] {
+    pub fn from_byte_repr(data: T) -> Result<Self, InvalidBytesError> {
+        let bytes = data.as_ref();
+        match bytes {
             [0, ..] => {
-                let mut cursor = Self::check_type(&data, 1)?;
+                let mut cursor = Self::check_type(bytes, 1)?;
                 loop {
-                    match Self::check_data_block(&data, cursor)? {
+                    match Self::check_data_block(bytes, cursor)? {
                         Some(next_cursor) => {
                             cursor = next_cursor;
                         }
-                        None => break Ok(unsafe { Self::from_byte_repr_unchecked(data) }),
+                        None => break Ok(Self::from_byte_repr_unchecked(data)),
                     }
                 }
             }
@@ -183,7 +186,7 @@ impl RawRecordData {
     /// Split into the `TYPE` and `DATA` blocks, discarding the header.
     #[inline]
     fn split_blocks(&self) -> (&[u8], &[u8]) {
-        let contents = &self.data[DATA_HEADER_SIZE..];
+        let contents = &self.to_byte_repr()[DATA_HEADER_SIZE..];
         contents.split_at(contents[0] as usize + 1)
     }
 }
