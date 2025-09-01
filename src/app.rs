@@ -55,12 +55,12 @@ pub use self::cli::{Cli, Command};
 
 /// Run the CLI.
 pub fn run_cli(cli: Cli) -> Result<()> {
-    info!("SQLite version: {}", rusqlite::version());
     info!(
-        "Autobib version: {} (database version: {}), ",
+        "Autobib version: {} (database version: {})",
         env!("CARGO_PKG_VERSION"),
         user_version()
     );
+    info!("SQLite version: {}", rusqlite::version());
 
     let strategy = choose_app_strategy(AppStrategyArgs {
         top_level_domain: "org".to_owned(),
@@ -88,6 +88,7 @@ pub fn run_cli(cli: Cli) -> Result<()> {
         create_dir_all(&data_dir)?;
         RecordDatabase::open(default_db_path)?
     };
+    info!("On-disk database version: {}", record_db.user_version()?);
 
     let (config_path, missing_ok) = cli.config.map_or_else(
         || (strategy.config_dir().join("config.toml"), true),
