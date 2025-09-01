@@ -211,6 +211,11 @@ impl RecordDatabase {
         conn.pragma_query_value(None, "user_version", |row| row.get(0))
     }
 
+    /// Read the user version of the current database.
+    pub fn user_version(&mut self) -> Result<i32, rusqlite::Error> {
+        Self::read_user_version(&mut self.conn)
+    }
+
     /// Read the application id from the database connection.
     fn read_application_id(conn: &mut Connection) -> Result<i32, rusqlite::Error> {
         conn.pragma_query_value(None, "application_id", |row| row.get(0))
