@@ -3,11 +3,11 @@ use rusqlite::Connection;
 use crate::{
     db::{application_id, validate::check_table_schema},
     error::DatabaseError,
-    logger::{debug, info},
+    logger::{debug, warn},
 };
 
 pub fn migrate(conn: &mut Connection, v: i32) -> Result<(), DatabaseError> {
-    info!("Migrating database from v{v} to v{}", v + 1);
+    warn!("Migrating database from v{v} to v{}", v + 1);
     match v {
         0 => {
             // since we did not use the application id in v0, check the table schemas to
