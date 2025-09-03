@@ -31,7 +31,7 @@ pub struct Cli {
     /// This option is set automatically if the standard input is not a terminal.
     #[arg(short = 'I', long, global = true)]
     pub no_interactive: bool,
-    /// Open the database in read-only mode for improved compatibility.
+    /// Open the database in read-only mode.
     #[arg(long, global = true)]
     pub read_only: bool,
     #[command(flatten)]
