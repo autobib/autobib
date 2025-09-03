@@ -9,7 +9,7 @@ use crate::{
     config::Config,
     db::{
         RecordDatabase,
-        state::{NullRecordRow, RecordIdState, RecordRow, State},
+        state::{NullRecordRow, RecordIdState, RecordRow, RowData, State},
     },
     entry::{Entry, EntryKey, RawRecordData},
     error::Error,
@@ -73,6 +73,25 @@ where
     Ok(deduplicated)
 }
 
+/// Group valid entries by their canonical id in order to catch duplicate entries.
+fn group_valid_entries_by_canonical<T>(
+    valid_entries: T,
+) -> BTreeMap<RemoteId, NonEmpty<Entry<RawRecordData>>>
+where
+    T: IntoIterator<Item = (Entry<RawRecordData>, RemoteId)>,
+{
+    let mut grouped_entries: BTreeMap<RemoteId, NonEmpty<Entry<RawRecordData>>> = BTreeMap::new();
+    for (bibtex_entry, canonical) in valid_entries {
+        match grouped_entries.entry(canonical) {
+            Occupied(e) => e.into_mut().push(bibtex_entry),
+            Vacant(e) => {
+                e.insert(NonEmpty::singleton(bibtex_entry));
+            }
+        }
+    }
+    grouped_entries
+}
+
 /// Retrieve and validate BibTeX entries.
 pub fn retrieve_and_validate_entries<
     T: Iterator<Item = RecordId>,
@@ -99,17 +118,75 @@ pub fn retrieve_and_validate_entries<
             None
         })
     });
+    group_valid_entries_by_canonical(valid_entries)
+}
 
-    let mut grouped_entries: BTreeMap<RemoteId, NonEmpty<Entry<RawRecordData>>> = BTreeMap::new();
-    for (bibtex_entry, canonical) in valid_entries {
-        match grouped_entries.entry(canonical) {
-            Occupied(e) => e.into_mut().push(bibtex_entry),
-            Vacant(e) => {
-                e.insert(NonEmpty::singleton(bibtex_entry));
+pub fn retrieve_entries_read_only<
+    T: Iterator<Item = RecordId>,
+    F: FnOnce() -> Vec<(regex::Regex, String)>,
+>(
+    citation_keys: T,
+    record_db: &mut RecordDatabase,
+    retrieve_only: bool,
+    ignore_null: bool,
+    config: &Config<F>,
+) -> BTreeMap<RemoteId, NonEmpty<Entry<RawRecordData>>> {
+    let valid_entries = citation_keys.filter_map(|record_id| {
+        retrieve_single_entry_read_only(record_db, record_id, retrieve_only, ignore_null, config)
+            .unwrap_or_else(|error| {
+                error!("{error}");
+                None
+            })
+    });
+    group_valid_entries_by_canonical(valid_entries)
+}
+
+/// Retrieve a single BibTeX entry if it exists in the database, returning if it does not `Ok(None)` otherwise.
+fn retrieve_single_entry_read_only<F: FnOnce() -> Vec<(regex::Regex, String)>>(
+    record_db: &mut RecordDatabase,
+    citation_key: RecordId,
+    retrieve_only: bool,
+    ignore_null: bool,
+    config: &Config<F>,
+) -> Result<Option<(Entry<RawRecordData>, RemoteId)>, Error> {
+    match record_db.state_from_record_id(citation_key, &config.alias_transform)? {
+        RecordIdState::Existent(key, row) => {
+            if retrieve_only {
+                row.commit()?;
+                Ok(None)
+            } else {
+                let RowData {
+                    data, canonical, ..
+                } = row.get_data()?;
+                let entry =
+                    validate_bibtex_key(key, &row).map(|key| (Entry::new(key, data), canonical));
+                row.commit()?;
+                Ok(entry)
             }
         }
+        RecordIdState::NullRemoteId(remote_id, missing) => {
+            if !ignore_null {
+                error!("Null record: '{remote_id}'");
+            }
+            missing.commit()?;
+            Ok(None)
+        }
+        RecordIdState::UndefinedAlias(alias) => {
+            if !ignore_null {
+                error!("Undefined alias: '{alias}'");
+            }
+            Ok(None)
+        }
+        RecordIdState::InvalidRemoteId(err) => {
+            error!("{err}");
+            Ok(None)
+        }
+        RecordIdState::Unknown(unknown) => {
+            let mapped = unknown.combine_and_commit()?;
+            error!("Database does not contain key: {mapped}");
+            Ok(None)
+        }
     }
-    grouped_entries
 }
 
 /// Retrieve and validate a single BibTeX entry.

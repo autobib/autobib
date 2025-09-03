@@ -47,7 +47,10 @@ use self::{
         get_attachment_root,
     },
     picker::{choose_attachment, choose_attachment_path, choose_canonical_id},
-    retrieve::{filter_and_deduplicate_by_canonical, retrieve_and_validate_entries},
+    retrieve::{
+        filter_and_deduplicate_by_canonical, retrieve_and_validate_entries,
+        retrieve_entries_read_only,
+    },
     write::{init_outfile, output_entries, output_keys},
 };
 
@@ -61,6 +64,14 @@ pub fn run_cli(cli: Cli) -> Result<()> {
         user_version()
     );
     info!("SQLite version: {}", rusqlite::version());
+
+    // check for compatibility of the sub-command with read-only mode to try to avoid SQLite
+    // write errors
+    if cli.read_only
+        && let Err(msg) = cli.command.is_read_only_compat()
+    {
+        bail!("Read-only mode: {msg}");
+    }
 
     let strategy = choose_app_strategy(AppStrategyArgs {
         top_level_domain: "org".to_owned(),
@@ -425,16 +436,28 @@ pub fn run_cli(cli: Cli) -> Result<()> {
 
             // Collect all entries which are not null, excluding those which should be skipped
             let cfg = config::load(&config_path, missing_ok)?;
-            let valid_entries = retrieve_and_validate_entries(
-                citation_keys
-                    .into_iter()
-                    .filter(|k| !skipped_keys.contains(k)),
-                &mut record_db,
-                &client,
-                retrieve_only,
-                ignore_null,
-                &cfg,
-            );
+            let not_skipped_keys = citation_keys
+                .into_iter()
+                .filter(|k| !skipped_keys.contains(k));
+
+            let valid_entries = if cli.read_only {
+                retrieve_entries_read_only(
+                    not_skipped_keys,
+                    &mut record_db,
+                    retrieve_only,
+                    ignore_null,
+                    &cfg,
+                )
+            } else {
+                retrieve_and_validate_entries(
+                    not_skipped_keys,
+                    &mut record_db,
+                    &client,
+                    retrieve_only,
+                    ignore_null,
+                    &cfg,
+                )
+            };
 
             if !retrieve_only {
                 output_entries(outfile, append, valid_entries)?;
@@ -802,14 +825,25 @@ pub fn run_cli(cli: Cli) -> Result<()> {
 
                 // retrieve all of the entries
                 let cfg = config::load(&config_path, missing_ok)?;
-                let valid_entries = retrieve_and_validate_entries(
-                    all_citekeys.into_iter(),
-                    &mut record_db,
-                    &client,
-                    retrieve_only,
-                    ignore_null,
-                    &cfg,
-                );
+                let keys = all_citekeys.into_iter();
+                let valid_entries = if cli.read_only {
+                    retrieve_entries_read_only(
+                        keys,
+                        &mut record_db,
+                        retrieve_only,
+                        ignore_null,
+                        &cfg,
+                    )
+                } else {
+                    retrieve_and_validate_entries(
+                        keys,
+                        &mut record_db,
+                        &client,
+                        retrieve_only,
+                        ignore_null,
+                        &cfg,
+                    )
+                };
 
                 if !retrieve_only {
                     output_entries(outfile, append, valid_entries)?;
