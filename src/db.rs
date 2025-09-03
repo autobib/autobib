@@ -277,21 +277,23 @@ impl RecordDatabase {
             }
         };
 
-        if read_only {
-            warn!(
-                "Opening database with version {}; application has version {}. This may result in unexpected SQLite errors.",
-                db_user_version,
-                user_version()
-            );
-            return Ok(());
-        }
-
         // check if the application id belongs to some other application
         if db_user_version < 0
             || (db_user_version == 0 && db_application_id != 0)
             || (db_user_version > 0 && db_application_id != application_id())
         {
             return Err(DatabaseError::InvalidDatabase);
+        }
+
+        // if read-only, we open the database and hope for the best; the worst case scenario
+        // is that SQL commands will result in an error or garbage data
+        if read_only {
+            warn!(
+                "Opening database (read-only) with version {}; application has version {}. This may result some commands to fail unexpectedly.",
+                db_user_version,
+                user_version()
+            );
+            return Ok(());
         }
 
         // check if the database version is too new
