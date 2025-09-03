@@ -77,7 +77,7 @@ pub fn run_cli(cli: Cli) -> Result<()> {
         if let Some(db_parent) = db_path.parent() {
             create_dir_all(db_parent)?;
         }
-        RecordDatabase::open(db_path)?
+        RecordDatabase::open(db_path, cli.read_only)?
     } else {
         // at the default path
         let default_db_path = data_dir.join("records.db");
@@ -86,7 +86,7 @@ pub fn run_cli(cli: Cli) -> Result<()> {
             default_db_path.display()
         );
         create_dir_all(&data_dir)?;
-        RecordDatabase::open(default_db_path)?
+        RecordDatabase::open(default_db_path, cli.read_only)?
     };
     info!("On-disk database version: {}", record_db.user_version()?);
 
