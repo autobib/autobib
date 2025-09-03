@@ -1308,6 +1308,27 @@ fn import_retrieve() -> Result<()> {
 }
 
 #[test]
+fn read_only() -> Result<()> {
+    let s = TestState::init()?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["get", "zbl:1337.28015"]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["--read-only", "get", "zbl:1337.28015"]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["--read-only", "get", "arxiv:1212.1873"]);
+    cmd.assert().failure().stderr(predicate::str::contains(
+        "attempt to write a readonly database",
+    ));
+
+    Ok(())
+}
+
+#[test]
 fn import_retrieve_only() -> Result<()> {
     let s = TestState::init()?;
 
