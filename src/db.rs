@@ -201,9 +201,6 @@ impl RecordDatabase {
         };
         let mut conn = Connection::open_with_flags(db_path, flags)?;
 
-        debug!("Enabling write-ahead log");
-        conn.pragma_update(None, "journal_mode", "WAL")?;
-
         Self::initialize(&mut conn, read_only)?;
 
         Ok(Self { conn })
@@ -272,6 +269,9 @@ impl RecordDatabase {
                 tx.execute(schema::null_records(), ())?;
                 tx.execute(schema::changelog(), ())?;
                 tx.commit()?;
+
+                debug!("Enabling write-ahead log");
+                conn.pragma_update(None, "journal_mode", "WAL")?;
 
                 return Ok(());
             }
