@@ -211,7 +211,7 @@ impl RecordDatabase {
 
         Self::initialize(&mut conn, read_only)?;
 
-        Ok(RecordDatabase { conn })
+        Ok(Self { conn })
     }
 
     /// Enable an application function for use in subsequent SQL queries.

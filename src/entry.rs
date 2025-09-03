@@ -98,7 +98,7 @@ impl FromStr for Entry<RecordData> {
     type Err = BibtexDataError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut de_iter = Deserializer::from_str(s).into_iter_regular_entry::<Entry<RecordData>>();
+        let mut de_iter = Deserializer::from_str(s).into_iter_regular_entry::<Self>();
 
         match de_iter.next() {
             Some(Ok(entry)) => {

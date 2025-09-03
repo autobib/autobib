@@ -62,9 +62,9 @@ pub enum FindMode {
 impl FindMode {
     pub fn from_flags(attachments: bool, _records: bool) -> Self {
         if attachments {
-            FindMode::Attachments
+            Self::Attachments
         } else {
-            FindMode::CanonicalId
+            Self::CanonicalId
         }
     }
 }
@@ -106,11 +106,11 @@ pub enum UpdateMode {
 impl UpdateMode {
     pub fn from_flags(no_interactive: bool, prefer_current: bool, prefer_incoming: bool) -> Self {
         if prefer_incoming {
-            UpdateMode::PreferIncoming
+            Self::PreferIncoming
         } else if prefer_current || no_interactive {
-            UpdateMode::PreferCurrent
+            Self::PreferCurrent
         } else {
-            UpdateMode::Prompt
+            Self::Prompt
         }
     }
 }
@@ -421,7 +421,7 @@ impl UtilCommand {
         match self {
             Self::List { .. } | Self::Check { fix: false } => Ok(()),
             Self::Check { fix: true, .. } => Err("Cannot enable `--fix` with `autobib util`"),
-            UtilCommand::Optimize | UtilCommand::Evict { .. } => {
+            Self::Optimize | Self::Evict { .. } => {
                 Err("Incompatible subcommand with `autobib util`")
             }
         }
@@ -433,26 +433,26 @@ impl Command {
     pub fn is_read_only_compat(&self) -> Result<(), &'static str> {
         // exhaustive matching so that there is a compile error if the `Cli` struct changes
         match self {
-            Command::Get { .. }
-            | Command::Info { .. }
-            | Command::Source { .. }
-            | Command::Completions { .. }
-            | Command::DefaultConfig
-            | Command::Find { .. }
-            | Command::Path { mkdir: false, .. }
-            | Command::Util {
+            Self::Get { .. }
+            | Self::Info { .. }
+            | Self::Source { .. }
+            | Self::Completions { .. }
+            | Self::DefaultConfig
+            | Self::Find { .. }
+            | Self::Path { mkdir: false, .. }
+            | Self::Util {
                 util_command: UtilCommand::List { .. } | UtilCommand::Check { fix: false, .. },
             } => Ok(()),
-            Command::Path { mkdir: true, .. } => Err("Cannot enable `--mkdir` with `autobib path`"),
-            Command::Alias { .. }
-            | Command::Attach { .. }
-            | Command::Delete { .. }
-            | Command::Import { .. }
-            | Command::Local { .. }
-            | Command::Merge { .. }
-            | Command::Update { .. }
-            | Command::Edit { .. } => Err("Incompatible subcommand"),
-            Command::Util { util_command } => util_command.is_read_only_compat(),
+            Self::Path { mkdir: true, .. } => Err("Cannot enable `--mkdir` with `autobib path`"),
+            Self::Alias { .. }
+            | Self::Attach { .. }
+            | Self::Delete { .. }
+            | Self::Import { .. }
+            | Self::Local { .. }
+            | Self::Merge { .. }
+            | Self::Update { .. }
+            | Self::Edit { .. } => Err("Incompatible subcommand"),
+            Self::Util { util_command } => util_command.is_read_only_compat(),
         }
     }
 }
