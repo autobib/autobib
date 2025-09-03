@@ -85,11 +85,7 @@ pub enum ValidationOutcome {
 
 impl From<bool> for ValidationOutcome {
     fn from(b: bool) -> Self {
-        if b {
-            ValidationOutcome::Valid
-        } else {
-            ValidationOutcome::Invalid
-        }
+        if b { Self::Valid } else { Self::Invalid }
     }
 }
 
@@ -304,7 +300,7 @@ impl TryFrom<ProviderBibtex> for RecordData {
 
     fn try_from(value: ProviderBibtex) -> Result<Self, Self::Error> {
         let ProviderBibtex { entry_type, fields } = value;
-        let mut record_data = RecordData::try_new(entry_type.to_lowercase())?;
+        let mut record_data = Self::try_new(entry_type.to_lowercase())?;
         convert_field!(
             fields,
             record_data,

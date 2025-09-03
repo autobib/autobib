@@ -56,7 +56,7 @@ impl MappedKey {
     }
 }
 
-impl<T: Into<String>> From<MappedKey<T>> for String {
+impl<T: Into<Self>> From<MappedKey<T>> for String {
     fn from(value: MappedKey<T>) -> Self {
         match value.original {
             Some(original) => original.into(),
@@ -98,13 +98,13 @@ pub enum MappedAliasOrRemoteId {
 
 impl From<AliasOrRemoteId> for MappedAliasOrRemoteId {
     /// Convert the mapped alias variant into a mapped key, preserving the other values.
-    fn from(value: AliasOrRemoteId) -> MappedAliasOrRemoteId {
+    fn from(value: AliasOrRemoteId) -> Self {
         match value {
-            AliasOrRemoteId::Alias(alias, None) => MappedAliasOrRemoteId::Alias(alias),
+            AliasOrRemoteId::Alias(alias, None) => Self::Alias(alias),
             AliasOrRemoteId::Alias(alias, Some(remote_id)) => {
-                MappedAliasOrRemoteId::RemoteId(MappedKey::mapped(remote_id, alias.into()))
+                Self::RemoteId(MappedKey::mapped(remote_id, alias.into()))
             }
-            AliasOrRemoteId::RemoteId(mapped_key) => MappedAliasOrRemoteId::RemoteId(mapped_key),
+            AliasOrRemoteId::RemoteId(mapped_key) => Self::RemoteId(mapped_key),
         }
     }
 }

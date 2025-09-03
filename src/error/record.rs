@@ -62,11 +62,11 @@ pub enum RemoteIdErrorKind {
 impl RemoteIdErrorKind {
     fn msg(&self) -> &'static str {
         match self {
-            RemoteIdErrorKind::EmptyProvider => "provider must contain non-whitespace characters",
-            RemoteIdErrorKind::EmptySubId => "sub-id must contain non-whitespace characters",
-            RemoteIdErrorKind::InvalidProvider => "provider is invalid",
-            RemoteIdErrorKind::InvalidSubId => "sub-id is invalid for the given provider",
-            RemoteIdErrorKind::IsAlias => "remote id must contain a colon",
+            Self::EmptyProvider => "provider must contain non-whitespace characters",
+            Self::EmptySubId => "sub-id must contain non-whitespace characters",
+            Self::InvalidProvider => "provider is invalid",
+            Self::InvalidSubId => "sub-id is invalid for the given provider",
+            Self::IsAlias => "remote id must contain a colon",
         }
     }
 }
@@ -91,7 +91,7 @@ impl fmt::Display for RemoteIdConversionError {
 impl From<RemoteIdConversionError> for RecordError {
     fn from(value: RemoteIdConversionError) -> Self {
         let RemoteIdConversionError { input, kind } = value;
-        RecordError {
+        Self {
             input,
             kind: RecordErrorKind::RemoteId(kind),
         }
@@ -113,8 +113,8 @@ pub enum AliasErrorKind {
 impl AliasErrorKind {
     fn msg(&self) -> &'static str {
         match self {
-            AliasErrorKind::Empty => "alias must contain non-whitespace characters",
-            AliasErrorKind::IsRemoteId => "alias must not contain a colon",
+            Self::Empty => "alias must contain non-whitespace characters",
+            Self::IsRemoteId => "alias must not contain a colon",
         }
     }
 }
@@ -134,7 +134,7 @@ impl fmt::Display for AliasConversionError {
 impl From<AliasConversionError> for RecordError {
     fn from(value: AliasConversionError) -> Self {
         let AliasConversionError { input, kind } = value;
-        RecordError {
+        Self {
             input,
             kind: RecordErrorKind::Alias(kind),
         }

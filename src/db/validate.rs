@@ -35,37 +35,37 @@ pub enum DatabaseFault {
 impl fmt::Display for DatabaseFault {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            DatabaseFault::RowHasInvalidCanonicalId(row_id, name) => {
+            Self::RowHasInvalidCanonicalId(row_id, name) => {
                 write!(
                     f,
                     "Record row '{row_id}' contains record id '{name}' which is not a valid canonical id"
                 )
             }
-            DatabaseFault::RowHasNonNormalizedCanonicalId(row_id, name, expected) => {
+            Self::RowHasNonNormalizedCanonicalId(row_id, name, expected) => {
                 write!(
                     f,
                     "Record row '{row_id}' contains record id '{name}' which is not normalized: expected '{expected}'"
                 )
             }
-            DatabaseFault::InvalidCitationKey(name) => {
+            Self::InvalidCitationKey(name) => {
                 write!(
                     f,
                     "CitationKeys table contains record id '{name}' which is not a valid canonical id"
                 )
             }
-            DatabaseFault::NonNormalizedCitationKey(name, expected) => {
+            Self::NonNormalizedCitationKey(name, expected) => {
                 write!(
                     f,
                     "CitationKeys table contains record id '{name}' which is not normalized: expected '{expected}'"
                 )
             }
-            DatabaseFault::DanglingRecord(row_id, name) => {
+            Self::DanglingRecord(row_id, name) => {
                 write!(
                     f,
                     "Record row '{row_id}' with record id '{name}' does not have corresponding key in the `CitationKeys` table."
                 )
             }
-            DatabaseFault::NullCitationKeys(count) => {
+            Self::NullCitationKeys(count) => {
                 if count.get() == 1 {
                     write!(
                         f,
@@ -78,13 +78,13 @@ impl fmt::Display for DatabaseFault {
                     )
                 }
             }
-            DatabaseFault::IntegrityError(err) => write!(f, "Database integrity error: {err}"),
-            DatabaseFault::InvalidRecordData(row_id, name, err) => write!(
+            Self::IntegrityError(err) => write!(f, "Database integrity error: {err}"),
+            Self::InvalidRecordData(row_id, name, err) => write!(
                 f,
                 "Record row '{row_id}' with record id '{name}' has invalid binary data: {err}"
             ),
-            DatabaseFault::MissingTable(table_name) => write!(f, "Missing table '{table_name}'"),
-            DatabaseFault::InvalidTableSchema(table_name, table_schema) => write!(
+            Self::MissingTable(table_name) => write!(f, "Missing table '{table_name}'"),
+            Self::InvalidTableSchema(table_name, table_schema) => write!(
                 f,
                 "Table '{table_name}' has invalid schema:\n{table_schema}",
             ),

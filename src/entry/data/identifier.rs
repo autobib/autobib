@@ -32,10 +32,10 @@ impl EntryKey {
 
     /// Substitute a character with a different entry key.
     #[inline]
-    pub fn substitute<S: AsRef<str>>(&self, from: char, to: &EntryKey<S>) -> Option<EntryKey> {
+    pub fn substitute<S: AsRef<str>>(&self, from: char, to: &EntryKey<S>) -> Option<Self> {
         self.0
             .find(from)
-            .map(|_| EntryKey(self.0.replace(from, to.as_ref())))
+            .map(|_| Self(self.0.replace(from, to.as_ref())))
     }
 }
 

@@ -15,9 +15,9 @@ impl AppFunction {
     /// The name of the function for use in SQL queries.
     pub fn name(&self) -> &'static str {
         match self {
-            AppFunction::Regexp => "regexp",
-            AppFunction::ContainsField => "contains_field",
-            AppFunction::GetField => "get_field",
+            Self::Regexp => "regexp",
+            Self::ContainsField => "contains_field",
+            Self::GetField => "get_field",
         }
     }
 }
