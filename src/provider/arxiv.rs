@@ -35,7 +35,7 @@ impl TryFrom<Entry> for RecordData {
     type Error = RecordDataError;
 
     fn try_from(entry: Entry) -> Result<Self, Self::Error> {
-        let mut record_data = RecordData::new(EntryType::preprint());
+        let mut record_data = Self::new(EntryType::preprint());
 
         let Entry {
             id,

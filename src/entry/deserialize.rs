@@ -87,7 +87,7 @@ impl<'de> de::Deserialize<'de> for FieldValue {
             // SAFETY: we do not check for the 'balanced `{}`' rule here because this rule is
             // automatically checked during bibtex deserialization process, and if we get it wrong,
             // it will not result in data corruption (just invalid output)
-            Ok(FieldValue(inner))
+            Ok(Self(inner))
         }
     }
 }

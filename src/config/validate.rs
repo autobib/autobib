@@ -33,9 +33,9 @@ enum CapturesErrorKind {
 impl fmt::Display for CapturesErrorKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
-            CapturesErrorKind::Missing => "has variant without capture group",
-            CapturesErrorKind::TooMany => "contains more than one capture group",
-            CapturesErrorKind::Nested => "contains nested capture group",
+            Self::Missing => "has variant without capture group",
+            Self::TooMany => "contains more than one capture group",
+            Self::Nested => "contains nested capture group",
         })
     }
 }
