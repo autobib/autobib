@@ -192,11 +192,6 @@ impl RecordDatabase {
             "Initializing new connection to '{}'",
             db_path.as_ref().display()
         );
-        if read_only {
-            warn!(
-                "Opening database in read-only mode. This will cause any command resulting in a write to fail."
-            );
-        }
         let flags = if read_only {
             OpenFlags::SQLITE_OPEN_READ_ONLY
                 | OpenFlags::SQLITE_OPEN_URI

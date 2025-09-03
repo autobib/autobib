@@ -95,6 +95,15 @@ fn get() -> Result<()> {
         .stdout(predicate_file)
         .stderr(predicate::str::is_empty());
 
+    let mut cmd = s.cmd()?;
+    cmd.args([
+        "--read-only",
+        "get",
+        "arxiv:1212.1873",
+        "isbn:9781119942399",
+    ]);
+    cmd.assert().success();
+
     s.close()
 }
 
@@ -136,6 +145,16 @@ fn source() -> Result<()> {
 
     let mut cmd = s.cmd()?;
     cmd.args(["source", "tests/resources/source/main.tex"]);
+    let predicate_file = predicate::path::eq_file(Path::new("tests/resources/source/stdout.txt"))
+        .utf8()
+        .unwrap();
+    cmd.assert()
+        .success()
+        .stdout(predicate_file)
+        .stderr(predicate::str::is_empty());
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["--read-only", "source", "tests/resources/source/main.tex"]);
     let predicate_file = predicate::path::eq_file(Path::new("tests/resources/source/stdout.txt"))
         .utf8()
         .unwrap();
@@ -226,6 +245,12 @@ fn local() -> Result<()> {
         "tests/resources/local/first.bib",
     ]);
     cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["--read-only", "local", "second"]);
+    cmd.assert()
+        .failure()
+        .stderr(predicate::str::contains("Incompatible subcommand"));
 
     let mut cmd = s.cmd()?;
     cmd.args(["get", "local:first"]);
@@ -658,6 +683,12 @@ fn list() -> Result<()> {
     );
 
     let mut cmd = s.cmd()?;
+    cmd.args(["--read-only", "util", "list"]);
+    cmd.assert().success().stdout(
+        predicate::str::contains("zbmath:06346461").and(predicate::str::contains("my_alias")),
+    );
+
+    let mut cmd = s.cmd()?;
     cmd.args(["util", "list", "--canonical"]);
     cmd.assert().success().stdout(
         predicate::str::contains("my_alias")
@@ -684,6 +715,16 @@ fn info() -> Result<()> {
 
     let mut cmd = s.cmd()?;
     cmd.args(["info", "zbl:1337.28015", "--report", "canonical"]);
+    cmd.assert().success().stdout("zbmath:06346461\n");
+
+    let mut cmd = s.cmd()?;
+    cmd.args([
+        "--read-only",
+        "info",
+        "zbl:1337.28015",
+        "--report",
+        "canonical",
+    ]);
     cmd.assert().success().stdout("zbmath:06346461\n");
 
     let mut cmd = s.cmd()?;
@@ -1321,8 +1362,24 @@ fn read_only() -> Result<()> {
 
     let mut cmd = s.cmd()?;
     cmd.args(["--read-only", "get", "arxiv:1212.1873"]);
+    cmd.assert()
+        .failure()
+        .stderr(predicate::str::contains("Database does not contain key"));
+
+    for arg in ["check", "list"] {
+        let mut cmd = s.cmd()?;
+        cmd.args(["--read-only", "util", arg]);
+        cmd.assert().success();
+    }
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["--read-only", "info", "zbl:1337.28015"]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["--read-only", "info", "arxiv:1212.1873"]);
     cmd.assert().failure().stderr(predicate::str::contains(
-        "attempt to write a readonly database",
+        "Cannot obtain report for record not in database",
     ));
 
     Ok(())
