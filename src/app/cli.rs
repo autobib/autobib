@@ -415,6 +415,48 @@ pub enum AliasCommand {
     },
 }
 
+impl UtilCommand {
+    /// Check if the command is read-only compatible.
+    pub fn is_read_only_compat(&self) -> Result<(), &'static str> {
+        match self {
+            Self::List { .. } | Self::Check { fix: false } => Ok(()),
+            Self::Check { fix: true, .. } => Err("Cannot enable `--fix` with `autobib util`"),
+            UtilCommand::Optimize | UtilCommand::Evict { .. } => {
+                Err("Incompatible subcommand with `autobib util`")
+            }
+        }
+    }
+}
+
+impl Command {
+    /// Check if the command is read-only compatible.
+    pub fn is_read_only_compat(&self) -> Result<(), &'static str> {
+        // exhaustive matching so that there is a compile error if the `Cli` struct changes
+        match self {
+            Command::Get { .. }
+            | Command::Info { .. }
+            | Command::Source { .. }
+            | Command::Completions { .. }
+            | Command::DefaultConfig
+            | Command::Find { .. }
+            | Command::Path { mkdir: false, .. }
+            | Command::Util {
+                util_command: UtilCommand::List { .. } | UtilCommand::Check { fix: false, .. },
+            } => Ok(()),
+            Command::Path { mkdir: true, .. } => Err("Cannot enable `--mkdir` with `autobib path`"),
+            Command::Alias { .. }
+            | Command::Attach { .. }
+            | Command::Delete { .. }
+            | Command::Import { .. }
+            | Command::Local { .. }
+            | Command::Merge { .. }
+            | Command::Update { .. }
+            | Command::Edit { .. } => Err("Incompatible subcommand"),
+            Command::Util { util_command } => util_command.is_read_only_compat(),
+        }
+    }
+}
+
 /// Utilities to manage database.
 #[derive(Subcommand)]
 pub enum UtilCommand {
