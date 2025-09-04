@@ -75,7 +75,7 @@ use chrono::{Local, TimeDelta};
 use delegate::delegate;
 use functions::{AppFunction, register_application_function};
 use nucleo_picker::{Injector, Render};
-use rusqlite::{Connection, DropBehavior, OptionalExtension, types::ValueRef};
+use rusqlite::{Connection, DropBehavior, OpenFlags, OptionalExtension, types::ValueRef};
 
 use self::state::{RecordIdState, RemoteIdState, RowData};
 use self::validate::{DatabaseFault, DatabaseValidator};
@@ -179,24 +179,31 @@ pub struct RecordDatabase {
 impl RecordDatabase {
     /// Open a database file at the provided [`Path`].
     ///
-    /// If the expected tables are missing, create them. If the expected tables already exist but
-    /// do not have the expected schema, this results in an error. The expected table schemas are
-    /// detailed in the documentation for [`RecordDatabase`].
+    /// If `read_only` is false, does the following initialization:
+    /// - Checks the `application_id` to match the program ID.
+    /// - Checks the `user_version`, migrating older versions and failing if the database version
+    ///   is newer than the one expected by this binary.
+    /// - If the database is empty (more precisely, if `sqlite_master` contains no entries)
+    ///   initialize the expected tables as detailed in the documentation for [`RecordDatabase`].
     ///
     /// Any tables other than the expected tables are ignored.
-    pub fn open<P: AsRef<Path>>(db_path: P) -> Result<Self, DatabaseError> {
+    pub fn open<P: AsRef<Path>>(db_path: P, read_only: bool) -> Result<Self, DatabaseError> {
         debug!(
             "Initializing new connection to '{}'",
             db_path.as_ref().display()
         );
-        let mut conn = Connection::open(db_path)?;
+        let flags = if read_only {
+            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX
+        } else {
+            OpenFlags::SQLITE_OPEN_READ_WRITE
+                | OpenFlags::SQLITE_OPEN_CREATE
+                | OpenFlags::SQLITE_OPEN_NO_MUTEX
+        };
+        let mut conn = Connection::open_with_flags(db_path, flags)?;
 
-        debug!("Enabling write-ahead log");
-        conn.pragma_update(None, "journal_mode", "WAL")?;
+        Self::initialize(&mut conn, read_only)?;
 
-        Self::initialize(&mut conn)?;
-
-        Ok(RecordDatabase { conn })
+        Ok(Self { conn })
     }
 
     /// Enable an application function for use in subsequent SQL queries.
@@ -231,7 +238,7 @@ impl RecordDatabase {
     }
 
     /// Initialize the relevant tables, or migrate from an older schema if necessary.
-    fn initialize(conn: &mut Connection) -> Result<(), DatabaseError> {
+    fn initialize(conn: &mut Connection, read_only: bool) -> Result<(), DatabaseError> {
         let db_user_version = Self::read_user_version(conn)?;
         let db_application_id = Self::read_application_id(conn)?;
         debug!(
@@ -246,21 +253,28 @@ impl RecordDatabase {
 
         // next most likely path: initializing a new database
         if Self::is_empty_database(conn)? && db_user_version == 0 && db_application_id == 0 {
-            info!("Creating new database");
-            let tx = conn.transaction()?;
+            if read_only {
+                return Err(DatabaseError::EmptyReadOnly);
+            } else {
+                info!("Creating new database");
+                let tx = conn.transaction()?;
 
-            debug!("Setting `application_id` and `user_version`");
-            tx.pragma_update(None, "application_id", application_id())?;
-            tx.pragma_update(None, "user_version", user_version())?;
+                debug!("Setting `application_id` and `user_version`");
+                tx.pragma_update(None, "application_id", application_id())?;
+                tx.pragma_update(None, "user_version", user_version())?;
 
-            debug!("Initializing database tables");
-            tx.execute(schema::records(), ())?;
-            tx.execute(schema::citation_keys(), ())?;
-            tx.execute(schema::null_records(), ())?;
-            tx.execute(schema::changelog(), ())?;
-            tx.commit()?;
+                debug!("Initializing database tables");
+                tx.execute(schema::records(), ())?;
+                tx.execute(schema::citation_keys(), ())?;
+                tx.execute(schema::null_records(), ())?;
+                tx.execute(schema::changelog(), ())?;
+                tx.commit()?;
 
-            return Ok(());
+                debug!("Enabling write-ahead log");
+                conn.pragma_update(None, "journal_mode", "WAL")?;
+
+                return Ok(());
+            }
         };
 
         // check if the application id belongs to some other application
@@ -269,6 +283,17 @@ impl RecordDatabase {
             || (db_user_version > 0 && db_application_id != application_id())
         {
             return Err(DatabaseError::InvalidDatabase);
+        }
+
+        // if read-only, we open the database and hope for the best; the worst case scenario
+        // is that SQL commands will result in an error or garbage data
+        if read_only {
+            warn!(
+                "Opening database (read-only) with version {}; application has version {}. This may result some commands to fail unexpectedly.",
+                db_user_version,
+                user_version()
+            );
+            return Ok(());
         }
 
         // check if the database version is too new

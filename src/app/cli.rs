@@ -31,6 +31,9 @@ pub struct Cli {
     /// This option is set automatically if the standard input is not a terminal.
     #[arg(short = 'I', long, global = true)]
     pub no_interactive: bool,
+    /// Open the database in read-only mode.
+    #[arg(long, global = true)]
+    pub read_only: bool,
     #[command(flatten)]
     pub verbose: Verbosity<WarnLevel>,
 }
@@ -59,9 +62,9 @@ pub enum FindMode {
 impl FindMode {
     pub fn from_flags(attachments: bool, _records: bool) -> Self {
         if attachments {
-            FindMode::Attachments
+            Self::Attachments
         } else {
-            FindMode::CanonicalId
+            Self::CanonicalId
         }
     }
 }
@@ -103,11 +106,11 @@ pub enum UpdateMode {
 impl UpdateMode {
     pub fn from_flags(no_interactive: bool, prefer_current: bool, prefer_incoming: bool) -> Self {
         if prefer_incoming {
-            UpdateMode::PreferIncoming
+            Self::PreferIncoming
         } else if prefer_current || no_interactive {
-            UpdateMode::PreferCurrent
+            Self::PreferCurrent
         } else {
-            UpdateMode::Prompt
+            Self::Prompt
         }
     }
 }
@@ -410,6 +413,48 @@ pub enum AliasCommand {
         /// The name of the new alias.
         new: Alias,
     },
+}
+
+impl UtilCommand {
+    /// Check if the command is read-only compatible.
+    pub fn is_read_only_compat(&self) -> Result<(), &'static str> {
+        match self {
+            Self::List { .. } | Self::Check { fix: false } => Ok(()),
+            Self::Check { fix: true, .. } => Err("Cannot enable `--fix` with `autobib util`"),
+            Self::Optimize | Self::Evict { .. } => {
+                Err("Incompatible subcommand with `autobib util`")
+            }
+        }
+    }
+}
+
+impl Command {
+    /// Check if the command is read-only compatible.
+    pub fn is_read_only_compat(&self) -> Result<(), &'static str> {
+        // exhaustive matching so that there is a compile error if the `Cli` struct changes
+        match self {
+            Self::Get { .. }
+            | Self::Info { .. }
+            | Self::Source { .. }
+            | Self::Completions { .. }
+            | Self::DefaultConfig
+            | Self::Find { .. }
+            | Self::Path { mkdir: false, .. }
+            | Self::Util {
+                util_command: UtilCommand::List { .. } | UtilCommand::Check { fix: false, .. },
+            } => Ok(()),
+            Self::Path { mkdir: true, .. } => Err("Cannot enable `--mkdir` with `autobib path`"),
+            Self::Alias { .. }
+            | Self::Attach { .. }
+            | Self::Delete { .. }
+            | Self::Import { .. }
+            | Self::Local { .. }
+            | Self::Merge { .. }
+            | Self::Update { .. }
+            | Self::Edit { .. } => Err("Incompatible subcommand"),
+            Self::Util { util_command } => util_command.is_read_only_compat(),
+        }
+    }
 }
 
 /// Utilities to manage database.
