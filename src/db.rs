@@ -193,11 +193,11 @@ impl RecordDatabase {
             db_path.as_ref().display()
         );
         let flags = if read_only {
-            OpenFlags::SQLITE_OPEN_READ_ONLY
-                | OpenFlags::SQLITE_OPEN_URI
-                | OpenFlags::SQLITE_OPEN_NO_MUTEX
+            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX
         } else {
-            OpenFlags::default()
+            OpenFlags::SQLITE_OPEN_READ_WRITE
+                | OpenFlags::SQLITE_OPEN_CREATE
+                | OpenFlags::SQLITE_OPEN_NO_MUTEX
         };
         let mut conn = Connection::open_with_flags(db_path, flags)?;
 
