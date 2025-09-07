@@ -32,7 +32,7 @@ pub struct Cli {
     #[arg(short = 'I', long, global = true)]
     pub no_interactive: bool,
     /// Open the database in read-only mode.
-    #[arg(long, global = true)]
+    #[arg(long)]
     pub read_only: bool,
     #[command(flatten)]
     pub verbose: Verbosity<WarnLevel>,
@@ -415,45 +415,47 @@ pub enum AliasCommand {
     },
 }
 
+pub enum ReadOnlyInvalid {
+    Command(&'static str),
+    Argument(&'static str),
+}
+
 impl UtilCommand {
     /// Check if the command is read-only compatible.
-    pub fn is_read_only_compat(&self) -> Result<(), &'static str> {
+    pub fn validate_read_only_compatibility(&self) -> Result<(), ReadOnlyInvalid> {
         match self {
             Self::List { .. } | Self::Check { fix: false } => Ok(()),
-            Self::Check { fix: true, .. } => Err("Cannot enable `--fix` with `autobib util`"),
-            Self::Optimize | Self::Evict { .. } => {
-                Err("Incompatible subcommand with `autobib util`")
-            }
+            Self::Check { fix: true, .. } => Err(ReadOnlyInvalid::Argument("--fix")),
+            Self::Optimize => Err(ReadOnlyInvalid::Command("util optimize")),
+            Self::Evict { .. } => Err(ReadOnlyInvalid::Command("util evict")),
         }
     }
 }
 
 impl Command {
     /// Check if the command is read-only compatible.
-    pub fn is_read_only_compat(&self) -> Result<(), &'static str> {
+    pub fn validate_read_only_compatibility(&self) -> Result<(), ReadOnlyInvalid> {
         // exhaustive matching so that there is a compile error if the `Cli` struct changes
-        match self {
+        let invalid_cmd = match self {
             Self::Get { .. }
             | Self::Info { .. }
             | Self::Source { .. }
             | Self::Completions { .. }
             | Self::DefaultConfig
             | Self::Find { .. }
-            | Self::Path { mkdir: false, .. }
-            | Self::Util {
-                util_command: UtilCommand::List { .. } | UtilCommand::Check { fix: false, .. },
-            } => Ok(()),
-            Self::Path { mkdir: true, .. } => Err("Cannot enable `--mkdir` with `autobib path`"),
-            Self::Alias { .. }
-            | Self::Attach { .. }
-            | Self::Delete { .. }
-            | Self::Import { .. }
-            | Self::Local { .. }
-            | Self::Merge { .. }
-            | Self::Update { .. }
-            | Self::Edit { .. } => Err("Incompatible subcommand"),
-            Self::Util { util_command } => util_command.is_read_only_compat(),
-        }
+            | Self::Path { mkdir: false, .. } => return Ok(()),
+            Self::Path { mkdir: true, .. } => return Err(ReadOnlyInvalid::Argument("--mkdir")),
+            Self::Alias { .. } => "alias",
+            Self::Attach { .. } => "attach",
+            Self::Delete { .. } => "delete",
+            Self::Import { .. } => "import",
+            Self::Local { .. } => "local",
+            Self::Merge { .. } => "merge",
+            Self::Update { .. } => "update",
+            Self::Edit { .. } => "edit",
+            Self::Util { util_command } => return util_command.validate_read_only_compatibility(),
+        };
+        Err(ReadOnlyInvalid::Command(invalid_cmd))
     }
 }
 
