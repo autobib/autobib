@@ -3,11 +3,17 @@ use log::{Level, Log, Metadata, Record};
 #[allow(unused_imports)]
 pub use log::{debug, info, trace, warn};
 use std::{
+    fmt,
     io::{self, IsTerminal},
     sync::atomic::{AtomicBool, Ordering},
 };
 
 static HAS_ERROR: AtomicBool = AtomicBool::new(false);
+
+pub fn reraise<E: fmt::Debug + fmt::Display>(err: &E) {
+    error!("{err}");
+    trace!("{err:?}");
+}
 
 pub(crate) fn log_with_style<Y: FnOnce(&'static str) -> StyledContent<&'static str>>(
     style: Y,
@@ -46,8 +52,7 @@ macro_rules! error {
     };
 }
 
-pub(crate) use error;
-pub(crate) use suggest;
+pub(crate) use {error, suggest};
 
 pub struct Logger {}
 

@@ -14,7 +14,7 @@ use crate::{
     entry::{Entry, EntryKey, RawRecordData},
     error::Error,
     http::HttpClient,
-    logger::{error, suggest},
+    logger::{error, reraise, suggest},
     record::{Record, RecordRowResponse},
     record::{RecordId, RemoteId, get_record_row},
 };
@@ -65,7 +65,7 @@ where
             }
             RecordIdState::InvalidRemoteId(err) => {
                 if !ignore_errors {
-                    error!("{err}");
+                    reraise(&err);
                 }
             }
         }
@@ -95,7 +95,7 @@ pub fn retrieve_and_validate_entries<
             config,
         )
         .unwrap_or_else(|error| {
-            error!("{error}");
+            reraise(&error);
             None
         })
     });
@@ -152,7 +152,7 @@ fn retrieve_and_validate_single_entry<F: FnOnce() -> Vec<(regex::Regex, String)>
             Ok(None)
         }
         RecordRowResponse::InvalidRemoteId(err) => {
-            error!("{err}");
+            reraise(&err);
             Ok(None)
         }
     }
@@ -166,24 +166,22 @@ fn validate_bibtex_key(key: String, row: &State<RecordRow>) -> Option<EntryKey<S
             match row.get_valid_referencing_keys() {
                 Ok(alternative_keys) => {
                     if !alternative_keys.is_empty() {
-                        error!("{}", parse_result,);
+                        reraise(&parse_result);
                         suggest!(
                             "Use one of the following equivalent keys: {}",
                             alternative_keys.join(", ")
                         );
                     } else {
-                        error!("{}", parse_result);
+                        reraise(&parse_result);
                         suggest!(
                             "Create an alias which does not contain whitespace or disallowed characters: {{}}(),=\\#%\""
                         );
                     }
                 }
                 Err(error2) => {
-                    error!(
-                        "{}\n  Another error occurred while retrieving equivalent keys:",
-                        parse_result
-                    );
-                    error!("{error2}");
+                    reraise(&parse_result);
+                    error!("Another error occurred while retrieving equivalent keys!");
+                    reraise(&error2);
                 }
             }
             None

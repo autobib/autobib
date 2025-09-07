@@ -24,7 +24,7 @@ use self::{
     app::{Cli, Command, run_cli},
     db::CitationKey,
     entry::RawRecordData,
-    logger::{Logger, error, info},
+    logger::{Logger, info, reraise},
 };
 
 pub use self::{
@@ -62,7 +62,7 @@ fn main() {
 
     // run the cli
     if let Err(err) = run_cli(cli) {
-        error!("{err}");
+        reraise(&err);
     }
 
     // check if there was a non-fatal error during execution

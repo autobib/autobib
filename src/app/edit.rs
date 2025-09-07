@@ -8,7 +8,7 @@ use crate::{
     db::state::{RecordRow, State},
     entry::{ConflictResolved, Entry, EntryData, RecordData},
     error::MergeError,
-    logger::{error, info, set_failed, suggest, warn},
+    logger::{error, info, reraise, set_failed, suggest, warn},
     record::Alias,
     term::{Editor, EditorConfig, Input},
 };
@@ -95,7 +95,7 @@ pub fn merge_record_data<'a, D: EntryData + 'a>(
                     let choice = match prompt.input() {
                         Ok(r) => r,
                         Err(error) => {
-                            error!("{error}");
+                            reraise(&error);
                             warn!("Keeping current value for '{key}'");
                             return ConflictResolved::Current;
                         }
@@ -120,7 +120,7 @@ pub fn merge_record_data<'a, D: EntryData + 'a>(
                     match editor.edit(&val) {
                         Ok(new) => ConflictResolved::New(new.unwrap_or(val)),
                         Err(error) => {
-                            error!("{error}");
+                            reraise(&error);
                             warn!("Keeping current value for '{key}'");
                             ConflictResolved::Current
                         }
