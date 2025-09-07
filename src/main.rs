@@ -17,11 +17,12 @@ use std::{
     process::exit,
 };
 
-use clap::{CommandFactory, Parser};
+use clap::{CommandFactory, Parser, error::ErrorKind};
 use clap_complete::aot::generate;
+use crossterm::style::Stylize;
 
 use self::{
-    app::{Cli, Command, run_cli},
+    app::{Cli, Command, ReadOnlyInvalid, run_cli},
     db::CitationKey,
     entry::RawRecordData,
     logger::{Logger, info, reraise},
@@ -40,6 +41,24 @@ static LOGGER: Logger = Logger {};
 
 fn main() {
     let mut cli = Cli::parse();
+
+    // check for compatibility with read-only mode to try to avoid SQLite write errors
+    if cli.read_only
+        && let Err(invalid) = cli.command.validate_read_only_compatibility()
+    {
+        let mut cmd = Cli::command();
+        let (name, s) = match invalid {
+            ReadOnlyInvalid::Command(s) => ("subcommand", s),
+            ReadOnlyInvalid::Argument(s) => ("argument", s),
+        };
+        let err_msg = format!(
+            "the {} '{}' cannot be used in read-only mode (enabled by '{}')",
+            name,
+            s.stylize().yellow(),
+            "--read-only".stylize().yellow(),
+        );
+        cmd.error(ErrorKind::ArgumentConflict, err_msg).exit();
+    }
 
     // initialize logger
     log::set_logger(&LOGGER)

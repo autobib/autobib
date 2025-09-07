@@ -250,7 +250,7 @@ fn local() -> Result<()> {
     cmd.args(["--read-only", "local", "second"]);
     cmd.assert()
         .failure()
-        .stderr(predicate::str::contains("Incompatible subcommand"));
+        .stderr(predicate::str::contains("cannot be used in read-only mode"));
 
     let mut cmd = s.cmd()?;
     cmd.args(["get", "local:first"]);

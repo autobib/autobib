@@ -54,7 +54,7 @@ use self::{
     write::{init_outfile, output_entries, output_keys},
 };
 
-pub use self::cli::{Cli, Command};
+pub use self::cli::{Cli, Command, ReadOnlyInvalid};
 
 /// Run the CLI.
 pub fn run_cli(cli: Cli) -> Result<()> {
@@ -64,14 +64,6 @@ pub fn run_cli(cli: Cli) -> Result<()> {
         user_version()
     );
     info!("SQLite version: {}", rusqlite::version());
-
-    // check for compatibility of the sub-command with read-only mode to try to avoid SQLite
-    // write errors
-    if cli.read_only
-        && let Err(msg) = cli.command.is_read_only_compat()
-    {
-        bail!("Read-only mode: {msg}");
-    }
 
     let strategy = choose_app_strategy(AppStrategyArgs {
         top_level_domain: "org".to_owned(),
