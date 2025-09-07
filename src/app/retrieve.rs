@@ -178,7 +178,7 @@ fn retrieve_single_entry_read_only<F: FnOnce() -> Vec<(regex::Regex, String)>>(
             Ok(None)
         }
         RecordIdState::InvalidRemoteId(err) => {
-            error!("{err}");
+            reraise(&err);
             Ok(None)
         }
         RecordIdState::Unknown(unknown) => {
