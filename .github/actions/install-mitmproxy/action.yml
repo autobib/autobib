@@ -9,10 +9,27 @@ runs:
       run: pipx install mitmproxy
     - name: Make mitmdump generate certificates
       shell: bash
+      if: runner.os != 'Windows'
       run: mitmdump -s ${{ github.action_path }}/init_cert.py
-    - name: Install CA certificate to system
+    - name: Make mitmdump generate certificates (Windows)
+      shell: pwsh
+      if: runner.os == 'Windows'
+      run: mitmdump -s ${{ github.action_path }}\init_cert.py
+    - name: Install certificate (Linux)
+      if: runner.os == 'Linux'
       shell: bash
       run: |
         openssl x509 -in "$HOME/.mitmproxy/mitmproxy-ca-cert.pem" -inform PEM -out cert.crt
         sudo cp cert.crt /usr/local/share/ca-certificates/
         sudo update-ca-certificates
+    - name: Install certificate (macOS)
+      if: runner.os == 'macOS'
+      shell: bash
+      run: |
+        openssl x509 -in "$HOME/.mitmproxy/mitmproxy-ca-cert.pem" -inform PEM -out cert.crt
+        sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain cert.crt
+    - name: Install certificate (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        Import-Certificate -FilePath "$Env:USERPROFILE\.mitmproxy\mitmproxy-ca-cert.pem" -CertStoreLocation Cert:\LocalMachine\Root
