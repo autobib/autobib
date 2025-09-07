@@ -32,10 +32,16 @@ jobs:
     - name: Build test binaries
       run: cargo test --no-run --locked
     - name: Get cached mitmproxy flows
+      id: mitmproxy-cache-restore
       uses: actions/cache/restore@v4
       with:
         path: ${{ env.FLOWS_FILE }}
         key: ${{ runner.os }}-mitmproxy-${{ hashFiles(env.REMOTES_FILE) }}
+    - name: Fail on cache no-hit
+      if: steps.mitmproxy-cache-restore.outputs.cache-hit != 'true'
+      run: |
+        echo 'Cache not found; see the previous step.'
+        exit 1
     - name: Install mitmproxy
       uses: ./.github/actions/install-mitmproxy
     - name: Start mitmdump
