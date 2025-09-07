@@ -16,7 +16,7 @@ jobs:
       cache-hit: ${{ steps.cache-flows-restore.outputs.cache-hit }}
       cache-primary-key: ${{ steps.cache-flows-restore.outputs.cache-primary-key }}
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
       with:
         sparse-checkout: |
           ${{ env.REMOTES_FILE }}
@@ -33,7 +33,7 @@ jobs:
     needs: lookup
     if: needs.lookup.outputs.cache-hit != 'true'
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: dtolnay/rust-toolchain@stable
     - uses: Swatinem/rust-cache@v2
     - name: Check sorted
