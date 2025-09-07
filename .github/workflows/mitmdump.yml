@@ -14,7 +14,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       cache-hit: ${{ steps.cache-flows-restore.outputs.cache-hit }}
-      cache-primary-key: ${{ steps.cache-flows-restore.outputs.cache-primary-key }}
     steps:
     - uses: actions/checkout@v5
       with:
@@ -24,7 +23,7 @@ jobs:
       id: cache-flows-restore
       with:
         path: ${{ env.FLOWS_FILE }}
-        key: ${{ runner.os }}-mitmproxy-${{ hashFiles(env.REMOTES_FILE) }}
+        key: mitmproxy-${{ hashFiles(env.REMOTES_FILE) }}
         lookup-only: true
 
   generate:
@@ -37,6 +36,7 @@ jobs:
     - uses: dtolnay/rust-toolchain@stable
     - uses: Swatinem/rust-cache@v2
     - name: Check sorted
+      shell: bash
       run: sort -C ${{ env.REMOTES_FILE }}
     - name: Check no duplicates
       shell: bash
@@ -47,6 +47,7 @@ jobs:
     - name: Start mitmdump
       run: mitmdump -w ${{ env.FLOWS_FILE }} &
     - name: Generate flows
+      shell: bash
       env:
         ALL_PROXY: http://127.0.0.1:8080
       run: xargs -a '${{ env.REMOTES_FILE }}' -d '\n' -- cargo run -- -vv get --retrieve-only --ignore-null
@@ -54,4 +55,4 @@ jobs:
       uses: actions/cache/save@v4
       with:
         path: ${{ env.FLOWS_FILE }}
-        key: ${{ needs.lookup.outputs.cache-primary-key }}
+        key: mitmproxy-${{ hashFiles(env.REMOTES_FILE) }}
