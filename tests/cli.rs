@@ -1403,3 +1403,28 @@ fn import_retrieve_only() -> Result<()> {
 
     s.close()
 }
+
+macro_rules! test_provider_success {
+    ($name:ident, $target:expr) => {
+        /// Check that `autobib get` succeeds
+        #[test]
+        fn $name() -> Result<()> {
+            let s = TestState::init()?;
+
+            let mut cmd = s.cmd()?;
+            cmd.args(["-vvv", "get", $target]);
+            cmd.assert().success();
+
+            s.close()
+        }
+    };
+}
+
+test_provider_success!(zbl_provider, "zbl:1337.28015");
+test_provider_success!(zbmath_provider, "zbmath:7937992");
+test_provider_success!(jfm_provider, "jfm:60.0017.02");
+test_provider_success!(arxiv_provider, "arxiv:1212.1873");
+test_provider_success!(mr_provider, "mr:3224722");
+test_provider_success!(isbn_provider, "isbn:9781119942399");
+test_provider_success!(doi_provider, "doi:10.4007/annals.2014.180.2.7");
+test_provider_success!(ol_provider, "ol:31159704M");
