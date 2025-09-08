@@ -578,6 +578,7 @@ pub enum Constraint<T> {
 }
 
 /// The result of renaming an alias.
+#[must_use]
 pub enum RenameAliasResult {
     /// The alias was successfully renamed.
     Renamed,
@@ -586,6 +587,7 @@ pub enum RenameAliasResult {
 }
 
 /// The result of renaming an alias.
+#[must_use]
 pub enum DeleteAliasResult {
     /// The alias was successfully renamed.
     Deleted,
