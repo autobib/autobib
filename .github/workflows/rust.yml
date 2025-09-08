@@ -56,7 +56,7 @@ jobs:
       uses: ./.github/actions/install-mitmproxy
     - name: Start mitmdump
       if: runner.os != 'Windows'
-      run: mitmdump --server-replay ${{ env.FLOWS_FILE }} --server-replay-reuse --set connection_strategy=lazy &
+      run: mitmdump --server-replay ${{ env.FLOWS_FILE }} --server-replay-reuse --set connection_strategy=lazy --server-replay-extra=kill &
     - name: Run tests
       if: runner.os != 'Windows'
       env:
