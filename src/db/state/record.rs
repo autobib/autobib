@@ -168,7 +168,7 @@ impl State<'_, RecordRow> {
     pub fn update(&self, data: &RawRecordData) -> Result<(), rusqlite::Error> {
         debug!("Updating row data for row '{}'", self.row_id());
         let mut updater = self.prepare(sql::update_cached_data())?;
-        updater.execute((self.row_id(), &Local::now(), data.to_byte_repr()))?;
+        updater.execute((self.row_id(), Local::now(), data.to_byte_repr()))?;
         Ok(())
     }
 
