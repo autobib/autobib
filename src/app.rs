@@ -99,7 +99,7 @@ pub fn run_cli<C: Client>(cli: Cli) -> Result<()> {
     );
 
     // Initialize the reqwest Client
-    let client = C::new()?;
+    let client = C::new();
 
     // Run the cli
     match cli.command {

@@ -20,12 +20,12 @@ use std::{
 use clap::{CommandFactory, Parser, error::ErrorKind};
 use clap_complete::aot::generate;
 use crossterm::style::Stylize;
-use reqwest::blocking::Client;
 
 use self::{
     app::{Cli, Command, ReadOnlyInvalid, run_cli},
     db::CitationKey,
     entry::RawRecordData,
+    http::AsyncClient,
     logger::{Logger, info, reraise},
 };
 
@@ -80,7 +80,7 @@ fn main() {
     }
 
     // run the cli
-    if let Err(err) = run_cli::<Client>(cli) {
+    if let Err(err) = run_cli::<AsyncClient>(cli) {
         reraise(&err);
     }
 
