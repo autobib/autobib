@@ -8,7 +8,7 @@ use anyhow::bail;
 
 use crate::{
     entry::{Entry, RecordData},
-    http::HttpClient,
+    http::Client,
     logger::info,
     path_hash::PathHash,
     record::{RecursiveRemoteResponse, RemoteId, get_remote_response_recursive},
@@ -53,10 +53,10 @@ pub fn get_attachment_dir(
 
 /// Either obtain data from a `.bib` file at the provided path, or look up data from the
 /// provider.
-pub fn data_from_path_or_remote<P: AsRef<Path>>(
+pub fn data_from_path_or_remote<P: AsRef<Path>, C: Client>(
     maybe_path: Option<P>,
     remote_id: RemoteId,
-    client: &HttpClient,
+    client: &C,
 ) -> Result<(RecordData, RemoteId), anyhow::Error> {
     match maybe_path {
         Some(path) => Ok((data_from_path(path)?, remote_id)),

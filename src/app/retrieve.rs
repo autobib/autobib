@@ -13,7 +13,7 @@ use crate::{
     },
     entry::{Entry, EntryKey, RawRecordData},
     error::Error,
-    http::HttpClient,
+    http::Client,
     logger::{error, reraise, suggest},
     record::{Record, RecordRowResponse},
     record::{RecordId, RemoteId, get_record_row},
@@ -96,10 +96,11 @@ where
 pub fn retrieve_and_validate_entries<
     T: Iterator<Item = RecordId>,
     F: FnOnce() -> Vec<(regex::Regex, String)>,
+    C: Client,
 >(
     citation_keys: T,
     record_db: &mut RecordDatabase,
-    client: &HttpClient,
+    client: &C,
     retrieve_only: bool,
     ignore_null: bool,
     config: &Config<F>,
@@ -190,14 +191,18 @@ fn retrieve_single_entry_read_only<F: FnOnce() -> Vec<(regex::Regex, String)>>(
 }
 
 /// Retrieve and validate a single BibTeX entry.
-fn retrieve_and_validate_single_entry<F: FnOnce() -> Vec<(regex::Regex, String)>>(
+fn retrieve_and_validate_single_entry<F, C>(
     record_db: &mut RecordDatabase,
     citation_key: RecordId,
-    client: &HttpClient,
+    client: &C,
     retrieve_only: bool,
     ignore_null: bool,
     config: &Config<F>,
-) -> Result<Option<(Entry<RawRecordData>, RemoteId)>, Error> {
+) -> Result<Option<(Entry<RawRecordData>, RemoteId)>, Error>
+where
+    F: FnOnce() -> Vec<(regex::Regex, String)>,
+    C: Client,
+{
     match get_record_row(record_db, citation_key, client, config)? {
         RecordRowResponse::Exists(record, row) => {
             if retrieve_only {

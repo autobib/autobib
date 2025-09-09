@@ -1,11 +1,12 @@
-use std::fmt::Display;
+#[cfg(any(feature = "localproxy", test))]
+mod localproxy;
 
-use reqwest::{
-    Error, IntoUrl,
-    blocking::{Client, ClientBuilder, Response},
+use ureq::{
+    Agent, Body,
+    http::{self, Uri},
 };
 
-use crate::logger::info;
+use crate::error::ProviderError;
 
 static APP_USER_AGENT: &str = concat!(
     env!("CARGO_PKG_NAME"),
@@ -18,26 +19,45 @@ static APP_USER_AGENT: &str = concat!(
     ")",
 );
 
-/// A thin wrapper around a [`reqwest::blocking::Client`].
-pub struct HttpClient {
-    client: Client,
+pub trait Client: Sized {
+    fn new() -> Self;
+
+    fn get<T>(&self, uri: T) -> Result<http::Response<Body>, ProviderError>
+    where
+        Uri: TryFrom<T>,
+        <Uri as TryFrom<T>>::Error: Into<http::Error>;
 }
 
-impl HttpClient {
-    /// Initialize a default builder.
-    pub fn default_builder() -> ClientBuilder {
-        Client::builder().user_agent(APP_USER_AGENT)
+pub trait Response {
+    fn bytes(&mut self) -> Result<Vec<u8>, ProviderError>;
+}
+
+impl Response for http::Response<Body> {
+    fn bytes(&mut self) -> Result<Vec<u8>, ProviderError> {
+        self.body_mut().read_to_vec().map_err(Into::into)
+    }
+}
+
+pub struct UreqClient {
+    inner: Agent,
+}
+
+impl Client for UreqClient {
+    fn new() -> Self {
+        let config = Agent::config_builder()
+            .user_agent(APP_USER_AGENT)
+            .https_only(true)
+            .http_status_as_error(false)
+            .build();
+        let inner = Agent::new_with_config(config);
+        Self { inner }
     }
 
-    /// Create a new client from the builder.
-    pub fn new(builder: ClientBuilder) -> Result<Self, Error> {
-        Ok(Self {
-            client: builder.build()?,
-        })
-    }
-    /// Make a request to a given url.
-    pub fn get<U: IntoUrl + Display>(&self, url: U) -> Result<Response, Error> {
-        info!("Making request to url: {url}");
-        self.client.get(url).send()
+    fn get<T>(&self, uri: T) -> Result<http::Response<Body>, ProviderError>
+    where
+        Uri: TryFrom<T>,
+        <Uri as TryFrom<T>>::Error: Into<http::Error>,
+    {
+        self.inner.get(uri).call().map_err(Into::into)
     }
 }

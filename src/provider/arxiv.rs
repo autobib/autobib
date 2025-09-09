@@ -1,12 +1,14 @@
 use chrono::{DateTime, FixedOffset};
-use reqwest::StatusCode;
 use rsxiv::{
     id::{ArticleId, normalize},
     response::{AuthorName, Response},
 };
 use serde::Deserialize;
 
-use super::{EntryType, HttpClient, ProviderError, RecordData, RecordDataError, ValidationOutcome};
+use super::{
+    Client, EntryType, ProviderError, RecordData, RecordDataError, Response as _, StatusCode,
+    ValidationOutcome,
+};
 
 pub fn is_valid_id(id: &str) -> ValidationOutcome {
     match normalize(id) {
@@ -90,8 +92,8 @@ impl TryFrom<Entry> for RecordData {
     }
 }
 
-pub fn get_record(id: &str, client: &HttpClient) -> Result<Option<RecordData>, ProviderError> {
-    let response = client.get(format!("https://export.arxiv.org/api/query?id_list={id}"))?;
+pub fn get_record<C: Client>(id: &str, client: &C) -> Result<Option<RecordData>, ProviderError> {
+    let mut response = client.get(format!("https://export.arxiv.org/api/query?id_list={id}"))?;
 
     let body = match response.status() {
         StatusCode::OK => response.bytes()?,

@@ -25,13 +25,13 @@ use self::{
     app::{Cli, Command, ReadOnlyInvalid, run_cli},
     db::CitationKey,
     entry::RawRecordData,
+    http::UreqClient,
     logger::{Logger, info, reraise},
 };
 
 pub use self::{
     config::Config,
     entry::Entry,
-    http::HttpClient,
     normalize::{Normalization, Normalize},
     record::{Alias, AliasOrRemoteId, MappedKey, RecordId, RemoteId, get_record_row},
     term::{Confirm, Editor, EditorConfig},
@@ -80,7 +80,7 @@ fn main() {
     }
 
     // run the cli
-    if let Err(err) = run_cli(cli) {
+    if let Err(err) = run_cli::<UreqClient>(cli) {
         reraise(&err);
     }
 
