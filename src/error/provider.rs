@@ -1,5 +1,5 @@
-use reqwest::StatusCode;
 use thiserror::Error;
+use ureq::http::StatusCode;
 
 use super::{RecordDataError, RecordError};
 
@@ -10,7 +10,7 @@ pub enum ProviderError {
     #[error("Reference source returned a key corresponding to a null record: '{0}'")]
     UnexpectedNullRemoteFromProvider(String),
     #[error("Network failure: {0}")]
-    NetworkFailure(#[from] reqwest::Error),
+    NetworkFailure(#[from] ureq::Error),
     #[error("Unexpected local record '{0}'")]
     UnexpectedLocal(String),
     #[error("Unexpected status code {0}")]

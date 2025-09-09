@@ -1,12 +1,13 @@
 use std::sync::LazyLock;
 
 use regex::Regex;
-use reqwest::StatusCode;
 use serde::Deserialize;
 
 use crate::logger::info;
 
-use super::{EntryType, HttpClient, ProviderError, RecordData, ValidationOutcome};
+use super::{
+    Client, EntryType, ProviderError, RecordData, Response, StatusCode, ValidationOutcome,
+};
 
 static OL_IDENTIFIER_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[0-9]{7,8}M$").unwrap());
 
@@ -43,8 +44,8 @@ struct OpenLibraryRecord {
     title: Option<String>,
 }
 
-pub fn get_record(id: &str, client: &HttpClient) -> Result<Option<RecordData>, ProviderError> {
-    let response = client.get(format!("https://openlibrary.org/books/OL{id}.json"))?;
+pub fn get_record<C: Client>(id: &str, client: &C) -> Result<Option<RecordData>, ProviderError> {
+    let mut response = client.get(format!("https://openlibrary.org/books/OL{id}.json"))?;
 
     let body = match response.status() {
         StatusCode::OK => response.bytes()?,
@@ -80,7 +81,7 @@ pub fn get_record(id: &str, client: &HttpClient) -> Result<Option<RecordData>, P
 
                 for AuthorID { key } in authors {
                     info!("Making remote request for OpenLibrary author at {key}");
-                    let response = client.get(format!("https://openlibrary.org{key}.json"))?;
+                    let mut response = client.get(format!("https://openlibrary.org{key}.json"))?;
 
                     let body = match response.status() {
                         StatusCode::OK => response.bytes()?,

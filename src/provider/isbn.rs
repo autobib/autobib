@@ -1,7 +1,6 @@
-use reqwest::StatusCode;
 use serde::Deserialize;
 
-use super::{HttpClient, ProviderError, RemoteId, ValidationOutcome};
+use super::{Client, ProviderError, RemoteId, Response, StatusCode, ValidationOutcome};
 
 /// Convert an ascii digit into the actual numerical value of the digit
 fn ascii_digit_to_u8(b: u8) -> Option<u8> {
@@ -146,8 +145,8 @@ struct OLKeyExtractor {
     key: String,
 }
 
-pub fn get_canonical(id: &str, client: &HttpClient) -> Result<Option<RemoteId>, ProviderError> {
-    let response = client.get(format!("https://openlibrary.org/isbn/{id}.json"))?;
+pub fn get_canonical<C: Client>(id: &str, client: &C) -> Result<Option<RemoteId>, ProviderError> {
+    let mut response = client.get(format!("https://openlibrary.org/isbn/{id}.json"))?;
 
     let body = match response.status() {
         StatusCode::OK => response.bytes()?,

@@ -3,7 +3,7 @@ use std::str::FromStr;
 use anyhow::anyhow;
 
 use crate::{
-    CitationKey, HttpClient,
+    CitationKey,
     app::{
         cli::{ImportMode, UpdateMode},
         edit::merge_record_data,
@@ -15,6 +15,7 @@ use crate::{
     },
     entry::{Entry, EntryKey, RecordData, entries_from_bibtex},
     error::{self, RecordError},
+    http::Client,
     logger::{error, info, set_failed, warn},
     normalize::{Normalization, Normalize},
     provider::{determine_remote_id_candidates, is_canonical},
@@ -38,14 +39,18 @@ pub struct ImportConfig {
 
 /// Import records from the provided buffer.
 #[inline]
-pub fn from_buffer<F: FnOnce() -> Vec<(regex::Regex, String)>>(
+pub fn from_buffer<F, C>(
     scratch: &[u8],
     import_config: &ImportConfig,
     record_db: &mut RecordDatabase,
-    client: &HttpClient,
+    client: &C,
     config: &Config<F>,
     bibfile: impl std::fmt::Display,
-) -> Result<(), anyhow::Error> {
+) -> Result<(), anyhow::Error>
+where
+    F: FnOnce() -> Vec<(regex::Regex, String)>,
+    C: Client,
+{
     for res in entries_from_bibtex(scratch) {
         match res {
             Ok(mut entry) => {
@@ -98,13 +103,17 @@ enum ImportOutcome {
 
 /// Import a single entry into the record database.
 #[inline]
-fn import_entry<F: FnOnce() -> Vec<(regex::Regex, String)>>(
+fn import_entry<F, C>(
     entry: Entry<RecordData>,
     import_config: &ImportConfig,
     record_db: &mut RecordDatabase,
-    client: &HttpClient,
+    client: &C,
     config: &Config<F>,
-) -> Result<ImportOutcome, anyhow::Error> {
+) -> Result<ImportOutcome, anyhow::Error>
+where
+    F: FnOnce() -> Vec<(regex::Regex, String)>,
+    C: Client,
+{
     match import_config.import_mode {
         ImportMode::Local => import_entry_impl(
             record_db,
@@ -130,7 +139,7 @@ fn import_entry<F: FnOnce() -> Vec<(regex::Regex, String)>>(
             &config.on_insert,
             |entry, record_db| {
                 // we require a canonical identifier since we do not perform any remote resolution
-                match determine_key(entry, true, config) {
+                match determine_key::<F, C>(entry, true, config) {
                     DeterminedKey::Alias(alias) => {
                         // we could not determine a remote identifier, so we just fall back to the
                         // 'local' behaviour
@@ -314,12 +323,12 @@ where
 /// is an alias, and no remote identifier could be determined from the entry: in this case, the
 /// behaviour is handled by the `handle_alias` closure.
 #[inline]
-fn import_entry_retrieve_impl<A, F>(
+fn import_entry_retrieve_impl<A, F, C>(
     record_db: &mut RecordDatabase,
     entry: Entry<RecordData>,
     import_config: &ImportConfig,
     config: &Config<F>,
-    client: &HttpClient,
+    client: &C,
     mut handle_alias: A,
 ) -> Result<ImportOutcome, anyhow::Error>
 where
@@ -328,6 +337,7 @@ where
         &'conn mut RecordDatabase,
     ) -> Result<ImportAction<'conn>, error::Error>,
     F: FnOnce() -> Vec<(regex::Regex, String)>,
+    C: Client,
 {
     import_entry_impl(
         record_db,
@@ -336,7 +346,7 @@ where
         import_config.no_alias,
         &config.on_insert,
         // we do not require a canonical identifier since we perform remote resolution
-        |entry, record_db| match determine_key(entry, false, config) {
+        |entry, record_db| match determine_key::<F, C>(entry, false, config) {
             DeterminedKey::Alias(alias) => handle_alias(alias, record_db),
             DeterminedKey::RemoteId(mapped_key, maybe_alias) => {
                 let remote_id = mapped_key.mapped;
@@ -407,32 +417,36 @@ enum DeterminedKey {
 
 /// Determine the key associated with the provided entry.
 #[inline]
-fn determine_key<F: FnOnce() -> Vec<(regex::Regex, String)>>(
+fn determine_key<F, C>(
     entry: &Entry<RecordData>,
     require_canonical: bool,
     config: &Config<F>,
-) -> DeterminedKey {
+) -> DeterminedKey
+where
+    F: FnOnce() -> Vec<(regex::Regex, String)>,
+    C: Client,
+{
     let resolved = RecordId::from(entry.key.as_ref())
         .resolve(&config.alias_transform)
         .map(Into::into);
     match resolved {
         Ok(MappedAliasOrRemoteId::Alias(alias)) => {
-            match best_key_from_data(entry.data(), require_canonical, config) {
+            match best_key_from_data::<F, C>(entry.data(), require_canonical, config) {
                 Some(remote_id) => DeterminedKey::RemoteId(remote_id, Some(alias)),
                 None => DeterminedKey::Alias(alias),
             }
         }
         Ok(MappedAliasOrRemoteId::RemoteId(mapped_key)) => {
-            if !require_canonical || is_canonical(mapped_key.mapped.provider()) {
+            if !require_canonical || is_canonical::<C>(mapped_key.mapped.provider()) {
                 DeterminedKey::RemoteId(mapped_key, None)
             } else {
-                match best_key_from_data(entry.data(), require_canonical, config) {
+                match best_key_from_data::<F, C>(entry.data(), require_canonical, config) {
                     Some(mapped_key) => DeterminedKey::RemoteId(mapped_key, None),
                     None => DeterminedKey::NotCanonical(mapped_key),
                 }
             }
         }
-        Err(err) => match best_key_from_data(entry.data(), require_canonical, config) {
+        Err(err) => match best_key_from_data::<F, C>(entry.data(), require_canonical, config) {
             Some(mapped_key) => DeterminedKey::RemoteId(mapped_key, None),
             None => DeterminedKey::Invalid(err),
         },
@@ -442,16 +456,20 @@ fn determine_key<F: FnOnce() -> Vec<(regex::Regex, String)>>(
 /// Determine the 'best' key from the data: that is, the key which matches a preferred
 /// provider with the smallest possible index.
 #[inline]
-fn best_key_from_data<F: FnOnce() -> Vec<(regex::Regex, String)>>(
+fn best_key_from_data<F, C>(
     data: &RecordData,
     require_canonical: bool,
     config: &Config<F>,
-) -> Option<MappedKey> {
+) -> Option<MappedKey>
+where
+    F: FnOnce() -> Vec<(regex::Regex, String)>,
+    C: Client,
+{
     let mut highest_scoring_candidate: Option<(MappedKey, usize)> = None;
     determine_remote_id_candidates(
         data,
         |provider| {
-            if require_canonical && !is_canonical(provider) {
+            if require_canonical && !is_canonical::<C>(provider) {
                 None
             } else {
                 config

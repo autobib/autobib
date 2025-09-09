@@ -1,7 +1,8 @@
-use reqwest::StatusCode;
 use serde_bibtex::de::Deserializer;
 
-use super::{HttpClient, ProviderBibtex, ProviderError, RecordData, ValidationOutcome};
+use super::{
+    Client, ProviderBibtex, ProviderError, RecordData, Response, StatusCode, ValidationOutcome,
+};
 
 pub fn is_valid_id(id: &str) -> ValidationOutcome {
     if id.len() == 8 && id.as_bytes().iter().all(u8::is_ascii_digit) {
@@ -16,11 +17,11 @@ pub fn is_valid_id(id: &str) -> ValidationOutcome {
     }
 }
 
-pub fn get_record(id: &str, client: &HttpClient) -> Result<Option<RecordData>, ProviderError> {
+pub fn get_record<C: Client>(id: &str, client: &C) -> Result<Option<RecordData>, ProviderError> {
     // It might be tempting to use the zbMATH REST API (https://api.zbmath.org/v1/).
     // However, sometimes this API endpoint will return incomplete data as a result of
     // licensing issues. On the other hand, the BibTeX record always works.
-    let response = client.get(format!("https://zbmath.org/bibtex/{id}.bib"))?;
+    let mut response = client.get(format!("https://zbmath.org/bibtex/{id}.bib"))?;
 
     let body = match response.status() {
         StatusCode::OK => response.bytes()?,
