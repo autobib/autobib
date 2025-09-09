@@ -5,7 +5,7 @@ use reqwest::StatusCode;
 use serde::Deserialize;
 use serde_bibtex::de::Deserializer;
 
-use super::{HttpClient, ProviderError, RemoteId, ValidationOutcome};
+use super::{Client, ProviderError, RemoteId, ValidationOutcome};
 
 static ZBL_IDENTIFIER_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[0-9]{4}\.[0-9]{5}$").unwrap());
@@ -19,7 +19,7 @@ struct OnlyEntryKey<'r> {
     entry_key: &'r str,
 }
 
-pub fn get_canonical(id: &str, client: &HttpClient) -> Result<Option<RemoteId>, ProviderError> {
+pub fn get_canonical<C: Client>(id: &str, client: &C) -> Result<Option<RemoteId>, ProviderError> {
     let response = client.get(format!("https://zbmath.org/bibtex/{id}.bib"))?;
 
     let body = match response.status() {

@@ -17,24 +17,25 @@ use serde::Deserialize;
 
 // re-imports exposed to provider implementations
 use crate::{
-    HttpClient, MappedKey, RemoteId,
+    MappedKey, RemoteId,
     entry::{EntryData, EntryType, RecordData},
     error::{ProviderError, RecordDataError},
+    http::Client,
 };
 
 /// A resolver, which converts a `sub_id` into [`RecordData`].
-type Resolver = fn(&str, &HttpClient) -> Result<Option<RecordData>, ProviderError>;
+type Resolver<C> = fn(&str, &C) -> Result<Option<RecordData>, ProviderError>;
 
 /// A referrer, which converts a `sub_id` into [`RemoteId`].
-type Referrer = fn(&str, &HttpClient) -> Result<Option<RemoteId>, ProviderError>;
+type Referrer<C> = fn(&str, &C) -> Result<Option<RemoteId>, ProviderError>;
 
 /// A validator, which checks that a `sub_id` is valid.
 type Validator = fn(&str) -> ValidationOutcome;
 
 /// A provider, which is either a [`Resolver`] or a [`Referrer`].
-enum Provider {
-    Resolver(Resolver),
-    Referrer(Referrer),
+enum Provider<C: Client> {
+    Resolver(Resolver<C>),
+    Referrer(Referrer<C>),
 }
 
 pub const REMOTE_PROVIDERS: [&str; 8] =
@@ -42,7 +43,7 @@ pub const REMOTE_PROVIDERS: [&str; 8] =
 
 /// Map the `provider` part of a [`RemoteId`] to a [`Resolver`] or [`Referrer`].
 #[inline]
-fn lookup_provider(provider: &str) -> Provider {
+fn lookup_provider<C: Client>(provider: &str) -> Provider<C> {
     match provider {
         "arxiv" => Provider::Resolver(arxiv::get_record),
         "doi" => Provider::Resolver(doi::get_record),
@@ -191,15 +192,15 @@ pub fn is_valid_provider(provider: &str) -> bool {
 }
 
 #[inline]
-pub fn is_canonical(provider: &str) -> bool {
+pub fn is_canonical<C: Client>(provider: &str) -> bool {
     lookup_validator(provider).is_some()
-        && matches!(lookup_provider(provider), Provider::Resolver(_))
+        && matches!(lookup_provider::<C>(provider), Provider::Resolver(_))
 }
 
 #[inline]
-pub fn is_reference(provider: &str) -> bool {
+pub fn is_reference<C: Client>(provider: &str) -> bool {
     lookup_validator(provider).is_some()
-        && matches!(lookup_provider(provider), Provider::Referrer(_))
+        && matches!(lookup_provider::<C>(provider), Provider::Referrer(_))
 }
 
 /// The outcome of resolving a provider and making the remote call
@@ -214,8 +215,8 @@ pub enum RemoteResponse {
 
 /// Obtain the [`RemoteResponse`] by looking up the [`RemoteId`] using the provided `client`.
 #[inline]
-pub fn get_remote_response(
-    client: &HttpClient,
+pub fn get_remote_response<C: Client>(
+    client: &C,
     remote_id: &RemoteId,
 ) -> Result<RemoteResponse, ProviderError> {
     match lookup_provider(remote_id.provider()) {

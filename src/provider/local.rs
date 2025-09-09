@@ -1,4 +1,4 @@
-use super::{HttpClient, ProviderError, RecordData, ValidationOutcome};
+use super::{Client, ProviderError, RecordData, ValidationOutcome};
 
 #[inline]
 pub fn is_valid_id(id: &str) -> ValidationOutcome {
@@ -7,7 +7,7 @@ pub fn is_valid_id(id: &str) -> ValidationOutcome {
 }
 
 #[inline]
-pub fn get_record(id: &str, _client: &HttpClient) -> Result<Option<RecordData>, ProviderError> {
+pub fn get_record<C: Client>(id: &str, _client: &C) -> Result<Option<RecordData>, ProviderError> {
     // WARNING: we must return an error here, or the record will get cached locally which will
     // result in strange errors!
     Err(ProviderError::UnexpectedLocal(id.into()))

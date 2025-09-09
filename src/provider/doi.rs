@@ -4,7 +4,7 @@ use regex::Regex;
 use reqwest::StatusCode;
 use serde_bibtex::de::Deserializer;
 
-use super::{HttpClient, ProviderBibtex, ProviderError, RecordData, ValidationOutcome};
+use super::{Client, ProviderBibtex, ProviderError, RecordData, ValidationOutcome};
 
 static DOI_IDENTIFIER_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(10.\d{4,9}/[-._;()/:a-zA-Z0-9]+)|(10.1002/[^\s]+)$").unwrap());
@@ -13,7 +13,7 @@ pub fn is_valid_id(id: &str) -> ValidationOutcome {
     DOI_IDENTIFIER_RE.is_match(id).into()
 }
 
-pub fn get_record(id: &str, client: &HttpClient) -> Result<Option<RecordData>, ProviderError> {
+pub fn get_record<C: Client>(id: &str, client: &C) -> Result<Option<RecordData>, ProviderError> {
     let response = client.get(format!(
         "https://api.crossref.org/works/{id}/transform/application/x-bibtex"
     ))?;

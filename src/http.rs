@@ -2,42 +2,34 @@ use std::fmt::Display;
 
 use reqwest::{
     Error, IntoUrl,
-    blocking::{Client, ClientBuilder, Response},
+    blocking::{Client as ReqwestClient, Response},
 };
 
 use crate::logger::info;
 
-static APP_USER_AGENT: &str = concat!(
-    env!("CARGO_PKG_NAME"),
-    "/",
-    env!("CARGO_PKG_VERSION"),
-    " (",
-    env!("CARGO_PKG_HOMEPAGE"),
-    "; ",
-    env!("CARGO_PKG_AUTHORS"),
-    ")",
-);
+pub trait Client: Sized {
+    fn new() -> Result<Self, Error>;
 
-/// A thin wrapper around a [`reqwest::blocking::Client`].
-pub struct HttpClient {
-    client: Client,
+    fn get<U: IntoUrl + Display>(&self, url: U) -> Result<Response, Error>;
 }
 
-impl HttpClient {
-    /// Initialize a default builder.
-    pub fn default_builder() -> ClientBuilder {
-        Client::builder().user_agent(APP_USER_AGENT)
+impl Client for ReqwestClient {
+    fn new() -> Result<Self, Error> {
+        static APP_USER_AGENT: &str = concat!(
+            env!("CARGO_PKG_NAME"),
+            "/",
+            env!("CARGO_PKG_VERSION"),
+            " (",
+            env!("CARGO_PKG_HOMEPAGE"),
+            "; ",
+            env!("CARGO_PKG_AUTHORS"),
+            ")",
+        );
+        Self::builder().user_agent(APP_USER_AGENT).build()
     }
 
-    /// Create a new client from the builder.
-    pub fn new(builder: ClientBuilder) -> Result<Self, Error> {
-        Ok(Self {
-            client: builder.build()?,
-        })
-    }
-    /// Make a request to a given url.
-    pub fn get<U: IntoUrl + Display>(&self, url: U) -> Result<Response, Error> {
+    fn get<U: IntoUrl + Display>(&self, url: U) -> Result<Response, Error> {
         info!("Making request to url: {url}");
-        self.client.get(url).send()
+        self.get(url).send()
     }
 }

@@ -20,6 +20,7 @@ use std::{
 use clap::{CommandFactory, Parser, error::ErrorKind};
 use clap_complete::aot::generate;
 use crossterm::style::Stylize;
+use reqwest::blocking::Client;
 
 use self::{
     app::{Cli, Command, ReadOnlyInvalid, run_cli},
@@ -31,7 +32,6 @@ use self::{
 pub use self::{
     config::Config,
     entry::Entry,
-    http::HttpClient,
     normalize::{Normalization, Normalize},
     record::{Alias, AliasOrRemoteId, MappedKey, RecordId, RemoteId, get_record_row},
     term::{Confirm, Editor, EditorConfig},
@@ -80,7 +80,7 @@ fn main() {
     }
 
     // run the cli
-    if let Err(err) = run_cli(cli) {
+    if let Err(err) = run_cli::<Client>(cli) {
         reraise(&err);
     }
 
