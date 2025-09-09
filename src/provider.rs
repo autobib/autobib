@@ -20,7 +20,7 @@ use crate::{
     MappedKey, RemoteId,
     entry::{EntryData, EntryType, RecordData},
     error::{ProviderError, RecordDataError},
-    http::Client,
+    http::{Client, Response},
 };
 
 /// A resolver, which converts a `sub_id` into [`RecordData`].

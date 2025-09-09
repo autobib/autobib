@@ -3,7 +3,7 @@ use std::sync::LazyLock;
 use regex::{Regex, bytes::Regex as BytesRegex};
 use reqwest::StatusCode;
 
-use super::{Client, ProviderError, RemoteId, ValidationOutcome};
+use super::{Client, ProviderError, RemoteId, Response, ValidationOutcome};
 
 static JFM_IDENTIFIER_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[0-9]{2}\.[0-9]{4}\.[0-9]{2}$").unwrap());

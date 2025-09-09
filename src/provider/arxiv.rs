@@ -6,7 +6,9 @@ use rsxiv::{
 };
 use serde::Deserialize;
 
-use super::{Client, EntryType, ProviderError, RecordData, RecordDataError, ValidationOutcome};
+use super::{
+    Client, EntryType, ProviderError, RecordData, RecordDataError, Response as _, ValidationOutcome,
+};
 
 pub fn is_valid_id(id: &str) -> ValidationOutcome {
     match normalize(id) {

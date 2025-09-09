@@ -1,7 +1,7 @@
 use reqwest::StatusCode;
 use serde_bibtex::de::Deserializer;
 
-use super::{Client, ProviderBibtex, ProviderError, RecordData, ValidationOutcome};
+use super::{Client, ProviderBibtex, ProviderError, RecordData, Response, ValidationOutcome};
 
 pub fn is_valid_id(id: &str) -> ValidationOutcome {
     if id.len() == 8 && id.as_bytes().iter().all(u8::is_ascii_digit) {

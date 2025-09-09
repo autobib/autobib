@@ -6,7 +6,7 @@ use serde::Deserialize;
 
 use crate::logger::info;
 
-use super::{Client, EntryType, ProviderError, RecordData, ValidationOutcome};
+use super::{Client, EntryType, ProviderError, RecordData, Response, ValidationOutcome};
 
 static OL_IDENTIFIER_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[0-9]{7,8}M$").unwrap());
 

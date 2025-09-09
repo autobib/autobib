@@ -2,7 +2,7 @@ use reqwest::StatusCode;
 use serde::Deserialize;
 use serde_bibtex::de::Deserializer;
 
-use super::{Client, ProviderBibtex, ProviderError, RecordData, ValidationOutcome};
+use super::{Client, ProviderBibtex, ProviderError, RecordData, Response, ValidationOutcome};
 
 #[allow(dead_code)]
 #[derive(Deserialize)]

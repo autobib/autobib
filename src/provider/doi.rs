@@ -4,7 +4,7 @@ use regex::Regex;
 use reqwest::StatusCode;
 use serde_bibtex::de::Deserializer;
 
-use super::{Client, ProviderBibtex, ProviderError, RecordData, ValidationOutcome};
+use super::{Client, ProviderBibtex, ProviderError, RecordData, Response, ValidationOutcome};
 
 static DOI_IDENTIFIER_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(10.\d{4,9}/[-._;()/:a-zA-Z0-9]+)|(10.1002/[^\s]+)$").unwrap());

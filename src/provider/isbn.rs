@@ -1,7 +1,7 @@
 use reqwest::StatusCode;
 use serde::Deserialize;
 
-use super::{Client, ProviderError, RemoteId, ValidationOutcome};
+use super::{Client, ProviderError, RemoteId, Response, ValidationOutcome};
 
 /// Convert an ascii digit into the actual numerical value of the digit
 fn ascii_digit_to_u8(b: u8) -> Option<u8> {

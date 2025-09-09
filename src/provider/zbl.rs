@@ -5,7 +5,7 @@ use reqwest::StatusCode;
 use serde::Deserialize;
 use serde_bibtex::de::Deserializer;
 
-use super::{Client, ProviderError, RemoteId, ValidationOutcome};
+use super::{Client, ProviderError, RemoteId, Response, ValidationOutcome};
 
 static ZBL_IDENTIFIER_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[0-9]{4}\.[0-9]{5}$").unwrap());
