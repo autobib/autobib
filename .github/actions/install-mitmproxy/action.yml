@@ -32,4 +32,5 @@ runs:
       if: runner.os == 'Windows'
       shell: pwsh
       run: |
-        Import-Certificate -FilePath "$Env:USERPROFILE\.mitmproxy\mitmproxy-ca-cert.pem" -CertStoreLocation Cert:\LocalMachine\Root
+        Import-Certificate -FilePath "$Env:USERPROFILE\.mitmproxy\mitmproxy-ca-cert.pem" \
+          -CertStoreLocation Cert:\LocalMachine\Root

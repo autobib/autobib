@@ -25,8 +25,12 @@ jobs:
   tests:
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest]
         toolchain: [stable]
+        include:
+          - os: windows-latest
+            toolchain: stable
+            extent: build-only
     runs-on: ${{ matrix.os }}
     needs: mitmproxy-flows
     steps:
@@ -40,25 +44,29 @@ jobs:
       run: cargo test --no-run --locked
     - name: Get cached mitmproxy flows
       id: mitmproxy-cache-restore
-      if: runner.os != 'Windows'
+      if: matrix.extent != 'build-only'
       uses: actions/cache/restore@v4
       with:
         path: ${{ env.FLOWS_FILE }}
         key: mitmproxy-${{ hashFiles(env.REMOTES_FILE) }}
         enableCrossOsArchive: true
     - name: Fail on cache no-hit
-      if: runner.os != 'Windows' && steps.mitmproxy-cache-restore.outputs.cache-hit != 'true'
+      if: >
+        matrix.extent != 'build-only' &&
+        steps.mitmproxy-cache-restore.outputs.cache-hit != 'true'
       run: |
         echo 'Cache not found; see the previous step.'
         exit 1
     - name: Install mitmproxy
-      if: runner.os != 'Windows'
+      if: matrix.extent != 'build-only'
       uses: ./.github/actions/install-mitmproxy
     - name: Start mitmdump
-      if: runner.os != 'Windows'
-      run: mitmdump --server-replay ${{ env.FLOWS_FILE }} --server-replay-reuse --set connection_strategy=lazy --server-replay-extra=kill &
+      if: matrix.extent != 'build-only'
+      run: |
+        mitmdump --server-replay ${{ env.FLOWS_FILE }} --server-replay-reuse \
+          --set connection_strategy=lazy --server-replay-extra=kill &
     - name: Run tests
-      if: runner.os != 'Windows'
+      if: matrix.extent != 'build-only'
       env:
         ALL_PROXY: http://127.0.0.1:8080
       run: cargo test --no-fail-fast --locked
