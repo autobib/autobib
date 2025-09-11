@@ -78,15 +78,14 @@ fn main() {
         cli.no_interactive = true;
     }
 
-    #[cfg(not(any(feature = "localwrite", feature = "localread")))]
+    #[cfg(not(any(feature = "write_response_cache", feature = "read_response_cache")))]
     let client = http::UreqClient::new();
 
-    #[cfg(feature = "localread")]
-    #[cfg_attr(feature = "localwrite", allow(unused))]
-    let client = http::localproxy::LocalReadClient::new();
+    #[cfg(all(feature = "write_response_cache", not(feature = "read_response_cache")))]
+    let client = http::cache::LocalWriteClient::new();
 
-    #[cfg(feature = "localwrite")]
-    let client = http::localproxy::LocalWriteClient::new();
+    #[cfg(feature = "read_response_cache")]
+    let client = http::cache::LocalReadClient::new();
 
     // run the cli
     if let Err(err) = run_cli(cli, client) {

@@ -15,24 +15,25 @@ env:
   RUST_BACKTRACE: 1
 
   REMOTES_FILE: tests/remotes.txt
-  FLOWS_FILE: mitmproxy/flows
+  AUTOBIB_RESPONSE_CACHE_FILE: responses.dat
+  CACHE_PREFIX: responses
 
 jobs:
-  mitmproxy-flows:
-    name: Prepare mitmproxy flows
-    uses: ./.github/workflows/mitmdump.yml
+  prepare-response-cache:
+    strategy:
+      matrix:
+        image: [ubuntu-latest, macos-latest, windows-latest]
+    name: Prepare response cache
+    uses: ./.github/workflows/response_cache.yml
+    with:
+      runner_image: ${{ matrix.image }}
 
   tests:
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
-        toolchain: [stable]
-        include:
-          - os: windows-latest
-            toolchain: stable
-            extent: build-only
-    runs-on: ${{ matrix.os }}
-    needs: mitmproxy-flows
+        image: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.image }}
+    needs: prepare-response-cache
     steps:
     - name: Configure Git on Windows
       if: runner.os == 'Windows'
@@ -41,35 +42,15 @@ jobs:
     - uses: dtolnay/rust-toolchain@stable
     - uses: Swatinem/rust-cache@v2
     - name: Build test binaries
-      run: cargo test --no-run --locked
-    - name: Get cached mitmproxy flows
-      id: mitmproxy-cache-restore
-      if: matrix.extent != 'build-only'
+      run: cargo test --no-run --locked --features read_response_cache
+    - name: Get cached response data
+      id: response-cache-restore
       uses: actions/cache/restore@v4
       with:
-        path: ${{ env.FLOWS_FILE }}
-        key: mitmproxy-${{ hashFiles(env.REMOTES_FILE) }}
-        enableCrossOsArchive: true
-    - name: Fail on cache no-hit
-      if: >
-        matrix.extent != 'build-only' &&
-        steps.mitmproxy-cache-restore.outputs.cache-hit != 'true'
-      run: |
-        echo 'Cache not found; see the previous step.'
-        exit 1
-    - name: Install mitmproxy
-      if: matrix.extent != 'build-only'
-      uses: ./.github/actions/install-mitmproxy
-    - name: Start mitmdump
-      if: matrix.extent != 'build-only'
-      run: |
-        mitmdump --server-replay ${{ env.FLOWS_FILE }} --server-replay-reuse \
-          --set connection_strategy=lazy --server-replay-extra=kill &
+        path: ${{ env.AUTOBIB_RESPONSE_CACHE_FILE }}
+        key: ${{ env.CACHE_PREFIX }}-${{ matrix.image }}-${{ hashFiles(env.REMOTES_FILE) }}
     - name: Run tests
-      if: matrix.extent != 'build-only'
-      env:
-        ALL_PROXY: http://127.0.0.1:8080
-      run: cargo test --no-fail-fast --locked
+      run: cargo test --no-fail-fast --locked --features read_response_cache
 
   checks:
     runs-on: ubuntu-latest

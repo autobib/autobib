@@ -1,16 +1,10 @@
-#[cfg(feature = "localread")]
+#[cfg(feature = "read_response_cache")]
 pub mod read;
 
-#[cfg(feature = "localwrite")]
+#[cfg(all(feature = "write_response_cache", not(feature = "read_response_cache")))]
 pub mod write;
 
-#[cfg(feature = "localread")]
-pub use read::LocalReadClient;
-
-#[cfg(feature = "localwrite")]
-pub use write::LocalWriteClient;
-
-use std::collections::HashMap;
+use std::{borrow::Cow, collections::HashMap, env::VarError, path::Path};
 
 use bincode::{Decode, Encode};
 use ureq::{
@@ -21,6 +15,12 @@ use ureq::{
     },
 };
 
+use crate::logger::warn;
+#[cfg(feature = "read_response_cache")]
+pub use read::LocalReadClient;
+#[cfg(all(feature = "write_response_cache", not(feature = "read_response_cache")))]
+pub use write::LocalWriteClient;
+
 /// A raw representation of the bytes of a HTTP/1.1 response.
 #[derive(Debug, PartialEq, Clone, Decode, Encode)]
 pub struct ResponseBytes {
@@ -29,7 +29,20 @@ pub struct ResponseBytes {
     pub body: Vec<u8>,
 }
 
-static LOCALPROXY_DATA_FILE: &str = "localproxy.dat";
+static DEFAULT_RESPONSE_CACHE_FILE: &str = "response.dat";
+
+fn response_cache_file() -> Cow<'static, Path> {
+    match std::env::var("AUTOBIB_RESPONSE_CACHE_FILE") {
+        Ok(s) => return Cow::Owned(s.into()),
+        Err(VarError::NotPresent) => {}
+        Err(VarError::NotUnicode(_)) => {
+            warn!(
+                "Variable 'AUTOBIB_RESPONSE_CACHE_FILE' is not Unicode. Falling back to default value: '{DEFAULT_RESPONSE_CACHE_FILE}'"
+            );
+        }
+    }
+    Cow::Borrowed(Path::new(DEFAULT_RESPONSE_CACHE_FILE))
+}
 
 impl TryFrom<&ResponseBytes> for Response<Body> {
     type Error = ureq::Error;
