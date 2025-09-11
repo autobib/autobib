@@ -1,16 +1,24 @@
-#[cfg(any(feature = "localread", feature = "localwrite"))]
-pub mod localproxy;
+//! # Abstractions over HTTP requests
+//!
+//! This module provides the [`Client`] trait, which is an abstraction over an HTTP client which
+//! can convert URIs into HTTP Response data.
+
+#[cfg(any(feature = "read_response_cache", feature = "write_response_cache"))]
+pub mod cache;
 
 use ureq::{
-    Agent, Body,
+    Body,
     http::{self, Uri},
 };
 
 use crate::error::ProviderError;
 
-pub trait Client: Sized {
+/// Abstraction over a HTTP client.
+pub trait Client {
+    /// An HTTP response body which can be efficiently converted into raw bytes.
     type Body: BodyBytes;
 
+    /// Returns the HTTP/1.1 response obtained by a `GET` request to the provided URI.
     fn get<T>(&self, uri: T) -> Result<http::Response<Self::Body>, ProviderError>
     where
         Uri: TryFrom<T>,
@@ -18,6 +26,7 @@ pub trait Client: Sized {
 }
 
 pub trait BodyBytes {
+    /// Convert the response body into raw bytes.
     fn bytes(self) -> Result<Vec<u8>, ProviderError>;
 }
 
@@ -33,13 +42,16 @@ impl BodyBytes for Vec<u8> {
     }
 }
 
-#[cfg_attr(feature = "localread", allow(unused))]
+/// The standard HTTP client, which makes genuine HTTP/1.1 requests using an internal
+/// [`ureq::Agent`].
+#[cfg(not(feature = "read_response_cache"))]
 pub struct UreqClient {
-    inner: Agent,
+    inner: ureq::Agent,
 }
 
-#[cfg_attr(feature = "localread", allow(unused))]
+#[cfg(not(feature = "read_response_cache"))]
 impl UreqClient {
+    /// Construct a new HTTP client with default configuration and correct user agent.
     pub fn new() -> Self {
         static APP_USER_AGENT: &str = concat!(
             env!("CARGO_PKG_NAME"),
@@ -52,16 +64,17 @@ impl UreqClient {
             ")",
         );
 
-        let config = Agent::config_builder()
+        let config = ureq::Agent::config_builder()
             .user_agent(APP_USER_AGENT)
             .https_only(true)
             .http_status_as_error(false)
             .build();
-        let inner = Agent::new_with_config(config);
+        let inner = ureq::Agent::new_with_config(config);
         Self { inner }
     }
 }
 
+#[cfg(not(feature = "read_response_cache"))]
 impl Client for UreqClient {
     type Body = Body;
 

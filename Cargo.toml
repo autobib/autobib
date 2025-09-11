@@ -13,8 +13,8 @@ rust-version = "1.89"
 edition = "2024"
 
 [features]
-localread = ["dep:bincode"]
-localwrite = ["dep:bincode"]
+read_response_cache = ["dep:bincode"]
+write_response_cache = ["dep:bincode"]
 
 [dependencies]
 anyhow = "1.0"
@@ -50,7 +50,6 @@ walkdir = "2.5"
 [dev-dependencies]
 assert_cmd = "2.0"
 assert_fs = "1.1"
-bincode = "2.0"
 predicates = "3.1"
 
 [profile.release]

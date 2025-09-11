@@ -818,9 +818,16 @@ fn test_path_platform_consistency() -> Result<()> {
 
     let mut cmd = s.cmd()?;
     cmd.args(["path", "zbl:1337.28015"]);
-    cmd.assert().success().stdout(predicate::str::ends_with(
-        "/zbmath/JX/TT/CT/GA3DGNBWGQ3DC===/\n",
-    ));
+
+    #[cfg(windows)]
+    let value = "\\zbmath\\JX\\TT\\CT\\GA3DGNBWGQ3DC===\\\n";
+
+    #[cfg(not(windows))]
+    let value = "/zbmath/JX/TT/CT/GA3DGNBWGQ3DC===/\n";
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::ends_with(value));
 
     let mut cmd = s.cmd()?;
     cmd.args([
@@ -831,11 +838,17 @@ fn test_path_platform_consistency() -> Result<()> {
     ]);
     cmd.assert().success();
 
+    #[cfg(windows)]
+    let value = "\\doi\\XN\\UL\\PE\\GEYC4MJQGE3C6MBQGIYS2OBWHEZSQOBZFE4TAMRVGYWTC===\\\n";
+
+    #[cfg(not(windows))]
+    let value = "/doi/XN/UL/PE/GEYC4MJQGE3C6MBQGIYS2OBWHEZSQOBZFE4TAMRVGYWTC===/\n";
+
     let mut cmd = s.cmd()?;
     cmd.args(["path", "my-alias"]);
-    cmd.assert().success().stdout(predicate::str::ends_with(
-        "/doi/XN/UL/PE/GEYC4MJQGE3C6MBQGIYS2OBWHEZSQOBZFE4TAMRVGYWTC===/\n",
-    ));
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::ends_with(value));
 
     s.close()
 }

@@ -7,13 +7,13 @@ use std::{
 use bincode::config;
 use ureq::http::Uri;
 
-use super::{LOCALPROXY_DATA_FILE, ResponseBytes};
+use super::{ResponseBytes, response_cache_file};
 use crate::{
     error::ProviderError,
     http::{Client, UreqClient},
 };
 
-/// A client which intercepts HTTP responses and writes them to the the `localproxy.dat` file for
+/// A client which intercepts HTTP responses and writes them to a response cache file for
 /// subsequent use by `LocalReadClient`.
 pub struct LocalWriteClient {
     lookup: Arc<Mutex<HashMap<String, ResponseBytes>>>,
@@ -31,13 +31,16 @@ impl LocalWriteClient {
 
 impl Drop for LocalWriteClient {
     fn drop(&mut self) {
-        let mut lookup_file = File::create(LOCALPROXY_DATA_FILE).expect(&format!(
-            "Failed to create proxy data file '{}'!",
-            LOCALPROXY_DATA_FILE
-        ));
+        let data_file = response_cache_file();
+        let mut lookup_file = File::create(&data_file).unwrap_or_else(|_| {
+            panic!(
+                "Failed to create response cache file '{}'",
+                data_file.display()
+            )
+        });
 
         bincode::encode_into_std_write(&self.lookup, &mut lookup_file, config::standard())
-            .expect("Failed to encode lookup table into 'localproxy.dat'!");
+            .expect("Failed to encode lookup table");
     }
 }
 
