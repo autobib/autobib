@@ -13,7 +13,8 @@ rust-version = "1.89"
 edition = "2024"
 
 [features]
-localproxy = ["dep:bincode"]
+localread = ["dep:bincode"]
+localwrite = ["dep:bincode"]
 
 [dependencies]
 anyhow = "1.0"

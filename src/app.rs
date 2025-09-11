@@ -57,7 +57,7 @@ use self::{
 pub use self::cli::{Cli, Command, ReadOnlyInvalid};
 
 /// Run the CLI.
-pub fn run_cli<C: Client>(cli: Cli) -> Result<()> {
+pub fn run_cli<C: Client>(cli: Cli, client: C) -> Result<()> {
     info!(
         "Autobib version: {} (database version: {})",
         env!("CARGO_PKG_VERSION"),
@@ -97,9 +97,6 @@ pub fn run_cli<C: Client>(cli: Cli) -> Result<()> {
         || (strategy.config_dir().join("config.toml"), true),
         |path| (path, false),
     );
-
-    // Initialize the reqwest Client
-    let client = C::new();
 
     // Run the cli
     match cli.command {

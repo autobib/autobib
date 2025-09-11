@@ -1,4 +1,4 @@
-use std::{path::PathBuf, str::from_utf8_unchecked};
+use std::path::PathBuf;
 
 use data_encoding::BASE32;
 use rapidhash::v1::rapidhash_v1;
@@ -30,14 +30,13 @@ impl PathHash for RemoteId {
         let sub_id_hash: [u8; 8] = rapidhash_v1(sub_id_bytes).to_le_bytes();
 
         let mut buffer = [0; 8];
-        BASE32.encode_mut(&sub_id_hash[..4], &mut buffer);
+        let res = BASE32.encode_mut_str(&sub_id_hash[..4], &mut buffer);
         let sub_id_encoded: String = BASE32.encode(sub_id_bytes);
         path_buf.extend([
             self.provider(),
-            // SAFETY: BASE32 encoding only returns ASCII bytes
-            unsafe { from_utf8_unchecked(&buffer[0..2]) },
-            unsafe { from_utf8_unchecked(&buffer[2..4]) },
-            unsafe { from_utf8_unchecked(&buffer[4..6]) },
+            &res[0..2],
+            &res[2..4],
+            &res[4..6],
             &sub_id_encoded,
         ]);
     }

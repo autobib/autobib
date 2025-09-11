@@ -4,7 +4,7 @@ use regex::Regex;
 use serde_bibtex::de::Deserializer;
 
 use super::{
-    Client, ProviderBibtex, ProviderError, RecordData, Response, StatusCode, ValidationOutcome,
+    BodyBytes, Client, ProviderBibtex, ProviderError, RecordData, StatusCode, ValidationOutcome,
 };
 
 static DOI_IDENTIFIER_RE: LazyLock<Regex> =
@@ -15,12 +15,12 @@ pub fn is_valid_id(id: &str) -> ValidationOutcome {
 }
 
 pub fn get_record<C: Client>(id: &str, client: &C) -> Result<Option<RecordData>, ProviderError> {
-    let mut response = client.get(format!(
+    let response = client.get(format!(
         "https://api.crossref.org/works/{id}/transform/application/x-bibtex"
     ))?;
 
     let body = match response.status() {
-        StatusCode::OK => response.bytes()?,
+        StatusCode::OK => response.into_body().bytes()?,
         StatusCode::NOT_FOUND => {
             return Ok(None);
         }

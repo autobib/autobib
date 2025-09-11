@@ -6,7 +6,7 @@ use rsxiv::{
 use serde::Deserialize;
 
 use super::{
-    Client, EntryType, ProviderError, RecordData, RecordDataError, Response as _, StatusCode,
+    BodyBytes, Client, EntryType, ProviderError, RecordData, RecordDataError, StatusCode,
     ValidationOutcome,
 };
 
@@ -93,10 +93,10 @@ impl TryFrom<Entry> for RecordData {
 }
 
 pub fn get_record<C: Client>(id: &str, client: &C) -> Result<Option<RecordData>, ProviderError> {
-    let mut response = client.get(format!("https://export.arxiv.org/api/query?id_list={id}"))?;
+    let response = client.get(format!("https://export.arxiv.org/api/query?id_list={id}"))?;
 
     let body = match response.status() {
-        StatusCode::OK => response.bytes()?,
+        StatusCode::OK => response.into_body().bytes()?,
         StatusCode::NOT_FOUND => {
             return Ok(None);
         }

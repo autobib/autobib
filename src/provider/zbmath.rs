@@ -1,7 +1,7 @@
 use serde_bibtex::de::Deserializer;
 
 use super::{
-    Client, ProviderBibtex, ProviderError, RecordData, Response, StatusCode, ValidationOutcome,
+    BodyBytes, Client, ProviderBibtex, ProviderError, RecordData, StatusCode, ValidationOutcome,
 };
 
 pub fn is_valid_id(id: &str) -> ValidationOutcome {
@@ -21,10 +21,10 @@ pub fn get_record<C: Client>(id: &str, client: &C) -> Result<Option<RecordData>,
     // It might be tempting to use the zbMATH REST API (https://api.zbmath.org/v1/).
     // However, sometimes this API endpoint will return incomplete data as a result of
     // licensing issues. On the other hand, the BibTeX record always works.
-    let mut response = client.get(format!("https://zbmath.org/bibtex/{id}.bib"))?;
+    let response = client.get(format!("https://zbmath.org/bibtex/{id}.bib"))?;
 
     let body = match response.status() {
-        StatusCode::OK => response.bytes()?,
+        StatusCode::OK => response.into_body().bytes()?,
         StatusCode::FORBIDDEN => {
             return Err(ProviderError::Unexpected(
                 "zbMATH server is temporarily inaccessible; try again later.".into(),

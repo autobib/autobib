@@ -6,7 +6,7 @@ use serde::Deserialize;
 use crate::logger::info;
 
 use super::{
-    Client, EntryType, ProviderError, RecordData, Response, StatusCode, ValidationOutcome,
+    BodyBytes, Client, EntryType, ProviderError, RecordData, StatusCode, ValidationOutcome,
 };
 
 static OL_IDENTIFIER_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[0-9]{7,8}M$").unwrap());
@@ -45,10 +45,10 @@ struct OpenLibraryRecord {
 }
 
 pub fn get_record<C: Client>(id: &str, client: &C) -> Result<Option<RecordData>, ProviderError> {
-    let mut response = client.get(format!("https://openlibrary.org/books/OL{id}.json"))?;
+    let response = client.get(format!("https://openlibrary.org/books/OL{id}.json"))?;
 
     let body = match response.status() {
-        StatusCode::OK => response.bytes()?,
+        StatusCode::OK => response.into_body().bytes()?,
         StatusCode::NOT_FOUND => {
             return Ok(None);
         }
@@ -81,10 +81,10 @@ pub fn get_record<C: Client>(id: &str, client: &C) -> Result<Option<RecordData>,
 
                 for AuthorID { key } in authors {
                     info!("Making remote request for OpenLibrary author at {key}");
-                    let mut response = client.get(format!("https://openlibrary.org{key}.json"))?;
+                    let response = client.get(format!("https://openlibrary.org{key}.json"))?;
 
                     let body = match response.status() {
-                        StatusCode::OK => response.bytes()?,
+                        StatusCode::OK => response.into_body().bytes()?,
                         code => return Err(ProviderError::UnexpectedStatusCode(code)),
                     };
 
