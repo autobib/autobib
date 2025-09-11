@@ -27,3 +27,9 @@ impl From<RecordError> for ProviderError {
         Self::InvalidIdFromProvider(input)
     }
 }
+
+impl From<ureq::http::Error> for ProviderError {
+    fn from(value: ureq::http::Error) -> Self {
+        Self::NetworkFailure(ureq::Error::Http(value))
+    }
+}

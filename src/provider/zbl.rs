@@ -4,7 +4,7 @@ use regex::Regex;
 use serde::Deserialize;
 use serde_bibtex::de::Deserializer;
 
-use super::{Client, ProviderError, RemoteId, Response, StatusCode, ValidationOutcome};
+use super::{BodyBytes, Client, ProviderError, RemoteId, StatusCode, ValidationOutcome};
 
 static ZBL_IDENTIFIER_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[0-9]{4}\.[0-9]{5}$").unwrap());
@@ -19,10 +19,10 @@ struct OnlyEntryKey<'r> {
 }
 
 pub fn get_canonical<C: Client>(id: &str, client: &C) -> Result<Option<RemoteId>, ProviderError> {
-    let mut response = client.get(format!("https://zbmath.org/bibtex/{id}.bib"))?;
+    let response = client.get(format!("https://zbmath.org/bibtex/{id}.bib"))?;
 
     let body = match response.status() {
-        StatusCode::OK => response.bytes()?,
+        StatusCode::OK => response.into_body().bytes()?,
         StatusCode::FORBIDDEN => {
             return Err(ProviderError::Unexpected(
                 "zbMATH server is temporarily inaccessible; try again later.".into(),

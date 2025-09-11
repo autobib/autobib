@@ -2,7 +2,7 @@ use std::sync::LazyLock;
 
 use regex::{Regex, bytes::Regex as BytesRegex};
 
-use super::{Client, ProviderError, RemoteId, Response, StatusCode, ValidationOutcome};
+use super::{BodyBytes, Client, ProviderError, RemoteId, StatusCode, ValidationOutcome};
 
 static JFM_IDENTIFIER_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[0-9]{2}\.[0-9]{4}\.[0-9]{2}$").unwrap());
@@ -15,10 +15,10 @@ pub fn is_valid_id(id: &str) -> ValidationOutcome {
 
 pub fn get_canonical<C: Client>(id: &str, client: &C) -> Result<Option<RemoteId>, ProviderError> {
     let url = format!("https://zbmath.org/{id}");
-    let mut response = client.get(&url)?;
+    let response = client.get(&url)?;
 
     let body = match response.status() {
-        StatusCode::OK => response.bytes()?,
+        StatusCode::OK => response.into_body().bytes()?,
         StatusCode::NOT_FOUND => {
             return Ok(None);
         }

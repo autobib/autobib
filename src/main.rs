@@ -25,7 +25,6 @@ use self::{
     app::{Cli, Command, ReadOnlyInvalid, run_cli},
     db::CitationKey,
     entry::RawRecordData,
-    http::UreqClient,
     logger::{Logger, info, reraise},
 };
 
@@ -79,8 +78,18 @@ fn main() {
         cli.no_interactive = true;
     }
 
+    #[cfg(not(any(feature = "localwrite", feature = "localread")))]
+    let client = http::UreqClient::new();
+
+    #[cfg(feature = "localread")]
+    #[cfg_attr(feature = "localwrite", allow(unused))]
+    let client = http::localproxy::LocalReadClient::new();
+
+    #[cfg(feature = "localwrite")]
+    let client = http::localproxy::LocalWriteClient::new();
+
     // run the cli
-    if let Err(err) = run_cli::<UreqClient>(cli) {
+    if let Err(err) = run_cli(cli, client) {
         reraise(&err);
     }
 
