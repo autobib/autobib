@@ -18,10 +18,22 @@ pub struct Cli {
     pub command: Command,
 
     /// Use record database.
-    #[arg(short, long, value_name = "PATH", env = "AUTOBIB_DATABASE_PATH")]
+    #[arg(
+        short = 'D',
+        long,
+        value_name = "PATH",
+        env = "AUTOBIB_DATABASE_PATH",
+        global = true
+    )]
     pub database: Option<PathBuf>,
     /// Use configuration file.
-    #[arg(short, long, value_name = "PATH", env = "AUTOBIB_CONFIG_PATH")]
+    #[arg(
+        short = 'C',
+        long,
+        value_name = "PATH",
+        env = "AUTOBIB_CONFIG_PATH",
+        global = true
+    )]
     pub config: Option<PathBuf>,
     /// Use directory for attachments.
     #[arg(long, value_name = "PATH", env = "AUTOBIB_ATTACHMENTS_DIRECTORY")]
