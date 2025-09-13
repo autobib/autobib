@@ -29,19 +29,19 @@ pub struct ResponseBytes {
     pub body: Vec<u8>,
 }
 
-static DEFAULT_RESPONSE_CACHE_FILE: &str = "response.dat";
+static DEFAULT_RESPONSE_CACHE_PATH: &str = "response.dat";
 
 fn response_cache_file() -> Cow<'static, Path> {
-    match std::env::var("AUTOBIB_RESPONSE_CACHE_FILE") {
+    match std::env::var("AUTOBIB_RESPONSE_CACHE_PATH") {
         Ok(s) => return Cow::Owned(s.into()),
         Err(VarError::NotPresent) => {}
         Err(VarError::NotUnicode(_)) => {
             warn!(
-                "Variable 'AUTOBIB_RESPONSE_CACHE_FILE' is not Unicode. Falling back to default value: '{DEFAULT_RESPONSE_CACHE_FILE}'"
+                "Variable 'AUTOBIB_RESPONSE_CACHE_PATH' is not Unicode. Falling back to default value: '{DEFAULT_RESPONSE_CACHE_PATH}'"
             );
         }
     }
-    Cow::Borrowed(Path::new(DEFAULT_RESPONSE_CACHE_FILE))
+    Cow::Borrowed(Path::new(DEFAULT_RESPONSE_CACHE_PATH))
 }
 
 impl TryFrom<&ResponseBytes> for Response<Body> {

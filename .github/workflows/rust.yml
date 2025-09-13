@@ -15,7 +15,7 @@ env:
   RUST_BACKTRACE: 1
 
   REMOTES_FILE: tests/remotes.txt
-  AUTOBIB_RESPONSE_CACHE_FILE: responses.dat
+  AUTOBIB_RESPONSE_CACHE_PATH: responses.dat
   CACHE_PREFIX: responses
 
 jobs:
@@ -47,7 +47,7 @@ jobs:
       id: response-cache-restore
       uses: actions/cache/restore@v4
       with:
-        path: ${{ env.AUTOBIB_RESPONSE_CACHE_FILE }}
+        path: ${{ env.AUTOBIB_RESPONSE_CACHE_PATH }}
         key: ${{ env.CACHE_PREFIX }}-${{ matrix.image }}-${{ hashFiles(env.REMOTES_FILE) }}
     - name: Run tests
       run: cargo test --no-fail-fast --locked --features read_response_cache
