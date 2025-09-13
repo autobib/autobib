@@ -1,4 +1,5 @@
 name: Rust
+description: Run Rust tests and checks
 
 on:
   pull_request:
@@ -19,36 +20,44 @@ env:
   CACHE_PREFIX: responses
 
 jobs:
-  prepare-response-cache:
-    strategy:
-      matrix:
-        image: [ubuntu-latest, macos-latest, windows-latest]
-    name: Prepare response cache
-    uses: ./.github/workflows/response_cache.yml
-    with:
-      runner_image: ${{ matrix.image }}
-
   tests:
     strategy:
       matrix:
         image: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.image }}
-    needs: prepare-response-cache
     steps:
+    # Windows configuration; this has to run before checkout!
     - name: Configure Git on Windows
       if: runner.os == 'Windows'
       run: git config --global core.autocrlf false
+
     - uses: actions/checkout@v5
     - uses: dtolnay/rust-toolchain@stable
     - uses: Swatinem/rust-cache@v2
-    - name: Build test binaries
-      run: cargo test --no-run --locked --features read_response_cache
+
+    # Load/create HTTP response cache
     - name: Get cached response data
       id: response-cache-restore
       uses: actions/cache/restore@v4
       with:
         path: ${{ env.AUTOBIB_RESPONSE_CACHE_PATH }}
         key: ${{ env.CACHE_PREFIX }}-${{ matrix.image }}-${{ hashFiles(env.REMOTES_FILE) }}
+    - name: Build response cache binary
+      if: ${{ steps.response-cache-restore.outputs.cache-hit != 'true' }}
+      run: cargo build --locked --features write_response_cache
+    - name: Create response cache
+      if: ${{ steps.response-cache-restore.outputs.cache-hit != 'true' }}
+      run: cat '${{ env.REMOTES_FILE }}' | xargs -- cargo run --locked --features write_response_cache -- -vv get --retrieve-only --ignore-null
+    - name: Save response cache
+      if: ${{ steps.response-cache-restore.outputs.cache-hit != 'true' }}
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ env.AUTOBIB_RESPONSE_CACHE_PATH }}
+        key: ${{ env.CACHE_PREFIX }}-${{ matrix.image }}-${{ hashFiles(env.REMOTES_FILE) }}
+
+    # Actually run tests
+    - name: Build test binaries
+      run: cargo test --no-run --locked --features read_response_cache
     - name: Run tests
       run: cargo test --no-fail-fast --locked --features read_response_cache
 
@@ -66,3 +75,9 @@ jobs:
       run: cargo clippy --locked
     - name: Check formatting
       run: cargo fmt --check
+    - name: Check remotes file is sorted
+      shell: bash
+      run: sort -C ${{ env.REMOTES_FILE }}
+    - name: Check remotes file contains no duplicates
+      shell: bash
+      run: test "$(cat ${{ env.REMOTES_FILE }} | uniq -d | wc -w)" -eq 0
