@@ -2,12 +2,13 @@
 set -euo pipefail
 
 REMOTES_FILE="tests/remotes.txt"
+CACHE_FORMAT_DEF="src/http/cache/format.rs"
+CACHE_ROOT="cache"
 
 # set up cache directory
-CACHE_ROOT="cache"
 mkdir -p $CACHE_ROOT
 touch $CACHE_ROOT/CACHEDIR.TAG
-HASH="$(cat $REMOTES_FILE src/http/cache.rs | sha256)"
+HASH="$(cat $REMOTES_FILE $CACHE_FORMAT_DEF | sha256)"
 CACHE_DIR="$CACHE_ROOT/test-cache-$HASH"
 
 

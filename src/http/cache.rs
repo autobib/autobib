@@ -1,12 +1,11 @@
+mod format;
 #[cfg(feature = "read_response_cache")]
 pub mod read;
-
 #[cfg(all(feature = "write_response_cache", not(feature = "read_response_cache")))]
 pub mod write;
 
 use std::{borrow::Cow, collections::HashMap, env::VarError, path::Path};
 
-use bincode::{Decode, Encode};
 use ureq::{
     Body,
     http::{
@@ -16,18 +15,12 @@ use ureq::{
 };
 
 use crate::logger::warn;
+pub use format::ResponseBytes;
 #[cfg(feature = "read_response_cache")]
 pub use read::LocalReadClient;
+
 #[cfg(all(feature = "write_response_cache", not(feature = "read_response_cache")))]
 pub use write::LocalWriteClient;
-
-/// A raw representation of the bytes of a HTTP/1.1 response.
-#[derive(Debug, PartialEq, Clone, Decode, Encode)]
-pub struct ResponseBytes {
-    pub status: u16,
-    pub headers: HashMap<Vec<u8>, Vec<u8>>,
-    pub body: Vec<u8>,
-}
 
 static DEFAULT_RESPONSE_CACHE_PATH: &str = "response.dat";
 

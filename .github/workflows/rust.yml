@@ -16,6 +16,7 @@ env:
   RUST_BACKTRACE: 1
 
   REMOTES_FILE: tests/remotes.txt
+  CACHE_FORMAT_DEF: src/http/cache/format.rs
   AUTOBIB_RESPONSE_CACHE_PATH: responses.dat
   CACHE_PREFIX: responses
 
@@ -36,24 +37,18 @@ jobs:
     - uses: Swatinem/rust-cache@v2
 
     # Load/create HTTP response cache
-    - name: Get cached response data
-      id: response-cache-restore
-      uses: actions/cache/restore@v4
+    - name: Set up response data cache
+      id: response-cache
+      uses: actions/cache@v4
       with:
         path: ${{ env.AUTOBIB_RESPONSE_CACHE_PATH }}
-        key: ${{ env.CACHE_PREFIX }}-${{ matrix.image }}-${{ hashFiles(env.REMOTES_FILE) }}
+        key: ${{ env.CACHE_PREFIX }}-${{ matrix.image }}-${{ hashFiles(env.REMOTES_FILE, env.CACHE_FORMAT_DEF) }}
     - name: Build response cache binary
-      if: ${{ steps.response-cache-restore.outputs.cache-hit != 'true' }}
+      if: steps.response-cache.outputs.cache-hit != 'true'
       run: cargo build --locked --features write_response_cache
     - name: Create response cache
-      if: ${{ steps.response-cache-restore.outputs.cache-hit != 'true' }}
+      if: steps.response-cache.outputs.cache-hit != 'true'
       run: cat '${{ env.REMOTES_FILE }}' | xargs -- cargo run --locked --features write_response_cache -- -vv get --retrieve-only --ignore-null
-    - name: Save response cache
-      if: ${{ steps.response-cache-restore.outputs.cache-hit != 'true' }}
-      uses: actions/cache/save@v4
-      with:
-        path: ${{ env.AUTOBIB_RESPONSE_CACHE_PATH }}
-        key: ${{ env.CACHE_PREFIX }}-${{ matrix.image }}-${{ hashFiles(env.REMOTES_FILE) }}
 
     # Actually run tests
     - name: Build test binaries
@@ -69,12 +64,16 @@ jobs:
       with:
         components: clippy, rustfmt
     - uses: Swatinem/rust-cache@v2
+
+    # Rust doc/fmt/clippy
     - name: Build docs
       run: cargo doc --no-deps --locked
     - name: Run Clippy lints
       run: cargo clippy --locked
     - name: Check formatting
       run: cargo fmt --check
+
+    # Check remotes file formatting
     - name: Check remotes file is sorted
       shell: bash
       run: sort -C ${{ env.REMOTES_FILE }}
