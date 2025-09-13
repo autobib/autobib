@@ -17,7 +17,7 @@ permissions:
 
 env:
   REMOTES_FILE: tests/remotes.txt
-  AUTOBIB_RESPONSE_CACHE_FILE: responses.dat
+  AUTOBIB_RESPONSE_CACHE_PATH: responses.dat
   CACHE_PREFIX: responses
 
 jobs:
@@ -37,7 +37,7 @@ jobs:
     - uses: actions/cache/restore@v4
       id: response-cache-restore
       with:
-        path: ${{ env.AUTOBIB_RESPONSE_CACHE_FILE }}
+        path: ${{ env.AUTOBIB_RESPONSE_CACHE_PATH }}
         key: ${{ env.CACHE_PREFIX }}-${{ inputs.runner_image }}-${{ hashFiles(env.REMOTES_FILE) }}
         lookup-only: true
 
@@ -66,5 +66,5 @@ jobs:
     - name: Save response cache
       uses: actions/cache/save@v4
       with:
-        path: ${{ env.AUTOBIB_RESPONSE_CACHE_FILE }}
+        path: ${{ env.AUTOBIB_RESPONSE_CACHE_PATH }}
         key: ${{ env.CACHE_PREFIX }}-${{ inputs.runner_image }}-${{ hashFiles(env.REMOTES_FILE) }}
