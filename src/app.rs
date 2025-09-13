@@ -32,7 +32,7 @@ use crate::{
     },
     entry::{Entry, EntryKey, RawRecordData, RecordData},
     error::AliasErrorKind,
-    http::HttpClient,
+    http::Client,
     logger::{debug, error, info, suggest, warn},
     normalize::{Normalization, Normalize},
     record::{Alias, Record, RecordId, RemoteId, get_record_row},
@@ -57,7 +57,7 @@ use self::{
 pub use self::cli::{Cli, Command, ReadOnlyInvalid};
 
 /// Run the CLI.
-pub fn run_cli(cli: Cli) -> Result<()> {
+pub fn run_cli<C: Client>(cli: Cli, client: C) -> Result<()> {
     info!(
         "Autobib version: {} (database version: {})",
         env!("CARGO_PKG_VERSION"),
@@ -97,10 +97,6 @@ pub fn run_cli(cli: Cli) -> Result<()> {
         || (strategy.config_dir().join("config.toml"), true),
         |path| (path, false),
     );
-
-    // Initialize the reqwest Client
-    let builder = HttpClient::default_builder();
-    let client = HttpClient::new(builder)?;
 
     // Run the cli
     match cli.command {

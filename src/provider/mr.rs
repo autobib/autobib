@@ -1,8 +1,9 @@
-use reqwest::StatusCode;
 use serde::Deserialize;
 use serde_bibtex::de::Deserializer;
 
-use super::{HttpClient, ProviderBibtex, ProviderError, RecordData, ValidationOutcome};
+use super::{
+    BodyBytes, Client, ProviderBibtex, ProviderError, RecordData, StatusCode, ValidationOutcome,
+};
 
 #[allow(dead_code)]
 #[derive(Deserialize)]
@@ -16,13 +17,13 @@ pub fn is_valid_id(id: &str) -> ValidationOutcome {
     (id.len() == 7 && id.as_bytes().iter().all(u8::is_ascii_digit)).into()
 }
 
-pub fn get_record(id: &str, client: &HttpClient) -> Result<Option<RecordData>, ProviderError> {
+pub fn get_record<C: Client>(id: &str, client: &C) -> Result<Option<RecordData>, ProviderError> {
     let response = client.get(format!(
         "https://mathscinet.ams.org/mathscinet/api/publications/format?formats=bib&ids={id}"
     ))?;
 
     let body = match response.status() {
-        StatusCode::OK => response.bytes()?,
+        StatusCode::OK => response.into_body().bytes()?,
         StatusCode::NOT_FOUND => {
             return Ok(None);
         }

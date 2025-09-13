@@ -6,7 +6,7 @@ use nonempty::NonEmpty;
 
 pub use self::key::{Alias, AliasOrRemoteId, MappedAliasOrRemoteId, MappedKey, RecordId, RemoteId};
 use crate::{
-    Config, HttpClient,
+    Config,
     config::AliasTransform,
     db::{
         RecordDatabase,
@@ -17,6 +17,7 @@ use crate::{
     },
     entry::{RawRecordData, RecordData},
     error::{Error, ProviderError, RecordError},
+    http::Client,
     logger::info,
     normalize::{Normalization, Normalize},
     provider::{RemoteResponse, get_remote_response},
@@ -132,12 +133,16 @@ fn row_to_response<'conn, K: Into<String>, T: From<RemoteRecordRowResponse<'conn
 ///
 /// The database state is passed back to the caller and must be commited for the record to be
 /// recorded in the database.
-pub fn get_record_row<'conn, F: FnOnce() -> Vec<(regex::Regex, String)>>(
+pub fn get_record_row<'conn, F, C>(
     db: &'conn mut RecordDatabase,
     record_id: RecordId,
-    client: &HttpClient,
+    client: &C,
     config: &Config<F>,
-) -> Result<RecordRowResponse<'conn>, Error> {
+) -> Result<RecordRowResponse<'conn>, Error>
+where
+    F: FnOnce() -> Vec<(regex::Regex, String)>,
+    C: Client,
+{
     match db.extended_state_from_record_id(record_id, &config.alias_transform)? {
         RecordIdState::Existent(key, row) => {
             info!("Found existing data for key {key}");
@@ -172,12 +177,16 @@ pub fn get_record_row<'conn, F: FnOnce() -> Vec<(regex::Regex, String)>>(
 }
 
 /// Get the [`Record`] associated with a [`RemoteId`].
-pub fn get_record_row_remote<'conn, F: FnOnce() -> Vec<(regex::Regex, String)>>(
+pub fn get_record_row_remote<'conn, F, C>(
     db: &'conn mut RecordDatabase,
     remote_id: RemoteId,
-    client: &HttpClient,
+    client: &C,
     config: &Config<F>,
-) -> Result<RemoteRecordRowResponse<'conn>, Error> {
+) -> Result<RemoteRecordRowResponse<'conn>, Error>
+where
+    F: FnOnce() -> Vec<(regex::Regex, String)>,
+    C: Client,
+{
     match db.state_from_remote_id(&remote_id)? {
         RemoteIdState::Existent(row) => {
             info!("Found existing data for key {remote_id}");
@@ -207,10 +216,10 @@ fn into_last<T>(ne: NonEmpty<T>) -> T {
 /// At each intermediate stage, attempt to read any data possible from the database
 /// inside the transaction implicit in the [`State<Missing>`], and write any new data to the
 /// database.
-fn get_record_row_recursive<'conn>(
+fn get_record_row_recursive<'conn, C: Client>(
     mut missing: State<'conn, Missing>,
     remote_id: RemoteId,
-    client: &HttpClient,
+    client: &C,
     normalization: &Normalization,
     exists_callback: impl FnOnce(&State<'conn, RecordRow>) -> Result<Option<String>, rusqlite::Error>,
 ) -> Result<RemoteRecordRowResponse<'conn>, Error> {
@@ -303,9 +312,9 @@ pub enum RecursiveRemoteResponse {
 ///
 /// This method does not involve any database reads or writes, and simply loops to obtain the
 /// remote record associated with a [`RemoteId`].
-pub fn get_remote_response_recursive(
+pub fn get_remote_response_recursive<C: Client>(
     remote_id: RemoteId,
-    client: &HttpClient,
+    client: &C,
 ) -> Result<RecursiveRemoteResponse, Error> {
     info!("Resolving remote record for '{remote_id}'");
     let mut history = NonEmpty::singleton(remote_id);
