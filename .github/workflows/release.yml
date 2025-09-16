@@ -240,4 +240,4 @@ jobs:
      - name: Publish release
        env:
          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_PUBLISH_TOKEN }}
-       run: cargo publish
+       run: cargo publish --dry-run
