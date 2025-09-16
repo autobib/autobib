@@ -14,9 +14,9 @@ cargo test --features read_response_cache
 ```
 
 ## Automated testing
-In order to automate the above steps, and also run other checks, you can use the [`test.sh`](../test.sh) shell scrip:
+In order to automate the above steps, and also run other checks, you can use [`scripts/test.sh`](../scripts/test.sh):
 ```sh
-./test.sh
+./scripts/test.sh
 ```
 The script automatically generates the cache files in paths the form `cache/test-cache-*/responses.dat`, and uses `cache/records.db` as a temporary database file to generate new caches.
 You can safely delete the `cache` directory as its contents are automatically created if required.
