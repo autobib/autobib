@@ -1,4 +1,4 @@
-name: Rust
+name: CI
 description: Run Rust tests and checks
 
 on:
