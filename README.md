@@ -16,8 +16,10 @@ Unlike other bibliography management tools such as [Zotero](https://www.zotero.o
 Moreover, Autobib is designed with first-class support for [BibTeX](https://en.wikipedia.org/wiki/BibTeX).
 
 ## Installation
+Pre-compiled binaries for recent tagged releases can be found on the [releases page](https://github.com/autobib/autobib/releases).
 
-Currently, the best way to install Autobib is to have the [rust toolchain](https://www.rust-lang.org/tools/install) installed on your device and run
+If a binary is not available for your platform, you can install from source.
+Make sure the [rust toolchain](https://www.rust-lang.org/tools/install) is installed on your device and run
 ```bash
 cargo install --locked autobib
 ```
