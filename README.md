@@ -1,12 +1,16 @@
-> [!CAUTION]
-> Autobib is **alpha software**.
+> [!WARNING]
+> Autobib is **beta software**.
 > 
 > - Things might be broken.
-> - All of your data might be deleted.
-> - The interface may change without warning in unexpected ways.
+> - Your data might be deleted.
+> - The interface may change between releases.
 > 
-> On the other hand, Autobib is currently usable, and you are welcome to try it out with these caveats in mind.
-> Please report any issues in the [issues page](https://github.com/autobib/autobib/issues).
+> On the other hand, core functionality of Autobib is currently quite stable (and under regular use by the authors).
+> If you use this software, please:
+>
+> - Keep regular backups of the `$XDG_DATA_HOME/autobib` directory, which contains the key user files which may be modified by this program.
+> - Follow updates by reading the [changelog files](docs/changelog).
+> - Report any issues in the [issues page](https://github.com/autobib/autobib/issues).
 
 # Autobib
 
