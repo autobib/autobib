@@ -2,8 +2,8 @@
 
 The testing facade can benefit from local caching of response data to reduce the number of network requests required for the tests to succeed.
 In order to generate the cache, run
-```sh
-xargs -a 'tests/remotes.txt' -d '\n' -- cargo run --features write_response_cache -- -vv get --retrieve-only --ignore-null
+```bash
+xargs -- cargo run --locked --features write_response_cache -- -vv get --retrieve-only --ignore-null < 'tests/remotes.txt'
 ```
 This will generate a file `responses.dat` in your working directory.
 You can choose an alternative location by setting the `AUTOBIB_RESPONSE_CACHE_PATH` environment variable.

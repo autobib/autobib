@@ -16,10 +16,6 @@ CACHE_DIR="${CACHE_ROOT}/test-cache-${HASH}"
 
 export AUTOBIB_RESPONSE_CACHE_PATH="${CACHE_DIR}/responses.dat"
 
-# temporary database file location: delete it if it already exists
-export AUTOBIB_DATABASE_PATH="${CACHE_DIR}/test-tmp-records.db"
-rm -f "${AUTOBIB_DATABASE_PATH}"
-
 if [[ ! -f "${AUTOBIB_RESPONSE_CACHE_PATH}" ]]; then
     echo "Cache file not found. Generating cache file: ${AUTOBIB_RESPONSE_CACHE_PATH}"
     

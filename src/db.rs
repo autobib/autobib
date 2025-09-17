@@ -199,7 +199,11 @@ impl RecordDatabase {
                 | OpenFlags::SQLITE_OPEN_CREATE
                 | OpenFlags::SQLITE_OPEN_NO_MUTEX
         };
+        #[cfg(not(feature = "write_response_cache"))]
         let mut conn = Connection::open_with_flags(db_path, flags)?;
+
+        #[cfg(feature = "write_response_cache")]
+        let mut conn = Connection::open_in_memory_with_flags(flags)?;
 
         Self::initialize(&mut conn, read_only)?;
 
