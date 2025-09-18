@@ -248,13 +248,16 @@ For this to take effect, remember to restart your shell or source the relevant f
 Then you can try typing `autobib f` and pressing the tab key.
 You should see `autobib find `.
 
-### Database and configuration file
+### User data and configuration file
 
 Autobib's SQLite database is by default kept at `$XDG_DATA_HOME/autobib/records.db`, or `~/.local/share/autobib/records.db` if `$XDG_DATA_HOME` is not set or empty.
-This path can also be modified with the `AUTOBIB_DATABASE_PATH` environment variable.
+This path can be modified with the `AUTOBIB_DATABASE_PATH` environment variable.
+
+Autobib stores file attachments in subfolders of `$XDG_DATA_HOME/autobib/attachments`, or `~/.local/share/autobib/attachments` if `$XDG_DATA_HOME` is not set or empty.
+This path can be modified with the `AUTOBIB_DATABASE_PATH` environment variable.
 
 Autobib supports basic global configuration through a TOML file which defaults to `$XDG_CONFIG_HOME/autobib/config.toml`, or `$HOME/.config/autobib/config.toml` if `$XDG_CONFIG_HOME` is not set or empty.
-This path can also be modified with the `AUTOBIB_CONFIG_PATH` environment variable.
+This path can be modified with the `AUTOBIB_CONFIG_PATH` environment variable.
 You can generate a default configuration file with `autobib default-config`, or view the configuration options [here](src/config/default_config.toml).
 
 ## License
