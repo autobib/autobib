@@ -1,9 +1,6 @@
 use std::fmt;
 
-use serde::{
-    Deserialize,
-    de::{self, Deserializer, Error, SeqAccess, Unexpected, Visitor},
-};
+use serde::de::{self, Deserializer, Error, SeqAccess, Unexpected, Visitor};
 
 use super::{
     Entry, EntryKey, EntryType, EntryTypeHeader, FieldKey, FieldValue, KeyHeader, RecordData,
@@ -97,14 +94,6 @@ impl<'de> de::Deserialize<'de> for Entry<RecordData> {
     where
         D: Deserializer<'de>,
     {
-        #[derive(Deserialize)]
-        #[serde(field_identifier, rename_all = "snake_case")]
-        enum StructField {
-            EntryType,
-            EntryKey,
-            Fields,
-        }
-
         struct EntryVisitor;
 
         impl<'de> Visitor<'de> for EntryVisitor {
