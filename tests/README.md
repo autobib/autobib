@@ -18,5 +18,8 @@ In order to automate the above steps, and also run other checks, you can use [`s
 ```sh
 ./scripts/test.sh
 ```
+This script has the following dependencies:
+- [`shellcheck`](https://www.shellcheck.net/)
+
 The script automatically generates the cache files in paths the form `cache/test-cache-*/responses.dat`, and uses `cache/records.db` as a temporary database file to generate new caches.
 You can safely delete the `cache` directory as its contents are automatically created if required.
