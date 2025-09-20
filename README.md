@@ -1,12 +1,16 @@
-> [!CAUTION]
-> Autobib is **alpha software**.
+> [!WARNING]
+> Autobib is **beta software**.
 > 
 > - Things might be broken.
-> - All of your data might be deleted.
-> - The interface may change without warning in unexpected ways.
+> - Your data might be deleted.
+> - The interface may change between releases.
 > 
-> On the other hand, Autobib is currently usable, and you are welcome to try it out with these caveats in mind.
-> Please report any issues in the [issues page](https://github.com/autobib/autobib/issues).
+> On the other hand, core functionality of Autobib is currently quite stable (and under regular use by the authors).
+> If you use this software, please:
+>
+> - Keep regular backups of the `$XDG_DATA_HOME/autobib` directory, which contains the key user files which may be modified by this program.
+> - Follow updates by reading the [changelog files](docs/changelog).
+> - Report any issues in the [issues page](https://github.com/autobib/autobib/issues).
 
 # Autobib
 
@@ -16,8 +20,10 @@ Unlike other bibliography management tools such as [Zotero](https://www.zotero.o
 Moreover, Autobib is designed with first-class support for [BibTeX](https://en.wikipedia.org/wiki/BibTeX).
 
 ## Installation
+Pre-compiled binaries for recent tagged releases can be found on the [releases page](https://github.com/autobib/autobib/releases).
 
-Currently, the best way to install Autobib is to have the [rust toolchain](https://www.rust-lang.org/tools/install) installed on your device and run
+If a binary is not available for your platform, you can install from source.
+Make sure the [rust toolchain](https://www.rust-lang.org/tools/install) is installed on your device and run
 ```bash
 cargo install --locked autobib
 ```
@@ -242,13 +248,16 @@ For this to take effect, remember to restart your shell or source the relevant f
 Then you can try typing `autobib f` and pressing the tab key.
 You should see `autobib find `.
 
-### Database and configuration file
+### User data and configuration file
 
 Autobib's SQLite database is by default kept at `$XDG_DATA_HOME/autobib/records.db`, or `~/.local/share/autobib/records.db` if `$XDG_DATA_HOME` is not set or empty.
-This path can also be modified with the `AUTOBIB_DATABASE_PATH` environment variable.
+This path can be modified with the `AUTOBIB_DATABASE_PATH` environment variable.
+
+Autobib stores file attachments in subfolders of `$XDG_DATA_HOME/autobib/attachments`, or `~/.local/share/autobib/attachments` if `$XDG_DATA_HOME` is not set or empty.
+This path can be modified with the `AUTOBIB_DATABASE_PATH` environment variable.
 
 Autobib supports basic global configuration through a TOML file which defaults to `$XDG_CONFIG_HOME/autobib/config.toml`, or `$HOME/.config/autobib/config.toml` if `$XDG_CONFIG_HOME` is not set or empty.
-This path can also be modified with the `AUTOBIB_CONFIG_PATH` environment variable.
+This path can be modified with the `AUTOBIB_CONFIG_PATH` environment variable.
 You can generate a default configuration file with `autobib default-config`, or view the configuration options [here](src/config/default_config.toml).
 
 ## License

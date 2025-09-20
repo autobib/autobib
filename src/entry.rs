@@ -4,10 +4,7 @@ mod deserialize;
 use std::{fmt, str::FromStr};
 
 use delegate::delegate;
-use serde::{
-    Deserialize,
-    ser::{Serialize, SerializeSeq, SerializeStruct, Serializer},
-};
+use serde::ser::{Serialize, SerializeSeq, SerializeStruct, Serializer};
 use serde_bibtex::{MacroDictionary, de::Deserializer, to_string_unchecked};
 
 pub use self::data::{
@@ -73,15 +70,6 @@ impl<D: EntryData> Serialize for Entry<D> {
         state.serialize_field("fields", &RecordDataWrapper(&self.record_data))?;
         state.end()
     }
-}
-
-/// A temporary struct used as an intermediate deserialization target, which can be easily
-/// converted into an [`Entry`].
-#[derive(Debug, PartialEq, Deserialize)]
-struct Contents {
-    entry_type: String,
-    entry_key: String,
-    fields: Vec<(String, String)>,
 }
 
 pub fn entries_from_bibtex(
