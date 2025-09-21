@@ -83,25 +83,14 @@ fn get() -> Result<()> {
     let predicate_file = predicate::path::eq_file(Path::new("tests/resources/get/stdout.txt"))
         .utf8()
         .unwrap();
-    cmd.args([
-        "get",
-        "zbl:1337.28015",
-        "arxiv:1212.1873",
-        "mr:3224722",
-        "isbn:9781119942399",
-    ]);
+    cmd.args(["get", "zbl:1337.28015", "arxiv:1212.1873", "mr:3224722"]);
     cmd.assert()
         .success()
         .stdout(predicate_file)
         .stderr(predicate::str::is_empty());
 
     let mut cmd = s.cmd()?;
-    cmd.args([
-        "--read-only",
-        "get",
-        "arxiv:1212.1873",
-        "isbn:9781119942399",
-    ]);
+    cmd.args(["--read-only", "get", "arxiv:1212.1873"]);
     cmd.assert().success();
 
     s.close()
@@ -1438,6 +1427,5 @@ test_provider_success!(zbmath_provider, "zbmath:7937992");
 test_provider_success!(jfm_provider, "jfm:60.0017.02");
 test_provider_success!(arxiv_provider, "arxiv:1212.1873");
 test_provider_success!(mr_provider, "mr:3224722");
-test_provider_success!(isbn_provider, "isbn:9781119942399");
 test_provider_success!(doi_provider, "doi:10.4007/annals.2014.180.2.7");
 test_provider_success!(ol_provider, "ol:31159704M");

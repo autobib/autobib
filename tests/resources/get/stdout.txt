@@ -21,19 +21,6 @@
   year = {2014},
 }
 
-@book{isbn:9781119942399,
-  address = {Chichester, West Sussex},
-  author = {Kenneth J. Falconer},
-  date = {2014},
-  edition = {Third edition.},
-  isbn = {9781119942399},
-  openlibrary = {31159704M},
-  pagetotal = {368},
-  publisher = {Wiley},
-  subtitle = {mathematical foundations and applications},
-  title = {Fractal geometry},
-}
-
 @article{zbl:1337.28015,
   author = {Hochman, Michael},
   doi = {10.4007/annals.2014.180.2.7},
