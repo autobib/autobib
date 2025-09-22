@@ -25,6 +25,7 @@
 pub mod bib;
 pub mod tex;
 pub mod tex_auxfile;
+pub mod txt;
 
 use std::{ffi::OsStr, path::Path, str::FromStr};
 
@@ -35,6 +36,8 @@ use crate::{RecordId, error::Error};
 pub enum SourceFileType {
     /// TeX-style contents, such as `.tex` or `.sty` files.
     Tex,
+    /// Text file, with one key per line.
+    Txt,
     /// TeX-based AUX file contents, mainly `.aux` files.
     Aux,
     /// Read citation keys from a BibTeX file.
@@ -47,6 +50,7 @@ impl FromStr for SourceFileType {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "tex" | "sty" | "cls" => Ok(Self::Tex),
+            "txt" => Ok(Self::Txt),
             "aux" => Ok(Self::Aux),
             "bib" => Ok(Self::Bib),
             ext => Err(Error::UnsupportedFileType(ext.into())),
@@ -88,6 +92,7 @@ pub fn get_citekeys_filter<T: Extend<RecordId>, F: FnMut(&RecordId) -> bool>(
         SourceFileType::Tex => tex::get_citekeys,
         SourceFileType::Aux => tex_auxfile::get_citekeys,
         SourceFileType::Bib => bib::get_citekeys,
+        SourceFileType::Txt => txt::get_citekeys,
     };
     get_citekey_impl(buffer, &mut FilterExtend { container, f });
 }
