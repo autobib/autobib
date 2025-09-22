@@ -8,7 +8,7 @@ license = "AGPL-3.0-or-later"
 readme = "README.md"
 keywords = ["cli", "bibtex", "biblatex", "bibliography"]
 categories = ["command-line-utilities"]
-version = "0.3.0"
+version = "0.4.0"
 rust-version = "1.90"
 edition = "2024"
 
