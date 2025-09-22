@@ -52,7 +52,7 @@ jobs:
     - name: Create response cache
       if: steps.response-cache.outputs.cache-hit != 'true'
       shell: bash
-      run: xargs < '${{ env.REMOTES_FILE }}' -- cargo run --locked --features write_response_cache -- -vv get --retrieve-only --ignore-null
+      run: cargo run --locked --features write_response_cache -- -vv source --retrieve-only --ignore-null '${{ env.REMOTES_FILE }}'
 
     # Actually run tests
     - name: Build test binaries
