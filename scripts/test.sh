@@ -22,7 +22,7 @@ if [[ ! -f "${AUTOBIB_RESPONSE_CACHE_PATH}" ]]; then
     mkdir -p "${CACHE_DIR}"
 
     # Generate the cache file
-    xargs < "${REMOTES_FILE}" -- cargo run --locked --features write_response_cache -- -vv get --retrieve-only --ignore-null
+    cargo run --locked --features write_response_cache -- -vv source --retrieve-only --ignore-null "${REMOTES_FILE}"
 else
     echo "Cache file found: ${AUTOBIB_RESPONSE_CACHE_PATH}"
 fi
