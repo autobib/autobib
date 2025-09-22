@@ -1,3 +1,28 @@
 [env]
 # see https://www.sqlite.org/compile.html#recommended_compile_time_options
 LIBSQLITE3_FLAGS = { value = "-DSQLITE_DQS=0 -DSQLITE_DEFAULT_MEMSTATUS=0 -DSQLITE_DEFAULT_WAL_SYNCHRONOUS=1 -DSQLITE_LIKE_DOESNT_MATCH_BLOBS -DSQLITE_MAX_EXPR_DEPTH=0 -DSQLITE_OMIT_DEPRECATED -DSQLITE_OMIT_PROGRESS_CALLBACK -DSQLITE_OMIT_SHARED_CACHE -DSQLITE_STRICT_SUBTYPE=1", force = true }
+
+# This seems to be best practice, e.g. rustc does this
+# see https://github.com/rust-lang/rust/pull/39837
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+# Statically link MUSL since one of the points of building this target is for it
+# to be fully statically linked.
+#
+# See: https://github.com/rust-lang/compiler-team/issues/422
+# See: https://github.com/rust-lang/compiler-team/issues/422#issuecomment-812135847
+[target.x86_64-unknown-linux-musl]
+rustflags = [
+  "-C", "target-feature=+crt-static",
+  "-C", "link-self-contained=yes",
+]
+
+[target.aarch64-unknown-linux-musl]
+rustflags = [
+  "-C", "target-feature=+crt-static",
+  "-C", "link-self-contained=yes",
+]

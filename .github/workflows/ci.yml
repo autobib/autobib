@@ -25,7 +25,7 @@ jobs:
   tests:
     strategy:
       matrix:
-        image: [ubuntu-latest, macos-latest, windows-latest]
+        image: [macos-latest, ubuntu-latest, ubuntu-24.04-arm, windows-latest, windows-11-arm]
     runs-on: ${{ matrix.image }}
     steps:
     # Windows configuration; this has to run before checkout!
