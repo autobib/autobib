@@ -1,17 +1,1 @@
 # Unreleased
-Supported database versions: `<= 1`
-
-Changes since `v0.3.0`.
-
-## Breaking
-
-- The `--database` flag short form has been changed from `-d` to `-D`.
-- The `--config` flag short form has been changed from `-c` to `-C`.
-  This fixes a conflict with the `--canonical` flag of `autobib util list`.
-
-## New features
-
-- The `-D/--database` and `-C/--config` flags are now global.
-- Adds new `--read-only` flag to disable database/filesystem writes and HTTP requests.
-  - This allows opening database files with potentially incompatible version.
-  - Enables special handling of `autobib get` and `autobib source` to only retrieve records which already exist in the database, without retrieving records from remote.
