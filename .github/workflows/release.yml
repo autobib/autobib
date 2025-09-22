@@ -116,42 +116,30 @@ jobs:
         include:
           - image: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            use-cross: false
 
           - image: ubuntu-latest
             target: x86_64-unknown-linux-musl
-            use-cross: false
 
-          - image: ubuntu-latest
+          - image: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
-            use-cross: true
 
-          - image: ubuntu-latest
+          - image: ubuntu-24.04-arm
             target: aarch64-unknown-linux-musl
-            use-cross: true
 
           - image: macos-latest
             target: aarch64-apple-darwin
-            use-cross: false
 
           - image: macos-latest
             target: x86_64-apple-darwin
-            use-cross: false
 
           - image: windows-latest
             target: x86_64-pc-windows-gnu
-            use-cross: false
 
           - image: windows-latest
             target: x86_64-pc-windows-msvc
-            use-cross: false
 
-          - image: windows-latest
+          - image: windows-11-arm
             target: aarch64-pc-windows-msvc
-            use-cross: false
-
-    env:
-      CARGO: cargo
 
     steps:
       - uses: actions/checkout@v5
@@ -161,17 +149,6 @@ jobs:
         with:
           toolchain: ${{ env.RUST_VERSION }}
           targets: ${{ matrix.target }}
-
-      - name: Install cross
-        if: matrix.use-cross
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cross
-
-      - name: Overwrite build command env variable
-        if: matrix.use-cross
-        shell: bash
-        run: echo "CARGO=cross" >> $GITHUB_ENV
 
       - name: Install build deps (linux-musl)
         if: matrix.target == 'x86_64-unknown-linux-musl' || matrix.target == 'aarch64-unknown-linux-musl'
@@ -183,7 +160,7 @@ jobs:
       - name: Build release binary
         shell: bash
         run: |
-          ${{ env.CARGO }} build --verbose --release --locked --target ${{ matrix.target }}
+          cargo build --verbose --release --locked --target ${{ matrix.target }}
           if [[ "${{ matrix.image }}" = "windows-latest" ]]; then
             bin="target/${{ matrix.target }}/release/autobib.exe"
           else
@@ -222,7 +199,7 @@ jobs:
 
       - name: Build archive (Windows)
         shell: bash
-        if: matrix.image == 'windows-latest'
+        if: runner.os == 'Windows'
         run: |
           7z a "$ARCHIVE.zip" "$ARCHIVE"
           certutil -hashfile "$ARCHIVE.zip" SHA256 > "$ARCHIVE.zip.sha256"
@@ -231,7 +208,7 @@ jobs:
   
       - name: Build archive (Unix)
         shell: bash
-        if: matrix.image != 'windows-latest'
+        if: runner.os != 'Windows'
         run: |
           tar czf "$ARCHIVE.tar.gz" "$ARCHIVE"
           shasum -a 256 "$ARCHIVE.tar.gz" > "$ARCHIVE.tar.gz.sha256"
