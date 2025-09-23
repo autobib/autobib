@@ -61,7 +61,7 @@ impl Editor {
                     }
                 }
                 Err(err) => {
-                    eprint!("Contents invalid: {err}");
+                    eprintln!("Contents invalid: {err}");
                 }
             }
 
