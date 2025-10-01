@@ -46,7 +46,7 @@ Jump to:
 - [Searching for records](#searching-for-records)
 - [Importing records](#importing-records)
 - [Shell completions](#shell-completions)
-- [Database and configuration file](#database-and-configuration-file)
+- [User data and configuration file](#user-data-and-configuration-file)
 
 ### Getting records
 
@@ -195,7 +195,7 @@ autobib find -f author,title
 ```
 will list all of your local records with the `author` and `title` fields available to search against.
 
-### Import records
+### Importing records
 
 You can import existing records from BibTeX files using `autobib import`.
 There are four mutually exclusive import modes, specified with flags:
@@ -262,6 +262,6 @@ You can generate a default configuration file with `autobib default-config`, or 
 
 ## License
 
-The source code of Autobib is distributed under the terms of the [GNU Affero General Public License, version 3](https://www.gnu.org/licenses/agpl-3.0.en.html).
+The source code of Autobib is distributed under the terms of the [GNU Affero General Public License, version 3](https://www.gnu.org/licenses/agpl-3.0.en.html) (or any later version).
 
 See [LICENSE](LICENSE) and [COPYRIGHT](COPYRIGHT) for details.
