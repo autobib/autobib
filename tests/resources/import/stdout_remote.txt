@@ -18,5 +18,6 @@
   title = {Attainable forms of {Assouad} spectra},
   volume = {73},
   year = {2024},
+  zbl = {1562.28062},
   zbmath = {07937992},
 }
