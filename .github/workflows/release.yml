@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-    - "v*"
+      - "v*"
 
 # necessary to create releases.
 permissions:
@@ -63,12 +63,14 @@ jobs:
       - name: Create draft GitHub release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create ${{ github.ref_name }}	--prerelease --draft --verify-tag --title "Autobib $VERSION" --notes "$(tail -n +2 $CHANGELOG_FILE)"
+        run: |
+          gh release create ${{ github.ref_name }}	--prerelease --draft --verify-tag \
+            --title "Autobib $VERSION" --notes "$(tail -n +2 $CHANGELOG_FILE)"
     outputs:
-     version: ${{ env.VERSION }}
+      version: ${{ env.VERSION }}
 
-  generate-license:
-    name: Collect and verify dependency licences
+  generate-licenses:
+    name: Collect and verify dependency licenses
     needs: create-release
     runs-on: ubuntu-latest
 
@@ -89,25 +91,27 @@ jobs:
           mkdir "$dir"
           echo "$dir" >> $GITHUB_PATH
           cd "$dir"
-          curl -LO $url
+          curl -LO "$url"
           echo "$SHA256 $about_root.tar.gz" | sha256sum -c
-          tar xf $about_root.tar.gz
-          mv $about_root/cargo-about .
+          tar xf "$about_root.tar.gz"
+          mv "$about_root/cargo-about" .
 
-      - name: Generate license file
+      - name: Generate licenses file
         shell: bash
         run: |
-          cargo-about generate --config about/config.toml about/template.hbs > license.html
-      - name: Create license file artifact
+          cargo-about generate --config about/config.toml --output-file third-party-licenses.html \
+            about/template.hbs
+
+      - name: Create licenses file artifact
         uses: actions/upload-artifact@v4
         with:
-          name: cargo-about-license-html
+          name: cargo-about-licenses-html
           path: |
-            license.html
+            third-party-licenses.html
 
   upload-binary:
     name: Compile release binaries
-    needs: [create-release, generate-license]
+    needs: [create-release, generate-licenses]
     runs-on: ${{ matrix.image }}
 
     strategy:
@@ -150,8 +154,8 @@ jobs:
           toolchain: ${{ env.RUST_VERSION }}
           targets: ${{ matrix.target }}
 
-      - name: Install build deps (linux-musl)
-        if: matrix.target == 'x86_64-unknown-linux-musl' || matrix.target == 'aarch64-unknown-linux-musl'
+      - name: Install build deps (Linux musl)
+        if: endsWith( matrix.target, '-unknown-linux-musl' )
         shell: bash
         run: |
           sudo apt-get update
@@ -168,7 +172,7 @@ jobs:
           fi
           echo "BIN=$bin" >> $GITHUB_ENV
 
-      - name: Strip release binary (macos)
+      - name: Strip release binary (macOS)
         if: matrix.image == 'macos-latest'
         shell: bash
         run: strip "$BIN"
@@ -178,23 +182,24 @@ jobs:
         run: |
           version="${{ needs.create-release.outputs.version }}"
           echo "ARCHIVE=autobib-$version-${{ matrix.target }}" >> $GITHUB_ENV
+
       - name: Show variables
         shell: bash
         run: |
           echo "archive is: $ARCHIVE"
           echo "bin is: $BIN"
 
-      - name: Download the license.html artifact
+      - name: Download licenses file artifact
         uses: actions/download-artifact@v5
         with:
-          name: cargo-about-license-html
+          name: cargo-about-licenses-html
 
       - name: Create directory for archive
         shell: bash
         run: |
           mkdir -p "$ARCHIVE"
           cp "$BIN" "$ARCHIVE"/
-          cp {README.md,COPYRIGHT,LICENSE,license.html} "$ARCHIVE"/
+          cp {README.md,COPYRIGHT,LICENSE,third-party-licenses.html} "$ARCHIVE"/
           cp "docs/changelog/${{ github.ref_name }}.md" "$ARCHIVE"/CHANGELOG.md
 
       - name: Build archive (Windows)
@@ -205,7 +210,7 @@ jobs:
           certutil -hashfile "$ARCHIVE.zip" SHA256 > "$ARCHIVE.zip.sha256"
           echo "ASSET=$ARCHIVE.zip" >> $GITHUB_ENV
           echo "ASSET_SUM=$ARCHIVE.zip.sha256" >> $GITHUB_ENV
-  
+
       - name: Build archive (Unix)
         shell: bash
         if: runner.os != 'Windows'
@@ -224,20 +229,19 @@ jobs:
 
   publish-crates-io:
     name: Publish release to crates.io
-    needs: [create-release, generate-license, upload-binary]
+    needs: [create-release, generate-licenses, upload-binary]
     runs-on: ubuntu-latest
     environment: release
     permissions:
       id-token: write
-
     steps:
-     - uses: actions/checkout@v5
-     - uses: rust-lang/crates-io-auth-action@v1
-       id: auth
-     - uses: dtolnay/rust-toolchain@master
-       with:
-         toolchain: ${{ env.RUST_VERSION }}
-     - name: Publish release
-       run: cargo publish
-       env:
-         CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+      - uses: actions/checkout@v5
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+      - name: Publish release
+        run: cargo publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
