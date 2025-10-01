@@ -14,7 +14,16 @@ struct MathscinetRecord {
 }
 
 pub fn is_valid_id(id: &str) -> ValidationOutcome {
-    (id.len() == 7 && id.as_bytes().iter().all(u8::is_ascii_digit)).into()
+    if id.len() < 6 || id.len() > 7 || !id.as_bytes().iter().all(u8::is_ascii_digit) {
+        return ValidationOutcome::Invalid;
+    }
+
+    if id.len() < 7 {
+        // left pad to length 7 using 0s
+        ValidationOutcome::Normalize(format!("{id:0>7}"))
+    } else {
+        ValidationOutcome::Valid
+    }
 }
 
 pub fn get_record<C: Client>(id: &str, client: &C) -> Result<Option<RecordData>, ProviderError> {
