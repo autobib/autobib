@@ -80,8 +80,8 @@ jobs:
       - name: Install cargo-about
         shell: bash
         env:
-          CARGO_ABOUT_VERSION: 0.8.0
-          SHA256: "b53515a1c85f37810ae03ed03a984cde60282eb1fba08ad0888bd9a62f7d5629"
+          CARGO_ABOUT_VERSION: 0.8.2
+          SHA256: "3d0a79ce63391a9aa49504d347af03cb716ce9abe6a12673d005ccdf3d9a03f6"
         run: |
           # Use the pre-compiled binary to reduce compilation time
           dir="$RUNNER_TEMP/about-download"
