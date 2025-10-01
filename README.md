@@ -20,7 +20,14 @@ Unlike other bibliography management tools such as [Zotero](https://www.zotero.o
 Moreover, Autobib is designed with first-class support for [BibTeX](https://en.wikipedia.org/wiki/BibTeX).
 
 ## Installation
+
 Pre-compiled binaries for recent tagged releases can be found on the [releases page](https://github.com/autobib/autobib/releases).
+
+If you use Homebrew, then you can also install Autobib through our tap:
+```bash
+brew tap autobib/autobib
+brew install autobib
+```
 
 If a binary is not available for your platform, you can install from source.
 Make sure the [rust toolchain](https://www.rust-lang.org/tools/install) is installed on your device and run
@@ -220,6 +227,10 @@ To handle colons in entry keys, use the `--replace-colons` option to specify a (
 
 Autobib supports shell completion of commands and options in shells like Bash and Zsh.
 See [supported shells](https://docs.rs/clap_complete/latest/clap_complete/aot/enum.Shell.html).
+
+> [!NOTE]
+> If you installed Autobib via Homebrew and are using Zsh, Bash, or Fish, then the completions script is already available inside the Homebrew prefix.
+> Follow the instructions [here](https://docs.brew.sh/Shell-Completion) to have your shell load the Homebrew-managed completions.
 
 A shell completions script can be generated as follows:
 ```sh
