@@ -172,11 +172,6 @@ jobs:
           fi
           echo "BIN=$bin" >> $GITHUB_ENV
 
-      - name: Strip release binary (macOS)
-        if: matrix.image == 'macos-latest'
-        shell: bash
-        run: strip "$BIN"
-
       - name: Determine archive name
         shell: bash
         run: |
