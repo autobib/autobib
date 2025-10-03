@@ -54,10 +54,12 @@ predicates = "3.1"
 
 [profile.release]
 lto = true
+strip = "symbols"
 
 [profile.profiling]
 inherits = "release"
 debug = true
+strip = "none"
 
 [lints.clippy]
 redundant_closure_for_method_calls = "warn"
