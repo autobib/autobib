@@ -19,7 +19,7 @@ pub trait Client {
     type Body: BodyBytes;
 
     /// Returns the HTTP/1.1 response obtained by a `GET` request to the provided URI.
-    fn get<T>(&self, uri: T) -> Result<http::Response<Self::Body>, ProviderError>
+    fn get<T>(&self, uri: T) -> Result<http::Response<Self::Body>, ureq::Error>
     where
         Uri: TryFrom<T>,
         <Uri as TryFrom<T>>::Error: Into<http::Error>;
@@ -78,11 +78,11 @@ impl UreqClient {
 impl Client for UreqClient {
     type Body = Body;
 
-    fn get<T>(&self, uri: T) -> Result<http::Response<Body>, ProviderError>
+    fn get<T>(&self, uri: T) -> Result<http::Response<Body>, ureq::Error>
     where
         Uri: TryFrom<T>,
         <Uri as TryFrom<T>>::Error: Into<http::Error>,
     {
-        self.inner.get(uri).call().map_err(Into::into)
+        self.inner.get(uri).call()
     }
 }

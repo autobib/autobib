@@ -33,7 +33,7 @@ impl LocalReadClient {
 impl Client for LocalReadClient {
     type Body = Body;
 
-    fn get<T>(&self, uri: T) -> Result<ureq::http::Response<Body>, crate::error::ProviderError>
+    fn get<T>(&self, uri: T) -> Result<ureq::http::Response<Body>, ureq::Error>
     where
         Uri: TryFrom<T>,
         <Uri as TryFrom<T>>::Error: Into<ureq::http::Error>,
@@ -42,6 +42,6 @@ impl Client for LocalReadClient {
         let response_bytes = self.lookup.get(&uri.to_string()).ok_or(ureq::Error::Other(
             format!("Url '{uri}' does not exist in local response cache").into(),
         ))?;
-        response_bytes.try_into().map_err(Into::into)
+        response_bytes.try_into()
     }
 }

@@ -8,10 +8,7 @@ use bincode::config;
 use ureq::http::Uri;
 
 use super::{ResponseBytes, response_cache_file};
-use crate::{
-    error::ProviderError,
-    http::{Client, UreqClient},
-};
+use crate::http::{Client, UreqClient};
 
 /// A client which intercepts HTTP responses and writes them to a response cache file for
 /// subsequent use by `LocalReadClient`.
@@ -47,12 +44,12 @@ impl Drop for LocalWriteClient {
 impl Client for LocalWriteClient {
     type Body = Vec<u8>;
 
-    fn get<T>(&self, uri: T) -> Result<ureq::http::Response<Self::Body>, ProviderError>
+    fn get<T>(&self, uri: T) -> Result<ureq::http::Response<Self::Body>, ureq::Error>
     where
         Uri: TryFrom<T>,
         <Uri as TryFrom<T>>::Error: Into<ureq::http::Error>,
     {
-        let uri = Uri::try_from(uri).map_err(Into::<ureq::http::Error>::into)?;
+        let uri = Uri::try_from(uri).map_err(Into::into)?;
         let key = uri.to_string();
         let res = self
             .inner
