@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, de::Visitor};
 
 use super::super::{EntryType, RecordData, RecordDataError};
 
@@ -67,8 +67,19 @@ impl TryFrom<Entry> for RecordData {
 
         // publication details, prioritizing 'series' data more
         if let Some(p) = source.pages {
-            record_data.check_and_insert("pages".into(), p.replace("-", "--"))?;
+            match p {
+                Pages::Total {
+                    _frontmatter: _,
+                    total,
+                } => {
+                    record_data.check_and_insert("pagetotal".into(), total.to_string())?;
+                }
+                Pages::Range { start, end } => {
+                    record_data.check_and_insert("pages".into(), format!("{start}--{end}"))?;
+                }
+            }
         }
+
         for book in source.book {
             record_data.check_and_insert_if_non_null("publisher", book.publisher)?;
             record_data.check_and_insert_if_non_null("year", book.year)?;
@@ -176,7 +187,7 @@ pub struct Title {
 #[derive(Deserialize)]
 pub struct Source {
     book: Vec<Book>,
-    pages: Option<String>,
+    pages: Option<Pages>,
     series: Vec<Series>,
 }
 
@@ -231,5 +242,63 @@ impl LinkType {
             Self::Doi => Some("doi"),
             Self::Https => None,
         }
+    }
+}
+
+pub enum Pages {
+    Total { _frontmatter: String, total: u64 },
+    Range { start: u64, end: u64 },
+}
+
+impl<'de> Deserialize<'de> for Pages {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct PageVisitor;
+
+        impl<'de> Visitor<'de> for PageVisitor {
+            type Value = Pages;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("A page count")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                // basically, pages can either be in the format
+                // "xv, 531~p." indicating a page count, or
+                // "100-200" indicating a range
+                // any other format should just be put into `String`
+                match value.split_once(", ") {
+                    Some((l, pages)) => match pages.strip_suffix("~p.") {
+                        Some(page_ct) => {
+                            let total: u64 = page_ct.parse().map_err(E::custom)?;
+                            Ok(Pages::Total {
+                                _frontmatter: l.into(),
+                                total,
+                            })
+                        }
+                        None => Err(E::custom(format!(
+                            "unexpected value for page / page count: {value}"
+                        ))),
+                    },
+                    None => match value.split_once("-") {
+                        Some((l, r)) => {
+                            let start: u64 = l.parse().map_err(E::custom)?;
+                            let end: u64 = r.parse().map_err(E::custom)?;
+                            Ok(Pages::Range { start, end })
+                        }
+                        None => Err(E::custom(format!(
+                            "unexpected value for page / page count: {value}"
+                        ))),
+                    },
+                }
+            }
+        }
+
+        deserializer.deserialize_str(PageVisitor)
     }
 }
