@@ -1,13 +1,1 @@
 # Unreleased
-Supported database versions: `<= 1`
-
-Changes since `v0.4.0`.
-
-## New features
-
-- Added `.txt` filetype support for `autobib source`, treating each non-empty line as a citation key, and trimming excess whitespace.
-
-## Changes to providers
-
-- The zbMATH backend has been migrated to the [zbMath REST API](https://api.zbmath.org/v1/) to fix access issues with the `zbmath.org/bibtex` endpoint. This impacts the following providers:
-  - `jfm:`, `zbl:`, and `zbmath:`
