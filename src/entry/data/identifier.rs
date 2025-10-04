@@ -81,6 +81,14 @@ impl EntryType<String> {
     pub fn book() -> Self {
         Self("book".to_owned())
     }
+
+    pub fn in_collection() -> Self {
+        Self("incollection".to_owned())
+    }
+
+    pub fn article() -> Self {
+        Self("article".to_owned())
+    }
 }
 
 /// A validated field key (e.g. `author` in `...author = {...}`) which satisfies the following
