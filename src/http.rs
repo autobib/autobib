@@ -6,6 +6,8 @@
 #[cfg(any(feature = "read_response_cache", feature = "write_response_cache"))]
 pub mod cache;
 
+use std::io;
+
 use ureq::{
     Body,
     http::{self, Uri},
@@ -28,17 +30,40 @@ pub trait Client {
 pub trait BodyBytes {
     /// Convert the response body into raw bytes.
     fn bytes(self) -> Result<Vec<u8>, ProviderError>;
+
+    /// Read bytes from the body without allocating.
+    fn as_reader(&mut self) -> impl io::Read;
+
+    /// Read bytes and deserialize as json.
+    fn read_json<T: serde::de::DeserializeOwned>(&mut self) -> Result<T, ureq::Error>;
 }
 
 impl BodyBytes for Body {
     fn bytes(mut self) -> Result<Vec<u8>, ProviderError> {
         self.read_to_vec().map_err(Into::into)
     }
+
+    fn as_reader(&mut self) -> impl io::Read {
+        self.as_reader()
+    }
+
+    fn read_json<T: serde::de::DeserializeOwned>(&mut self) -> Result<T, ureq::Error> {
+        self.read_json::<T>()
+    }
 }
 
 impl BodyBytes for Vec<u8> {
     fn bytes(self) -> Result<Vec<u8>, ProviderError> {
         Ok(self)
+    }
+
+    fn as_reader(&mut self) -> impl io::Read {
+        self.as_slice()
+    }
+
+    fn read_json<T: serde::de::DeserializeOwned>(&mut self) -> Result<T, ureq::Error> {
+        let value: T = serde_json::from_slice(self)?;
+        Ok(value)
     }
 }
 
