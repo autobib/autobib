@@ -26,8 +26,8 @@ impl LocalWriteClient {
     }
 }
 
-impl Drop for LocalWriteClient {
-    fn drop(&mut self) {
+impl LocalWriteClient {
+    pub fn serialize(self) {
         let data_file = response_cache_file();
         let mut lookup_file = File::create(&data_file).unwrap_or_else(|_| {
             panic!(

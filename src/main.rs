@@ -100,7 +100,7 @@ The following is a description of the error which occured:
     let client = http::cache::LocalReadClient::new();
 
     // run the cli
-    if let Err(err) = run_cli(cli, client) {
+    if let Err(err) = run_cli(cli, &client) {
         reraise(&err);
     }
 
@@ -108,4 +108,7 @@ The following is a description of the error which occured:
     if Logger::has_error() {
         exit(1)
     }
+
+    #[cfg(all(feature = "write_response_cache", not(feature = "read_response_cache")))]
+    client.serialize()
 }
