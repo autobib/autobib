@@ -4,6 +4,10 @@
 //! Do not add other things to this file, or modify it unnecessarily.
 use std::collections::HashMap;
 
+// Bump this variable to forcibly break cache
+#[allow(unused)]
+static FORMAT_VERSION: u32 = 0;
+
 use bincode::{Decode, Encode};
 
 /// A raw representation of the bytes of a HTTP/1.1 response.
