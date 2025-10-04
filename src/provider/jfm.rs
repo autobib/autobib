@@ -1,45 +1,46 @@
 use std::sync::LazyLock;
 
-use regex::{Regex, bytes::Regex as BytesRegex};
+use regex::Regex;
+use serde::Deserialize;
 
 use super::{BodyBytes, Client, ProviderError, RemoteId, StatusCode, ValidationOutcome};
 
+#[derive(Deserialize)]
+pub struct Response {
+    pub result: EntryIdOnly,
+}
+
+#[derive(Deserialize)]
+pub struct EntryIdOnly {
+    id: u32,
+}
+
 static JFM_IDENTIFIER_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[0-9]{2}\.[0-9]{4}\.[0-9]{2}$").unwrap());
-static BIBTEX_LINK_RE: LazyLock<BytesRegex> =
-    LazyLock::new(|| BytesRegex::new(r"/bibtex/([0-9]{8})\.bib").unwrap());
 
 pub fn is_valid_id(id: &str) -> ValidationOutcome {
     JFM_IDENTIFIER_RE.is_match(id).into()
 }
 
 pub fn get_canonical<C: Client>(id: &str, client: &C) -> Result<Option<RemoteId>, ProviderError> {
-    let url = format!("https://zbmath.org/{id}");
-    let response = client.get(&url)?;
+    let response = client.get(format!("https://api.zbmath.org/v1/document/{id}"))?;
 
     let body = match response.status() {
         StatusCode::OK => response.into_body().bytes()?,
+        StatusCode::FORBIDDEN => {
+            return Err(ProviderError::TemporaryFailure);
+        }
         StatusCode::NOT_FOUND => {
             return Ok(None);
         }
         code => return Err(ProviderError::UnexpectedStatusCode(code)),
     };
 
-    let mut identifiers = Vec::new();
-    for (_, [sub_id]) in BIBTEX_LINK_RE.captures_iter(&body).map(|c| c.extract()) {
-        // SAFETY: since BIBTEX_LINK_RE only matches on ASCII bytes the match is guaranteed to be
-        // valid UTF-8
-        identifiers.push(unsafe { std::str::from_utf8_unchecked(sub_id) });
-    }
-
-    match &identifiers[..] {
-        [] => Ok(None),
-        [identifier, ..] => Ok(Some(RemoteId::from_parts("zbmath", identifier)?)),
-        // TODO: maybe do something better than just taking the first identifier
-        //       e.g. jfm:60.0017.02 has multiple associated identifiers
-        // _ => Err(ProviderError::Unexpected(format!(
-        //     "Request to '{url}' returned multiple identifiers: {}",
-        //     identifiers.join(", ")
-        // ))),
+    match serde_json::from_slice::<Response>(&body) {
+        Ok(response) => Ok(Some(RemoteId::from_parts(
+            "zbmath",
+            &response.result.id.to_string(),
+        )?)),
+        Err(err) => Err(ProviderError::UnexpectedResponseFormat(err.to_string())),
     }
 }

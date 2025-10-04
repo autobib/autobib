@@ -13,8 +13,16 @@ pub enum ProviderError {
     NetworkFailure(#[from] ureq::Error),
     #[error("Unexpected local record '{0}'")]
     UnexpectedLocal(String),
+    #[error(
+        "API server is temporarily inaccessible; try again later. If this is a recurring problem, please report it at https://github.com/autobib/autobib/issues"
+    )]
+    TemporaryFailure,
     #[error("Unexpected status code {0}")]
     UnexpectedStatusCode(StatusCode),
+    #[error(
+        "API returned response in unexpected format. This is a bug, please report it at 'https://github.com/autobib/autobib/issues', including the below error message:\n> {0}"
+    )]
+    UnexpectedResponseFormat(String),
     #[error("Unexpected failure: {0}")]
     Unexpected(String),
     #[error("Incompatible data format: {0}")]
