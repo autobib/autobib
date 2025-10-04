@@ -10,12 +10,15 @@
 }
 
 @article{zbmath:7937992,
+  arxiv = {2206.06921},
   author = {Rutar, Alex},
   doi = {10.1512/iumj.2024.73.9928},
+  issue = {4},
   journal = {Indiana Univ. Math. J.},
   language = {English},
   pages = {1331--1356},
-  title = {Attainable forms of {Assouad} spectra},
+  publisher = {Indiana University, Department of Mathematics, Bloomington, IN},
+  title = {Attainable forms of Assouad spectra},
   volume = {73},
   year = {2024},
   zbl = {1562.28062},

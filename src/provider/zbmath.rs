@@ -1,8 +1,8 @@
-use serde_bibtex::de::Deserializer;
+mod response;
 
-use super::{
-    BodyBytes, Client, ProviderBibtex, ProviderError, RecordData, StatusCode, ValidationOutcome,
-};
+use super::{BodyBytes, Client, ProviderError, RecordData, StatusCode, ValidationOutcome};
+
+use self::response::Response;
 
 pub fn is_valid_id(id: &str) -> ValidationOutcome {
     if id.len() == 8 && id.as_bytes().iter().all(u8::is_ascii_digit) {
@@ -18,17 +18,12 @@ pub fn is_valid_id(id: &str) -> ValidationOutcome {
 }
 
 pub fn get_record<C: Client>(id: &str, client: &C) -> Result<Option<RecordData>, ProviderError> {
-    // It might be tempting to use the zbMATH REST API (https://api.zbmath.org/v1/).
-    // However, sometimes this API endpoint will return incomplete data as a result of
-    // licensing issues. On the other hand, the BibTeX record always works.
-    let response = client.get(format!("https://zbmath.org/bibtex/{id}.bib"))?;
+    let response = client.get(format!("https://api.zbmath.org/v1/document/{id}"))?;
 
     let body = match response.status() {
         StatusCode::OK => response.into_body().bytes()?,
         StatusCode::FORBIDDEN => {
-            return Err(ProviderError::Unexpected(
-                "zbMATH server is temporarily inaccessible; try again later.".into(),
-            ));
+            return Err(ProviderError::TemporaryFailure);
         }
         StatusCode::NOT_FOUND => {
             return Ok(None);
@@ -36,13 +31,8 @@ pub fn get_record<C: Client>(id: &str, client: &C) -> Result<Option<RecordData>,
         code => return Err(ProviderError::UnexpectedStatusCode(code)),
     };
 
-    let mut entry_iter =
-        Deserializer::from_slice(&body).into_iter_regular_entry::<ProviderBibtex>();
-
-    match entry_iter.next() {
-        Some(Ok(entry)) => Ok(Some(entry.try_into()?)),
-        _ => Err(ProviderError::Unexpected(
-            "zbMATH BibTeX record is invalid!".into(),
-        )),
+    match serde_json::from_slice::<Response>(&body) {
+        Ok(response) => Ok(Some(response.result.try_into()?)),
+        Err(err) => Err(ProviderError::UnexpectedResponseFormat(err.to_string())),
     }
 }

@@ -11,10 +11,11 @@
 
 @book{jfm:60.0017.02,
   author = {Hilbert, D. and Bernays, P.},
+  jfm = {60.0017.02},
+  journal = {Grundlehren Math. Wiss.},
   language = {German},
   publisher = {Springer, Cham},
-  series = {Grundlehren Math. Wiss.},
-  title = {Grundlagen der {Mathematik}. {I}.},
+  title = {Grundlagen der Mathematik. I.},
   volume = {40},
   year = {1934},
   zbmath = {02537022},

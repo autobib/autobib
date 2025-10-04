@@ -2,9 +2,18 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 use serde::Deserialize;
-use serde_bibtex::de::Deserializer;
 
 use super::{BodyBytes, Client, ProviderError, RemoteId, StatusCode, ValidationOutcome};
+
+#[derive(Deserialize)]
+pub struct Response {
+    pub result: EntryIdOnly,
+}
+
+#[derive(Deserialize)]
+pub struct EntryIdOnly {
+    id: u32,
+}
 
 static ZBL_IDENTIFIER_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[0-9]{4}\.[0-9]{5}$").unwrap());
@@ -13,20 +22,13 @@ pub fn is_valid_id(id: &str) -> ValidationOutcome {
     ZBL_IDENTIFIER_RE.is_match(id).into()
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
-struct OnlyEntryKey<'r> {
-    entry_key: &'r str,
-}
-
 pub fn get_canonical<C: Client>(id: &str, client: &C) -> Result<Option<RemoteId>, ProviderError> {
-    let response = client.get(format!("https://zbmath.org/bibtex/{id}.bib"))?;
+    let response = client.get(format!("https://api.zbmath.org/v1/document/{id}"))?;
 
     let body = match response.status() {
         StatusCode::OK => response.into_body().bytes()?,
         StatusCode::FORBIDDEN => {
-            return Err(ProviderError::Unexpected(
-                "zbMATH server is temporarily inaccessible; try again later.".into(),
-            ));
+            return Err(ProviderError::TemporaryFailure);
         }
         StatusCode::NOT_FOUND => {
             return Ok(None);
@@ -34,20 +36,11 @@ pub fn get_canonical<C: Client>(id: &str, client: &C) -> Result<Option<RemoteId>
         code => return Err(ProviderError::UnexpectedStatusCode(code)),
     };
 
-    let mut entry_iter = Deserializer::from_slice(&body).into_iter_regular_entry();
-
-    match entry_iter.next() {
-        Some(Ok(OnlyEntryKey { entry_key })) => {
-            if let Some(identifier) = entry_key.strip_prefix("zbMATH") {
-                Ok(Some(RemoteId::from_parts("zbmath", identifier)?))
-            } else {
-                Err(ProviderError::Unexpected(
-                    "zbMATH BibTeX record has unexpected citation key format!".to_string(),
-                ))
-            }
-        }
-        _ => Err(ProviderError::Unexpected(
-            "zbMATH BibTeX record is invalid!".into(),
-        )),
+    match serde_json::from_slice::<Response>(&body) {
+        Ok(response) => Ok(Some(RemoteId::from_parts(
+            "zbmath",
+            &response.result.id.to_string(),
+        )?)),
+        Err(err) => Err(ProviderError::UnexpectedResponseFormat(err.to_string())),
     }
 }
