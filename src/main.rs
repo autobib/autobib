@@ -40,14 +40,18 @@ static LOGGER: Logger = Logger {};
 
 fn main() {
     std::panic::set_hook(Box::new(|panic_info| {
-        eprintln!("An unexpected error occured while running the program. There are a two possibilities:
-  1. Your database file is malformed or has been edited by another program. Run `autobib util check`
-     to see if this is the case.
-  2. There is a bug in autobib. Please report it at 'https://github.com/autobib/autobib/issues', including
-     the error message below and any other information you can provide about the context in which it occured.
+        eprintln!(
+            "An unexpected error occured while running the program:
+  1. Your database file could be malformed or has been edited by another program.
+     Run `autobib util check` to see if this is the case.
+  2. If you have ruled out 1., this is a bug in autobib. Please report it at
+     > https://github.com/autobib/autobib/issues
+     including the error message below and any other information you can provide
+     about the context in which it occured.
 
 The following is a description of the error which occured:
-");
+"
+        );
         eprintln!("{panic_info}");
     }));
 
