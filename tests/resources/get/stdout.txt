@@ -21,6 +21,18 @@
   year = {2014},
 }
 
+@book{zbl:1285.28011,
+  author = {Falconer, Kenneth},
+  language = {English},
+  pagetotal = {368},
+  publisher = {Hoboken, NJ: John Wiley \& Sons},
+  title = {Fractal geometry. Mathematical foundations and applications},
+  titleaddon = {3rd ed.},
+  year = {2014},
+  zbl = {1285.28011},
+  zbmath = {06245248},
+}
+
 @article{zbl:1337.28015,
   arxiv = {1212.1873},
   author = {Hochman, Michael},

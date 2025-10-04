@@ -83,7 +83,13 @@ fn get() -> Result<()> {
     let predicate_file = predicate::path::eq_file(Path::new("tests/resources/get/stdout.txt"))
         .utf8()
         .unwrap();
-    cmd.args(["get", "zbl:1337.28015", "arxiv:1212.1873", "mr:3224722"]);
+    cmd.args([
+        "get",
+        "zbl:1337.28015",
+        "zbl:1285.28011",
+        "arxiv:1212.1873",
+        "mr:3224722",
+    ]);
     cmd.assert()
         .success()
         .stdout(predicate_file)
