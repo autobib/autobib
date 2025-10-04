@@ -13,8 +13,9 @@ rust-version = "1.90"
 edition = "2024"
 
 [features]
+in_memory_database = []
 read_response_cache = ["dep:bincode"]
-write_response_cache = ["dep:bincode"]
+write_response_cache = ["dep:bincode", "in_memory_database"]
 
 [dependencies]
 anyhow = "1.0"
