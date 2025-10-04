@@ -57,7 +57,7 @@ use self::{
 pub use self::cli::{Cli, Command, ReadOnlyInvalid};
 
 /// Run the CLI.
-pub fn run_cli<C: Client>(cli: Cli, client: C) -> Result<()> {
+pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
     info!(
         "Autobib version: {} (database version: {})",
         env!("CARGO_PKG_VERSION"),
@@ -104,7 +104,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: C) -> Result<()> {
             AliasCommand::Add { alias, target } => {
                 info!("Creating alias '{alias}' for '{target}'");
                 let cfg = config::load(&config_path, missing_ok)?;
-                let (_, row) = get_record_row(&mut record_db, target, &client, &cfg)?
+                let (_, row) = get_record_row(&mut record_db, target, client, &cfg)?
                     .exists_or_commit_null("Cannot create alias for")?;
                 if !row.add_alias(&alias)? {
                     error!("Alias already exists: '{alias}'");
@@ -138,7 +138,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: C) -> Result<()> {
         } => {
             // Extend with the filename.
             let cfg = config::load(&config_path, missing_ok)?;
-            let (record, row) = get_record_row(&mut record_db, citation_key, &client, &cfg)?
+            let (record, row) = get_record_row(&mut record_db, citation_key, client, &cfg)?
                 .exists_or_commit_null("Cannot attach file for")?;
             row.commit()?;
             let mut target = get_attachment_dir(&record.canonical, &data_dir, cli.attachments_dir)?;
@@ -279,7 +279,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: C) -> Result<()> {
                         canonical,
                     },
                     row,
-                ) = get_record_row(&mut record_db, key, &client, &cfg)?
+                ) = get_record_row(&mut record_db, key, client, &cfg)?
                     .exists_or_commit_null("Cannot edit")?;
 
                 if cli.no_interactive {
@@ -440,7 +440,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: C) -> Result<()> {
                 retrieve_and_validate_entries(
                     not_skipped_keys,
                     &mut record_db,
-                    &client,
+                    client,
                     retrieve_only,
                     ignore_null,
                     &cfg,
@@ -497,7 +497,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: C) -> Result<()> {
                             &scratch,
                             &import_config,
                             &mut record_db,
-                            &client,
+                            client,
                             &cfg,
                             bibfile.display(),
                         )?;
@@ -684,7 +684,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: C) -> Result<()> {
             prefer_incoming,
         } => {
             let cfg = config::load(&config_path, missing_ok)?;
-            let (existing, row) = get_record_row(&mut record_db, into, &client, &cfg)?
+            let (existing, row) = get_record_row(&mut record_db, into, client, &cfg)?
                 .exists_or_commit_null("Cannot merge into")?;
 
             let new_data: Vec<RowData> = from
@@ -721,7 +721,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: C) -> Result<()> {
         } => {
             let cfg = config::load(&config_path, missing_ok)?;
             // Extend with the filename.
-            let (record, row) = get_record_row(&mut record_db, citation_key, &client, &cfg)?
+            let (record, row) = get_record_row(&mut record_db, citation_key, client, &cfg)?
                 .exists_or_commit_null("Cannot show directory for")?;
             row.commit()?;
             let mut target = get_attachment_dir(&record.canonical, &data_dir, cli.attachments_dir)?;
@@ -826,7 +826,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: C) -> Result<()> {
                     retrieve_and_validate_entries(
                         keys,
                         &mut record_db,
-                        &client,
+                        client,
                         retrieve_only,
                         ignore_null,
                         &cfg,
@@ -852,7 +852,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: C) -> Result<()> {
                         canonical,
                         ..
                     } = row.get_data()?;
-                    let new_raw_data = match data_from_path_or_remote(from, canonical, &client) {
+                    let new_raw_data = match data_from_path_or_remote(from, canonical, client) {
                         Ok((data, _)) => data,
                         Err(err) => {
                             row.commit()?;
@@ -871,7 +871,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: C) -> Result<()> {
                     row.commit()?;
                 }
                 RecordIdState::NullRemoteId(mapped_remote_id, null_row) => {
-                    match data_from_path_or_remote(from, mapped_remote_id.mapped, &client) {
+                    match data_from_path_or_remote(from, mapped_remote_id.mapped, client) {
                         Ok((data, canonical)) => {
                             info!("Existing row was null; inserting new data.");
                             let row = null_row.delete()?.insert_entry_data(&data, &canonical)?;
