@@ -147,7 +147,7 @@ pub enum Command {
         /// Rename the file.
         #[arg(short, long)]
         rename: Option<PathBuf>,
-        /// Overwrite existing files.
+        /// Overwrite existing files with the same name.
         #[arg(short, long)]
         force: bool,
     },
