@@ -134,20 +134,20 @@ pub enum Command {
         #[command(subcommand)]
         alias_command: AliasCommand,
     },
-    /// Attach files.
+    /// Attach a file.
     ///
-    /// Add new files to the directory associated with a record, as determined by the `path`
+    /// Add a new file to the directory associated with a record, as determined by the `path`
     /// subcommand. The original file is copied to the new directory, or can be renamed
     /// with the `--rename` option.
     Attach {
-        /// The record to associate the files with.
+        /// The record to associate the file with.
         citation_key: RecordId,
-        /// The path to the file to add.
-        file: PathBuf,
+        /// The path or URL for the file to add.
+        file: String,
         /// Rename the file.
         #[arg(short, long)]
         rename: Option<PathBuf>,
-        /// Overwrite existing files with the same name.
+        /// Overwrite an existing file with the same name.
         #[arg(short, long)]
         force: bool,
     },

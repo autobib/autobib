@@ -12,7 +12,7 @@ use std::{
     fs::{File, OpenOptions, create_dir_all},
     io::{Read, Seek, copy},
     iter::once,
-    path::Path,
+    path::{Path, PathBuf},
     str::FromStr,
 };
 
@@ -32,7 +32,7 @@ use crate::{
     },
     entry::{Entry, EntryKey, RawRecordData, RecordData},
     error::AliasErrorKind,
-    http::Client,
+    http::{BodyBytes, Client},
     logger::{debug, error, info, suggest, warn},
     normalize::{Normalization, Normalize},
     record::{Alias, Record, RecordId, RemoteId, get_record_row},
@@ -136,6 +136,35 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             rename,
             force,
         } => {
+            /// Determine the target filename from the `rename` value (if any), and otherwise
+            /// use the provided fallback
+            fn use_rename_or_fallback(
+                target: &mut PathBuf,
+                rename: Option<PathBuf>,
+                fallback: Option<&std::ffi::OsStr>,
+            ) -> Result<(), anyhow::Error> {
+                target.push(match rename {
+                    None => {
+                        if let Some(name) = fallback {
+                            name
+                        } else {
+                            bail!("Source file must not be a directory");
+                        }
+                    }
+                    Some(ref rename) => {
+                        match (rename.parent().and_then(Path::to_str), rename.file_name()) {
+                            // rename.parent() returns Some("") for relative paths with one component; see
+                            //  https://doc.rust-lang.org/stable/std/path/struct.Path.html#method.parent
+                            (Some(""), Some(filename)) => filename,
+                            _ => {
+                                bail!("Renamed value must be a relative path with one component");
+                            }
+                        }
+                    }
+                });
+                Ok(())
+            }
+
             // Extend with the filename.
             let cfg = config::load(&config_path, missing_ok)?;
             let (record, row) = get_record_row(&mut record_db, citation_key, client, &cfg)?
@@ -143,42 +172,54 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             row.commit()?;
             let mut target = get_attachment_dir(&record.canonical, &data_dir, cli.attachments_dir)?;
 
-            create_dir_all(&target)?;
-
-            // Try to open the source file first, since this will reduce the number of redundant
-            // errors.
-            let mut source_file = File::open(&file)?;
-
-            // determine the target filename, either by parsing from the 'rename' value or
-            // defaulting to the filename of the source file
-            target.push(match rename {
-                None => {
-                    if let Some(name) = file.file_name() {
-                        name
-                    } else {
-                        bail!("Source file must not be a directory");
-                    }
-                }
-                Some(ref rename) => {
-                    match (rename.parent().and_then(Path::to_str), rename.file_name()) {
-                        // rename.parent() returns Some("") for relative paths with one component; see
-                        //  https://doc.rust-lang.org/stable/std/path/struct.Path.html#method.parent
-                        (Some(""), Some(filename)) => filename,
-                        _ => {
-                            bail!("Renamed value must be a relative path with one component");
-                        }
-                    }
-                }
-            });
-
             let mut opts = OpenOptions::new();
             opts.write(true);
             if !force {
                 opts.create_new(true);
             }
 
-            let mut target_file = opts.open(&target)?;
-            copy(&mut source_file, &mut target_file)?;
+            // create the destination directory
+            create_dir_all(&target)?;
+
+            match ureq::http::Uri::try_from(&file) {
+                Ok(uri) if uri.scheme().is_some() => {
+                    // In the URI case, defer the network request for as long as possible.
+
+                    // This is the correct way to read the final component from a URI path; see
+                    // https://datatracker.ietf.org/doc/html/rfc3986#section-3.3
+                    let path = uri.path();
+                    let name = match uri.path().rsplit_once('/') {
+                        Some((_, name)) => name,
+                        None => path,
+                    };
+                    if name.is_empty() {
+                        bail!(
+                            "Could not determine filename from provided URI. Use `--rename` to manually specify a name."
+                        );
+                    }
+
+                    use_rename_or_fallback(&mut target, rename, Some(std::ffi::OsStr::new(name)))?;
+
+                    let mut target_file = opts.open(dbg!(&target))?;
+
+                    info!("Downloading file from: {uri}");
+                    let mut response = client.get(uri)?;
+                    copy(&mut response.body_mut().as_reader(), &mut target_file)?;
+                }
+                _ => {
+                    let file = PathBuf::from(file);
+
+                    // Try to open the source file first, since this will reduce the number of redundant
+                    // errors.
+                    let mut source_file = File::open(&file)?;
+
+                    use_rename_or_fallback(&mut target, rename, file.file_name())?;
+
+                    info!("Copying file from: {}", file.display());
+                    let mut target_file = opts.open(&target)?;
+                    copy(&mut source_file, &mut target_file)?;
+                }
+            }
         }
         Command::Completions { shell: _ } => {
             unreachable!(
