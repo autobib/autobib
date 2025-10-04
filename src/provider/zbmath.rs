@@ -20,8 +20,8 @@ pub fn is_valid_id(id: &str) -> ValidationOutcome {
 pub fn get_record<C: Client>(id: &str, client: &C) -> Result<Option<RecordData>, ProviderError> {
     let response = client.get(format!("https://api.zbmath.org/v1/document/{id}"))?;
 
-    let body = match response.status() {
-        StatusCode::OK => response.into_body().bytes()?,
+    let mut body = match response.status() {
+        StatusCode::OK => response.into_body(),
         StatusCode::FORBIDDEN => {
             return Err(ProviderError::TemporaryFailure);
         }
@@ -31,7 +31,7 @@ pub fn get_record<C: Client>(id: &str, client: &C) -> Result<Option<RecordData>,
         code => return Err(ProviderError::UnexpectedStatusCode(code)),
     };
 
-    match serde_json::from_slice::<Response>(&body) {
+    match body.read_json::<Response>() {
         Ok(response) => Ok(Some(response.result.try_into()?)),
         Err(err) => Err(ProviderError::UnexpectedResponseFormat(err.to_string())),
     }

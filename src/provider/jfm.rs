@@ -25,8 +25,8 @@ pub fn is_valid_id(id: &str) -> ValidationOutcome {
 pub fn get_canonical<C: Client>(id: &str, client: &C) -> Result<Option<RemoteId>, ProviderError> {
     let response = client.get(format!("https://api.zbmath.org/v1/document/{id}"))?;
 
-    let body = match response.status() {
-        StatusCode::OK => response.into_body().bytes()?,
+    let mut body = match response.status() {
+        StatusCode::OK => response.into_body(),
         StatusCode::FORBIDDEN => {
             return Err(ProviderError::TemporaryFailure);
         }
@@ -36,7 +36,7 @@ pub fn get_canonical<C: Client>(id: &str, client: &C) -> Result<Option<RemoteId>
         code => return Err(ProviderError::UnexpectedStatusCode(code)),
     };
 
-    match serde_json::from_slice::<Response>(&body) {
+    match body.read_json::<Response>() {
         Ok(response) => Ok(Some(RemoteId::from_parts(
             "zbmath",
             &response.result.id.to_string(),

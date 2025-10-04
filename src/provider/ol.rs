@@ -47,7 +47,7 @@ struct OpenLibraryRecord {
 pub fn get_record<C: Client>(id: &str, client: &C) -> Result<Option<RecordData>, ProviderError> {
     let response = client.get(format!("https://openlibrary.org/books/OL{id}.json"))?;
 
-    let body = match response.status() {
+    let mut body = match response.status() {
         StatusCode::OK => response.into_body().bytes()?,
         StatusCode::NOT_FOUND => {
             return Ok(None);
@@ -55,7 +55,7 @@ pub fn get_record<C: Client>(id: &str, client: &C) -> Result<Option<RecordData>,
         code => return Err(ProviderError::UnexpectedStatusCode(code)),
     };
 
-    match serde_json::from_slice(&body) {
+    match body.read_json() {
         Ok(OpenLibraryRecord {
             authors,
             title,

@@ -148,15 +148,15 @@ struct OLKeyExtractor {
 pub fn get_canonical<C: Client>(id: &str, client: &C) -> Result<Option<RemoteId>, ProviderError> {
     let response = client.get(format!("https://openlibrary.org/isbn/{id}.json"))?;
 
-    let body = match response.status() {
-        StatusCode::OK => response.into_body().bytes()?,
+    let mut body = match response.status() {
+        StatusCode::OK => response.into_body(),
         StatusCode::NOT_FOUND => {
             return Ok(None);
         }
         code => return Err(ProviderError::UnexpectedStatusCode(code)),
     };
 
-    let extractor: OLKeyExtractor = match serde_json::from_slice(&body) {
+    let extractor: OLKeyExtractor = match body.read_json() {
         Ok(ext) => ext,
         Err(err) => return Err(ProviderError::Unexpected(err.to_string())),
     };

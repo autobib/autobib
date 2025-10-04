@@ -31,15 +31,15 @@ pub fn get_record<C: Client>(id: &str, client: &C) -> Result<Option<RecordData>,
         "https://mathscinet.ams.org/mathscinet/api/publications/format?formats=bib&ids={id}"
     ))?;
 
-    let body = match response.status() {
-        StatusCode::OK => response.into_body().bytes()?,
+    let mut body = match response.status() {
+        StatusCode::OK => response.into_body(),
         StatusCode::NOT_FOUND => {
             return Ok(None);
         }
         code => return Err(ProviderError::UnexpectedStatusCode(code)),
     };
 
-    let (msc_record,): (MathscinetRecord,) = match serde_json::from_slice(&body) {
+    let (msc_record,): (MathscinetRecord,) = match body.read_json() {
         Ok(record) => record,
         Err(err) => return Err(ProviderError::Unexpected(err.to_string())),
     };
