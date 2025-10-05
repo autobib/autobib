@@ -1,10 +1,10 @@
 name: CI
-description: Run Rust tests and checks
+# Run Rust tests and checks
 
 on:
   pull_request:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
 
 permissions:
   contents: read
@@ -25,79 +25,94 @@ jobs:
   tests:
     strategy:
       matrix:
-        image: [macos-latest, ubuntu-latest, ubuntu-24.04-arm, windows-latest, windows-11-arm]
+        image:
+          [
+            macos-latest,
+            ubuntu-latest,
+            ubuntu-24.04-arm,
+            windows-latest,
+            windows-11-arm,
+          ]
     runs-on: ${{ matrix.image }}
     steps:
-    # Windows configuration; this has to run before checkout!
-    - name: Configure Git on Windows
-      if: runner.os == 'Windows'
-      run: git config --global core.autocrlf false
+      # Windows configuration; this has to run before checkout!
+      - name: Configure Git on Windows
+        if: runner.os == 'Windows'
+        run: git config --global core.autocrlf false
 
-    - uses: actions/checkout@v5
-    - uses: dtolnay/rust-toolchain@master
-      with:
-        toolchain: ${{ env.RUST_VERSION }}
-    - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+      - uses: Swatinem/rust-cache@v2
 
-    # Load/create HTTP response cache
-    - name: Set up response data cache
-      id: response-cache
-      uses: actions/cache@v4
-      with:
-        path: ${{ env.AUTOBIB_RESPONSE_CACHE_PATH }}
-        key: ${{ env.CACHE_PREFIX }}-${{ matrix.image }}-${{ hashFiles(env.REMOTES_FILE, env.CACHE_FORMAT_DEF) }}
-    - name: Build response cache binary
-      if: steps.response-cache.outputs.cache-hit != 'true'
-      run: cargo build --locked --features write_response_cache
-    - name: Create response cache
-      if: steps.response-cache.outputs.cache-hit != 'true'
-      shell: bash
-      run: cargo run --locked --features write_response_cache -- -vv source --retrieve-only --ignore-null '${{ env.REMOTES_FILE }}'
+      # Load/create HTTP response cache
+      - name: Set up response data cache
+        id: response-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.AUTOBIB_RESPONSE_CACHE_PATH }}
+          key: ${{ env.CACHE_PREFIX }}-${{ matrix.image }}-${{ hashFiles(env.REMOTES_FILE, env.CACHE_FORMAT_DEF) }}
+      - name: Build response cache binary
+        if: steps.response-cache.outputs.cache-hit != 'true'
+        run: cargo build --locked --features write_response_cache
+      - name: Create response cache
+        if: steps.response-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: cargo run --locked --features write_response_cache -- -vv source --retrieve-only --ignore-null '${{ env.REMOTES_FILE }}'
 
-    # Actually run tests
-    - name: Build test binaries
-      run: cargo test --no-run --locked --features read_response_cache
-    - name: Run tests
-      run: cargo test --no-fail-fast --locked --features read_response_cache
+      # Actually run tests
+      - name: Build test binaries
+        run: cargo test --no-run --locked --features read_response_cache
+      - name: Run tests
+        run: cargo test --no-fail-fast --locked --features read_response_cache
 
   checks:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v5
-    - uses: dtolnay/rust-toolchain@master
-      with:
-        toolchain: ${{ env.RUST_VERSION }}
-        components: clippy, rustfmt
-    - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
 
-    # Check RUST_VERSION equal to Cargo.toml
-    - name: Check CI rust version equal to Cargo.toml
-      shell: bash
-      run: |
-        CARGO_TOML_RUST_VERSION="$(yq '.package.rust-version' Cargo.toml)"
-        if [[ "$CARGO_TOML_RUST_VERSION" != "${{ env.RUST_VERSION }}" ]]; then
-          echo >&2 "Rust version in Cargo.toml ($CARGO_TOML_RUST_VERSION) not equal to CI: ${{ env.RUST_VERSION }}"
-          echo >&2 "The rust version is set as a repository-level variable"
-          exit 1
-        fi
+      # Check RUST_VERSION equal to Cargo.toml
+      - name: Check CI rust version equal to Cargo.toml
+        shell: bash
+        run: |
+          CARGO_TOML_RUST_VERSION="$(yq '.package.rust-version' Cargo.toml)"
+          if [[ "$CARGO_TOML_RUST_VERSION" != "${{ env.RUST_VERSION }}" ]]; then
+            echo >&2 "Rust version in Cargo.toml ($CARGO_TOML_RUST_VERSION) not equal to CI: ${{ env.RUST_VERSION }}"
+            echo >&2 "The rust version is set as a repository-level variable"
+            exit 1
+          fi
 
-    # Rust doc/fmt/clippy
-    - name: Build docs
-      run: cargo doc --no-deps --locked
-    - name: Run Clippy lints
-      run: cargo clippy --locked
-    - name: Check formatting
-      run: cargo fmt --check
+      # Rust doc/fmt/clippy
+      - name: Build docs
+        run: cargo doc --no-deps --locked
+      - name: Run Clippy lints
+        run: cargo clippy --locked
+      - name: Check formatting
+        run: cargo fmt --check
 
-    # Check remotes file formatting
-    - name: Check remotes file is sorted
-      shell: bash
-      run: sort -C ${{ env.REMOTES_FILE }}
-    - name: Check remotes file contains no duplicates
-      shell: bash
-      run: test "$(cat ${{ env.REMOTES_FILE }} | uniq -d | wc -w)" -eq 0
+      # Markdown lints
+      - name: Run markdownlint
+        uses: DavidAnson/markdownlint-cli2-action@v20
+        with:
+          globs: |
+            **/*.md
+            !target/**/*.md
 
-    # Check bash scripts
-    - name: Checking contents of `scripts` directory
-      shell: bash
-      run: shellcheck scripts/*.sh --enable=all
+      # Check remotes file formatting
+      - name: Check remotes file is sorted
+        shell: bash
+        run: sort -C ${{ env.REMOTES_FILE }}
+      - name: Check remotes file contains no duplicates
+        shell: bash
+        run: test "$(cat ${{ env.REMOTES_FILE }} | uniq -d | wc -w)" -eq 0
+
+      # Check bash scripts
+      - name: Checking contents of `scripts` directory
+        shell: bash
+        run: shellcheck scripts/*.sh --enable=all
