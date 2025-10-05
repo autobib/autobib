@@ -1,0 +1,7 @@
+# Configuration for markdownlint
+
+# MD013/line-length
+MD013: false
+
+# MD059/descriptive-link-text
+MD059: false

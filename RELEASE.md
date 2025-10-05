@@ -13,15 +13,17 @@
    It will also create a draft release with all of the release binaries.
 9. Go to the 'releases' tab on GitHub and publish the draft release.
 
-
 ## Automation
 
 A convenience step has been created to automate steps 1-5.
 The script can be find in [`scripts/release.sh`](scripts/release.sh) and can be run with
-```
+
+```sh
 ./scripts/release.sh {major, minor, patch, rc, beta, alpha}
 ```
+
 This script requires that the following tools are installed
+
 - [`sed`](https://www.gnu.org/software/sed/) (GNU-compatible)
 - [`cargo-edit`](https://crates.io/crates/cargo-edit)
 - [`yq`](https://mikefarah.gitbook.io/yq)
