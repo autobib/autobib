@@ -1,4 +1,4 @@
-use std::{fmt, path::Path};
+use std::{fmt, path::Path, str::FromStr};
 
 use anyhow::Error;
 use regex_syntax::ast::{Ast, GroupKind, Span, parse::Parser};
@@ -14,6 +14,7 @@ use crate::{logger::error, provider::is_valid_provider};
 pub fn report_config_errors<P: AsRef<Path>>(path: P) -> Result<(), Error> {
     let raw_config = RawConfig::load(path, true)?;
 
+    validate_find_default_template(&raw_config.find.default_template);
     validate_alias_transform_rules(raw_config.alias_transform.rules);
 
     Ok(())
@@ -156,6 +157,12 @@ fn eval_ast(ast: &Ast) -> Outcome {
         }
         // none of the other nodes are recursive
         _ => Outcome::NoCapture,
+    }
+}
+
+fn validate_find_default_template(s: &str) {
+    if let Err(e) = crate::format::Template::from_str(s) {
+        error!("Config 'find.default_template' has invalid syntax: {e}");
     }
 }
 
