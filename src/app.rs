@@ -370,8 +370,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             }
         }
         Command::Find {
-            fields,
-            entry_type,
+            format,
             attachments,
             records,
             all_fields,
@@ -384,12 +383,13 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
 
             let cfg = config::load(&config_path, missing_ok)?;
 
+            let template = format.unwrap_or_default();
+
             match find_mode {
                 FindMode::Attachments => {
                     let mut picker = choose_attachment_path(
                         record_db,
-                        fields,
-                        entry_type,
+                        template,
                         all_fields,
                         get_attachment_root(&data_dir, cli.attachments_dir)?,
                         cfg.find.ignore_hidden,
@@ -419,8 +419,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     }
                 }
                 FindMode::CanonicalId => {
-                    let (mut picker, handle) =
-                        choose_canonical_id(record_db, fields, entry_type, all_fields);
+                    let (mut picker, handle) = choose_canonical_id(record_db, template, all_fields);
                     match picker.pick()? {
                         Some(row_data) => {
                             let cfg = config::load(&config_path, missing_ok)?;

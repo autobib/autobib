@@ -4,6 +4,7 @@ mod config;
 pub mod db;
 mod entry;
 pub mod error;
+pub mod format;
 mod http;
 mod logger;
 mod normalize;
