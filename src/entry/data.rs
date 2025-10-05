@@ -17,8 +17,8 @@ use delegate::delegate;
 use regex::Regex;
 
 pub use identifier::{EntryKey, EntryType, FieldKey, FieldValue, validate_ascii_identifier};
-pub use raw::RawRecordData;
 pub(crate) use raw::{EntryTypeHeader, KeyHeader, ValueHeader};
+pub use raw::{RawRecordData, RawRecordFieldsIter};
 
 use crate::normalize::{Normalize, normalize_whitespace_str};
 
@@ -62,7 +62,7 @@ pub unsafe trait EntryData: PartialEq {
     /// Get the `entry_type` as a string slice.
     fn entry_type(&self) -> &str;
 
-    /// Get the exact size (in bytes) if the binary format representation of the [`EntryData`].
+    /// Get the exact size (in bytes) of the binary format representation of the [`EntryData`].
     ///
     /// The default implementation is performed by iterating over all fields.
     fn raw_len(&self) -> usize {
@@ -79,7 +79,7 @@ pub unsafe trait EntryData: PartialEq {
     /// The default implementation iterates over all fields and returns the first match.
     fn get_field<'r>(&'r self, field_name: &str) -> Option<&'r str> {
         for (key, val) in self.fields() {
-            if field_name > key {
+            if field_name < key {
                 return None;
             }
 
@@ -100,12 +100,12 @@ pub unsafe trait EntryData: PartialEq {
 
 /// An in-memory [`EntryData`] implementation which supports addition and deletion of fields.
 #[derive(Debug, PartialEq, Eq)]
-pub struct RecordData {
-    pub(super) entry_type: EntryType<String>,
-    pub(super) fields: BTreeMap<FieldKey<String>, FieldValue<String>>,
+pub struct RecordData<S = String> {
+    pub(super) entry_type: EntryType<S>,
+    pub(super) fields: BTreeMap<FieldKey<S>, FieldValue<S>>,
 }
 
-impl Default for RecordData {
+impl<S: AsRef<str> + Ord + From<&'static str>> Default for RecordData<S> {
     fn default() -> Self {
         Self::new(EntryType("misc".into()))
     }
@@ -133,13 +133,24 @@ pub enum ConflictResolved {
     New(FieldValue),
 }
 
-impl RecordData {
-    /// Initialize a new [`RecordData`] instance.
-    pub fn new(entry_type: EntryType) -> Self {
-        Self {
-            entry_type,
-            fields: BTreeMap::new(),
+impl<'r> RecordData<&'r str> {
+    pub fn borrow_entry_data<D: EntryData>(data: &'r D) -> Self {
+        let mut new = Self::new(EntryType(data.entry_type()));
+        for (key, value) in data.fields() {
+            new.fields.insert(FieldKey(key), FieldValue(value));
         }
+        new
+    }
+}
+
+impl RecordData {
+    pub fn from_entry_data<D: EntryData>(data: &D) -> Self {
+        let mut new = Self::new(EntryType(data.entry_type().to_owned()));
+        for (key, value) in data.fields() {
+            new.fields
+                .insert(FieldKey(key.to_owned()), FieldValue(value.to_owned()));
+        }
+        new
     }
 
     /// Check for the following configuration inside the data:
@@ -166,21 +177,25 @@ impl RecordData {
         }
     }
 
-    pub fn get_str<Q>(&self, key: &Q) -> Option<&str>
-    where
-        FieldKey: Borrow<Q> + Ord,
-        Q: Ord + ?Sized,
-    {
-        self.get(key).map(AsRef::as_ref)
-    }
+    /// This method is very similar to `merge_or_overwrite`, but also updates the entry type and is
+    /// slightly more optimized since it blindly overwrites existing entries, instead of checking
+    /// that they are different.
+    pub fn update_from<D: EntryData>(&mut self, data: &D) {
+        self.entry_type.0.clear();
+        self.entry_type.0.push_str(data.entry_type());
 
-    pub fn from_entry_data<D: EntryData>(data: &D) -> Self {
-        let mut new = Self::new(EntryType(data.entry_type().to_owned()));
         for (key, value) in data.fields() {
-            new.fields
-                .insert(FieldKey(key.to_owned()), FieldValue(value.to_owned()));
+            match self.fields.get_mut(key) {
+                Some(existing) => {
+                    existing.0.clear();
+                    existing.0.push_str(value);
+                }
+                None => {
+                    self.fields
+                        .insert(FieldKey(key.to_owned()), FieldValue(value.to_owned()));
+                }
+            }
         }
-        new
     }
 
     /// Merge data from `other`, invoking a callback to resolve conflicts.
@@ -198,18 +213,20 @@ impl RecordData {
         for (key, value) in other.fields() {
             match self.fields.get_mut(key) {
                 Some(current_value) if current_value != value => {
-                    let new_value = match resolve_conflict(
+                    match resolve_conflict(
                         FieldKey(key),
                         FieldValue(&current_value.0),
                         FieldValue(value),
                     ) {
                         ConflictResolved::Current => continue,
-                        ConflictResolved::Incoming => FieldValue(value.to_owned()),
-                        ConflictResolved::New(new_value) => new_value,
+                        ConflictResolved::Incoming => {
+                            current_value.0.clear();
+                            current_value.0.push_str(value);
+                        }
+                        ConflictResolved::New(new_value) => {
+                            *current_value = new_value;
+                        }
                     };
-                    // This is more efficient than using `mem::swap` since this compiles down to a
-                    // single memcpy.
-                    let _ = std::mem::replace(current_value, new_value);
                 }
                 Some(_) => {}
                 None => {
@@ -230,27 +247,6 @@ impl RecordData {
     #[inline]
     pub fn merge_or_overwrite<D: EntryData>(&mut self, other: &D) {
         self.merge_with_callback(other, |_, _, _| ConflictResolved::Incoming);
-    }
-
-    delegate! {
-        to self.fields {
-            pub fn len(&self) -> usize;
-            pub fn is_empty(&self) -> bool;
-            pub fn get<Q>(&self, key: &Q) -> Option<&FieldValue>
-                where FieldKey: Borrow<Q> + Ord,
-                      Q: Ord + ?Sized;
-            pub fn keys(&self) -> std::collections::btree_map::Keys<'_, FieldKey, FieldValue>;
-            pub fn values(&self) -> std::collections::btree_map::Values<'_, FieldKey, FieldValue>;
-            pub fn insert(&mut self, key: FieldKey, value: FieldValue) -> Option<FieldValue>;
-            pub fn contains_key<Q>(&self, key: &Q) -> bool
-            where
-                FieldKey: Borrow<Q> + Ord,
-                Q: Ord + ?Sized;
-            pub fn remove<Q>(&mut self, key: &Q) -> Option<FieldValue>
-            where
-                FieldKey: Borrow<Q> + Ord,
-                Q: Ord + ?Sized;
-        }
     }
 
     pub fn try_new(e: String) -> Result<Self, crate::error::RecordDataError> {
@@ -278,7 +274,46 @@ impl RecordData {
     }
 }
 
-unsafe impl EntryData for RecordData {
+impl<S: AsRef<str> + Ord> RecordData<S> {
+    /// Initialize a new [`RecordData`] instance.
+    pub fn new(entry_type: EntryType<S>) -> Self {
+        Self {
+            entry_type,
+            fields: BTreeMap::new(),
+        }
+    }
+
+    pub fn get_str<Q>(&self, key: &Q) -> Option<&str>
+    where
+        FieldKey<S>: Borrow<Q> + Ord,
+        Q: Ord + ?Sized,
+    {
+        self.get(key).map(AsRef::as_ref)
+    }
+
+    delegate! {
+        to self.fields {
+            pub fn len(&self) -> usize;
+            pub fn is_empty(&self) -> bool;
+            pub fn get<Q>(&self, key: &Q) -> Option<&FieldValue<S>>
+                where FieldKey<S>: Borrow<Q>,
+                      Q: Ord + ?Sized;
+            pub fn keys(&self) -> std::collections::btree_map::Keys<'_, FieldKey<S>, FieldValue<S>>;
+            pub fn values(&self) -> std::collections::btree_map::Values<'_, FieldKey<S>, FieldValue<S>>;
+            pub fn insert(&mut self, key: FieldKey<S>, value: FieldValue<S>) -> Option<FieldValue<S>>;
+            pub fn contains_key<Q>(&self, key: &Q) -> bool
+            where
+                FieldKey<S>: Borrow<Q>,
+                Q: Ord + ?Sized;
+            pub fn remove<Q>(&mut self, key: &Q) -> Option<FieldValue<S>>
+            where
+                FieldKey<S>: Borrow<Q>,
+                Q: Ord + ?Sized;
+        }
+    }
+}
+
+unsafe impl<S: AsRef<str> + Ord> EntryData for RecordData<S> {
     fn fields(&self) -> impl Iterator<Item = (&str, &str)> {
         self.fields
             .iter()

@@ -97,7 +97,7 @@ impl EntryType<String> {
 /// 1. has length at least `1` and at most [`KeyHeader::MAX`].
 /// 2. composed only of ASCII printable characters with `{}(),= \t\n\\#%\"` and
 ///    `A..=Z` removed.
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct FieldKey<S = String>(pub(in crate::entry) S);
 
 impl<S: AsRef<str>> FieldKey<S> {

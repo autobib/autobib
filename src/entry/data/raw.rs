@@ -210,7 +210,7 @@ impl<'r> RawRecordData<&'r [u8]> {
 /// The iterator type for the fields of a [`RawRecordData`]. This cannot be constructed directly;
 /// it is constructed implicitly by the [`EntryData::fields`] implementation of [`RawRecordData`].
 #[derive(Debug)]
-pub(super) struct RawRecordFieldsIter<'a> {
+pub struct RawRecordFieldsIter<'a> {
     remaining: &'a [u8],
 }
 
@@ -235,6 +235,15 @@ impl<'a> Iterator for RawRecordFieldsIter<'a> {
             Some((from_utf8(key).unwrap(), from_utf8(value).unwrap()))
         } else {
             None
+        }
+    }
+}
+
+impl RawRecordData {
+    pub fn raw_fields(&self) -> RawRecordFieldsIter<'_> {
+        let (_, data_blocks) = self.split_blocks();
+        RawRecordFieldsIter {
+            remaining: data_blocks,
         }
     }
 }
