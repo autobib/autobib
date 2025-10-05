@@ -211,7 +211,7 @@ pub enum Command {
     /// picker are rendered using the template provided by the `--format` option, falling
     /// back to the config value or a default template.
     Find {
-        /// A format specifier.
+        /// Set the format template.
         #[arg(short, long)]
         format: Option<Template>,
         /// Search record attachments and print the selected path.
@@ -220,7 +220,7 @@ pub enum Command {
         /// Search records and print the selected canonical identifier.
         #[arg(long, group = "find_mode")]
         records: bool,
-        /// Only search records which contain all of the fields in the provided template.
+        /// Only include records which contain all of the fields in the template.
         #[arg(long)]
         all_fields: bool,
     },
