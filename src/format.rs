@@ -186,7 +186,7 @@ impl Template {
     }
 }
 
-pub const DEFAULT_TEMPLATE: &str = r#"{author} ~ {title}{=subtitle ". "}{subtitle}"#;
+pub const DEFAULT_TEMPLATE: &str = r#"{author} ~ {title}{=subtitle ". "}{=subtitle subtitle}"#;
 
 impl Default for Template {
     fn default() -> Self {
