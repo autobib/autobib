@@ -32,7 +32,23 @@ impl TryFrom<Entry> for RecordData {
                 author_buf.push_str(&author.name);
             }
         }
-        record_data.check_and_insert("author".into(), author_buf)?;
+        if !author_buf.is_empty() {
+            record_data.check_and_insert("author".into(), author_buf)?;
+        }
+
+        // editors
+        let mut editor_buf = String::new();
+        for editor in contributors.editors {
+            if editor_buf.is_empty() {
+                editor_buf = editor.name;
+            } else {
+                editor_buf.push_str(" and ");
+                editor_buf.push_str(&editor.name);
+            }
+        }
+        if !editor_buf.is_empty() {
+            record_data.check_and_insert("editor".into(), editor_buf)?;
+        }
 
         // language
         let mut lang_buf = String::new();
@@ -44,7 +60,9 @@ impl TryFrom<Entry> for RecordData {
                 lang_buf.push_str(&lang);
             }
         }
-        record_data.check_and_insert("language".into(), lang_buf)?;
+        if !lang_buf.is_empty() {
+            record_data.check_and_insert("language".into(), lang_buf)?;
+        }
 
         // zbmath, zbl, jfm keys
         record_data.check_and_insert("zbmath".into(), format!("{id:0>8}"))?;
@@ -210,6 +228,7 @@ pub struct Series {
 #[derive(Deserialize)]
 pub struct Contributors {
     authors: Vec<Author>,
+    editors: Vec<Author>,
 }
 
 #[derive(Deserialize)]
