@@ -8,6 +8,7 @@ use clap_verbosity_flag::{Verbosity, WarnLevel};
 use crate::{
     cite_search::SourceFileType,
     error::ShortError,
+    format::Template,
     record::{Alias, RecordId},
 };
 
@@ -206,28 +207,20 @@ pub enum Command {
     },
     /// Search for a citation key.
     ///
-    /// Open an interactive picker to search for a given citation key. In order to choose the
-    /// fields against which to search, use the `--fields` option.
+    /// Open an interactive picker to search for a given citation key. The lines in the
+    /// picker are rendered using the template provided by the `--format` option, falling
+    /// back to the config value or a default template.
     Find {
-        /// Fields to search (e.g. author, title), delimited by commas.
-        #[arg(
-            short,
-            long,
-            value_delimiter = ',',
-            default_value = "author,title",
-            value_name = "NAME"
-        )]
-        fields: Vec<String>,
-        /// Display entry type for searching.
+        /// A format specifier.
         #[arg(short, long)]
-        entry_type: bool,
+        format: Option<Template>,
         /// Search record attachments and print the selected path.
         #[arg(short, long, group = "find_mode")]
         attachments: bool,
         /// Search records and print the selected canonical identifier.
         #[arg(long, group = "find_mode")]
         records: bool,
-        /// Only search records which contain all of the provided fields.
+        /// Only search records which contain all of the fields in the provided template.
         #[arg(long)]
         all_fields: bool,
     },

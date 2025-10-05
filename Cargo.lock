@@ -131,9 +131,9 @@ dependencies = [
  "edit",
  "etcetera",
  "itertools",
- "lockstep",
  "log",
  "memchr",
+ "mufmt",
  "nonempty",
  "nucleo-picker",
  "predicates",
@@ -975,12 +975,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "lockstep"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc1d1453ec2e9f09a7f0a7279d75021ce92ceca13860798ab3b6025aaa7cd891"
-
-[[package]]
 name = "log"
 version = "0.4.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -988,9 +982,9 @@ checksum = "34080505efa8e45a4b816c349525ebe327ceaa8559756f0356cba97ef3bf7432"
 
 [[package]]
 name = "memchr"
-version = "2.7.5"
+version = "2.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32a282da65faaf38286cf3be983213fcf1d2e2a58700e808f83f4ea9a4804bc0"
+checksum = "f52b00d39961fc5b2736ea853c9cc86238e165017a493d1d5c8eac6bdc4cc273"
 
 [[package]]
 name = "miniz_oxide"
@@ -1011,6 +1005,15 @@ dependencies = [
  "log",
  "wasi 0.11.1+wasi-snapshot-preview1",
  "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "mufmt"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "83c2bdd5e5cd22150bbbbbc5c6d8d7cac1ce10d7ea6cd7ec8cd6ede576ec7b31"
+dependencies = [
+ "memchr",
 ]
 
 [[package]]

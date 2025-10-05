@@ -2,6 +2,7 @@
 //! The main error types which result from normal usage.
 mod bibtex;
 mod database;
+mod format;
 mod provider;
 mod record;
 mod record_data;
@@ -11,6 +12,7 @@ use thiserror::Error;
 pub use self::{
     bibtex::BibtexDataError,
     database::DatabaseError,
+    format::KeyParseError,
     provider::ProviderError,
     record::{
         AliasConversionError, AliasErrorKind, RecordError, RecordErrorKind,
