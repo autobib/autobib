@@ -147,39 +147,42 @@ pub struct Template {
 }
 
 impl Template {
-    pub fn has_keys_contained_in(&self, row: &RowData) -> bool {
-        match self.strategy {
-            Strategy::Sorted => {
-                let mut fields = BibtexFields::new(row);
-                for span in self.template.spans() {
-                    if let Span::Expr(Key::Bare(Token::Field(k))) = span
-                        && fields.get_field_ordered(k.as_ref()).is_none()
-                    {
+    fn contained_impl<T>(
+        &self,
+        init: impl FnOnce() -> T,
+        mut contains: impl FnMut(&str, &mut T) -> bool,
+    ) -> bool {
+        let mut ctx = init();
+        for span in self.template.spans() {
+            match span {
+                Span::Expr(Key::Bare(Token::Field(k))) => {
+                    if !contains(k.as_ref(), &mut ctx) {
                         return false;
                     }
                 }
-            }
-            Strategy::Small => {
-                for span in self.template.spans() {
-                    if let Span::Expr(Key::Bare(Token::Field(k))) = span
-                        && !row.data.contains_field(k.as_ref())
-                    {
+                Span::Expr(Key::Conditional(k1, Token::Field(k2))) => {
+                    if contains(k1.as_ref(), &mut ctx) && !contains(k2.as_ref(), &mut ctx) {
                         return false;
                     }
                 }
-            }
-            Strategy::Large => {
-                let data = RecordData::borrow_entry_data(&row.data);
-                for span in self.template.spans() {
-                    if let Span::Expr(Key::Bare(Token::Field(k))) = span
-                        && !data.contains_field(k.as_ref())
-                    {
-                        return false;
-                    }
-                }
+                _ => {}
             }
         }
         true
+    }
+
+    pub fn has_keys_contained_in(&self, row: &RowData) -> bool {
+        match self.strategy {
+            Strategy::Sorted => self.contained_impl(
+                || BibtexFields::new(row),
+                |k, fields| fields.get_field_ordered(k).is_some(),
+            ),
+            Strategy::Small => self.contained_impl(|| (), |k, ()| row.data.contains_field(k)),
+            Strategy::Large => self.contained_impl(
+                || RecordData::borrow_entry_data(&row.data),
+                |k, data| data.contains_field(k),
+            ),
+        }
     }
 }
 
@@ -374,6 +377,34 @@ mod tests {
     use super::*;
 
     #[test]
+    fn keys_contained_in() {
+        fn check<const N: usize>(s: &str, keys: [(&'static str, &'static str); N], expected: bool) {
+            println!("Testing template: {s}");
+
+            let template = Template::from_str(s).unwrap();
+            let mut data = RecordData::<String>::default();
+            for (k, v) in keys {
+                data.check_and_insert(k.into(), v.into()).unwrap();
+            }
+
+            let row_data = RowData {
+                data: RawRecordData::from_entry_data(&data),
+                canonical: RemoteId::from_parts("local", "123").unwrap(),
+                modified: Local::now(),
+            };
+
+            assert_eq!(template.has_keys_contained_in(&row_data), expected);
+        }
+
+        check("{a} {b}", [("a", "A"), ("b", "")], true);
+        check("{a} {=b c}", [("a", "A")], true);
+        check("{a} {=b c}", [("a", "A"), ("b", "B")], false);
+        check("{a} {=b b}", [("a", "A"), ("b", "B")], true);
+        check("{=b a}", [("a", "A"), ("b", "B")], true);
+        check("{=c \". \"}", [("a", "A"), ("b", "B")], true);
+    }
+
+    #[test]
     fn test_field_keys() {
         fn check<const N: usize>(s: &str, keys: [&'static str; N]) {
             let template = Template::from_str(s).unwrap();
@@ -406,7 +437,6 @@ mod tests {
             let template = Template::from_str(s).unwrap();
             let mut data = RecordData::<String>::default();
             for (k, v) in keys {
-                println!("Inserting key {k} = {v}");
                 data.check_and_insert(k.into(), v.into()).unwrap();
             }
 
