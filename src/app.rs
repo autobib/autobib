@@ -32,6 +32,7 @@ use crate::{
     },
     entry::{Entry, EntryKey, RawRecordData, RecordData},
     error::AliasErrorKind,
+    format::Template,
     http::{BodyBytes, Client},
     logger::{debug, error, info, suggest, warn},
     normalize::{Normalization, Normalize},
@@ -370,7 +371,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             }
         }
         Command::Find {
-            format,
+            template: format,
             attachments,
             records,
             all_fields,
@@ -383,7 +384,16 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
 
             let cfg = config::load(&config_path, missing_ok)?;
 
-            let template = format.unwrap_or_default();
+            // read template, or load from config / use default
+            let template = match format {
+                Some(t) => t,
+                None => match Template::from_str(&cfg.find.default_template) {
+                    Ok(t) => t,
+                    Err(err) => {
+                        bail!("Syntax error in `find.default_template` configuration value: {err}");
+                    }
+                },
+            };
 
             match find_mode {
                 FindMode::Attachments => {
