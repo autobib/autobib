@@ -56,14 +56,14 @@ impl Ast<'_> for Token {
 /// This is either a bare token, or a conditional token which only renders if the key is present in
 /// the field keys.
 #[derive(Debug, Clone)]
-pub enum Key {
+pub enum Expression {
     /// `{=key raw}`
     Conditional(FieldKey, Token),
     /// `{raw}`
     Bare(Token),
 }
 
-impl Ast<'_> for Key {
+impl Ast<'_> for Expression {
     type Error = KeyParseError;
 
     fn from_expr(expr: &str) -> Result<Self, Self::Error> {
@@ -103,12 +103,12 @@ enum Strategy {
 
 /// An iterator over the field keys in a template, in order of appearance.
 struct TemplateFieldKeys<'a, T> {
-    spans: std::slice::Iter<'a, Span<T, Key>>,
+    spans: std::slice::Iter<'a, Span<T, Expression>>,
     buffered: Option<&'a FieldKey>,
 }
 
 impl<'a, T> TemplateFieldKeys<'a, T> {
-    pub fn new(template: &'a mufmt::Template<T, Key>) -> Self {
+    pub fn new(template: &'a mufmt::Template<T, Expression>) -> Self {
         Self {
             spans: template.spans().iter(),
             buffered: None,
@@ -126,8 +126,8 @@ impl<'a, T> Iterator for TemplateFieldKeys<'a, T> {
 
         loop {
             match self.spans.next()? {
-                Span::Expr(Key::Bare(Token::Field(f))) => return Some(f),
-                Span::Expr(Key::Conditional(f, raw)) => {
+                Span::Expr(Expression::Bare(Token::Field(f))) => return Some(f),
+                Span::Expr(Expression::Conditional(f, raw)) => {
                     if let Token::Field(field_key) = raw {
                         self.buffered = Some(field_key);
                     }
@@ -142,7 +142,7 @@ impl<'a, T> Iterator for TemplateFieldKeys<'a, T> {
 /// A wrapper around a [`mufmt::Template`].
 #[derive(Debug, Clone)]
 pub struct Template {
-    template: mufmt::Template<String, Key>,
+    template: mufmt::Template<String, Expression>,
     strategy: Strategy,
 }
 
@@ -155,12 +155,12 @@ impl Template {
         let mut ctx = init();
         for span in self.template.spans() {
             match span {
-                Span::Expr(Key::Bare(Token::Field(k))) => {
+                Span::Expr(Expression::Bare(Token::Field(k))) => {
                     if !contains(k.as_ref(), &mut ctx) {
                         return false;
                     }
                 }
-                Span::Expr(Key::Conditional(k1, Token::Field(k2))) => {
+                Span::Expr(Expression::Conditional(k1, Token::Field(k2))) => {
                     if contains(k1.as_ref(), &mut ctx) && !contains(k2.as_ref(), &mut ctx) {
                         return false;
                     }
@@ -203,7 +203,7 @@ impl FromStr for Template {
     type Err = SyntaxError<KeyParseError>;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let template = mufmt::Template::<String, Key>::compile(s)?;
+        let template = mufmt::Template::<String, Expression>::compile(s)?;
 
         let strategy = if TemplateFieldKeys::new(&template).is_sorted() {
             Strategy::Sorted
@@ -264,19 +264,19 @@ impl<'r, 'ast, 'state> std::fmt::Display for DisplayedRow<'r, 'ast, 'state> {
 }
 
 impl<'row, 'ast, 'state> DisplayedRow<'row, 'ast, 'state> {
-    fn from_data<F>(row_data: &'row RowData, ast: &'ast Key, mut f: F) -> Self
+    fn from_data<F>(row_data: &'row RowData, ast: &'ast Expression, mut f: F) -> Self
     where
         F: FnMut(&str) -> Option<&'state str>,
     {
         let token = match ast {
-            Key::Conditional(field_key, token) => {
+            Expression::Conditional(field_key, token) => {
                 if f(field_key.as_ref()).is_some() {
                     token
                 } else {
                     return Self::Skip;
                 }
             }
-            Key::Bare(token) => token,
+            Expression::Bare(token) => token,
         };
 
         match token {
@@ -295,7 +295,7 @@ impl<'row, 'ast, 'state> DisplayedRow<'row, 'ast, 'state> {
 
 pub struct ManifestSorted<'r>(&'r RowData);
 
-impl<'r> ManifestMut<Key> for ManifestSorted<'r> {
+impl<'r> ManifestMut<Expression> for ManifestSorted<'r> {
     type Error = Infallible;
 
     type State<'a> = BibtexFields<'a>;
@@ -306,7 +306,7 @@ impl<'r> ManifestMut<Key> for ManifestSorted<'r> {
 
     fn manifest_mut(
         &self,
-        ast: &Key,
+        ast: &Expression,
         state: &mut Self::State<'_>,
     ) -> Result<impl std::fmt::Display, Self::Error> {
         Ok(DisplayedRow::from_data(self.0, ast, |k| {
@@ -317,10 +317,10 @@ impl<'r> ManifestMut<Key> for ManifestSorted<'r> {
 
 pub struct ManifestSmall<'r>(&'r RowData);
 
-impl<'r> Manifest<Key> for ManifestSmall<'r> {
+impl<'r> Manifest<Expression> for ManifestSmall<'r> {
     type Error = Infallible;
 
-    fn manifest(&self, ast: &Key) -> Result<impl std::fmt::Display, Self::Error> {
+    fn manifest(&self, ast: &Expression) -> Result<impl std::fmt::Display, Self::Error> {
         Ok(DisplayedRow::from_data(self.0, ast, |k| {
             self.0.data.get_field(k)
         }))
@@ -329,7 +329,7 @@ impl<'r> Manifest<Key> for ManifestSmall<'r> {
 
 pub struct ManifestLarge<'r>(&'r RowData);
 
-impl<'r> ManifestMut<Key> for ManifestLarge<'r> {
+impl<'r> ManifestMut<Expression> for ManifestLarge<'r> {
     type Error = Infallible;
 
     type State<'s> = RecordData<&'s str>;
@@ -340,7 +340,7 @@ impl<'r> ManifestMut<Key> for ManifestLarge<'r> {
 
     fn manifest_mut(
         &self,
-        ast: &Key,
+        ast: &Expression,
         state: &mut Self::State<'_>,
     ) -> Result<impl std::fmt::Display, Self::Error> {
         Ok(DisplayedRow::from_data(self.0, ast, |k| state.get_field(k)))

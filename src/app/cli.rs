@@ -221,8 +221,8 @@ pub enum Command {
         #[arg(long, group = "find_mode")]
         records: bool,
         /// Only include records which contain all of the fields in the template.
-        #[arg(long)]
-        all_fields: bool,
+        #[arg(short, long)]
+        strict: bool,
     },
     /// Retrieve records given citation keys.
     Get {
