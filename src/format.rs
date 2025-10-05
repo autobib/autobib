@@ -183,10 +183,11 @@ impl Template {
     }
 }
 
+pub const DEFAULT_TEMPLATE: &str = r#"{author} ~ {title}{=subtitle ". "}{subtitle}"#;
+
 impl Default for Template {
     fn default() -> Self {
-        let template =
-            mufmt::Template::compile(r#"{author} ~ {title}{=subtitle ". "}{subtitle}"#).unwrap();
+        let template = mufmt::Template::compile(DEFAULT_TEMPLATE).unwrap();
 
         Self {
             template,

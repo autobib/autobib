@@ -213,7 +213,7 @@ pub enum Command {
     Find {
         /// Set the format template.
         #[arg(short, long)]
-        format: Option<Template>,
+        template: Option<Template>,
         /// Search record attachments and print the selected path.
         #[arg(short, long, group = "find_mode")]
         attachments: bool,
