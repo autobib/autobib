@@ -5,8 +5,8 @@ on:
     tags:
       - "v*"
 
-# necessary to create releases.
 permissions:
+  # write permission is necessary to create releases.
   contents: write
 
 env:
