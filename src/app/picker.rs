@@ -45,7 +45,7 @@ pub fn choose_attachment(att_data: &AttachmentData) -> Picker<DirEntry, DirEntry
 pub fn choose_attachment_path<F: FnMut(&Path) -> bool + Send + 'static>(
     mut record_db: RecordDatabase,
     template: Template,
-    all_fields: bool,
+    strict: bool,
     attachment_root: PathBuf,
     ignore_hidden: bool,
     mut filter: F,
@@ -57,7 +57,7 @@ pub fn choose_attachment_path<F: FnMut(&Path) -> bool + Send + 'static>(
     let injector = picker.injector();
     thread::spawn(move || {
         record_db.inject_records(injector.clone(), |row_data| {
-            if all_fields && !injector.renderer().has_keys_contained_in(&row_data) {
+            if strict && !injector.renderer().has_keys_contained_in(&row_data) {
                 return None;
             }
 
@@ -107,7 +107,7 @@ pub fn choose_attachment_path<F: FnMut(&Path) -> bool + Send + 'static>(
 pub fn choose_canonical_id(
     mut record_db: RecordDatabase,
     template: Template,
-    all_fields: bool,
+    strict: bool,
 ) -> (
     Picker<RowData, Template>,
     thread::JoinHandle<Result<RecordDatabase, rusqlite::Error>>,
@@ -123,7 +123,7 @@ pub fn choose_canonical_id(
         // page size (maybe 10k? this should take <1ms per page), and then check for cancellation
         // between pages.
         record_db.inject_records(injector.clone(), |row_data| {
-            if all_fields && !injector.renderer().has_keys_contained_in(&row_data) {
+            if strict && !injector.renderer().has_keys_contained_in(&row_data) {
                 None
             } else {
                 Some(row_data)
