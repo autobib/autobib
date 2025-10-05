@@ -171,6 +171,33 @@ fn test_insert_len() {
 }
 
 #[test]
+fn test_round_trip() {
+    fn check(keys: &[(&'static str, &'static str)]) {
+        let mut data = RecordData::<String>::default();
+        for (k, v) in keys {
+            data.check_and_insert((*k).into(), (*v).into()).unwrap();
+        }
+        assert_eq!(data.fields().count(), keys.len());
+
+        let raw_data = RawRecordData::from_entry_data(&data);
+        assert_eq!(raw_data.fields().count(), keys.len());
+
+        let new_data = RecordData::from_entry_data(&raw_data);
+        assert_eq!(new_data.fields().count(), keys.len());
+
+        for (k, v) in keys {
+            assert_eq!(raw_data.get_field(k), Some(*v));
+            assert_eq!(data.get_field(k), Some(*v));
+            assert_eq!(new_data.get_field(k), Some(*v));
+        }
+    }
+    check(&[("a", "A"), ("b", "B")]);
+    check(&[("a", "A"), ("c", ""), ("b", "C")]);
+    check(&[]);
+    check(&[("b", "a")]);
+}
+
+#[test]
 fn test_format_manual() {
     let mut record_data = RecordData::try_new("article".into()).unwrap();
     record_data

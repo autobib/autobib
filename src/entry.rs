@@ -9,7 +9,7 @@ use serde_bibtex::{MacroDictionary, de::Deserializer, to_string_unchecked};
 
 pub use self::data::{
     BorrowedEntryData, ConflictResolved, EntryData, EntryKey, EntryType, FieldKey, FieldValue,
-    RawRecordData, RecordData,
+    RawRecordData, RawRecordFieldsIter, RecordData,
 };
 pub(crate) use self::data::{EntryTypeHeader, KeyHeader, ValueHeader};
 
