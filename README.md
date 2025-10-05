@@ -196,12 +196,14 @@ As a consequence, the `sub_id` part of a `local:` identifier must be a valid ali
 
 In order to search for records which are saved on your local database, use the `autobib find` command.
 This will open a fuzzy picker for searching through various fields.
-Specify the fields that you would like with `-f`, followed by a comma-separated list of fields.
+You can customize the search syntax using templates.
 For example,
 ```sh
-autobib find -f author,title
+autobib find -t '{author}: {title}'
 ```
 will list all of your local records with the `author` and `title` fields available to search against.
+
+Read more in the [template syntax documentation](docs/template.md).
 
 ### Importing records
 
