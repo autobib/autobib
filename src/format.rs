@@ -1,4 +1,4 @@
-use std::{collections::BTreeSet, convert::Infallible, iter::Peekable, str::FromStr};
+use std::{collections::BTreeSet, convert::Infallible, fmt, iter::Peekable, str::FromStr};
 
 use mufmt::{Ast, Manifest, ManifestMut, Span, SyntaxError};
 use nucleo_picker::Render;
@@ -6,7 +6,7 @@ use nucleo_picker::Render;
 use crate::{
     db::{CitationKey, state::RowData},
     entry::{EntryData, FieldKey, RawRecordFieldsIter, RecordData},
-    error::KeyParseError,
+    error::{ClapTemplateError, KeyParseError},
 };
 
 /// A basic template token.
@@ -43,6 +43,7 @@ impl Ast<'_> for Token {
                 let s = serde_json::from_str(expr)?;
                 Ok(Self::String(s))
             }
+            None => Err(KeyParseError::Empty),
             _ => {
                 let key = FieldKey::try_new(expr)?.to_owned();
                 Ok(Self::Field(key))
@@ -139,7 +140,7 @@ impl<'a, T> Iterator for TemplateFieldKeys<'a, T> {
     }
 }
 
-/// A wrapper around a [`mufmt::Template`].
+/// A wrapper around a [`mufmt::Template`] which also pre-computes an optimal rendering strategy.
 #[derive(Debug, Clone)]
 pub struct Template {
     template: mufmt::Template<String, Expression>,
@@ -147,6 +148,24 @@ pub struct Template {
 }
 
 impl Template {
+    pub fn compile(s: &str) -> Result<Self, SyntaxError<KeyParseError>> {
+        let template = mufmt::Template::<String, Expression>::compile(s)?;
+
+        let strategy = if TemplateFieldKeys::new(&template).is_sorted() {
+            Strategy::Sorted
+        } else if TemplateFieldKeys::new(&template)
+            .collect::<BTreeSet<&FieldKey<String>>>()
+            .len()
+            <= 4
+        {
+            Strategy::Small
+        } else {
+            Strategy::Large
+        };
+
+        Ok(Self { template, strategy })
+    }
+
     fn contained_impl<T>(
         &self,
         init: impl FnOnce() -> T,
@@ -199,25 +218,17 @@ impl Default for Template {
     }
 }
 
+impl From<SyntaxError<KeyParseError>> for ClapTemplateError {
+    fn from(e: SyntaxError<KeyParseError>) -> Self {
+        Self(e)
+    }
+}
+
 impl FromStr for Template {
-    type Err = SyntaxError<KeyParseError>;
+    type Err = ClapTemplateError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let template = mufmt::Template::<String, Expression>::compile(s)?;
-
-        let strategy = if TemplateFieldKeys::new(&template).is_sorted() {
-            Strategy::Sorted
-        } else if TemplateFieldKeys::new(&template)
-            .collect::<BTreeSet<&FieldKey<String>>>()
-            .len()
-            <= 4
-        {
-            Strategy::Small
-        } else {
-            Strategy::Large
-        };
-
-        Ok(Self { template, strategy })
+        Ok(Self::compile(s)?)
     }
 }
 
@@ -252,8 +263,8 @@ enum DisplayedRow<'row, 'ast, 'state> {
     Skip,
 }
 
-impl<'r, 'ast, 'state> std::fmt::Display for DisplayedRow<'r, 'ast, 'state> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<'r, 'ast, 'state> fmt::Display for DisplayedRow<'r, 'ast, 'state> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Row(s) => f.write_str(s),
             Self::Ast(s) => f.write_str(s),
@@ -308,7 +319,7 @@ impl<'r> ManifestMut<Expression> for ManifestSorted<'r> {
         &self,
         ast: &Expression,
         state: &mut Self::State<'_>,
-    ) -> Result<impl std::fmt::Display, Self::Error> {
+    ) -> Result<impl fmt::Display, Self::Error> {
         Ok(DisplayedRow::from_data(self.0, ast, |k| {
             state.get_field_ordered(k)
         }))
@@ -320,7 +331,7 @@ pub struct ManifestSmall<'r>(&'r RowData);
 impl<'r> Manifest<Expression> for ManifestSmall<'r> {
     type Error = Infallible;
 
-    fn manifest(&self, ast: &Expression) -> Result<impl std::fmt::Display, Self::Error> {
+    fn manifest(&self, ast: &Expression) -> Result<impl fmt::Display, Self::Error> {
         Ok(DisplayedRow::from_data(self.0, ast, |k| {
             self.0.data.get_field(k)
         }))
@@ -342,7 +353,7 @@ impl<'r> ManifestMut<Expression> for ManifestLarge<'r> {
         &self,
         ast: &Expression,
         state: &mut Self::State<'_>,
-    ) -> Result<impl std::fmt::Display, Self::Error> {
+    ) -> Result<impl fmt::Display, Self::Error> {
         Ok(DisplayedRow::from_data(self.0, ast, |k| state.get_field(k)))
     }
 }
@@ -381,7 +392,7 @@ mod tests {
         fn check<const N: usize>(s: &str, keys: [(&'static str, &'static str); N], expected: bool) {
             println!("Testing template: {s}");
 
-            let template = Template::from_str(s).unwrap();
+            let template = Template::compile(s).unwrap();
             let mut data = RecordData::<String>::default();
             for (k, v) in keys {
                 data.check_and_insert(k.into(), v.into()).unwrap();
@@ -407,7 +418,7 @@ mod tests {
     #[test]
     fn test_field_keys() {
         fn check<const N: usize>(s: &str, keys: [&'static str; N]) {
-            let template = Template::from_str(s).unwrap();
+            let template = Template::compile(s).unwrap();
             assert_eq!(TemplateFieldKeys::new(&template.template).count(), N);
 
             let field_keys = TemplateFieldKeys::new(&template.template);
@@ -434,7 +445,7 @@ mod tests {
         ) {
             println!("Testing template: {s}");
 
-            let template = Template::from_str(s).unwrap();
+            let template = Template::compile(s).unwrap();
             let mut data = RecordData::<String>::default();
             for (k, v) in keys {
                 data.check_and_insert(k.into(), v.into()).unwrap();

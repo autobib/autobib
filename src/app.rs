@@ -387,7 +387,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             // read template, or load from config / use default
             let template = match format {
                 Some(t) => t,
-                None => match Template::from_str(&cfg.find.default_template) {
+                None => match Template::compile(&cfg.find.default_template) {
                     Ok(t) => t,
                     Err(err) => {
                         bail!("Syntax error in `find.default_template` configuration value: {err}");

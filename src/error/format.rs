@@ -5,7 +5,7 @@ use super::RecordDataError;
 #[derive(Error, Debug)]
 pub enum KeyParseError {
     #[error(
-        "Specifier '%{0}' does not exist. Accepted values are: %entry_type, %provider, %sub_id, %full_id"
+        "Meta '%{0}' is invalid. Accepted values:\n     %entry_type %provider %sub_id %full_id"
     )]
     InvalidSpecial(String),
 
@@ -16,4 +16,6 @@ pub enum KeyParseError {
     InvalidLiteral(#[from] serde_json::Error),
     #[error("A conditional block is missing a value.")]
     IncompleteConditional,
+    #[error("Must be non-empty.")]
+    Empty,
 }
