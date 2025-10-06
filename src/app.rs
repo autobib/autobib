@@ -170,7 +170,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             let (record, row) = get_record_row(&mut record_db, citation_key, client, &cfg)?
                 .exists_or_commit_null("Cannot attach file for")?;
             row.commit()?;
-            let mut target = get_attachment_dir(&record.canonical, &data_dir, cli.attachments_dir)?;
+            let mut target = get_attachment_dir(&data_dir, cli.attachments_dir, &record.canonical)?;
 
             let mut opts = OpenOptions::new();
             opts.write(true);
@@ -768,7 +768,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             let (record, row) = get_record_row(&mut record_db, citation_key, client, &cfg)?
                 .exists_or_commit_null("Cannot show directory for")?;
             row.commit()?;
-            let mut target = get_attachment_dir(&record.canonical, &data_dir, cli.attachments_dir)?;
+            let mut target = get_attachment_dir(&data_dir, cli.attachments_dir, &record.canonical)?;
 
             if mkdir {
                 create_dir_all(&target)?;
