@@ -10,7 +10,7 @@ use toml::from_str;
 use crate::{
     Alias, CitationKey,
     format::DEFAULT_TEMPLATE,
-    logger::{debug, info},
+    logger::{debug, info, warn},
     normalize::Normalization,
 };
 pub use validate::report_config_errors as validate;
@@ -133,7 +133,12 @@ pub fn load<P: AsRef<Path>>(
     let rules = LazyLock::new(move || {
         rules
             .into_iter()
-            .filter_map(|(re, s)| Regex::new(&re).ok().map(|compiled| (compiled, s)))
+            .filter_map(|(re, s)| {
+                Regex::new(&re)
+                    .inspect_err(|err| warn!("Invalid config: failed to compile 'alias_transform.rules' transformation\nrule with provider '{s}': {err}"))
+                    .ok()
+                    .map(|compiled| (compiled, s))
+            })
             .collect()
     });
 
