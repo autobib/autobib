@@ -9,13 +9,9 @@ use crate::{
     error::{ClapTemplateError, KeyParseError},
 };
 
-/// A basic template token.
+/// A `{&meta}` token.
 #[derive(Debug, Clone)]
-pub enum Token {
-    /// `{key}`
-    Field(FieldKey),
-    /// `{"string"}`
-    String(String),
+pub enum Meta {
     /// `{%entry_type}`
     EntryType,
     /// `{%provider}`
@@ -26,19 +22,38 @@ pub enum Token {
     FullId,
 }
 
+impl FromStr for Meta {
+    type Err = KeyParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "entry_type" => Ok(Self::EntryType),
+            "provider" => Ok(Self::Provider),
+            "sub_id" => Ok(Self::SubId),
+            "full_id" => Ok(Self::FullId),
+            _ => Err(KeyParseError::InvalidSpecial(s.into())),
+        }
+    }
+}
+
+/// A basic template token.
+#[derive(Debug, Clone)]
+pub enum Token {
+    /// `{key}`
+    FieldKey(FieldKey),
+    /// `{"string"}`
+    String(String),
+    /// `{%entry_type}`
+    Meta(Meta),
+}
+
 impl Ast<'_> for Token {
     type Error = KeyParseError;
 
     fn from_expr(expr: &'_ str) -> Result<Self, Self::Error> {
         let mut chars = expr.chars();
         match chars.next() {
-            Some('%') => match chars.as_str() {
-                "entry_type" => Ok(Self::EntryType),
-                "provider" => Ok(Self::Provider),
-                "sub_id" => Ok(Self::SubId),
-                "full_id" => Ok(Self::FullId),
-                _ => Err(KeyParseError::InvalidSpecial(chars.as_str().into())),
-            },
+            Some('%') => Meta::from_str(chars.as_str()).map(Self::Meta),
             Some('"') => {
                 let s = serde_json::from_str(expr)?;
                 Ok(Self::String(s))
@@ -46,7 +61,7 @@ impl Ast<'_> for Token {
             None => Err(KeyParseError::Empty),
             _ => {
                 let key = FieldKey::try_new(expr)?.to_owned();
-                Ok(Self::Field(key))
+                Ok(Self::FieldKey(key))
             }
         }
     }
@@ -127,9 +142,9 @@ impl<'a, T> Iterator for TemplateFieldKeys<'a, T> {
 
         loop {
             match self.spans.next()? {
-                Span::Expr(Expression::Bare(Token::Field(f))) => return Some(f),
+                Span::Expr(Expression::Bare(Token::FieldKey(f))) => return Some(f),
                 Span::Expr(Expression::Conditional(f, raw)) => {
-                    if let Token::Field(field_key) = raw {
+                    if let Token::FieldKey(field_key) = raw {
                         self.buffered = Some(field_key);
                     }
                     return Some(f);
@@ -174,12 +189,12 @@ impl Template {
         let mut ctx = init();
         for span in self.template.spans() {
             match span {
-                Span::Expr(Expression::Bare(Token::Field(k))) => {
+                Span::Expr(Expression::Bare(Token::FieldKey(k))) => {
                     if !contains(k.as_ref(), &mut ctx) {
                         return false;
                     }
                 }
-                Span::Expr(Expression::Conditional(k1, Token::Field(k2))) => {
+                Span::Expr(Expression::Conditional(k1, Token::FieldKey(k2))) => {
                     if contains(k1.as_ref(), &mut ctx) && !contains(k2.as_ref(), &mut ctx) {
                         return false;
                     }
@@ -291,15 +306,17 @@ impl<'row, 'ast, 'state> DisplayedRow<'row, 'ast, 'state> {
         };
 
         match token {
-            Token::Field(key) => match f(key.as_ref()) {
+            Token::FieldKey(key) => match f(key.as_ref()) {
                 Some(val) => DisplayedRow::State(val),
                 None => DisplayedRow::Skip,
             },
             Token::String(s) => DisplayedRow::Ast(s),
-            Token::EntryType => DisplayedRow::Row(row_data.data.entry_type()),
-            Token::Provider => DisplayedRow::Row(row_data.canonical.provider()),
-            Token::SubId => DisplayedRow::Row(row_data.canonical.sub_id()),
-            Token::FullId => DisplayedRow::Row(row_data.canonical.name()),
+            Token::Meta(meta) => match meta {
+                Meta::EntryType => DisplayedRow::Row(row_data.data.entry_type()),
+                Meta::Provider => DisplayedRow::Row(row_data.canonical.provider()),
+                Meta::SubId => DisplayedRow::Row(row_data.canonical.sub_id()),
+                Meta::FullId => DisplayedRow::Row(row_data.canonical.name()),
+            },
         }
     }
 }
