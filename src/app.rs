@@ -9,7 +9,7 @@ mod write;
 
 use std::{
     collections::{BTreeSet, HashSet},
-    fs::{File, OpenOptions, create_dir_all},
+    fs::{File, OpenOptions, create_dir_all, exists},
     io::{Read, Seek, copy},
     iter::once,
     path::{Path, PathBuf},
@@ -207,7 +207,21 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         c => bail!("Failed to download file: {c}"),
                     };
                     let mut target_file = opts.open(dbg!(&target))?;
-                    copy(&mut body.as_reader(), &mut target_file)?;
+                    if let Err(e) = copy(&mut body.as_reader(), &mut target_file) {
+                        error!("{e}");
+                        // check if there is a file at the target location; if there is one, it
+                        // could be the partially downloaded file
+                        match exists(&target) {
+                            Ok(false) => {}
+                            _ => {
+                                warn!(
+                                    "The file may have partially downloaded at the below path:\n
+                                {}",
+                                    target.display()
+                                );
+                            }
+                        }
+                    }
                 }
                 _ => {
                     let file = PathBuf::from(file);
