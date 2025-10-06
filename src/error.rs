@@ -7,6 +7,10 @@ mod provider;
 mod record;
 mod record_data;
 
+use std::{error, fmt};
+
+use crossterm::style::Stylize;
+use mufmt::SyntaxError;
 use thiserror::Error;
 
 pub use self::{
@@ -53,3 +57,29 @@ impl From<rusqlite::Error> for Error {
         Self::DatabaseError(value.into())
     }
 }
+
+/// A special error wrapper type which has displays a template syntax error nicely for clap.
+#[derive(Debug)]
+pub struct ClapTemplateError(pub SyntaxError<KeyParseError>);
+
+impl fmt::Display for ClapTemplateError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        const CLAP_PREFIX_LEN: usize = "error: invalid value '".len();
+
+        let std::ops::Range { start, end } = self.0.locate();
+
+        let loc = format!("{caret:^>0$}", end - start, caret = "^")
+            .stylize()
+            .red();
+        write!(
+            f,
+            "\n{space:>0$}{loc}\n{help} {kind}",
+            CLAP_PREFIX_LEN + start,
+            space = " ",
+            help = "help:".stylize().blue().bold(),
+            kind = self.0.kind,
+        )
+    }
+}
+
+impl error::Error for ClapTemplateError {}

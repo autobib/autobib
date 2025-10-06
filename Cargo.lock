@@ -1009,9 +1009,9 @@ dependencies = [
 
 [[package]]
 name = "mufmt"
-version = "0.3.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "83c2bdd5e5cd22150bbbbbc5c6d8d7cac1ce10d7ea6cd7ec8cd6ede576ec7b31"
+checksum = "ab671b7dc8b718f565fac0bb0a44c701ff81be1eb4ee7860b066d3fa349678a2"
 dependencies = [
  "memchr",
 ]
