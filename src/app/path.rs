@@ -42,9 +42,9 @@ pub fn get_attachment_root(
 
 /// Get the attachment directory corresponding to the provided citation key.
 pub fn get_attachment_dir(
-    canonical: &RemoteId,
     data_dir: &Path,
     default_attachments_dir: Option<PathBuf>,
+    canonical: &RemoteId,
 ) -> Result<PathBuf, anyhow::Error> {
     let mut attachments_root = get_attachment_root(data_dir, default_attachments_dir)?;
     canonical.extend_attachments_path(&mut attachments_root);
