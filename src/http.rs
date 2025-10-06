@@ -91,7 +91,6 @@ impl UreqClient {
 
         let config = ureq::Agent::config_builder()
             .user_agent(APP_USER_AGENT)
-            .https_only(true)
             .http_status_as_error(false)
             .build();
         let inner = ureq::Agent::new_with_config(config);
