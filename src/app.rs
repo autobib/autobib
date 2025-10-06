@@ -194,17 +194,20 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     };
                     if name.is_empty() {
                         bail!(
-                            "Could not determine filename from provided URI. Use `--rename` to manually specify a name."
+                            "Could not determine filename from URL. Use `--rename` to manually specify a name."
                         );
                     }
 
                     use_rename_or_fallback(&mut target, rename, Some(std::ffi::OsStr::new(name)))?;
 
-                    let mut target_file = opts.open(dbg!(&target))?;
-
                     info!("Downloading file from: {uri}");
-                    let mut response = client.get(uri)?;
-                    copy(&mut response.body_mut().as_reader(), &mut target_file)?;
+                    let response = client.get(uri)?;
+                    let mut body = match response.status() {
+                        ureq::http::StatusCode::OK => response.into_body(),
+                        c => bail!("Failed to download file: {c}"),
+                    };
+                    let mut target_file = opts.open(dbg!(&target))?;
+                    copy(&mut body.as_reader(), &mut target_file)?;
                 }
                 _ => {
                     let file = PathBuf::from(file);
