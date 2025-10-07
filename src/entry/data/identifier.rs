@@ -100,6 +100,12 @@ impl EntryType<String> {
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct FieldKey<S = String>(pub(in crate::entry) S);
 
+impl FieldKey<String> {
+    pub fn try_new_normalize(s: &str) -> Result<Self, RecordDataError> {
+        Self::try_new(s.to_ascii_lowercase())
+    }
+}
+
 impl<S: AsRef<str>> FieldKey<S> {
     #[inline]
     pub fn try_new(s: S) -> Result<Self, RecordDataError> {

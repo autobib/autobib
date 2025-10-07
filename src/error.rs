@@ -7,7 +7,7 @@ mod provider;
 mod record;
 mod record_data;
 
-use std::{error, fmt};
+use std::{error, fmt, ops::Range};
 
 use crossterm::style::Stylize;
 use mufmt::SyntaxError;
@@ -16,7 +16,7 @@ use thiserror::Error;
 pub use self::{
     bibtex::BibtexDataError,
     database::DatabaseError,
-    format::KeyParseError,
+    format::{KeyParseError, KeyParseErrorKind},
     provider::ProviderError,
     record::{
         AliasConversionError, AliasErrorKind, RecordError, RecordErrorKind,
@@ -66,7 +66,15 @@ impl fmt::Display for ClapTemplateError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         const CLAP_PREFIX_LEN: usize = "error: invalid value '".len();
 
-        let std::ops::Range { start, end } = self.0.locate();
+        let Range { start, end } = self.0.locate();
+
+        let (start, end) = if let mufmt::SyntaxErrorKind::InvalidExpr(ref e) = self.0.kind
+            && let Some(Range { start: l, end: r }) = e.span
+        {
+            (start + l, start + r)
+        } else {
+            (start, end)
+        };
 
         let loc = format!("{caret:^>0$}", end - start, caret = "^")
             .stylize()
