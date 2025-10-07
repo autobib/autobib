@@ -98,7 +98,9 @@ Here, `\"` expands to `"` because JSON quotes must be escaped.
 
 ### Conditional expansion
 
-In order to handle potentially missing keys, an expression can be prefixed by a *conditional* of the form `=key`, followed by whitespace and then any value from the previous section (that is, a *field key*, a *meta*, or a *string*).
+In order to handle potentially missing keys, an expression can be prefixed by a *conditional* of the form `=key` or `!key`, followed by whitespace and then any value from the previous section (that is, a *field key*, a *meta*, or a *string*).
+
+A conditional `{=key v}` will only render `v` if `key` exists in the data, and `{!key v}` will only render `v` if `key` *does not* exist in the data.
 For example:
 
 ```txt
@@ -106,10 +108,10 @@ For example:
 ```
 
 since the `subtitle` key is not defined.
-On the other hand, since the `journal` key is defined,
+On the other hand, since the `journal` key is defined and `issue` is not,
 
 ```txt
-'{author}{=journal ". "}{journal} => 'Hochman, Michael. Ann. Math.'
+'{author}{=journal ". "}{journal}{!issue " No issue number} => 'Hochman, Michael. Ann. Math. No issue number'
 ```
 
 ### Handling missed keys

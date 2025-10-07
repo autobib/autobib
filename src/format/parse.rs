@@ -22,6 +22,8 @@ pub enum Kind<'a> {
     Opt,
     /// =
     Cond,
+    /// !
+    Neg,
     /// %
     Meta,
     /// [a-zA-Z0-9_] or (ident)
@@ -36,6 +38,7 @@ impl<'a> Kind<'a> {
             Self::Whitespace => "whitespace",
             Self::Opt => "an optional modifier (?)",
             Self::Cond => "a conditional marker (=)",
+            Self::Neg => "a negation marker (!)",
             Self::Meta => "a meta marker (%)",
             Self::Ident(_) => "an identifier",
             Self::String(_) => "a string",
@@ -67,6 +70,26 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    #[inline]
+    pub fn skip_if_opt(&mut self) -> bool {
+        self.skip_if_char('?')
+    }
+
+    #[inline]
+    pub fn skip_if_cond(&mut self) -> Option<bool> {
+        match self.inner.as_bytes().get(self.offset) {
+            Some(b'!') => {
+                self.offset += 1;
+                Some(false)
+            }
+            Some(b'=') => {
+                self.offset += 1;
+                Some(true)
+            }
+            _ => None,
+        }
+    }
+
     fn step(&mut self, increment: usize, kind: Kind<'a>) -> Token<'a> {
         let new_offset = self.offset + increment;
         let span = self.offset..new_offset;
@@ -92,16 +115,6 @@ impl<'a> Lexer<'a> {
             kind,
             span: Some(span),
         }
-    }
-
-    #[inline]
-    pub fn skip_if_opt(&mut self) -> bool {
-        self.skip_if_char('?')
-    }
-
-    #[inline]
-    pub fn skip_if_cond(&mut self) -> bool {
-        self.skip_if_char('=')
     }
 
     pub fn expect_eof(&mut self) -> Result<(), KeyParseError> {
@@ -148,6 +161,7 @@ impl<'a> Lexer<'a> {
                 Err(self.step_err_end(KeyParseErrorKind::UnclosedString))
             }
             '=' => Ok(Some(self.step(1, Kind::Cond))),
+            '!' => Ok(Some(self.step(1, Kind::Neg))),
             '%' => Ok(Some(self.step(1, Kind::Meta))),
             '?' => Ok(Some(self.step(1, Kind::Opt))),
             '(' => {

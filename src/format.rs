@@ -111,6 +111,8 @@ impl Atom {
 /// the field keys.
 #[derive(Debug, Clone)]
 pub enum Expression {
+    /// `{!key atom}`
+    Negation(FieldKey, Atom),
     /// `{=key atom}`
     Conditional(FieldKey, Atom),
     /// `{atom}`
@@ -119,29 +121,36 @@ pub enum Expression {
 
 impl Expression {
     fn from_lexer(lexer: &mut Lexer<'_>) -> Result<Self, KeyParseError> {
-        let res = if lexer.skip_if_cond() {
-            // {=key} but now the = has been consumed
+        let res = match lexer.skip_if_cond() {
+            Some(c) => {
+                // {=key} but now the = has been consumed
 
-            static MSG: &str = "a field key";
-            let token = lexer.expect_token(MSG)?;
-            match token.kind {
-                Kind::Ident(s) => {
-                    let field_key = FieldKey::try_new_normalize(s).spanned(token.span)?;
-                    static MSG: &str = "whitespace and then the conditional value";
-                    let token = lexer.expect_token(MSG)?;
-                    match token.kind {
-                        Kind::Whitespace => {
-                            let atom = Atom::from_lexer(lexer)?;
-                            Self::Conditional(field_key, atom)
+                static MSG: &str = "a field key";
+                let token = lexer.expect_token(MSG)?;
+                match token.kind {
+                    Kind::Ident(s) => {
+                        let field_key = FieldKey::try_new_normalize(s).spanned(token.span)?;
+                        static MSG: &str = "whitespace and then the conditional value";
+                        let token = lexer.expect_token(MSG)?;
+                        match token.kind {
+                            Kind::Whitespace => {
+                                let atom = Atom::from_lexer(lexer)?;
+                                if c {
+                                    Self::Conditional(field_key, atom)
+                                } else {
+                                    Self::Negation(field_key, atom)
+                                }
+                            }
+                            _ => return Err(unexp(MSG, token)),
                         }
-                        _ => return Err(unexp(MSG, token)),
                     }
+                    _ => return Err(unexp(MSG, token)),
                 }
-                _ => return Err(unexp(MSG, token)),
             }
-        } else {
-            let atom = Atom::from_lexer(lexer)?;
-            Self::Bare(atom)
+            None => {
+                let atom = Atom::from_lexer(lexer)?;
+                Self::Bare(atom)
+            }
         };
 
         lexer.expect_eof()?;
@@ -202,7 +211,7 @@ impl<'a, T> Iterator for TemplateFieldKeys<'a, T> {
                 Span::Expr(Expression::Bare(Atom::FieldKey(f) | Atom::FieldKeyOpt(f))) => {
                     return Some(f);
                 }
-                Span::Expr(Expression::Conditional(f, raw)) => {
+                Span::Expr(Expression::Conditional(f, raw) | Expression::Negation(f, raw)) => {
                     if let Atom::FieldKeyOpt(field_key) | Atom::FieldKey(field_key) = raw {
                         self.buffered = Some(field_key);
                     }
@@ -251,6 +260,11 @@ impl Template {
                 }
                 Span::Expr(Expression::Conditional(k1, Atom::FieldKey(k2))) => {
                     if contains(k1.as_ref(), &mut ctx) && !contains(k2.as_ref(), &mut ctx) {
+                        return false;
+                    }
+                }
+                Span::Expr(Expression::Negation(k1, Atom::FieldKey(k2))) => {
+                    if !contains(k1.as_ref(), &mut ctx) && !contains(k2.as_ref(), &mut ctx) {
                         return false;
                     }
                 }
@@ -352,6 +366,13 @@ impl<'row, 'ast, 'state> DisplayedRow<'row, 'ast, 'state> {
         let token = match ast {
             Expression::Conditional(field_key, token) => {
                 if f(field_key.as_ref()).is_some() {
+                    token
+                } else {
+                    return Self::Skip;
+                }
+            }
+            Expression::Negation(field_key, token) => {
+                if f(field_key.as_ref()).is_none() {
                     token
                 } else {
                     return Self::Skip;
@@ -482,6 +503,14 @@ mod tests {
         check("{a} {b}", [("a", "A"), ("b", "")], true);
         check("{a} {=b c}", [("a", "A")], true);
         check("{a} {=b c}", [("a", "A"), ("b", "B")], false);
+        check("{!b c}", [("a", "A")], false);
+        check("{!b c}", [("b", "B")], true);
+        check("{!a a}", [("a", "A")], true);
+        check("{!a a}", [], false);
+        check("{!b c?}", [("a", "A")], true);
+        check("{=a c?}", [("a", "A")], true);
+        check("{!b a}", [("a", "A")], true);
+        check("{a} {=b c?}", [("a", "A"), ("b", "B")], true);
         check("{a} {=b b}", [("a", "A"), ("b", "B")], true);
         check("{=b a}", [("a", "A"), ("b", "B")], true);
         check("{=c \". \"}", [("a", "A"), ("b", "B")], true);
@@ -504,6 +533,7 @@ mod tests {
         check(r#"{=a b} {c} {=d "e"}"#, ["a", "b", "c", "d"]);
         check(r#"{=c d?} {f?}"#, ["c", "d", "f"]);
         check(r#"{=CH D?}"#, ["ch", "d"]);
+        check(r#"{!CH D?}"#, ["ch", "d"]);
         check(r#"{E?}"#, ["e"]);
         check(r#"{(E?)}"#, ["e?"]);
         check(r#""#, []);
