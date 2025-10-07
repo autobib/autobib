@@ -36,3 +36,4 @@ sort -C "${REMOTES_FILE}"
 REPETITIONS="$(uniq -d < "${REMOTES_FILE}" | wc -w)"
 test "${REPETITIONS}" -eq 0
 shellcheck scripts/*.sh --enable=all
+deno run --allow-read --allow-sys --no-config npm:markdownlint-cli2 -- '**/*.md' '!target/**/*.md'

@@ -29,7 +29,10 @@ if [[ "${CURRENT_BRANCH}" != "main" ]]; then
 fi
 
 cargo set-version --bump "$1"
-VERSION="$(yq '.package.version' Cargo.toml)"
+PKGID="$(cargo pkgid)"
+# bash-ism to extract the part of the string following the final
+# '#' character
+VERSION="${PKGID##*#}"
 VERSION_TAG="v${VERSION}"
 
 DATE_FORMATTED="$(date +"%Y-%m-%d")"
