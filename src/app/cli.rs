@@ -5,7 +5,9 @@ use std::{
 };
 
 use anyhow::Result;
-use clap::{CommandFactory, Parser, Subcommand, ValueEnum, error::ErrorKind};
+use clap::{
+    CommandFactory, Parser, Subcommand, ValueEnum, builder::ArgPredicate, error::ErrorKind,
+};
 use clap_complete::aot::Shell;
 use clap_verbosity_flag::{Verbosity, WarnLevel};
 use crossterm::style::Stylize;
@@ -248,7 +250,13 @@ pub enum Command {
         /// The type of import to perform.
         mode: ImportMode,
         /// How to resolve conflicting field values.
-        #[arg(short = 'n', long, value_enum, default_value_t)]
+        #[arg(
+            short = 'n',
+            long,
+            value_enum,
+            default_value_if("no_interactive", ArgPredicate::IsPresent, "prefer-current"),
+            default_value_t
+        )]
         on_conflict: OnConflict,
         /// Never create aliases.
         #[arg(short = 'A', long)]
@@ -289,7 +297,13 @@ pub enum Command {
         /// Records to be merged.
         from: Vec<RecordId>,
         /// How to resolve conflicting field values.
-        #[arg(short = 'n', long, value_enum, default_value_t)]
+        #[arg(
+            short = 'n',
+            long,
+            value_enum,
+            default_value_if("no_interactive", ArgPredicate::IsPresent, "prefer-current"),
+            default_value_t
+        )]
         on_conflict: OnConflict,
     },
     /// Show attachment directory associated with record.
@@ -351,7 +365,13 @@ pub enum Command {
         #[arg(short, long, value_name = "PATH")]
         from: Option<PathBuf>,
         /// How to resolve conflicting field values.
-        #[arg(short = 'n', long, value_enum, default_value_t)]
+        #[arg(
+            short = 'n',
+            long,
+            value_enum,
+            default_value_if("no_interactive", ArgPredicate::IsPresent, "prefer-current"),
+            default_value_t
+        )]
         on_conflict: OnConflict,
     },
     /// Utilities to manage database.
