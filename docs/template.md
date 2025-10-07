@@ -33,7 +33,6 @@ For example, the template
 Hello {world}
 ```
 
-<!-- markdownlint-disable-next-line MD038 -->
 consists of text `Hello ` followed by an expression `world`.
 
 In order to include braces in text, duplicate the bracket, like `{{`.
@@ -44,7 +43,6 @@ For example,
 Hello {# "Brace {" #}
 ```
 
-<!-- markdownlint-disable-next-line MD038 -->
 contains of text `Hello ` followed by an expression `"Brace {"`.
 
 ### Expression syntax
