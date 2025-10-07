@@ -55,7 +55,7 @@ use self::{
     write::{init_outfile, output_entries, output_keys},
 };
 
-pub use self::cli::{Cli, Command, ReadOnlyInvalid};
+pub use self::cli::{Cli, Command};
 
 /// Run the CLI.
 pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
@@ -98,6 +98,9 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
         || (strategy.config_dir().join("config.toml"), true),
         |path| (path, false),
     );
+
+    info!("Interactive: {}", !cli.no_interactive);
+    info!("Read-only: {}", cli.read_only);
 
     // Run the cli
     match cli.command {
@@ -521,10 +524,8 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             no_alias,
             replace_colons,
             log_failures,
-            mut on_conflict,
+            on_conflict,
         } => {
-            on_conflict.validate_no_interactive(cli.no_interactive);
-
             let replace_colons = match replace_colons {
                 Some(subst) => match EntryKey::try_new(subst) {
                     Ok(new) => Some(new),
@@ -738,10 +739,8 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
         Command::Merge {
             into,
             from,
-            mut on_conflict,
+            on_conflict,
         } => {
-            on_conflict.validate_no_interactive(cli.no_interactive);
-
             let cfg = config::load(&config_path, missing_ok)?;
             let (existing, row) = get_record_row(&mut record_db, into, client, &cfg)?
                 .exists_or_commit_null("Cannot merge into")?;
@@ -900,10 +899,8 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
         Command::Update {
             citation_key,
             from,
-            mut on_conflict,
+            on_conflict,
         } => {
-            on_conflict.validate_no_interactive(cli.no_interactive);
-
             let cfg = config::load(&config_path, missing_ok)?;
             match record_db.state_from_record_id(citation_key, &cfg.alias_transform)? {
                 RecordIdState::Existent(citation_key, row) => {

@@ -1,9 +1,14 @@
-use std::{path::PathBuf, str::FromStr};
+use std::{
+    io::{self, IsTerminal},
+    path::PathBuf,
+    str::FromStr,
+};
 
 use anyhow::Result;
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{CommandFactory, Parser, Subcommand, ValueEnum, error::ErrorKind};
 use clap_complete::aot::Shell;
 use clap_verbosity_flag::{Verbosity, WarnLevel};
+use crossterm::style::Stylize;
 
 use crate::{
     cite_search::SourceFileType,
@@ -12,7 +17,12 @@ use crate::{
     record::{Alias, RecordId},
 };
 
-#[derive(Parser)]
+/// Determine the default value for `no_interactive` based on interactivity of stdin and stderr.
+fn determine_no_interactive() -> bool {
+    !(io::stdin().is_terminal() && io::stderr().is_terminal())
+}
+
+#[derive(Debug, Parser)]
 #[command(author, version, about, long_about = None)]
 pub struct Cli {
     #[command(subcommand)]
@@ -42,7 +52,7 @@ pub struct Cli {
     /// Do not require user action.
     ///
     /// This option is set automatically if the standard input is not a terminal.
-    #[arg(short = 'I', long, global = true)]
+    #[arg(short = 'I', long, global = true, default_value_t = determine_no_interactive())]
     pub no_interactive: bool,
     /// Open the database in read-only mode.
     #[arg(long)]
@@ -71,7 +81,7 @@ pub enum InfoReportType {
     Modified,
 }
 
-#[derive(Debug, Copy, Clone, ValueEnum, Default)]
+#[derive(Debug, Copy, Clone, ValueEnum)]
 pub enum OnConflict {
     /// Always keep current values. [default if non-interactive]
     #[value(alias("c"), alias("current"))]
@@ -80,15 +90,16 @@ pub enum OnConflict {
     #[value(alias("i"), alias("incoming"))]
     PreferIncoming,
     /// Prompt if the there is a conflict.
-    #[default]
     #[value(alias("p"))]
     Prompt,
 }
 
-impl OnConflict {
-    pub fn validate_no_interactive(&mut self, no_interactive: bool) {
-        if no_interactive && matches!(self, Self::Prompt) {
-            *self = Self::PreferCurrent;
+impl Default for OnConflict {
+    fn default() -> Self {
+        if determine_no_interactive() {
+            Self::PreferCurrent
+        } else {
+            Self::Prompt
         }
     }
 }
@@ -119,7 +130,7 @@ pub enum ImportMode {
     RetrieveOnly,
 }
 
-#[derive(Subcommand)]
+#[derive(Debug, Subcommand)]
 pub enum Command {
     /// Manage aliases.
     Alias {
@@ -234,6 +245,7 @@ pub enum Command {
         /// The BibTeX file(s) from which to import.
         targets: Vec<PathBuf>,
         #[arg(short = 'm', long, value_enum, default_value_t)]
+        /// The type of import to perform.
         mode: ImportMode,
         /// How to resolve conflicting field values.
         #[arg(short = 'n', long, value_enum, default_value_t)]
@@ -362,7 +374,7 @@ where
 }
 
 /// Manage aliases.
-#[derive(Subcommand)]
+#[derive(Debug, Subcommand)]
 pub enum AliasCommand {
     /// Add a new alias.
     Add {
@@ -393,6 +405,28 @@ pub enum AliasCommand {
 pub enum ReadOnlyInvalid {
     Command(&'static str),
     Argument(&'static str),
+}
+
+impl Cli {
+    /// Perform argument validation that Clap cannot do.
+    pub fn validate(&self) {
+        if self.read_only
+            && let Err(invalid) = self.command.validate_read_only_compatibility()
+        {
+            let mut cmd = Self::command();
+            let (name, s) = match invalid {
+                ReadOnlyInvalid::Command(s) => ("subcommand", s),
+                ReadOnlyInvalid::Argument(s) => ("argument", s),
+            };
+            let err_msg = format!(
+                "the {} '{}' cannot be used in read-only mode (enabled by '{}')",
+                name,
+                s.stylize().yellow(),
+                "--read-only".stylize().yellow(),
+            );
+            cmd.error(ErrorKind::ArgumentConflict, err_msg).exit();
+        }
+    }
 }
 
 impl UtilCommand {
@@ -435,7 +469,7 @@ impl Command {
 }
 
 /// Utilities to manage database.
-#[derive(Subcommand)]
+#[derive(Debug, Subcommand)]
 pub enum UtilCommand {
     /// Check database for errors.
     Check {
