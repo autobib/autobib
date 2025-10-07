@@ -6,8 +6,8 @@ Changes since `v0.4.1`.
 
 ## Breaking changes
 
-- The `-f/--fields` and `--all-fields` flags in `autobib find` has been removed.
-  Their functionality has been superseded template support with the new `--template` flag.
+- The `-f/--fields` and `--all-fields` flags in `autobib find` have been removed.
+  Their functionality has been superseded by template support with the new `--template` flag.
 
 ## New features
 

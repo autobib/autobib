@@ -35,7 +35,7 @@ pub enum RecordDataError {
     #[error("Value has invalid size {0}; must be at most {max}", max = ValueHeader::MAX)]
     ValueInvalidLength(usize),
 
-    #[error("Value does not contain balanced `{{ }}` brackets")]
+    #[error("Value does not contain balanced `{{ }}` braces")]
     ValueNotBalanced,
 
     #[error("Invalid bytes: `{0}`")]
