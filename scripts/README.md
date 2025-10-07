@@ -7,4 +7,4 @@ This directory contains `bash` scripts to automate certain functionality.
 - [`release.sh`](release.sh): Automate some release steps. Depends on:
   - [`sed`](https://www.gnu.org/software/sed/) (GNU-compatible)
   - [`cargo-edit`](https://crates.io/crates/cargo-edit)
-  - [`yq`](https://mikefarah.gitbook.io/yq)
+  - [`deno`](https://https://deno.com/)

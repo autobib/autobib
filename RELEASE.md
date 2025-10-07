@@ -24,4 +24,3 @@ This script requires that the following tools are installed
 
 - [`sed`](https://www.gnu.org/software/sed/) (GNU-compatible)
 - [`cargo-edit`](https://crates.io/crates/cargo-edit)
-- [`yq`](https://mikefarah.gitbook.io/yq)
