@@ -41,7 +41,7 @@ use crate::{
 };
 
 use self::{
-    cli::{AliasCommand, FindMode, ImportMode, InfoReportType, UpdateMode, UtilCommand},
+    cli::{AliasCommand, FindMode, InfoReportType, OnConflict, UtilCommand},
     edit::{edit_record_and_update, merge_record_data},
     path::{
         data_from_path_or_default, data_from_path_or_remote, get_attachment_dir,
@@ -372,12 +372,9 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
         }
         Command::Find {
             template: format,
-            attachments,
-            records,
             strict,
+            mode: find_mode,
         } => {
-            let find_mode = FindMode::from_flags(attachments, records);
-
             if cli.no_interactive {
                 bail!("`autobib find` cannot run in non-interactive mode");
             }
@@ -520,16 +517,14 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
         }
         Command::Import {
             targets,
-            local,
-            determine_key,
-            retrieve,
-            retrieve_only,
+            mode,
             no_alias,
             replace_colons,
             log_failures,
-            prefer_current,
-            prefer_incoming,
+            mut on_conflict,
         } => {
+            on_conflict.validate_no_interactive(cli.no_interactive);
+
             let replace_colons = match replace_colons {
                 Some(subst) => match EntryKey::try_new(subst) {
                     Ok(new) => Some(new),
@@ -539,12 +534,8 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             };
 
             let import_config = self::import::ImportConfig {
-                update_mode: UpdateMode::from_flags(
-                    cli.no_interactive,
-                    prefer_current,
-                    prefer_incoming,
-                ),
-                import_mode: ImportMode::from_flags(local, determine_key, retrieve, retrieve_only),
+                on_conflict,
+                import_mode: mode,
                 no_alias,
                 no_interactive: cli.no_interactive,
                 replace_colons,
@@ -747,9 +738,10 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
         Command::Merge {
             into,
             from,
-            prefer_current,
-            prefer_incoming,
+            mut on_conflict,
         } => {
+            on_conflict.validate_no_interactive(cli.no_interactive);
+
             let cfg = config::load(&config_path, missing_ok)?;
             let (existing, row) = get_record_row(&mut record_db, into, client, &cfg)?
                 .exists_or_commit_null("Cannot merge into")?;
@@ -771,7 +763,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             // merge data
             let mut existing_record = RecordData::from_entry_data(&existing.data);
             merge_record_data(
-                UpdateMode::from_flags(cli.no_interactive, prefer_current, prefer_incoming),
+                on_conflict,
                 &mut existing_record,
                 new_data.iter().map(|row_data| &row_data.data),
                 &existing.key,
@@ -908,9 +900,10 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
         Command::Update {
             citation_key,
             from,
-            prefer_current,
-            prefer_incoming,
+            mut on_conflict,
         } => {
+            on_conflict.validate_no_interactive(cli.no_interactive);
+
             let cfg = config::load(&config_path, missing_ok)?;
             match record_db.state_from_record_id(citation_key, &cfg.alias_transform)? {
                 RecordIdState::Existent(citation_key, row) => {
@@ -928,7 +921,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     };
                     let mut existing_record = RecordData::from_entry_data(&existing_raw_data);
                     merge_record_data(
-                        UpdateMode::from_flags(cli.no_interactive, prefer_current, prefer_incoming),
+                        on_conflict,
                         &mut existing_record,
                         once(&new_raw_data),
                         &citation_key,

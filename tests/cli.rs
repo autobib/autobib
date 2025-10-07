@@ -1265,7 +1265,8 @@ fn import_determine_key_no_match() -> Result<()> {
     cmd.args([
         "import",
         "tests/resources/import/file.bib",
-        "--determine-key",
+        "-m",
+        "determine-key",
     ]);
     cmd.assert().success();
 
@@ -1301,7 +1302,8 @@ fn import_determine_key_match() -> Result<()> {
     cmd.args([
         "import",
         "tests/resources/import/file.bib",
-        "--determine-key",
+        "-m",
+        "determine-key",
     ]);
     cmd.assert().success();
 
@@ -1340,8 +1342,9 @@ fn import_retrieve() -> Result<()> {
     cmd.args([
         "import",
         "tests/resources/import/file.bib",
-        "--retrieve",
-        "--prefer-incoming",
+        "-mr",
+        "-n",
+        "prefer-incoming",
     ]);
     cmd.assert().success();
 
@@ -1401,7 +1404,8 @@ fn import_retrieve_only() -> Result<()> {
     cmd.args([
         "import",
         "tests/resources/import/file.bib",
-        "--retrieve-only",
+        "-m",
+        "retrieve-only",
         "--log-failures",
     ]);
     cmd.assert().failure().stdout(

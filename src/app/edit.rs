@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use anyhow::Result;
 
-use super::UpdateMode;
+use super::OnConflict;
 
 use crate::{
     db::state::{RecordRow, State},
@@ -64,27 +64,27 @@ pub fn edit_record_and_update(
 }
 
 /// Merge an iterator of [`EntryData`] into existing data, using the merge rules as specified
-/// by the passed [`UpdateMode`].
+/// by the passed [`OnConflict`].
 pub fn merge_record_data<'a, D: EntryData + 'a>(
-    mode: UpdateMode,
+    on_conflict: OnConflict,
     existing_record: &mut RecordData,
     new_raw_data: impl Iterator<Item = &'a D>,
     citation_key: impl std::fmt::Display,
 ) -> Result<(), MergeError> {
-    match mode {
-        UpdateMode::PreferCurrent => {
+    match on_conflict {
+        OnConflict::PreferCurrent => {
             info!("Updating {citation_key} with new data, skipping existing fields");
             for data in new_raw_data {
                 existing_record.merge_or_skip(data);
             }
         }
-        UpdateMode::PreferIncoming => {
+        OnConflict::PreferIncoming => {
             info!("Updating {citation_key} with new data, overwriting existing fields");
             for data in new_raw_data {
                 existing_record.merge_or_overwrite(data);
             }
         }
-        UpdateMode::Prompt => {
+        OnConflict::Prompt => {
             info!("Updating {citation_key} with new data, prompting on conflict");
             for data in new_raw_data {
                 existing_record.merge_with_callback(data, |key, current, incoming| {

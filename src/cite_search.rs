@@ -32,7 +32,7 @@ use std::{ffi::OsStr, path::Path, str::FromStr};
 use crate::{RecordId, error::Error};
 
 /// The file type of a source from which citation keys can be read.
-#[derive(Debug, Clone, Copy)]
+#[derive(clap::ValueEnum, Debug, Clone, Copy)]
 pub enum SourceFileType {
     /// TeX-style contents, such as `.tex` or `.sty` files.
     Tex,
