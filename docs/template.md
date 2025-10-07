@@ -19,7 +19,7 @@ Record data is the information encapsulated in a record, such as
 }
 ```
 
-All examples in this document refer to this specific entry.
+All examples in this document refer to this specific entry (unless otherwise noted).
 
 ## Syntax overview
 
@@ -52,6 +52,22 @@ These are expressions like `author` or `title`, which expand into the correspond
 
 ```txt
 '{author}: {title}' => 'Hochman, Michael: On self-similar sets with overlaps and inverse theorems for entropy'
+```
+
+The only permitted characters in a field key are ASCII letters and numbers, plus the underscore `_` character.
+If your Bibtex entries contain other characters, you must manually escape them using brackets `()`.
+For example, given data
+
+```bib
+@book{k,
+  dots.and.qmark? = {Val},
+}
+```
+
+we have the expansion
+
+```txt
+'{(docs.and.qmark?)}' => 'Val'
 ```
 
 If a field key does not exist, the empty string is printed instead.
@@ -111,7 +127,9 @@ For example:
 1. Given a basic expression `{key}`, if `key` is not present.
 2. Given a conditional expression `{=key1 key2}`, if `key1` is present and `key2` is not present.
 
-The default behaviour can be manually enforced for specific expressions in strict mode by writing `{=key key}` in place of `{key}`.
+The default behaviour can be enabled for specific field keys by appending a question mark: that is, writing `{key?}` in place of `{key}`.
+Without strict mode, `{key?}` and `{key}` are equivalent.
+The `{key?}` syntax is equivalent to the more repetitive `{=key key}`, and will also render (slightly) faster.
 
 For example, in strict mode, the following expressions will fail to render:
 
