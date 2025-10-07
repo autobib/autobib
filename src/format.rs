@@ -1,4 +1,4 @@
-use std::{collections::BTreeSet, convert::Infallible, fmt, iter::Peekable, str::FromStr};
+use std::{convert::Infallible, fmt, iter::Peekable, str::FromStr};
 
 use mufmt::{Ast, Manifest, ManifestMut, Span, SyntaxError};
 use nucleo_picker::Render;
