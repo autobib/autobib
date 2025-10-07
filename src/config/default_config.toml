@@ -13,7 +13,7 @@ ignore_hidden = false
 # The default format template when running `autobib find` without specifying a template
 # with `--template`. For syntax documentation, see
 # > https://github.com/autobib/autobib/blob/main/docs/template.md
-default_template = '{author} ~ {title}{=subtitle ". "}{=subtitle subtitle}'
+default_template = '{author} ~ {title}{=subtitle ". "}{subtitle?}'
 
 # Actions to perform when adding a new item to the database from a remote provider.
 # These actions are not run for local operations, such as `autobib local`.
