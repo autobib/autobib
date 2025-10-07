@@ -5,7 +5,7 @@ use anyhow::anyhow;
 use crate::{
     CitationKey,
     app::{
-        cli::{ImportMode, UpdateMode},
+        cli::{ImportMode, OnConflict},
         edit::merge_record_data,
     },
     config::Config,
@@ -29,7 +29,7 @@ use crate::{
 /// The configuration used to specify the behaviour when importing data.
 #[derive(Debug)]
 pub struct ImportConfig {
-    pub update_mode: UpdateMode,
+    pub on_conflict: OnConflict,
     pub import_mode: ImportMode,
     pub no_alias: bool,
     pub no_interactive: bool,
@@ -149,7 +149,7 @@ where
                         match record_db.state_from_remote_id(&mapped_key.mapped)? {
                             RemoteIdState::Existent(row) => Ok(ImportAction::Update(
                                 row,
-                                import_config.update_mode,
+                                import_config.on_conflict,
                                 mapped_key.to_string(),
                                 maybe_alias,
                             )),
@@ -225,7 +225,7 @@ where
 enum ImportAction<'conn> {
     /// The entry already has data corresponding to the provided row; update the row with the
     /// entry.
-    Update(State<'conn, RecordRow>, UpdateMode, String, Option<Alias>),
+    Update(State<'conn, RecordRow>, OnConflict, String, Option<Alias>),
     /// There is no data for the entry; data into the database.
     Insert(State<'conn, Missing>, RemoteId, Option<Alias>),
     /// A key could not be determined from the entry; prompt for a new key (if interactive).
@@ -353,7 +353,7 @@ where
                 match get_record_row_remote(record_db, remote_id, client, config)? {
                     RemoteRecordRowResponse::Exists(record, row) => Ok(ImportAction::Update(
                         row,
-                        import_config.update_mode,
+                        import_config.on_conflict,
                         record.key,
                         maybe_alias,
                     )),

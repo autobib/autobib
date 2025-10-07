@@ -55,77 +55,68 @@ pub struct Cli {
 pub enum InfoReportType {
     /// Show all info.
     #[default]
+    #[value(alias("a"))]
     All,
     /// Print the canonical identifer.
+    #[value(alias("c"))]
     Canonical,
     /// Check if the key is valid BibTeX.
+    #[value(alias("v"))]
     Valid,
     /// Print equivalent identifiers.
+    #[value(alias("e"))]
     Equivalent,
     /// Print the last modified time.
+    #[value(alias("m"))]
     Modified,
 }
 
-#[derive(Debug, Copy, Clone)]
-pub enum FindMode {
-    Attachments,
-    CanonicalId,
-}
-
-impl FindMode {
-    pub fn from_flags(attachments: bool, _records: bool) -> Self {
-        if attachments {
-            Self::Attachments
-        } else {
-            Self::CanonicalId
-        }
-    }
-}
-
-#[derive(Debug, Copy, Clone)]
-pub enum ImportMode {
-    Local,
-    DetermineKey,
-    Retrieve,
-    RetrieveOnly,
-}
-
-impl ImportMode {
-    pub fn from_flags(
-        _local: bool,
-        determine_key: bool,
-        retrieve: bool,
-        retrieve_only: bool,
-    ) -> Self {
-        if determine_key {
-            Self::DetermineKey
-        } else if retrieve {
-            Self::Retrieve
-        } else if retrieve_only {
-            Self::RetrieveOnly
-        } else {
-            Self::Local
-        }
-    }
-}
-
-#[derive(Debug, Copy, Clone)]
-pub enum UpdateMode {
+#[derive(Debug, Copy, Clone, ValueEnum, Default)]
+pub enum OnConflict {
+    /// Always keep current values. [default if non-interactive]
+    #[value(alias("c"), alias("current"))]
     PreferCurrent,
+    /// Overwrite current values.
+    #[value(alias("i"), alias("incoming"))]
     PreferIncoming,
+    /// Prompt if the there is a conflict.
+    #[default]
+    #[value(alias("p"))]
     Prompt,
 }
 
-impl UpdateMode {
-    pub fn from_flags(no_interactive: bool, prefer_current: bool, prefer_incoming: bool) -> Self {
-        if prefer_incoming {
-            Self::PreferIncoming
-        } else if prefer_current || no_interactive {
-            Self::PreferCurrent
-        } else {
-            Self::Prompt
+impl OnConflict {
+    pub fn validate_no_interactive(&mut self, no_interactive: bool) {
+        if no_interactive && matches!(self, Self::Prompt) {
+            *self = Self::PreferCurrent;
         }
     }
+}
+
+#[derive(Debug, Copy, Clone, ValueEnum, Default)]
+pub enum FindMode {
+    /// Search record attachments and print the selected path.
+    Attachments,
+    /// Search records and print the selected canonical identifier.
+    #[default]
+    CanonicalId,
+}
+
+#[derive(Debug, Copy, Clone, ValueEnum, Default)]
+pub enum ImportMode {
+    /// Import as `local:` records.
+    #[default]
+    #[value(alias("l"))]
+    Local,
+    /// Use automatically determined keys.
+    #[value(alias("k"))]
+    DetermineKey,
+    /// Use automatically determined keys, first retrieving from remote.
+    #[value(alias("r"))]
+    Retrieve,
+    /// Only determine the key and retrieve from remote.
+    #[value(alias("R"))]
+    RetrieveOnly,
 }
 
 #[derive(Subcommand)]
@@ -214,15 +205,12 @@ pub enum Command {
         /// Set the format template.
         #[arg(short, long)]
         template: Option<Template>,
-        /// Search record attachments and print the selected path.
-        #[arg(short, long, group = "find_mode")]
-        attachments: bool,
-        /// Search records and print the selected canonical identifier.
-        #[arg(long, group = "find_mode")]
-        records: bool,
         /// Only include records which contain all of the fields in the template.
         #[arg(short, long)]
         strict: bool,
+        /// The type of search to perform.
+        #[arg(short, long, value_enum, default_value_t)]
+        mode: FindMode,
     },
     /// Retrieve records given citation keys.
     Get {
@@ -245,18 +233,11 @@ pub enum Command {
     Import {
         /// The BibTeX file(s) from which to import.
         targets: Vec<PathBuf>,
-        /// Import as `local:` records.
-        #[arg(short = 'l', long, group = "import_mode")]
-        local: bool,
-        /// Import with automatically determined keys.
-        #[arg(short = 'k', long, group = "import_mode")]
-        determine_key: bool,
-        /// Import with automatically determined keys, first retrieving from remote.
-        #[arg(short = 'r', long, group = "import_mode")]
-        retrieve: bool,
-        /// Only determine the key and retrieve from remote.
-        #[arg(short = 'R', long, group = "import_mode")]
-        retrieve_only: bool,
+        #[arg(short = 'm', long, value_enum, default_value_t)]
+        mode: ImportMode,
+        /// How to resolve conflicting field values.
+        #[arg(short = 'n', long, value_enum, default_value_t)]
+        on_conflict: OnConflict,
         /// Never create aliases.
         #[arg(short = 'A', long)]
         no_alias: bool,
@@ -266,12 +247,6 @@ pub enum Command {
         /// Print entries which could not be imported
         #[arg(long)]
         log_failures: bool,
-        /// Keep the current value without prompting in the event of a conflict.
-        #[arg(long, group = "on-conflict")]
-        prefer_current: bool,
-        /// Update with the incoming value without prompting in the event of a conflict.
-        #[arg(long, group = "on-conflict")]
-        prefer_incoming: bool,
     },
     /// Show metadata for citation key.
     Info {
@@ -301,12 +276,9 @@ pub enum Command {
         into: RecordId,
         /// Records to be merged.
         from: Vec<RecordId>,
-        /// Keep the current value without prompting in the event of a conflict.
-        #[arg(long, group = "update-mode")]
-        prefer_current: bool,
-        /// Update with the incoming value without prompting in the event of a conflict.
-        #[arg(long, group = "update-mode")]
-        prefer_incoming: bool,
+        /// How to resolve conflicting field values.
+        #[arg(short = 'n', long, value_enum, default_value_t)]
+        on_conflict: OnConflict,
     },
     /// Show attachment directory associated with record.
     Path {
@@ -357,20 +329,18 @@ pub enum Command {
     /// By default, you will be prompted if there is a conflict between the current and incoming
     /// records.
     ///
-    /// To override this behaviour, use `--prefer-current` or `--prefer-incoming`.
-    /// The `--no-interactive` global option implies `--prefer-current`.
+    /// To override this behaviour, use `-p current` or `-p incoming`.
+    /// If the terminal is not interactive or the `--no-interactive` global option is set, this
+    /// will result in an error if the `-p current` or `-p incoming` is not explicitly set.
     Update {
         /// The citation key to update.
         citation_key: RecordId,
         /// Read update data from local path.
         #[arg(short, long, value_name = "PATH")]
         from: Option<PathBuf>,
-        /// Keep the current value without prompting in the event of a conflict.
-        #[arg(long, group = "update-mode")]
-        prefer_current: bool,
-        /// Update with the incoming value without prompting in the event of a conflict.
-        #[arg(long, group = "update-mode")]
-        prefer_incoming: bool,
+        /// How to resolve conflicting field values.
+        #[arg(short = 'n', long, value_enum, default_value_t)]
+        on_conflict: OnConflict,
     },
     /// Utilities to manage database.
     Util {
