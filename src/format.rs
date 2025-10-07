@@ -1,15 +1,19 @@
+mod parse;
+
 use std::{convert::Infallible, fmt, iter::Peekable, str::FromStr};
 
 use mufmt::{Ast, Manifest, ManifestMut, Span, SyntaxError};
 use nucleo_picker::Render;
 
+use self::parse::{Kind, Lexer, Token};
+
 use crate::{
     db::{CitationKey, state::RowData},
     entry::{EntryData, FieldKey, RawRecordFieldsIter, RecordData},
-    error::{ClapTemplateError, KeyParseError},
+    error::{ClapTemplateError, KeyParseError, KeyParseErrorKind},
 };
 
-/// A `{&meta}` token.
+/// A `{%meta}` token.
 #[derive(Debug, Clone)]
 pub enum Meta {
     /// `{%entry_type}`
@@ -23,7 +27,7 @@ pub enum Meta {
 }
 
 impl FromStr for Meta {
-    type Err = KeyParseError;
+    type Err = KeyParseErrorKind;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
@@ -31,38 +35,72 @@ impl FromStr for Meta {
             "provider" => Ok(Self::Provider),
             "sub_id" => Ok(Self::SubId),
             "full_id" => Ok(Self::FullId),
-            _ => Err(KeyParseError::InvalidSpecial(s.into())),
+            _ => Err(KeyParseErrorKind::InvalidMeta(s.into())),
         }
     }
 }
 
-/// A basic template token.
+/// A helper function to construct a KeyParseError when something specific is expected, but
+/// something unexpected was received.
+fn unexp(msg: &'static str, t: Token<'_>) -> KeyParseError {
+    KeyParseError {
+        kind: KeyParseErrorKind::Unexpected(msg, t.kind.describe()),
+        span: Some(t.span),
+    }
+}
+
+/// A basic template component.
 #[derive(Debug, Clone)]
-pub enum Token {
+pub enum Atom {
     /// `{key}`
     FieldKey(FieldKey),
+    /// `{key?}`
+    FieldKeyOpt(FieldKey),
     /// `{"string"}`
     String(String),
     /// `{%entry_type}`
     Meta(Meta),
 }
 
-impl Ast<'_> for Token {
-    type Error = KeyParseError;
+trait SpannedError<T> {
+    fn spanned(self, span: std::ops::Range<usize>) -> Result<T, KeyParseError>;
+}
 
-    fn from_expr(expr: &'_ str) -> Result<Self, Self::Error> {
-        let mut chars = expr.chars();
-        match chars.next() {
-            Some('%') => Meta::from_str(chars.as_str()).map(Self::Meta),
-            Some('"') => {
-                let s = serde_json::from_str(expr)?;
-                Ok(Self::String(s))
+impl<T, E: Into<KeyParseErrorKind>> SpannedError<T> for Result<T, E> {
+    fn spanned(self, span: std::ops::Range<usize>) -> Result<T, KeyParseError> {
+        self.map_err(|e| KeyParseError {
+            kind: e.into(),
+            span: Some(span),
+        })
+    }
+}
+
+impl Atom {
+    /// Read a single Atom from the provided lexer without consuming past the end of the atom.
+    fn from_lexer(lexer: &mut Lexer<'_>) -> Result<Self, KeyParseError> {
+        static MSG: &str = "A field key, string, or meta";
+        let token = lexer.expect_token(MSG)?;
+        match token.kind {
+            Kind::String(s) => Ok(Self::String(s)),
+            Kind::Ident(s) => {
+                let key = FieldKey::try_new_normalize(s)
+                    .spanned(token.span)?
+                    .to_owned();
+                Ok(if lexer.skip_if_opt() {
+                    Self::FieldKeyOpt(key)
+                } else {
+                    Self::FieldKey(key)
+                })
             }
-            None => Err(KeyParseError::Empty),
-            _ => {
-                let key = FieldKey::try_new(expr)?.to_owned();
-                Ok(Self::FieldKey(key))
+            Kind::Meta => {
+                static MSG: &str = "an identifier";
+                let token = lexer.expect_token(MSG)?;
+                match token.kind {
+                    Kind::Ident(s) => Ok(Self::Meta(Meta::from_str(s).spanned(token.span)?)),
+                    _ => Err(unexp(MSG, token)),
+                }
             }
+            _ => Err(unexp(MSG, token)),
         }
     }
 }
@@ -73,31 +111,50 @@ impl Ast<'_> for Token {
 /// the field keys.
 #[derive(Debug, Clone)]
 pub enum Expression {
-    /// `{=key raw}`
-    Conditional(FieldKey, Token),
-    /// `{raw}`
-    Bare(Token),
+    /// `{=key atom}`
+    Conditional(FieldKey, Atom),
+    /// `{atom}`
+    Bare(Atom),
+}
+
+impl Expression {
+    fn from_lexer(lexer: &mut Lexer<'_>) -> Result<Self, KeyParseError> {
+        let res = if lexer.skip_if_cond() {
+            // {=key} but now the = has been consumed
+
+            static MSG: &str = "a field key";
+            let token = lexer.expect_token(MSG)?;
+            match token.kind {
+                Kind::Ident(s) => {
+                    let field_key = FieldKey::try_new_normalize(s).spanned(token.span)?;
+                    static MSG: &str = "whitespace and then the conditional value";
+                    let token = lexer.expect_token(MSG)?;
+                    match token.kind {
+                        Kind::Whitespace => {
+                            let atom = Atom::from_lexer(lexer)?;
+                            Self::Conditional(field_key, atom)
+                        }
+                        _ => return Err(unexp(MSG, token)),
+                    }
+                }
+                _ => return Err(unexp(MSG, token)),
+            }
+        } else {
+            let atom = Atom::from_lexer(lexer)?;
+            Self::Bare(atom)
+        };
+
+        lexer.expect_eof()?;
+        Ok(res)
+    }
 }
 
 impl Ast<'_> for Expression {
     type Error = KeyParseError;
 
     fn from_expr(expr: &str) -> Result<Self, Self::Error> {
-        let mut chars = expr.chars();
-        match chars.next() {
-            Some('=') => match chars.as_str().split_once(char::is_whitespace) {
-                Some((key, s)) => {
-                    let conditional = FieldKey::try_new(key)?.to_owned();
-                    // 's' is already end-trimmed
-                    Ok(Self::Conditional(
-                        conditional,
-                        Token::from_expr(s.trim_start())?,
-                    ))
-                }
-                None => Err(KeyParseError::IncompleteConditional),
-            },
-            _ => Ok(Self::Bare(Token::from_expr(expr)?)),
-        }
+        let mut lexer = Lexer::new(expr);
+        Self::from_lexer(&mut lexer)
     }
 }
 
@@ -142,9 +199,11 @@ impl<'a, T> Iterator for TemplateFieldKeys<'a, T> {
 
         loop {
             match self.spans.next()? {
-                Span::Expr(Expression::Bare(Token::FieldKey(f))) => return Some(f),
+                Span::Expr(Expression::Bare(Atom::FieldKey(f) | Atom::FieldKeyOpt(f))) => {
+                    return Some(f);
+                }
                 Span::Expr(Expression::Conditional(f, raw)) => {
-                    if let Token::FieldKey(field_key) = raw {
+                    if let Atom::FieldKeyOpt(field_key) | Atom::FieldKey(field_key) = raw {
                         self.buffered = Some(field_key);
                     }
                     return Some(f);
@@ -185,12 +244,12 @@ impl Template {
         let mut ctx = init();
         for span in self.template.spans() {
             match span {
-                Span::Expr(Expression::Bare(Token::FieldKey(k))) => {
+                Span::Expr(Expression::Bare(Atom::FieldKey(k))) => {
                     if !contains(k.as_ref(), &mut ctx) {
                         return false;
                     }
                 }
-                Span::Expr(Expression::Conditional(k1, Token::FieldKey(k2))) => {
+                Span::Expr(Expression::Conditional(k1, Atom::FieldKey(k2))) => {
                     if contains(k1.as_ref(), &mut ctx) && !contains(k2.as_ref(), &mut ctx) {
                         return false;
                     }
@@ -302,12 +361,12 @@ impl<'row, 'ast, 'state> DisplayedRow<'row, 'ast, 'state> {
         };
 
         match token {
-            Token::FieldKey(key) => match f(key.as_ref()) {
+            Atom::FieldKey(key) | Atom::FieldKeyOpt(key) => match f(key.as_ref()) {
                 Some(val) => DisplayedRow::State(val),
                 None => DisplayedRow::Skip,
             },
-            Token::String(s) => DisplayedRow::Ast(s),
-            Token::Meta(meta) => match meta {
+            Atom::String(s) => DisplayedRow::Ast(s),
+            Atom::Meta(meta) => match meta {
                 Meta::EntryType => DisplayedRow::Row(row_data.data.entry_type()),
                 Meta::Provider => DisplayedRow::Row(row_data.canonical.provider()),
                 Meta::SubId => DisplayedRow::Row(row_data.canonical.sub_id()),
@@ -431,6 +490,7 @@ mod tests {
     #[test]
     fn test_field_keys() {
         fn check<const N: usize>(s: &str, keys: [&'static str; N]) {
+            println!("Testing: {s}");
             let template = Template::compile(s).unwrap();
             assert_eq!(TemplateFieldKeys::new(&template.template).count(), N);
 
@@ -442,6 +502,10 @@ mod tests {
 
         check("{a} {b}", ["a", "b"]);
         check(r#"{=a b} {c} {=d "e"}"#, ["a", "b", "c", "d"]);
+        check(r#"{=c d?} {f?}"#, ["c", "d", "f"]);
+        check(r#"{=CH D?}"#, ["ch", "d"]);
+        check(r#"{E?}"#, ["e"]);
+        check(r#"{(E?)}"#, ["e?"]);
         check(r#""#, []);
         check(r#"Nothing"#, []);
     }
