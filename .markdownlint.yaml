@@ -6,5 +6,8 @@ MD013: false
 # MD031/blanks-around-fences
 MD031: false
 
+# MD038/no-space-in-code
+MD038: false
+
 # MD059/descriptive-link-text
 MD059: false
