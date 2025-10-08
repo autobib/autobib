@@ -2,16 +2,13 @@
 
 The testing facade can benefit from local caching of response data to reduce the number of network requests required for the tests to succeed.
 In order to generate the cache, run
-
 ```sh
 xargs -- cargo run --locked --features write_response_cache -- -vv get --retrieve-only --ignore-null < 'tests/remotes.txt'
 ```
-
 This will generate a file `responses.dat` in your working directory.
 You can choose an alternative location by setting the `AUTOBIB_RESPONSE_CACHE_PATH` environment variable.
 
 After generating the response cache, you can (optionally) read from the response cache while testing by running
-
 ```sh
 cargo test --features read_response_cache
 ```
@@ -19,11 +16,9 @@ cargo test --features read_response_cache
 ## Automated testing
 
 In order to automate the above steps, and also run other checks, you can use [`scripts/test.sh`](../scripts/test.sh):
-
 ```sh
 ./scripts/test.sh
 ```
-
 This script has the following dependencies:
 
 - [`shellcheck`](https://www.shellcheck.net/)

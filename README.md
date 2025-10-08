@@ -24,7 +24,6 @@ Moreover, Autobib is designed with first-class support for [BibTeX](https://en.w
 Pre-compiled binaries for recent tagged releases can be found on the [releases page](https://github.com/autobib/autobib/releases).
 
 If you use Homebrew, then you can also install Autobib through our tap:
-
 ```sh
 brew tap autobib/autobib
 brew install autobib
@@ -32,7 +31,6 @@ brew install autobib
 
 If a binary is not available for your platform, you can install from source.
 Make sure the [rust toolchain](https://www.rust-lang.org/tools/install) is installed on your device and run
-
 ```sh
 cargo install --locked autobib
 ```
@@ -40,7 +38,6 @@ cargo install --locked autobib
 ## Basic usage
 
 To see all the commands available with Autobib, run
-
 ```sh
 autobib help
 autobib help <subcommand>
@@ -62,13 +59,10 @@ Jump to:
 
 At its most basic, Autobib converts *identifiers* into *records*.
 To obtain the data associated with the zbMath record [`Zbl 1337.28015`](https://zbmath.org/1528.14024), running
-
 ```sh
 autobib get zbl:1337.28015
 ```
-
 will return
-
 ```bib
 @article{zbl:1337.28015,
   author = {Hochman, Michael},
@@ -83,7 +77,6 @@ will return
   zbmath = {06346461},
 }
 ```
-
 An identifier is a pair `provider:sub_id`.
 The currently supported providers are:
 
@@ -101,7 +94,6 @@ If your preferred format is not supported, feel free to [open an issue](https://
 ### Sourcing from files
 
 A more common scenario is that you have a file, say `main.tex`, with some contents:
-
 ```tex
 % contents of file `main.tex`
 \documentclass{article}
@@ -109,13 +101,10 @@ A more common scenario is that you have a file, say `main.tex`, with some conten
 We refer the reader to \cite{zbl:1337.28015,zbl:1409.11054}.
 \end{document}
 ```
-
 Then, for example, running
-
 ```sh
 autobib source main.tex --out main.bib
 ```
-
 will search through the document for valid citation keys and output the bibliography into the file `main.bib`.
 
 ### Modifying records
@@ -124,11 +113,9 @@ On the first run, Autobib retrieves the data directly from a remote provider.
 The data is stored locally in a [SQLite](https://www.sqlite.org/) database, so that subsequent runs are substantially faster.
 
 You can view and modify the internally stored record with
-
 ```sh
 autobib edit zbl:1337.28015
 ```
-
 If the record does not yet exist in your local record database, it will be retrieved before editing.
 
 You can also re-retrieve a record from the remote provider using the `autobib update` command, or remove one from the database using the `autobib delete` command.
@@ -138,13 +125,10 @@ Run `autobib help update` and `autobib help delete` for more details.
 
 It is also possible to assign *aliases* to records, using the `autobib alias` sub-command.
 To create an alias for the record with identifier `zbl:1337.28015`, run
-
 ```sh
 autobib alias add hochman-entropy zbl:1337.28015
 ```
-
 Then running `autobib get hochman-entropy` returns
-
 ```bib
 @article{hochman-entropy,
   author = {Hochman, Michael},
@@ -159,20 +143,17 @@ Then running `autobib get hochman-entropy` returns
   zbmath = {06346461},
 }
 ```
-
 The record is identical to the record `zbl:1337.28015`, except that the citation key is the name of the alias.
 In order to distinguish from usual identifiers, an alias cannot contain the colon `:`.
 
 Note that the characters `{}(),=\#%"` and [whitespace](https://doc.rust-lang.org/reference/whitespace.html) are not permitted in a BibTeX entry key.
 You can still create aliases using these characters: for instance, `autobib alias add % zbl:1337.28015` works.
 However, attempting to retrieve the BibTeX entry associated with this alias will result in an error.
-
 ```txt
 $ autobib get %
 ERROR Invalid bibtex entry key: %
   Suggested fix: use an alias which does not contain disallowed characters: {}(),=\#%"
 ```
-
 Run `autobib help alias` for more options for managing aliases.
 
 Aliases can be used in most locations that the usual identifiers are used.
@@ -188,7 +169,6 @@ For example, to convert `zbMATH06346461` to `zbmath:06346461` and automatically 
 rules = [["^zbMATH([0-9]{8})$", "zbmath"]]
 create_alias = true
 ```
-
 Read the [default configuration](src/config/default_config.toml) for more detail.
 
 ### Creating local records
@@ -196,21 +176,17 @@ Read the [default configuration](src/config/default_config.toml) for more detail
 Sometimes, it is necessary to create a local record which may not otherwise exist on a remote database.
 In order to do this, the command `autobib local` can be used to generate a special `local:` record, which only exists locally in the database.
 For example,
-
 ```sh
 autobib local my-entry
 ```
-
 creates a record under the identifier `local:my-entry`.
 You will be prompted to fill in the record, unless you pass the `-I`/`--no-interactive` flag.
 To modify the record later, run the above command again or use the [`autobib edit` command](#modifying-records).
 
 It is also possible to create the local record from a BibTeX file:
-
 ```sh
 autobib -I local my-entry --from source.bib
 ```
-
 Note that the BibTeX file should contain exactly one entry, or this command will fail.
 
 When you create the local record `local:my-entry`, a new alias `my-entry` (if available) is also created and assigned to the new record.
@@ -222,11 +198,9 @@ In order to search for records which are saved on your local database, use the `
 This will open a fuzzy picker for searching through various fields.
 Specify the fields that you would like with `-f`, followed by a comma-separated list of fields.
 For example,
-
 ```sh
 autobib find -f author,title
 ```
-
 will list all of your local records with the `author` and `title` fields available to search against.
 
 ### Importing records
@@ -259,26 +233,21 @@ See [supported shells](https://docs.rs/clap_complete/latest/clap_complete/aot/en
 > Follow the instructions [here](https://docs.brew.sh/Shell-Completion) to have your shell load the Homebrew-managed completions.
 
 A shell completions script can be generated as follows:
-
 ```sh
 autobib completions <shell>
 ```
-
 Run this on interactive shell start-up and redirect the output to your preferred directory of completions scripts.
 
 For example, in Zsh, add the following lines to `~/.zshrc`:
-
 ```sh
 if type autobib &> /dev/null
 then
   autobib completions zsh > "$HOME/.local/share/zsh/site-functions/_autobib"
 fi
 ```
-
 and make sure `~/.local/share/zsh/site-functions` (or another directory of your choice) is added to the `FPATH` environment variable.
 
 In Bash, add the following lines to `~/.profile`:
-
 ```sh
 if type autobib &> /dev/null
 then
