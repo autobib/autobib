@@ -257,7 +257,6 @@ fi
 
 For this to take effect, remember to restart your shell or source the relevant file.
 Then you can try typing `autobib f` and pressing the tab key.
-<!-- markdownlint-disable-next-line MD038 -->
 You should see `autobib find `.
 
 ### User data and configuration file
