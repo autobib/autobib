@@ -4,7 +4,6 @@
 This file documents the template syntax used by Autobib to format record data.
 
 Record data is the information encapsulated in a record, such as
-
 ```bib
 @article{zbmath:06346461,
   arxiv = {1212.1873},
@@ -18,7 +17,6 @@ Record data is the information encapsulated in a record, such as
   year = {2014},
 }
 ```
-
 All examples in this document refer to this specific entry (unless otherwise noted).
 
 ## Syntax overview
@@ -28,28 +26,23 @@ All examples in this document refer to this specific entry (unless otherwise not
 A template is composed of *text* and *expressions*.
 Expressions are delimited by curly braces: `{}`.
 For example, the template
-
 ```txt
 Hello {world}
 ```
-
 consists of text `Hello ` followed by an expression `world`.
 
 In order to include braces in text, duplicate the bracket, like `{{`.
 In order to include braces inside expressions, use *extended delimiters*:  an opening bracket `{` can be followed by any number of `#` keys, and then it can only be closed by the same number of `#` keys, followed by `}`.
 For example,
-
 ```txt
 Hello {# "Brace {" #}
 ```
-
 contains of text `Hello ` followed by an expression `"Brace {"`.
 
 ### Expression syntax
 
 *Field keys* refer directly to the field values in the Bibtex data.
 These are expressions like `author` or `title`, which expand into the corresponding keys:
-
 ```txt
 '{author}: {title}' => 'Hochman, Michael: On self-similar sets with overlaps and inverse theorems for entropy'
 ```
@@ -57,26 +50,21 @@ These are expressions like `author` or `title`, which expand into the correspond
 The only permitted characters in a field key are ASCII letters and numbers, plus the underscore `_` character.
 If your Bibtex entries contain other characters, you must manually escape them using brackets `()`.
 For example, given data
-
 ```bib
 @book{k,
   dots.and.qmark? = {Val},
 }
 ```
-
 we have the expansion
-
 ```txt
 '{(docs.and.qmark?)}' => 'Val'
 ```
 
 If a field key does not exist, the empty string is printed instead.
 For example, since `editor` is not defined,
-
 ```txt
 '{author}{editor}' => 'Hochman, Michael'
 ```
-
 It is possible to [handle missed keys](#handling-missed-keys) to customize this behaviour.
 
 There are also a number of *meta* expressions, which refer to metadata of the entry.
@@ -89,11 +77,9 @@ These are all prefixed by the `%` character:
 
 Finally, it is possible to input a *string*, i.e. a [JSON string](https://www.json.org/json-en.html), by quoting text.
 This allows manually inputting invisible characters or specifying Unicode values using escapes by including the value in quotes:
-
 ```txt
 '{"json \" string"}' => 'json " string'
 ```
-
 Here, `\"` expands to `"` because JSON quotes must be escaped.
 
 ### Conditional expansion
@@ -102,14 +88,11 @@ In order to handle potentially missing keys, an expression can be prefixed by a 
 
 A conditional `{=key v}` will only render `v` if `key` exists in the data, and `{!key v}` will only render `v` if `key` *does not* exist in the data.
 For example:
-
 ```txt
 '{author}{=subtitle ". "}{subtitle} => 'Hochman, Michael'
 ```
-
 since the `subtitle` key is not defined.
 On the other hand, since the `journal` key is defined and `issue` is not,
-
 ```txt
 '{author}{=journal ". "}{journal}{!issue " No issue number} => 'Hochman, Michael. Ann. Math. No issue number'
 ```
@@ -139,9 +122,7 @@ For example, in strict mode, the following expressions will fail to render:
 - `{=title editor}`, since `title` is present but `editor` is not present
 
 On the other hand,
-
 ```txt
 '{author}{=editor subtitle}' => 'Hochman, Michael'
 ```
-
 since `editor` is not defined, so `subtitle` does not need to be rendered.
