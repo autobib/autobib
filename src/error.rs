@@ -62,6 +62,12 @@ impl From<rusqlite::Error> for Error {
 #[derive(Debug)]
 pub struct ClapTemplateError(pub SyntaxError<KeyParseError>);
 
+impl From<SyntaxError<KeyParseError>> for ClapTemplateError {
+    fn from(e: SyntaxError<KeyParseError>) -> Self {
+        Self(e)
+    }
+}
+
 impl fmt::Display for ClapTemplateError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         const CLAP_PREFIX_LEN: usize = "error: invalid value '".len();

@@ -9,7 +9,7 @@ use toml::from_str;
 
 use crate::{
     Alias, CitationKey,
-    format::DEFAULT_TEMPLATE,
+    format::DEFAULT_FIND_TEMPLATE,
     logger::{debug, info, warn},
     normalize::Normalization,
 };
@@ -31,7 +31,7 @@ struct RawConfig {
 }
 
 fn find_default_template() -> String {
-    DEFAULT_TEMPLATE.into()
+    DEFAULT_FIND_TEMPLATE.into()
 }
 
 /// A direct representation of the `[find]` section of the configuration.
