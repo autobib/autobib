@@ -3,5 +3,8 @@
 # MD013/line-length
 MD013: false
 
+# MD031/blanks-around-fences
+MD031: false
+
 # MD059/descriptive-link-text
 MD059: false
