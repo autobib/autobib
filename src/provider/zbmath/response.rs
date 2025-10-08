@@ -252,6 +252,10 @@ pub enum LinkType {
     Doi,
     #[serde(rename = "https")]
     Https,
+    #[serde(rename = "http")]
+    Http,
+    #[serde(rename = "euclid")]
+    Euclid,
 }
 
 impl LinkType {
@@ -259,7 +263,7 @@ impl LinkType {
         match self {
             Self::Arxiv => Some("arxiv"),
             Self::Doi => Some("doi"),
-            Self::Https => None,
+            _ => None,
         }
     }
 }
