@@ -85,7 +85,9 @@ pub enum InfoReportType {
 
 #[derive(Debug, Copy, Clone, ValueEnum)]
 pub enum OnConflict {
-    /// Always keep current values. [default if non-interactive]
+    /// Always keep current values.
+    ///
+    /// This is the default if the terminal is not interactive.
     #[value(alias("c"), alias("current"))]
     PreferCurrent,
     /// Overwrite current values.
