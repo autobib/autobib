@@ -6,33 +6,41 @@ use crate::error::{KeyParseError, KeyParseErrorKind};
 pub struct Lexer<'a> {
     /// no leading or trailing whitespace
     inner: &'a str,
+    /// the index into the offset
     offset: usize,
 }
 
+/// A single token produced by the lexer.
 #[derive(Debug, PartialEq)]
 pub struct Token<'a> {
+    /// The span in the source str from which this token originated.
     pub span: Range<usize>,
+    /// The kind of token.
     pub kind: Kind<'a>,
 }
 
+/// A token kind
 #[derive(Debug, PartialEq)]
 pub enum Kind<'a> {
+    /// Consecutive Unicode whitespace
     Whitespace,
-    /// ?
+    /// The '?' character
     Opt,
-    /// =
+    /// The '=' character
     Cond,
-    /// !
+    /// The '!' character
     Neg,
-    /// %
+    /// The '%' character
     Meta,
-    /// [a-zA-Z0-9_] or (ident)
+    /// Either a bare identifier in the range `[a-zA-Z0-9_]` or a bracketed identifier `(ident)`
+    /// where `ident` does not contain closing brackets.
     Ident(&'a str),
-    /// "string"
+    /// A JSON string, like `"string"`.
     String(String),
 }
 
 impl<'a> Kind<'a> {
+    /// Returns a short human-readable description of the kind.
     pub fn describe(&self) -> &'static str {
         match self {
             Self::Whitespace => "whitespace",
@@ -46,11 +54,13 @@ impl<'a> Kind<'a> {
     }
 }
 
-fn is_ident_char(ch: char) -> bool {
+/// Returns of a character is permitted in a bare identifier.
+fn is_bare_ident_char(ch: char) -> bool {
     ch.is_ascii_alphanumeric() || ch == '_'
 }
 
 impl<'a> Lexer<'a> {
+    /// Create a new lexer with an inner source string.
     pub fn new(inner: &'a str) -> Self {
         Self { inner, offset: 0 }
     }
@@ -60,21 +70,24 @@ impl<'a> Lexer<'a> {
         &self.inner[self.offset..]
     }
 
-    fn skip_if_char(&mut self, exp: char) -> bool {
-        let mut chars = self.remainder().chars();
-        if chars.next().is_some_and(|ch| ch == exp) {
-            self.offset += exp.len_utf8();
-            true
-        } else {
-            false
+    /// Consume the next token if it is a `?` token.
+    ///
+    /// Returns `Some` if a token was consumed, and `None` otherwise.
+    #[inline]
+    pub fn skip_if_opt(&mut self) -> Option<()> {
+        match self.inner.as_bytes().get(self.offset) {
+            Some(b'?') => {
+                self.offset += 1;
+                Some(())
+            }
+            _ => None,
         }
     }
 
-    #[inline]
-    pub fn skip_if_opt(&mut self) -> bool {
-        self.skip_if_char('?')
-    }
-
+    /// Consume the next token if it is a `!` or `=` token.
+    ///
+    /// Returns `Some(true)` if a `=` token was consumed, `Some(false)` if a `=` token was
+    /// consumed, and `None` otherwise.
     #[inline]
     pub fn skip_if_cond(&mut self) -> Option<bool> {
         match self.inner.as_bytes().get(self.offset) {
@@ -90,13 +103,15 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn step(&mut self, increment: usize, kind: Kind<'a>) -> Token<'a> {
+    /// A helper function to yield a token and increment the inner offset.
+    fn step_ok(&mut self, increment: usize, kind: Kind<'a>) -> Token<'a> {
         let new_offset = self.offset + increment;
         let span = self.offset..new_offset;
         self.offset = new_offset;
         Token { kind, span }
     }
 
+    /// A helper function to yield an error and increment the inner offset.
     fn step_err(&mut self, increment: usize, kind: KeyParseErrorKind) -> KeyParseError {
         let new_offset = self.offset + increment;
         let span = self.offset..new_offset;
@@ -107,7 +122,11 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn step_err_end(&mut self, kind: KeyParseErrorKind) -> KeyParseError {
+    /// A helper function to yield an error and increment the inner offset if the error results in
+    /// consuming the entire internal buffer.
+    ///
+    /// The corresponding span is the remainder of the expression.
+    fn step_err_final(&mut self, kind: KeyParseErrorKind) -> KeyParseError {
         let new_offset = self.inner.len();
         let span = self.offset..new_offset;
         self.offset = new_offset;
@@ -117,6 +136,9 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    /// Expect the end of the expression.
+    ///
+    /// Returns an error if there are any trailing characters.
     pub fn expect_eof(&mut self) -> Result<(), KeyParseError> {
         let rem = self.remainder();
         if rem.is_empty() {
@@ -129,6 +151,9 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    /// Expect a token.
+    ///
+    /// Returns an error if there are no more tokens.
     pub fn expect_token(&mut self, msg: &'static str) -> Result<Token<'a>, KeyParseError> {
         match self.next_token()? {
             Some(token) => Ok(token),
@@ -139,6 +164,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    /// Read the next token from the expression, if any.
     pub fn next_token(&mut self) -> Result<Option<Token<'a>>, KeyParseError> {
         let mut chars = self.remainder().chars();
         let c = match chars.next() {
@@ -155,46 +181,48 @@ impl<'a> Lexer<'a> {
                             Ok(s) => s,
                             Err(_) => todo!(),
                         };
-                        return Ok(Some(self.step(cutoff, Kind::String(s))));
+                        return Ok(Some(self.step_ok(cutoff, Kind::String(s))));
                     }
                 }
-                Err(self.step_err_end(KeyParseErrorKind::UnclosedString))
+                Err(self.step_err_final(KeyParseErrorKind::UnclosedString))
             }
-            '=' => Ok(Some(self.step(1, Kind::Cond))),
-            '!' => Ok(Some(self.step(1, Kind::Neg))),
-            '%' => Ok(Some(self.step(1, Kind::Meta))),
-            '?' => Ok(Some(self.step(1, Kind::Opt))),
+            '=' => Ok(Some(self.step_ok(1, Kind::Cond))),
+            '!' => Ok(Some(self.step_ok(1, Kind::Neg))),
+            '%' => Ok(Some(self.step_ok(1, Kind::Meta))),
+            '?' => Ok(Some(self.step_ok(1, Kind::Opt))),
             '(' => {
                 let tail = chars.as_str().as_bytes();
                 match memchr::memchr(b')', tail) {
                     Some(idx) => {
                         let cutoff = idx + 1;
                         let escaped = &self.remainder()[1..cutoff];
-                        Ok(Some(self.step(cutoff + 1, Kind::Ident(escaped))))
+                        Ok(Some(self.step_ok(cutoff + 1, Kind::Ident(escaped))))
                     }
-                    None => Err(self.step_err_end(KeyParseErrorKind::MissingBracket)),
+                    None => Err(self.step_err_final(KeyParseErrorKind::MissingBracket)),
                 }
             }
             ')' => Err(self.step_err(1, KeyParseErrorKind::ExtraBracket)),
             ch if ch.is_whitespace() => {
                 let extra = self.remainder().len() - self.remainder().trim_start().len();
-                Ok(Some(self.step(extra, Kind::Whitespace)))
+                Ok(Some(self.step_ok(extra, Kind::Whitespace)))
             }
-            ch if is_ident_char(ch) => match self.remainder().find(|ch| !is_ident_char(ch)) {
-                Some(cutoff) => {
-                    let res = &self.remainder()[..cutoff];
-                    Ok(Some(self.step(cutoff, Kind::Ident(res))))
+            ch if is_bare_ident_char(ch) => {
+                match self.remainder().find(|ch| !is_bare_ident_char(ch)) {
+                    Some(cutoff) => {
+                        let res = &self.remainder()[..cutoff];
+                        Ok(Some(self.step_ok(cutoff, Kind::Ident(res))))
+                    }
+                    None => {
+                        let res = self.remainder();
+                        let start = self.offset;
+                        self.offset = self.inner.len();
+                        Ok(Some(Token {
+                            span: start..self.offset,
+                            kind: Kind::Ident(res),
+                        }))
+                    }
                 }
-                None => {
-                    let res = self.remainder();
-                    let start = self.offset;
-                    self.offset = self.inner.len();
-                    Ok(Some(Token {
-                        span: start..self.offset,
-                        kind: Kind::Ident(res),
-                    }))
-                }
-            },
+            }
             ch => Err(self.step_err(ch.len_utf8(), KeyParseErrorKind::UnexpectedChar(ch))),
         }
     }

@@ -42,6 +42,9 @@ impl FromStr for Meta {
 
 /// A helper function to construct a KeyParseError when something specific is expected, but
 /// something unexpected was received.
+///
+/// The `msg` is used as the error message and should contain a description of what was expected.
+/// The token `t` is the token which was received instead.
 fn unexp(msg: &'static str, t: Token<'_>) -> KeyParseError {
     KeyParseError {
         kind: KeyParseErrorKind::Unexpected(msg, t.kind.describe()),
@@ -62,6 +65,7 @@ pub enum Atom {
     Meta(Meta),
 }
 
+/// A helper trait which allows adding a span to a KeyParseErrorKind.
 trait SpannedError<T> {
     fn spanned(self, span: std::ops::Range<usize>) -> Result<T, KeyParseError>;
 }
@@ -76,7 +80,8 @@ impl<T, E: Into<KeyParseErrorKind>> SpannedError<T> for Result<T, E> {
 }
 
 impl Atom {
-    /// Read a single Atom from the provided lexer without consuming past the end of the atom.
+    /// Read a single atom from the provided lexer without consuming any characters beyond the end
+    /// of the atom.
     fn from_lexer(lexer: &mut Lexer<'_>) -> Result<Self, KeyParseError> {
         static MSG: &str = "A field key, string, or meta";
         let token = lexer.expect_token(MSG)?;
@@ -86,7 +91,7 @@ impl Atom {
                 let key = FieldKey::try_new_normalize(s)
                     .spanned(token.span)?
                     .to_owned();
-                Ok(if lexer.skip_if_opt() {
+                Ok(if lexer.skip_if_opt().is_some() {
                     Self::FieldKeyOpt(key)
                 } else {
                     Self::FieldKey(key)
@@ -105,26 +110,28 @@ impl Atom {
     }
 }
 
-/// The key type, representing a `{ ... }` expression in the template.
+/// An abstract representation of the contents of a `{ ... }` expression in the template.
 ///
-/// This is either a bare token, or a conditional token which only renders if the key is present in
-/// the field keys.
+/// This is either a bare token, or a conditional token which only renders if the key is present
+/// or not present in the field keys.
 #[derive(Debug, Clone)]
 pub enum Expression {
-    /// `{!key atom}`
-    Negation(FieldKey, Atom),
-    /// `{=key atom}`
-    Conditional(FieldKey, Atom),
-    /// `{atom}`
+    /// `{atom}`: render `atom`
     Bare(Atom),
+    /// `{=key atom}`: render `atom` if `key` is present
+    IfDefined(FieldKey, Atom),
+    /// `{!key atom}`: render `atom` if `key` is not present
+    IfUndefined(FieldKey, Atom),
 }
 
-impl Expression {
-    fn from_lexer(lexer: &mut Lexer<'_>) -> Result<Self, KeyParseError> {
+impl Ast<'_> for Expression {
+    type Error = KeyParseError;
+
+    fn from_expr(expr: &str) -> Result<Self, Self::Error> {
+        let mut lexer = Lexer::new(expr);
         let res = match lexer.skip_if_cond() {
             Some(c) => {
                 // {=key} but now the = has been consumed
-
                 static MSG: &str = "a field key";
                 let token = lexer.expect_token(MSG)?;
                 match token.kind {
@@ -134,11 +141,11 @@ impl Expression {
                         let token = lexer.expect_token(MSG)?;
                         match token.kind {
                             Kind::Whitespace => {
-                                let atom = Atom::from_lexer(lexer)?;
+                                let atom = Atom::from_lexer(&mut lexer)?;
                                 if c {
-                                    Self::Conditional(field_key, atom)
+                                    Self::IfDefined(field_key, atom)
                                 } else {
-                                    Self::Negation(field_key, atom)
+                                    Self::IfUndefined(field_key, atom)
                                 }
                             }
                             _ => return Err(unexp(MSG, token)),
@@ -148,22 +155,13 @@ impl Expression {
                 }
             }
             None => {
-                let atom = Atom::from_lexer(lexer)?;
+                let atom = Atom::from_lexer(&mut lexer)?;
                 Self::Bare(atom)
             }
         };
 
         lexer.expect_eof()?;
         Ok(res)
-    }
-}
-
-impl Ast<'_> for Expression {
-    type Error = KeyParseError;
-
-    fn from_expr(expr: &str) -> Result<Self, Self::Error> {
-        let mut lexer = Lexer::new(expr);
-        Self::from_lexer(&mut lexer)
     }
 }
 
@@ -190,6 +188,7 @@ struct TemplateFieldKeys<'a, T> {
 }
 
 impl<'a, T> TemplateFieldKeys<'a, T> {
+    /// Extract the field keys from a `mufmt::Template` with `Expression` as the Ast.
     pub fn new(template: &'a mufmt::Template<T, Expression>) -> Self {
         Self {
             spans: template.spans().iter(),
@@ -211,7 +210,7 @@ impl<'a, T> Iterator for TemplateFieldKeys<'a, T> {
                 Span::Expr(Expression::Bare(Atom::FieldKey(f) | Atom::FieldKeyOpt(f))) => {
                     return Some(f);
                 }
-                Span::Expr(Expression::Conditional(f, raw) | Expression::Negation(f, raw)) => {
+                Span::Expr(Expression::IfDefined(f, raw) | Expression::IfUndefined(f, raw)) => {
                     if let Atom::FieldKeyOpt(field_key) | Atom::FieldKey(field_key) = raw {
                         self.buffered = Some(field_key);
                     }
@@ -231,6 +230,10 @@ pub struct Template {
 }
 
 impl Template {
+    /// Compile this template from a template string.
+    ///
+    /// At compilation time, the [`Strategy`] is also computed which is used to determine the
+    /// algorithm used when rendering.
     pub fn compile(s: &str) -> Result<Self, SyntaxError<KeyParseError>> {
         let template = mufmt::Template::<String, Expression>::compile(s)?;
 
@@ -258,12 +261,12 @@ impl Template {
                         return false;
                     }
                 }
-                Span::Expr(Expression::Conditional(k1, Atom::FieldKey(k2))) => {
+                Span::Expr(Expression::IfDefined(k1, Atom::FieldKey(k2))) => {
                     if contains(k1.as_ref(), &mut ctx) && !contains(k2.as_ref(), &mut ctx) {
                         return false;
                     }
                 }
-                Span::Expr(Expression::Negation(k1, Atom::FieldKey(k2))) => {
+                Span::Expr(Expression::IfUndefined(k1, Atom::FieldKey(k2))) => {
                     if !contains(k1.as_ref(), &mut ctx) && !contains(k2.as_ref(), &mut ctx) {
                         return false;
                     }
@@ -274,6 +277,8 @@ impl Template {
         true
     }
 
+    /// Returns whether if this template can be rendered by the provided row data without having
+    /// any non-optional undefined keys.
     pub fn has_keys_contained_in(&self, row: &RowData) -> bool {
         match self.strategy {
             Strategy::Sorted => self.contained_impl(
@@ -289,24 +294,8 @@ impl Template {
     }
 }
 
-pub const DEFAULT_TEMPLATE: &str = r#"{author} ~ {title}{=subtitle ". "}{subtitle?}"#;
-
-impl Default for Template {
-    fn default() -> Self {
-        let template = mufmt::Template::compile(DEFAULT_TEMPLATE).unwrap();
-
-        Self {
-            template,
-            strategy: Strategy::Small,
-        }
-    }
-}
-
-impl From<SyntaxError<KeyParseError>> for ClapTemplateError {
-    fn from(e: SyntaxError<KeyParseError>) -> Self {
-        Self(e)
-    }
-}
+/// The default template used by `autobib find`.
+pub const DEFAULT_FIND_TEMPLATE: &str = r#"{author} ~ {title}{=subtitle ". "}{subtitle?}"#;
 
 impl FromStr for Template {
     type Err = ClapTemplateError;
@@ -316,6 +305,11 @@ impl FromStr for Template {
     }
 }
 
+/// A container around a the fields of a bibtex entry, which permits subsequent field key reads at
+/// long as the keys are read in increasing order.
+///
+/// If keys are read out of order, this may fail to return a key even if it is defined in the
+/// underlying data.
 pub struct BibtexFields<'a> {
     inner: Peekable<RawRecordFieldsIter<'a>>,
 }
@@ -327,6 +321,10 @@ impl<'a> BibtexFields<'a> {
         }
     }
 
+    /// Get the value of a field key.
+    ///
+    /// The caller is guaranteed to check that subsequent calls to this function pass values of
+    /// `key` in increasing order.
     pub fn get_field_ordered(&mut self, key: &str) -> Option<&'a str> {
         // advance the inner iterator until we either find or miss the key
         while self.inner.next_if(|nxt| nxt.0 < key).is_some() {}
@@ -339,7 +337,7 @@ impl<'a> BibtexFields<'a> {
     }
 }
 
-/// A return type which helps the compiler reason about lifetimes.
+/// A `Display` adapter which helps the compiler reason about lifetimes.
 enum DisplayedRow<'row, 'ast, 'state> {
     Row(&'row str),
     Ast(&'ast str),
@@ -364,14 +362,14 @@ impl<'row, 'ast, 'state> DisplayedRow<'row, 'ast, 'state> {
         F: FnMut(&str) -> Option<&'state str>,
     {
         let token = match ast {
-            Expression::Conditional(field_key, token) => {
+            Expression::IfDefined(field_key, token) => {
                 if f(field_key.as_ref()).is_some() {
                     token
                 } else {
                     return Self::Skip;
                 }
             }
-            Expression::Negation(field_key, token) => {
+            Expression::IfUndefined(field_key, token) => {
                 if f(field_key.as_ref()).is_none() {
                     token
                 } else {
