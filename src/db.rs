@@ -555,7 +555,7 @@ impl RecordDatabase {
 impl Drop for RecordDatabase {
     fn drop(&mut self) {
         if let Err(err) = self.optimize() {
-            eprintln!("Failed to optimize database on close: {err}");
+            error!("Failed to optimize database on close: {err}");
         }
     }
 }

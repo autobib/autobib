@@ -207,7 +207,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         ureq::http::StatusCode::OK => response.into_body(),
                         c => bail!("Failed to download file: {c}"),
                     };
-                    let mut target_file = opts.open(dbg!(&target))?;
+                    let mut target_file = opts.open(&target)?;
                     if let Err(e) = copy(&mut body.as_reader(), &mut target_file) {
                         error!("{e}");
                         // check if there is a file at the target location; if there is one, it
