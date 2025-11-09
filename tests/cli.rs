@@ -138,21 +138,27 @@ fn get_append() -> Result<()> {
 fn source() -> Result<()> {
     let s = TestState::init()?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["source", "tests/resources/source/main.tex"]);
     let predicate_file = predicate::path::eq_file(Path::new("tests/resources/source/stdout.txt"))
         .utf8()
         .unwrap();
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["source", "tests/resources/source/main.tex"]);
     cmd.assert()
         .success()
-        .stdout(predicate_file)
+        .stdout(predicate_file.clone())
         .stderr(predicate::str::is_empty());
 
     let mut cmd = s.cmd()?;
     cmd.args(["--read-only", "source", "tests/resources/source/main.tex"]);
-    let predicate_file = predicate::path::eq_file(Path::new("tests/resources/source/stdout.txt"))
-        .utf8()
-        .unwrap();
+    cmd.assert()
+        .success()
+        .stdout(predicate_file.clone())
+        .stderr(predicate::str::is_empty());
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["source", "--file-type", "tex", "--stdin"])
+        .stdin(fs::File::open("tests/resources/source/main.tex")?);
     cmd.assert()
         .success()
         .stdout(predicate_file)
