@@ -107,6 +107,8 @@ autobib source main.tex --out main.bib
 ```
 will search through the document for valid citation keys and output the bibliography into the file `main.bib`.
 
+Read more at [`docs/source.md`](docs/source.md).
+
 ### Modifying records
 
 On the first run, Autobib retrieves the data directly from a remote provider.

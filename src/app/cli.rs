@@ -345,7 +345,7 @@ pub enum Command {
         /// Skip a citation key (if present).
         #[arg(short, long, value_name = "CITATION_KEYS")]
         skip: Vec<RecordId>,
-        /// Skip citation keys which are present in the provided `.bib` file(s).
+        /// Skip citation keys which are present in the provided file(s).
         #[arg(long, value_name = "PATH")]
         skip_from: Vec<PathBuf>,
         /// Override file type detection for skip files.
