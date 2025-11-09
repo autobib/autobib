@@ -1,4 +1,7 @@
-use std::{fs::File, io::Read};
+use std::{
+    fs::File,
+    io::{Read, stdin},
+};
 
 use anyhow::bail;
 
@@ -16,6 +19,23 @@ pub fn get_citekeys_from_file<T: Extend<RecordId>, P: AsRef<std::path::Path>>(
     ft_flag: &'static str,
 ) -> Result<(), anyhow::Error> {
     get_citekeys_from_file_filter(read_from, file_type, container, scratch, ft_flag, |_| true)
+}
+
+pub fn get_citekeys_from_stdin<T: Extend<RecordId>, E: FnMut(&RecordId) -> bool>(
+    file_type: Option<SourceFileType>,
+    container: &mut T,
+    scratch: &mut Vec<u8>,
+    exclude: E,
+) -> Result<(), anyhow::Error> {
+    let ft = file_type.unwrap_or(SourceFileType::Txt);
+    scratch.clear();
+    match stdin().read_to_end(scratch) {
+        Ok(_) => {}
+        Err(e) => bail!("Failed to read from standard input: '{e}'"),
+    }
+    get_citekeys_filter(ft, scratch, container, exclude);
+
+    Ok(())
 }
 
 /// A wrapper around [`get_citekeys_filter`] to open the file, detect the file type (or use the provided

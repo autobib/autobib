@@ -798,6 +798,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             paths,
             file_type,
             out,
+            stdin,
             append,
             skip,
             skip_from,
@@ -839,6 +840,15 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 // only print the keys which were found
                 let mut all_citekeys: BTreeSet<RecordId> = BTreeSet::new();
 
+                if stdin {
+                    source::get_citekeys_from_stdin(
+                        file_type,
+                        &mut all_citekeys,
+                        &mut scratch,
+                        |record_id| !skipped_keys.contains(record_id),
+                    )?;
+                }
+
                 for path in paths {
                     source::get_citekeys_from_file_filter(
                         path,
@@ -849,6 +859,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         |record_id| !skipped_keys.contains(record_id),
                     )?;
                 }
+
                 output_keys(all_citekeys.iter())?;
             } else {
                 // read citation keys from all of the paths, excluding those which are present in
@@ -857,6 +868,15 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 // The citation keys do not need to be sorted since sorting
                 // happens in the `validate_and_retrieve` function.
                 let mut all_citekeys: HashSet<RecordId> = HashSet::new();
+
+                if stdin {
+                    source::get_citekeys_from_stdin(
+                        file_type,
+                        &mut all_citekeys,
+                        &mut scratch,
+                        |record_id| !skipped_keys.contains(record_id),
+                    )?;
+                }
 
                 for path in paths {
                     source::get_citekeys_from_file_filter(
