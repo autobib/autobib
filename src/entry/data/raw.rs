@@ -29,11 +29,11 @@ pub(crate) type EntryTypeHeader = u8;
 ///
 /// For a description of the binary format, see the [`db`](crate::db) module documentation.
 #[derive(Debug, Clone)]
-pub struct RawRecordData<T = Vec<u8>> {
+pub struct RawEntryData<T = Vec<u8>> {
     data: T,
 }
 
-impl RawRecordData {
+impl RawEntryData {
     pub fn from_entry_data<D: EntryData>(entry_data: &D) -> Self {
         let mut data = Vec::with_capacity(entry_data.raw_len());
 
@@ -60,16 +60,16 @@ impl RawRecordData {
     }
 }
 
-impl<T: AsRef<[u8]>> PartialEq for RawRecordData<T> {
+impl<T: AsRef<[u8]>> PartialEq for RawEntryData<T> {
     fn eq(&self, other: &Self) -> bool {
         self.data.as_ref().eq(other.data.as_ref())
     }
 }
 
-impl<T: AsRef<[u8]>> Eq for RawRecordData<T> {}
+impl<T: AsRef<[u8]>> Eq for RawEntryData<T> {}
 
-impl<T: AsRef<[u8]>> RawRecordData<T> {
-    /// Construct a [`RawRecordData`] from raw bytes without performing any consistency checks.
+impl<T: AsRef<[u8]>> RawEntryData<T> {
+    /// Construct a [`RawEntryData`] from raw bytes without performing any consistency checks.
     ///
     /// # Panics
     /// The caller must ensure that underlying data upholds the requirements of the binary representation. Otherwise, calling this function will result in a panic or downstream corrupted data.
@@ -82,7 +82,7 @@ impl<T: AsRef<[u8]>> RawRecordData<T> {
         self.data.as_ref()
     }
 
-    /// Construct a [`RawRecordData`] from raw bytes, checking that the underlying bytes are valid.
+    /// Construct a [`RawEntryData`] from raw bytes, checking that the underlying bytes are valid.
     pub fn from_byte_repr(data: T) -> Result<Self, InvalidBytesError> {
         let bytes = data.as_ref();
         match bytes {
@@ -199,7 +199,7 @@ impl<T: AsRef<[u8]>> RawRecordData<T> {
     }
 }
 
-impl<'r> RawRecordData<&'r [u8]> {
+impl<'r> RawEntryData<&'r [u8]> {
     #[inline]
     fn split_blocks_borrowed(&self) -> (&'r [u8], &'r [u8]) {
         let contents = &self.data[DATA_HEADER_SIZE..];
@@ -207,8 +207,8 @@ impl<'r> RawRecordData<&'r [u8]> {
     }
 }
 
-/// The iterator type for the fields of a [`RawRecordData`]. This cannot be constructed directly;
-/// it is constructed implicitly by the [`EntryData::fields`] implementation of [`RawRecordData`].
+/// The iterator type for the fields of a [`RawEntryData`]. This cannot be constructed directly;
+/// it is constructed implicitly by the [`EntryData::fields`] implementation of [`RawEntryData`].
 #[derive(Debug)]
 pub struct RawRecordFieldsIter<'a> {
     remaining: &'a [u8],
@@ -239,7 +239,7 @@ impl<'a> Iterator for RawRecordFieldsIter<'a> {
     }
 }
 
-impl RawRecordData {
+impl RawEntryData {
     pub fn raw_fields(&self) -> RawRecordFieldsIter<'_> {
         let (_, data_blocks) = self.split_blocks();
         RawRecordFieldsIter {
@@ -248,7 +248,7 @@ impl RawRecordData {
     }
 }
 
-impl<'r> BorrowedEntryData<'r> for RawRecordData<&'r [u8]> {
+impl<'r> BorrowedEntryData<'r> for RawEntryData<&'r [u8]> {
     fn fields_borrowed(&self) -> impl Iterator<Item = (&'r str, &'r str)> {
         let (_, data_blocks) = self.split_blocks_borrowed();
         RawRecordFieldsIter {
@@ -257,7 +257,7 @@ impl<'r> BorrowedEntryData<'r> for RawRecordData<&'r [u8]> {
     }
 }
 
-unsafe impl<T: AsRef<[u8]>> EntryData for RawRecordData<T> {
+unsafe impl<T: AsRef<[u8]>> EntryData for RawEntryData<T> {
     fn fields(&self) -> impl Iterator<Item = (&str, &str)> {
         let (_, data_blocks) = self.split_blocks();
         RawRecordFieldsIter {

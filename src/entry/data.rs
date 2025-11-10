@@ -1,5 +1,5 @@
 //! # Abstraction over BibTeX data.
-//! This module implements the mutable [`RecordData`] and immutable [`RawRecordData`] types, which
+//! This module implements the mutable [`RecordData`] and immutable [`RawEntryData`] types, which
 //! represent the data inherent in a BibTeX entry.
 //!
 //! The data consists of the entry type (e.g. `article`) as well as the field keys and values (e.g. `title =
@@ -18,7 +18,7 @@ use regex::Regex;
 
 pub use identifier::{EntryKey, EntryType, FieldKey, FieldValue, validate_ascii_identifier};
 pub(crate) use raw::{EntryTypeHeader, KeyHeader, ValueHeader};
-pub use raw::{RawRecordData, RawRecordFieldsIter};
+pub use raw::{RawEntryData, RawRecordFieldsIter};
 
 use crate::normalize::{Normalize, normalize_whitespace_str};
 
@@ -100,12 +100,12 @@ pub unsafe trait EntryData: PartialEq {
 
 /// An in-memory [`EntryData`] implementation which supports addition and deletion of fields.
 #[derive(Debug, PartialEq, Eq)]
-pub struct RecordData<S = String> {
+pub struct MutableEntryData<S = String> {
     pub(super) entry_type: EntryType<S>,
     pub(super) fields: BTreeMap<FieldKey<S>, FieldValue<S>>,
 }
 
-impl<S: AsRef<str> + Ord + From<&'static str>> Default for RecordData<S> {
+impl<S: AsRef<str> + Ord + From<&'static str>> Default for MutableEntryData<S> {
     fn default() -> Self {
         Self::new(EntryType("misc".into()))
     }
@@ -133,7 +133,7 @@ pub enum ConflictResolved {
     New(FieldValue),
 }
 
-impl<'r> RecordData<&'r str> {
+impl<'r> MutableEntryData<&'r str> {
     pub fn borrow_entry_data<D: EntryData>(data: &'r D) -> Self {
         let mut new = Self::new(EntryType(data.entry_type()));
         for (key, value) in data.fields() {
@@ -143,7 +143,7 @@ impl<'r> RecordData<&'r str> {
     }
 }
 
-impl RecordData {
+impl MutableEntryData {
     pub fn from_entry_data<D: EntryData>(data: &D) -> Self {
         let mut new = Self::new(EntryType(data.entry_type().to_owned()));
         for (key, value) in data.fields() {
@@ -274,7 +274,7 @@ impl RecordData {
     }
 }
 
-impl<S: AsRef<str> + Ord> RecordData<S> {
+impl<S: AsRef<str> + Ord> MutableEntryData<S> {
     /// Initialize a new [`RecordData`] instance.
     pub fn new(entry_type: EntryType<S>) -> Self {
         Self {
@@ -313,7 +313,7 @@ impl<S: AsRef<str> + Ord> RecordData<S> {
     }
 }
 
-unsafe impl<S: AsRef<str> + Ord> EntryData for RecordData<S> {
+unsafe impl<S: AsRef<str> + Ord> EntryData for MutableEntryData<S> {
     fn fields(&self) -> impl Iterator<Item = (&str, &str)> {
         self.fields
             .iter()
@@ -332,7 +332,7 @@ unsafe impl<S: AsRef<str> + Ord> EntryData for RecordData<S> {
 static TRAILING_JOURNAL_SERIES_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\s*\([1-9][0-9]*\)$").unwrap());
 
-impl Normalize for RecordData {
+impl Normalize for MutableEntryData {
     fn set_eprint<Q: AsRef<str>>(&mut self, keys: std::slice::Iter<'_, Q>) -> bool {
         for key in keys {
             match self.is_eprint_normalized(key) {

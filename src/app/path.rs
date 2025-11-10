@@ -7,7 +7,7 @@ use std::{
 use anyhow::bail;
 
 use crate::{
-    entry::{Entry, RecordData},
+    entry::{Entry, MutableEntryData},
     http::Client,
     logger::info,
     path_hash::PathHash,
@@ -57,7 +57,7 @@ pub fn data_from_path_or_remote<P: AsRef<Path>, C: Client>(
     maybe_path: Option<P>,
     remote_id: RemoteId,
     client: &C,
-) -> Result<(RecordData, RemoteId), anyhow::Error> {
+) -> Result<(MutableEntryData, RemoteId), anyhow::Error> {
     match maybe_path {
         Some(path) => Ok((data_from_path(path)?, remote_id)),
         _ => match get_remote_response_recursive(remote_id, client)? {
@@ -72,16 +72,16 @@ pub fn data_from_path_or_remote<P: AsRef<Path>, C: Client>(
 /// Either obtain data from a `.bib` file at the provided path, or return the default data.
 pub fn data_from_path_or_default<P: AsRef<Path>>(
     maybe_path: Option<P>,
-) -> Result<RecordData, anyhow::Error> {
+) -> Result<MutableEntryData, anyhow::Error> {
     match maybe_path {
         Some(path) => data_from_path(path),
-        _ => Ok(RecordData::default()),
+        _ => Ok(MutableEntryData::default()),
     }
 }
 
 /// Obtain data from a bibtex record at a provided path.
-fn data_from_path<P: AsRef<Path>>(path: P) -> Result<RecordData, anyhow::Error> {
+fn data_from_path<P: AsRef<Path>>(path: P) -> Result<MutableEntryData, anyhow::Error> {
     let bibtex = read_to_string(path)?;
-    let entry = Entry::<RecordData>::from_str(&bibtex)?;
+    let entry = Entry::<MutableEntryData>::from_str(&bibtex)?;
     Ok(entry.record_data)
 }
