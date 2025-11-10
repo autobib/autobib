@@ -80,6 +80,7 @@ pub fn migrate(conn: &mut Connection, v: i32) -> Result<(), DatabaseError> {
             debug!("Setting the application id.");
             conn.pragma_update(None, "application_id", application_id())?;
         }
+        1 => return Err(DatabaseError::CannotMigrate(1)),
         // this is only reachable if the user_version was set by a different program
         _ => return Err(DatabaseError::InvalidDatabase),
     }
