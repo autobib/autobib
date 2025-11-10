@@ -143,7 +143,7 @@ where
     F: FnOnce() -> Vec<(regex::Regex, String)>,
     C: Client,
 {
-    match db.extended_state_from_record_id(record_id, &config.alias_transform)? {
+    match db.state_from_record_id(record_id, &config.alias_transform)? {
         RecordIdState::Existent(key, row) => {
             info!("Found existing data for key {key}");
             row_to_response(key, row)

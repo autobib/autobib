@@ -1,5 +1,5 @@
 //! # Abstraction over BibTeX data.
-//! This module implements the mutable [`RecordData`] and immutable [`RawEntryData`] types, which
+//! This module implements the mutable [`MutableEntryData`] and immutable [`RawEntryData`] types, which
 //! represent the data inherent in a BibTeX entry.
 //!
 //! The data consists of the entry type (e.g. `article`) as well as the field keys and values (e.g. `title =
