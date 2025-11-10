@@ -10,7 +10,7 @@ mod write;
 use std::{
     collections::{BTreeSet, HashSet},
     fs::{File, OpenOptions, create_dir_all, exists},
-    io::{Read, Seek, copy},
+    io::{IsTerminal, Read, Seek, copy},
     iter::once,
     path::{Path, PathBuf},
     str::FromStr,
@@ -809,6 +809,11 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
         } => {
             let mut outfile = init_outfile(out, append)?;
             let mut scratch = Vec::new();
+
+            if paths.is_empty() && stdin.is_none() && !std::io::stdin().is_terminal() {
+                warn!("Text written to standard input is being ignored");
+                suggest!("Use `--stdin FILE_TYPE` to search for identifiers in standard input.");
+            }
 
             // initialize skipped keys with:
             // - explicitly passed keys
