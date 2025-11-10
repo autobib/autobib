@@ -76,8 +76,8 @@ impl<T: AsRef<[u8]>> RawRecordData<T> {
     pub fn to_byte_repr(&self) -> &[u8] {
         match self {
             Self::Entry(raw_entry_data) => raw_entry_data.to_byte_repr(),
-            Self::Deleted => &[],
             Self::Merged(s) => s.as_ref(),
+            Self::Deleted => &[],
         }
     }
 }

@@ -1,1 +1,1 @@
-SELECT record_id, data FROM Records
+SELECT record_id, data FROM Records WHERE active
