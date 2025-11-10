@@ -282,12 +282,9 @@ pub enum Command {
     Local {
         /// The name for the record.
         id: String,
-        /// Create local record from BibTeX file.
+        /// Create the record using the provided BibTeX data.
         #[arg(short, long, value_name = "PATH", group = "input")]
         from: Option<PathBuf>,
-        /// Rename an existing local record.
-        #[arg(long, value_name = "EXISTING_ID", group = "input")]
-        rename_from: Option<String>,
         /// Do not create the alias `<ID>` for `local:<ID>`.
         #[arg(short = 'A', long)]
         no_alias: bool,

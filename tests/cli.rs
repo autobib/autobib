@@ -288,29 +288,6 @@ fn local() -> Result<()> {
     cmd.assert().success().stdout(predicate_file);
 
     let mut cmd = s.cmd()?;
-    cmd.args(["local", "second", "--rename-from", "first"]);
-    cmd.assert().failure().stderr(predicate::str::contains(
-        "Local record 'local:second' already exists",
-    ));
-
-    let mut cmd = s.cmd()?;
-    cmd.args(["local", "third", "--rename-from", "first"]);
-    cmd.assert().success();
-
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "local:first", "first"]);
-    cmd.assert().failure().stderr(
-        predicate::str::contains("Unexpected local record")
-            .and(predicate::str::contains("Undefined alias")),
-    );
-
-    let mut cmd = s.cmd()?;
-    cmd.args(["info", "third", "--report", "equivalent"]);
-    cmd.assert()
-        .success()
-        .stdout(predicate::eq("local:third\nthird\n"));
-
-    let mut cmd = s.cmd()?;
     cmd.args(["local", " \n"]);
     cmd.assert().failure().stderr(predicate::str::contains(
         "local sub-id must contain non-whitespace characters",
