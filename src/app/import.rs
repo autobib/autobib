@@ -13,7 +13,7 @@ use crate::{
         RecordDatabase,
         state::{Missing, RecordRow, RemoteIdState, State},
     },
-    entry::{Entry, EntryKey, RecordData, entries_from_bibtex},
+    entry::{Entry, EntryKey, MutableEntryData, entries_from_bibtex},
     error::{self, RecordError},
     http::Client,
     logger::{error, info, set_failed, warn},
@@ -97,7 +97,7 @@ enum ImportOutcome {
     /// The import was successful.
     Success,
     /// The import failed with an error and with the provided entry.
-    Failure(anyhow::Error, Entry<RecordData>),
+    Failure(anyhow::Error, Entry<MutableEntryData>),
     /// There was an error while importing the entry, which the user did not fix.
     UserCancelled,
 }
@@ -105,7 +105,7 @@ enum ImportOutcome {
 /// Import a single entry into the record database.
 #[inline]
 fn import_entry<F, C>(
-    entry: Entry<RecordData>,
+    entry: Entry<MutableEntryData>,
     import_config: &ImportConfig,
     record_db: &mut RecordDatabase,
     client: &C,
@@ -261,7 +261,7 @@ fn create_alias(
 #[inline]
 fn import_entry_impl<F>(
     record_db: &mut RecordDatabase,
-    mut entry: Entry<RecordData>,
+    mut entry: Entry<MutableEntryData>,
     no_interactive: bool,
     no_alias: bool,
     nl: &Normalization,
@@ -269,7 +269,7 @@ fn import_entry_impl<F>(
 ) -> Result<ImportOutcome, anyhow::Error>
 where
     F: for<'conn> FnMut(
-        &Entry<RecordData>,
+        &Entry<MutableEntryData>,
         &'conn mut RecordDatabase,
     ) -> Result<ImportAction<'conn>, error::Error>,
 {
@@ -278,7 +278,7 @@ where
             ImportAction::Update(row, update_mode, remote_id, maybe_alias) => {
                 entry.record_data.normalize(nl);
                 let raw_record_data = row.get_data()?.data;
-                let mut existing_record = RecordData::from_entry_data(&raw_record_data);
+                let mut existing_record = MutableEntryData::from_entry_data(&raw_record_data);
                 merge_record_data(
                     update_mode,
                     &mut existing_record,
@@ -326,7 +326,7 @@ where
 #[inline]
 fn import_entry_retrieve_impl<A, F, C>(
     record_db: &mut RecordDatabase,
-    entry: Entry<RecordData>,
+    entry: Entry<MutableEntryData>,
     import_config: &ImportConfig,
     config: &Config<F>,
     client: &C,
@@ -419,7 +419,7 @@ enum DeterminedKey {
 /// Determine the key associated with the provided entry.
 #[inline]
 fn determine_key<F, C>(
-    entry: &Entry<RecordData>,
+    entry: &Entry<MutableEntryData>,
     require_canonical: bool,
     config: &Config<F>,
 ) -> DeterminedKey
@@ -458,7 +458,7 @@ where
 /// provider with the smallest possible index.
 #[inline]
 fn best_key_from_data<F, C>(
-    data: &RecordData,
+    data: &MutableEntryData,
     require_canonical: bool,
     config: &Config<F>,
 ) -> Option<MappedKey>

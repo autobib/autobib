@@ -9,7 +9,7 @@ use self::parse::{Kind, Lexer, Token};
 
 use crate::{
     db::{CitationKey, state::RowData},
-    entry::{EntryData, FieldKey, RawRecordFieldsIter, RecordData},
+    entry::{EntryData, FieldKey, MutableEntryData, RawRecordFieldsIter},
     error::{ClapTemplateError, KeyParseError, KeyParseErrorKind},
 };
 
@@ -287,7 +287,7 @@ impl Template {
             ),
             Strategy::Small => self.contained_impl(|| (), |k, ()| row.data.contains_field(k)),
             Strategy::Large => self.contained_impl(
-                || RecordData::borrow_entry_data(&row.data),
+                || MutableEntryData::borrow_entry_data(&row.data),
                 |k, data| data.contains_field(k),
             ),
         }
@@ -434,10 +434,10 @@ pub struct ManifestLarge<'r>(&'r RowData);
 impl<'r> ManifestMut<Expression> for ManifestLarge<'r> {
     type Error = Infallible;
 
-    type State<'s> = RecordData<&'s str>;
+    type State<'s> = MutableEntryData<&'s str>;
 
     fn init_state(&self) -> Self::State<'_> {
-        RecordData::borrow_entry_data(&self.0.data)
+        MutableEntryData::borrow_entry_data(&self.0.data)
     }
 
     fn manifest_mut(
@@ -472,7 +472,7 @@ impl Render<RowData> for Template {
 
 #[cfg(test)]
 mod tests {
-    use crate::{entry::RawRecordData, record::RemoteId};
+    use crate::{entry::RawEntryData, record::RemoteId};
 
     use chrono::Local;
 
@@ -484,13 +484,13 @@ mod tests {
             println!("Testing template: {s}");
 
             let template = Template::compile(s).unwrap();
-            let mut data = RecordData::<String>::default();
+            let mut data = MutableEntryData::<String>::default();
             for (k, v) in keys {
                 data.check_and_insert(k.into(), v.into()).unwrap();
             }
 
             let row_data = RowData {
-                data: RawRecordData::from_entry_data(&data),
+                data: RawEntryData::from_entry_data(&data),
                 canonical: RemoteId::from_parts("local", "123").unwrap(),
                 modified: Local::now(),
             };
@@ -551,19 +551,19 @@ mod tests {
             println!("Testing template: {s}");
 
             let template = Template::compile(s).unwrap();
-            let mut data = RecordData::<String>::default();
+            let mut data = MutableEntryData::<String>::default();
             for (k, v) in keys {
                 data.check_and_insert(k.into(), v.into()).unwrap();
             }
 
             let row_data = RowData {
-                data: RawRecordData::from_entry_data(&data),
+                data: RawEntryData::from_entry_data(&data),
                 canonical: RemoteId::from_parts(provider, sub_id).unwrap(),
                 modified: Local::now(),
             };
 
             println!("{:?}", row_data.data.get_field("b"));
-            println!("{:?}", RecordData::from_entry_data(&row_data.data));
+            println!("{:?}", MutableEntryData::from_entry_data(&row_data.data));
 
             assert_eq!(template.strategy, strategy);
             assert_eq!(template.render(&row_data), rendered);

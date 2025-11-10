@@ -6,7 +6,7 @@ use super::OnConflict;
 
 use crate::{
     db::state::{RecordRow, State},
-    entry::{ConflictResolved, Entry, EntryData, RecordData},
+    entry::{ConflictResolved, Entry, EntryData, MutableEntryData},
     error::MergeError,
     logger::{error, info, reraise, set_failed, suggest, warn},
     record::Alias,
@@ -17,10 +17,10 @@ use crate::{
 /// record, saving the data.
 pub fn edit_record_and_update(
     row: &State<RecordRow>,
-    mut entry: Entry<RecordData>,
+    mut entry: Entry<MutableEntryData>,
     force_update: bool,
     canonical: impl std::fmt::Display,
-) -> Result<Entry<RecordData>, anyhow::Error> {
+) -> Result<Entry<MutableEntryData>, anyhow::Error> {
     let editor = Editor::new(EditorConfig { suffix: ".bib" });
 
     let data_changed = if let Some(new_entry) = editor.edit(&entry)? {
@@ -67,7 +67,7 @@ pub fn edit_record_and_update(
 /// by the passed [`OnConflict`].
 pub fn merge_record_data<'a, D: EntryData + 'a>(
     on_conflict: OnConflict,
-    existing_record: &mut RecordData,
+    existing_record: &mut MutableEntryData,
     new_raw_data: impl Iterator<Item = &'a D>,
     citation_key: impl std::fmt::Display,
 ) -> Result<(), MergeError> {

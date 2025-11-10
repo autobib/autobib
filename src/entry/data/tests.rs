@@ -4,7 +4,7 @@ use crate::error::{InvalidBytesError, RecordDataError};
 
 #[test]
 fn test_normalize_whitespace() {
-    let mut record_data = RecordData::try_new("article".into()).unwrap();
+    let mut record_data = MutableEntryData::try_new("article".into()).unwrap();
     for (k, v) in [("a", " "), ("b", "ok"), ("c", "a\t b")] {
         record_data.check_and_insert(k.into(), v.into()).unwrap();
     }
@@ -19,7 +19,7 @@ fn test_normalize_whitespace() {
 #[test]
 fn test_normalize_eprint() {
     // standard normalize
-    let mut record_data = RecordData::try_new("article".into()).unwrap();
+    let mut record_data = MutableEntryData::try_new("article".into()).unwrap();
     for (k, v) in [
         ("doi", "xxx"),
         ("eprinttype", "doi"),
@@ -34,7 +34,7 @@ fn test_normalize_eprint() {
     assert_eq!(record_data.get_str("eprinttype"), Some("zbl"));
 
     // already ok
-    let mut record_data = RecordData::try_new("article".into()).unwrap();
+    let mut record_data = MutableEntryData::try_new("article".into()).unwrap();
     for (k, v) in [
         ("doi", "xxx"),
         ("eprinttype", "doi"),
@@ -47,7 +47,7 @@ fn test_normalize_eprint() {
     assert!(!changed);
 
     // set new
-    let mut record_data = RecordData::try_new("article".into()).unwrap();
+    let mut record_data = MutableEntryData::try_new("article".into()).unwrap();
     for (k, v) in [("doi", "xxx"), ("zbl", "yyy")] {
         record_data.check_and_insert(k.into(), v.into()).unwrap();
     }
@@ -57,7 +57,7 @@ fn test_normalize_eprint() {
     assert_eq!(record_data.get_str("eprinttype"), Some("zbl"));
 
     // set new partial
-    let mut record_data = RecordData::try_new("article".into()).unwrap();
+    let mut record_data = MutableEntryData::try_new("article".into()).unwrap();
     for (k, v) in [("doi", "xxx"), ("eprint", "xxx")] {
         record_data.check_and_insert(k.into(), v.into()).unwrap();
     }
@@ -67,7 +67,7 @@ fn test_normalize_eprint() {
     assert_eq!(record_data.get_str("eprinttype"), Some("doi"));
 
     // skip missing without changing
-    let mut record_data = RecordData::try_new("article".into()).unwrap();
+    let mut record_data = MutableEntryData::try_new("article".into()).unwrap();
     for (k, v) in [("doi", "xxx"), ("eprint", "xxx"), ("eprinttype", "doi")] {
         record_data.check_and_insert(k.into(), v.into()).unwrap();
     }
@@ -75,7 +75,7 @@ fn test_normalize_eprint() {
     assert!(!changed);
 
     // set new skip
-    let mut record_data = RecordData::try_new("article".into()).unwrap();
+    let mut record_data = MutableEntryData::try_new("article".into()).unwrap();
     {
         let (k, v) = ("doi", "xxx");
         record_data.check_and_insert(k.into(), v.into()).unwrap();
@@ -86,7 +86,7 @@ fn test_normalize_eprint() {
     assert_eq!(record_data.get_str("eprinttype"), Some("doi"));
 
     // skip
-    let mut record_data = RecordData::try_new("article".into()).unwrap();
+    let mut record_data = MutableEntryData::try_new("article".into()).unwrap();
     for (k, v) in [("zbl", "yyy"), ("eprinttype", "doi")] {
         record_data.check_and_insert(k.into(), v.into()).unwrap();
     }
@@ -94,12 +94,12 @@ fn test_normalize_eprint() {
     assert!(!changed);
 
     // no data skip
-    let mut record_data = RecordData::try_new("article".into()).unwrap();
+    let mut record_data = MutableEntryData::try_new("article".into()).unwrap();
     let changed = record_data.set_eprint(["doi"].iter());
     assert!(!changed);
 
     // no match multi skip
-    let mut record_data = RecordData::try_new("article".into()).unwrap();
+    let mut record_data = MutableEntryData::try_new("article".into()).unwrap();
     for (k, v) in [("zbl", "yyy"), ("eprinttype", "doi")] {
         record_data.check_and_insert(k.into(), v.into()).unwrap();
     }
@@ -110,7 +110,7 @@ fn test_normalize_eprint() {
 /// Check that conversion into the raw form and back results in identical data.
 #[test]
 fn test_data_round_trip() {
-    let mut record_data = RecordData::try_new("article".into()).unwrap();
+    let mut record_data = MutableEntryData::try_new("article".into()).unwrap();
     record_data
         .check_and_insert("year".into(), "2024".into())
         .unwrap();
@@ -127,9 +127,9 @@ fn test_data_round_trip() {
         .check_and_insert("a".into(), "b".repeat(65_535))
         .unwrap();
 
-    let raw_data = RawRecordData::from_entry_data(&record_data);
+    let raw_data = RawEntryData::from_entry_data(&record_data);
 
-    let mut record_data_clone = RecordData::try_new(raw_data.entry_type().into()).unwrap();
+    let mut record_data_clone = MutableEntryData::try_new(raw_data.entry_type().into()).unwrap();
 
     for (key, value) in raw_data.fields() {
         record_data_clone
@@ -140,13 +140,13 @@ fn test_data_round_trip() {
     assert_eq!(record_data, record_data_clone);
     assert_eq!(
         raw_data.to_byte_repr(),
-        RawRecordData::from_entry_data(&record_data_clone).to_byte_repr()
+        RawEntryData::from_entry_data(&record_data_clone).to_byte_repr()
     );
 }
 
 #[test]
 fn test_insert_len() {
-    let mut record_data = RecordData::try_new("a".into()).unwrap();
+    let mut record_data = MutableEntryData::try_new("a".into()).unwrap();
 
     assert_eq!(
         record_data.check_and_insert("a".repeat(256), "".into()),
@@ -173,16 +173,16 @@ fn test_insert_len() {
 #[test]
 fn test_round_trip() {
     fn check(keys: &[(&'static str, &'static str)]) {
-        let mut data = RecordData::<String>::default();
+        let mut data = MutableEntryData::<String>::default();
         for (k, v) in keys {
             data.check_and_insert((*k).into(), (*v).into()).unwrap();
         }
         assert_eq!(data.fields().count(), keys.len());
 
-        let raw_data = RawRecordData::from_entry_data(&data);
+        let raw_data = RawEntryData::from_entry_data(&data);
         assert_eq!(raw_data.fields().count(), keys.len());
 
-        let new_data = RecordData::from_entry_data(&raw_data);
+        let new_data = MutableEntryData::from_entry_data(&raw_data);
         assert_eq!(new_data.fields().count(), keys.len());
 
         for (k, v) in keys {
@@ -199,7 +199,7 @@ fn test_round_trip() {
 
 #[test]
 fn test_format_manual() {
-    let mut record_data = RecordData::try_new("article".into()).unwrap();
+    let mut record_data = MutableEntryData::try_new("article".into()).unwrap();
     record_data
         .check_and_insert("year".into(), "2023".into())
         .unwrap();
@@ -207,7 +207,7 @@ fn test_format_manual() {
         .check_and_insert("title".into(), "The Title".into())
         .unwrap();
 
-    let data = RawRecordData::from_entry_data(&record_data);
+    let data = RawEntryData::from_entry_data(&record_data);
     let expected = vec![
         0, 7, b'a', b'r', b't', b'i', b'c', b'l', b'e', 5, 9, 0, b't', b'i', b't', b'l', b'e',
         b'T', b'h', b'e', b' ', b'T', b'i', b't', b'l', b'e', 4, 4, 0, b'y', b'e', b'a', b'r',
@@ -237,7 +237,7 @@ fn test_validate_data_ok() {
             b'2', b'0', b'2', b'3',
         ],
     ] {
-        assert!(RawRecordData::from_byte_repr(data).is_ok());
+        assert!(RawEntryData::from_byte_repr(data).is_ok());
     }
 }
 
@@ -249,7 +249,7 @@ fn test_validate_data_err() {
         b'T', b'h', b'e', b' ', b'T', b'i', b't', b'l', b'e', 4, 4, 0, b'y', b'e', b'a', b'r',
         b'2', b'0', b'2', b'3',
     ];
-    let parsed = RawRecordData::from_byte_repr(malformed_data);
+    let parsed = RawEntryData::from_byte_repr(malformed_data);
     assert!(matches!(
         parsed,
         Err(InvalidBytesError {
@@ -264,7 +264,7 @@ fn test_validate_data_err() {
         b'h', b'e', b' ', b'T', b'i', b't', b'l', b'e', 4, 4, 0, b'y', b'e', b'a', b'r', b'2',
         b'0', b'2', b'3',
     ];
-    let parsed = RawRecordData::from_byte_repr(malformed_data);
+    let parsed = RawEntryData::from_byte_repr(malformed_data);
     assert!(matches!(parsed, Err(InvalidBytesError { position: 2, .. })));
 
     // bad length header
@@ -273,7 +273,7 @@ fn test_validate_data_err() {
         b'T', b'h', b'e', b' ', b'T', b'i', b't', b'l', b'e', 4, 4, 0, b'y', b'e', b'a', b'r',
         b'2', b'0', b'2', b'3',
     ];
-    let parsed = RawRecordData::from_byte_repr(malformed_data);
+    let parsed = RawEntryData::from_byte_repr(malformed_data);
     assert!(matches!(
         parsed,
         Err(InvalidBytesError {
@@ -284,38 +284,38 @@ fn test_validate_data_err() {
 
     // trailing bytes
     let malformed_data = vec![0, 7, b'a', b'r', b't', b'i', b'c', b'l', b'e', 1];
-    let parsed = RawRecordData::from_byte_repr(malformed_data);
+    let parsed = RawEntryData::from_byte_repr(malformed_data);
     assert!(parsed.is_err());
 
     // entry type cannot have length 0
     let malformed_data = vec![0, 0];
-    let parsed = RawRecordData::from_byte_repr(malformed_data);
+    let parsed = RawEntryData::from_byte_repr(malformed_data);
     assert!(parsed.is_err());
 
     // field key cannot have length 0
     let malformed_data = vec![0, 1, b'a', 0, 0, 0];
-    let parsed = RawRecordData::from_byte_repr(malformed_data);
+    let parsed = RawEntryData::from_byte_repr(malformed_data);
     assert!(parsed.is_err());
 }
 
 #[test]
 fn test_data_err_insert() {
     assert_eq!(
-        RecordData::try_new("".into()),
+        MutableEntryData::try_new("".into()),
         Err(RecordDataError::EntryTypeInvalidLength(0)),
     );
 
     assert_eq!(
-        RecordData::try_new("b".repeat(300)),
+        MutableEntryData::try_new("b".repeat(300)),
         Err(RecordDataError::EntryTypeInvalidLength(300)),
     );
 
     assert_eq!(
-        RecordData::try_new("🍄".into()),
+        MutableEntryData::try_new("🍄".into()),
         Err(RecordDataError::ContainsInvalidChar),
     );
 
-    let mut record_data = RecordData::try_new("a".into()).unwrap();
+    let mut record_data = MutableEntryData::try_new("a".into()).unwrap();
 
     assert_eq!(
         record_data.check_and_insert("BAD".into(), "".into()),

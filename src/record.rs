@@ -15,7 +15,7 @@ use crate::{
             Unknown,
         },
     },
-    entry::{RawRecordData, RecordData},
+    entry::{MutableEntryData, RawEntryData},
     error::{Error, ProviderError, RecordError},
     http::Client,
     logger::info,
@@ -29,7 +29,7 @@ pub struct Record {
     /// The original key.
     pub key: String,
     /// The raw data.
-    pub data: RawRecordData,
+    pub data: RawEntryData,
     /// The canonical identifier.
     pub canonical: RemoteId,
 }
@@ -229,7 +229,7 @@ fn get_record_row_recursive<'conn, C: Client>(
         missing = match get_remote_response(client, history.last())? {
             RemoteResponse::Data(mut data) => {
                 data.normalize(normalization);
-                let raw_record_data = RawRecordData::from_entry_data(&data);
+                let raw_record_data = RawEntryData::from_entry_data(&data);
 
                 // SAFETY: the provided canonical identifier is present in the provided references
                 let row = unsafe {
@@ -248,7 +248,7 @@ fn get_record_row_recursive<'conn, C: Client>(
                 break Ok(RemoteRecordRowResponse::Exists(
                     Record {
                         key,
-                        data: RawRecordData::from_entry_data(&data),
+                        data: RawEntryData::from_entry_data(&data),
                         canonical,
                     },
                     row,
@@ -303,7 +303,7 @@ fn get_record_row_recursive<'conn, C: Client>(
 /// The result of obtaining a remote record, with no reference to a database.
 pub enum RecursiveRemoteResponse {
     /// The remote record exists, and has the provided data and canonical identifier.
-    Exists(RecordData, RemoteId),
+    Exists(MutableEntryData, RemoteId),
     /// The remote record does not exist.
     Null(RemoteId),
 }

@@ -30,7 +30,7 @@ use crate::{
         state::{ExistsOrUnknown, RecordIdState, RowData},
         user_version,
     },
-    entry::{Entry, EntryKey, RawRecordData, RecordData},
+    entry::{Entry, EntryKey, MutableEntryData, RawEntryData},
     error::AliasErrorKind,
     format::Template,
     http::{BodyBytes, Client},
@@ -352,7 +352,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     } else {
                         // non-interactive so we only apply the normalizations and update the data
                         // if anything changed
-                        let mut editable_data = RecordData::from_entry_data(&data);
+                        let mut editable_data = MutableEntryData::from_entry_data(&data);
                         if editable_data.normalize(&nl) {
                             row.save_to_changelog()?;
                             row.update_entry_data(&editable_data)?;
@@ -360,7 +360,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         row.commit()?;
                     }
                 } else {
-                    let mut editable_data = RecordData::from_entry_data(&data);
+                    let mut editable_data = MutableEntryData::from_entry_data(&data);
                     let changed = editable_data.normalize(&nl);
                     let entry_key =
                         EntryKey::try_new(key).unwrap_or_else(|_| EntryKey::placeholder());
@@ -669,7 +669,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 }
                 ExistsOrUnknown::Unknown(missing) => {
                     let data = data_from_path_or_default(from.as_ref())?;
-                    let raw_record_data = RawRecordData::from_entry_data(&data);
+                    let raw_record_data = RawEntryData::from_entry_data(&data);
                     let row = missing.insert(&raw_record_data, &remote_id)?;
                     (row, raw_record_data)
                 }
@@ -681,7 +681,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     Entry {
                         key: EntryKey::try_new(remote_id.name().into())
                             .unwrap_or_else(|_| EntryKey::placeholder()),
-                        record_data: RecordData::from_entry_data(&raw_data),
+                        record_data: MutableEntryData::from_entry_data(&raw_data),
                     },
                     false,
                     &remote_id,
@@ -714,7 +714,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 .collect::<Result<_, rusqlite::Error>>()?;
 
             // merge data
-            let mut existing_record = RecordData::from_entry_data(&existing.data);
+            let mut existing_record = MutableEntryData::from_entry_data(&existing.data);
             merge_record_data(
                 on_conflict,
                 &mut existing_record,
@@ -724,7 +724,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
 
             // update the row data with the modified data
             row.save_to_changelog()?;
-            row.update(&RawRecordData::from_entry_data(&existing_record))?;
+            row.update(&RawEntryData::from_entry_data(&existing_record))?;
             row.commit()?;
         }
         Command::Path {
@@ -895,7 +895,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                             bail!(err);
                         }
                     };
-                    let mut existing_record = RecordData::from_entry_data(&existing_raw_data);
+                    let mut existing_record = MutableEntryData::from_entry_data(&existing_raw_data);
                     merge_record_data(
                         on_conflict,
                         &mut existing_record,
@@ -903,7 +903,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         &citation_key,
                     )?;
                     row.save_to_changelog()?;
-                    row.update(&RawRecordData::from_entry_data(&existing_record))?;
+                    row.update(&RawEntryData::from_entry_data(&existing_record))?;
                     row.commit()?;
                 }
                 RecordIdState::NullRemoteId(mapped_remote_id, null_row) => {
