@@ -56,14 +56,6 @@ impl InDatabase for RecordRow {
 }
 
 impl State<'_, RecordRow> {
-    /// Copy the [`RowData`] of a row corresponding to a [`RecordRow`] to the `Changelog` table.
-    pub fn save_to_changelog(&self) -> Result<(), rusqlite::Error> {
-        debug!("Saving row '{}' to Changelog table", self.row_id());
-        self.prepare_cached(sql::copy_to_changelog())?
-            .execute((self.row_id(),))?;
-        Ok(())
-    }
-
     /// Delete the data associated with the provided citation key and modify the entry in
     /// `CitationKeys` to point to this row. Returns the resulting [`RowData`] if deletion was
     /// successful, and otherwise `None`. Deletion will fail if citation key is not present in the
@@ -89,9 +81,7 @@ impl State<'_, RecordRow> {
                     .prepare_cached(sql::get_record_data())?
                     .query_row([row_id], |row| row.try_into())?;
 
-                // copy the row to the changelog
-                self.prepare_cached(sql::copy_to_changelog())?
-                    .execute((row_id,))?;
+                // FIXME: previously copied to changelog here
 
                 // delete the row
                 self.prepare_cached(sql::delete_record_row())?

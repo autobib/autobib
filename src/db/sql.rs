@@ -60,8 +60,6 @@ sql!(
 
 sql!(get_all_record_data, "Get all record data");
 
-sql!(copy_to_changelog, "Copy record data to changelog");
-
 sql!(rename_citation_key, "Rename a citation key");
 
 sql!(get_record_key, "Get a record key");

@@ -310,7 +310,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                                 }
                             }
                         }
-                        row.save_to_changelog()?;
+                        // FIXME: changelog
                         row.delete()?.commit()?;
                     }
                     _ => {
@@ -354,7 +354,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         // if anything changed
                         let mut editable_data = MutableEntryData::from_entry_data(&data);
                         if editable_data.normalize(&nl) {
-                            row.save_to_changelog()?;
+                            // FIXME: changelog
                             row.update_entry_data(&editable_data)?;
                         }
                         row.commit()?;
@@ -723,7 +723,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             )?;
 
             // update the row data with the modified data
-            row.save_to_changelog()?;
+            // FIXME: Changelog
             row.update(&RawEntryData::from_entry_data(&existing_record))?;
             row.commit()?;
         }
@@ -902,7 +902,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         once(&new_raw_data),
                         &citation_key,
                     )?;
-                    row.save_to_changelog()?;
+                    // FIXME: changelog
                     row.update(&RawEntryData::from_entry_data(&existing_record))?;
                     row.commit()?;
                 }
