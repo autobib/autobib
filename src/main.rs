@@ -36,6 +36,7 @@ pub use self::{
 static LOGGER: Logger = Logger {};
 
 fn main() {
+    #[cfg(not(debug_assertions))]
     std::panic::set_hook(Box::new(|panic_info| {
         eprintln!(
             "An unexpected error occured while running the program:
