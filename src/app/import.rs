@@ -285,7 +285,7 @@ where
                     std::iter::once(entry.data()),
                     &remote_id,
                 )?;
-                row.save_to_changelog()?;
+                // FIXME: changelog
                 row.update_entry_data(&existing_record)?;
                 create_alias(row, &remote_id, no_alias, maybe_alias)?;
                 return Ok(ImportOutcome::Success);
