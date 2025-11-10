@@ -12,9 +12,9 @@ use super::{DatabaseId, InDatabase, State};
 
 /// An identifier for a row in the `Records` table.
 #[derive(Debug)]
-pub struct RecordRow(RowId);
+pub struct EntryRecordRow(RowId);
 
-impl DatabaseId for RecordRow {}
+impl DatabaseId for EntryRecordRow {}
 
 /// The contents of a row in the `Records` table.
 pub struct RowData {
@@ -39,7 +39,7 @@ impl TryFrom<&rusqlite::Row<'_>> for RowData {
     }
 }
 
-impl InDatabase for RecordRow {
+impl InDatabase for EntryRecordRow {
     type Data = RowData;
 
     const GET_STMT: &str = sql::get_record_data();
@@ -55,7 +55,7 @@ impl InDatabase for RecordRow {
     }
 }
 
-impl State<'_, RecordRow> {
+impl State<'_, EntryRecordRow> {
     /// Delete the data associated with the provided citation key and modify the entry in
     /// `CitationKeys` to point to this row. Returns the resulting [`RowData`] if deletion was
     /// successful, and otherwise `None`. Deletion will fail if citation key is not present in the
@@ -97,18 +97,18 @@ impl State<'_, RecordRow> {
         })
     }
 
-    /// Get every key in the `CitationKeys` table which references the [`RecordRow`].
+    /// Get every key in the `CitationKeys` table which references the [`EntryRecordRow`].
     pub fn get_referencing_keys(&self) -> Result<Vec<String>, rusqlite::Error> {
         self.get_referencing_keys_impl(Some)
     }
 
-    /// Get every remote id in the `CitationKeys` table which references the [`RecordRow`].
+    /// Get every remote id in the `CitationKeys` table which references the [`EntryRecordRow`].
     pub fn get_referencing_remote_ids(&self) -> Result<Vec<RemoteId>, rusqlite::Error> {
         self.get_referencing_keys_impl(RemoteId::from_alias_or_remote_id_unchecked)
     }
 
     /// Get a transformed version of every key in the `CitationKeys` table which references
-    /// the [`RecordRow`] for which the provided `filter_map` does not return `None`.
+    /// the [`EntryRecordRow`] for which the provided `filter_map` does not return `None`.
     fn get_referencing_keys_impl<T, F: FnMut(String) -> Option<T>>(
         &self,
         mut filter_map: F,

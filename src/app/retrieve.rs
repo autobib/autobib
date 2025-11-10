@@ -9,7 +9,7 @@ use crate::{
     config::Config,
     db::{
         RecordDatabase,
-        state::{NullRecordRow, RecordIdState, RecordRow, RowData, State},
+        state::{EntryRecordRow, NullRecordRow, RecordIdState, RowData, State},
     },
     entry::{Entry, EntryKey, RawEntryData},
     error::Error,
@@ -42,7 +42,7 @@ where
 
     for record_id in citation_keys {
         match record_db.state_from_record_id(record_id, &config.alias_transform)? {
-            RecordIdState::Existent(key, row) => {
+            RecordIdState::Entry(key, row) => {
                 deduplicated
                     .entry(row.get_canonical()?)
                     .or_insert_with(HashSet::new)
@@ -151,7 +151,7 @@ fn retrieve_single_entry_read_only<F: FnOnce() -> Vec<(regex::Regex, String)>>(
     config: &Config<F>,
 ) -> Result<Option<(Entry<RawEntryData>, RemoteId)>, Error> {
     match record_db.state_from_record_id(citation_key, &config.alias_transform)? {
-        RecordIdState::Existent(key, row) => {
+        RecordIdState::Entry(key, row) => {
             if retrieve_only {
                 row.commit()?;
                 Ok(None)
@@ -241,7 +241,7 @@ where
 }
 
 /// Validate a BibTeX key, logging errors and suggesting fixes.
-fn validate_bibtex_key(key: String, row: &State<RecordRow>) -> Option<EntryKey<String>> {
+fn validate_bibtex_key(key: String, row: &State<EntryRecordRow>) -> Option<EntryKey<String>> {
     match EntryKey::try_new(key) {
         Ok(bibtex_key) => Some(bibtex_key),
         Err(parse_result) => {

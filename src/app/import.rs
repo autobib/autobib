@@ -11,7 +11,7 @@ use crate::{
     config::Config,
     db::{
         RecordDatabase,
-        state::{Missing, RecordRow, RemoteIdState, State},
+        state::{EntryRecordRow, Missing, RemoteIdState, State},
     },
     entry::{Entry, EntryKey, MutableEntryData, entries_from_bibtex},
     error::{self, RecordError},
@@ -148,7 +148,7 @@ where
                     }
                     DeterminedKey::RemoteId(mapped_key, maybe_alias) => {
                         match record_db.state_from_remote_id(&mapped_key.mapped)? {
-                            RemoteIdState::Existent(row) => Ok(ImportAction::Update(
+                            RemoteIdState::Entry(row) => Ok(ImportAction::Update(
                                 row,
                                 import_config.on_conflict,
                                 mapped_key.to_string(),
@@ -190,7 +190,7 @@ where
             |alias, record_db| {
                 let remote_id = RemoteId::local(&alias);
                 match record_db.state_from_remote_id(&remote_id)? {
-                    RemoteIdState::Existent(row) => {
+                    RemoteIdState::Entry(row) => {
                         row.commit()?;
                         Ok(ImportAction::PromptNewKey(anyhow!(
                             "Local id '{remote_id}' already exists.",
@@ -226,7 +226,12 @@ where
 enum ImportAction<'conn> {
     /// The entry already has data corresponding to the provided row; update the row with the
     /// entry.
-    Update(State<'conn, RecordRow>, OnConflict, String, Option<Alias>),
+    Update(
+        State<'conn, EntryRecordRow>,
+        OnConflict,
+        String,
+        Option<Alias>,
+    ),
     /// There is no data for the entry; data into the database.
     Insert(State<'conn, Missing>, RemoteId, Option<Alias>),
     /// A key could not be determined from the entry; prompt for a new key (if interactive).
@@ -235,7 +240,7 @@ enum ImportAction<'conn> {
 
 /// A helper function to create a new alias, with logging.
 fn create_alias(
-    row: State<'_, RecordRow>,
+    row: State<'_, EntryRecordRow>,
     remote_id: &str,
     no_alias: bool,
     maybe_alias: Option<Alias>,
@@ -386,7 +391,7 @@ fn handle_local_alias(
 ) -> Result<ImportAction<'_>, error::Error> {
     let remote_id = RemoteId::local(&alias);
     match record_db.state_from_remote_id(&remote_id)? {
-        RemoteIdState::Existent(row) => {
+        RemoteIdState::Entry(row) => {
             row.commit()?;
             Ok(ImportAction::PromptNewKey(anyhow!(
                 "Local id '{remote_id}' already exists.",
