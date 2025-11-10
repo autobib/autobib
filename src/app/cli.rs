@@ -330,9 +330,9 @@ pub enum Command {
         /// Write output to file.
         #[arg(short, long, group = "output", value_name = "PATH")]
         out: Option<PathBuf>,
-        /// Search for identifiers in standard input (defaults to one record per line).
-        #[arg(long)]
-        stdin: bool,
+        /// Search in standard input interpreted as the provided file type.
+        #[arg(long, value_name = "FILETYPE")]
+        stdin: Option<SourceFileType>,
         /// Append new entries to the output.
         #[arg(short, long, requires = "out")]
         append: bool,
