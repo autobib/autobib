@@ -11,7 +11,7 @@ use crate::{
     db::{
         RecordDatabase,
         state::{
-            Missing, NullRecordRow, RecordIdState, RecordRow, RemoteIdState, RowData, State,
+            EntryRecordRow, Missing, NullRecordRow, RecordIdState, RemoteIdState, RowData, State,
             Unknown,
         },
     },
@@ -44,7 +44,7 @@ pub struct Record {
 #[derive(Debug)]
 pub enum RemoteRecordRowResponse<'conn> {
     /// The record exists.
-    Exists(Record, State<'conn, RecordRow>),
+    Exists(Record, State<'conn, EntryRecordRow>),
     /// The record is null.
     Null(RemoteId, State<'conn, NullRecordRow>),
 }
@@ -63,7 +63,7 @@ pub enum RemoteRecordRowResponse<'conn> {
 #[derive(Debug)]
 pub enum RecordRowResponse<'conn> {
     /// The record exists.
-    Exists(Record, State<'conn, RecordRow>),
+    Exists(Record, State<'conn, EntryRecordRow>),
     /// The record is null.
     NullRemoteId(RemoteId, State<'conn, NullRecordRow>),
     /// The identifier has an invalid form.
@@ -87,14 +87,14 @@ impl<'conn> From<RemoteRecordRowResponse<'conn>> for RecordRowResponse<'conn> {
 
 impl<'conn> RecordRowResponse<'conn> {
     /// Either return the record and corresponding state transaction wrapper, or raise an error. In
-    /// order to commit the new changes, the resulting [`RecordRow`] must be committed.
+    /// order to commit the new changes, the resulting [`EntryRecordRow`] must be committed.
     ///
     /// If the record is null, the corresponding transaction is automatically committed before
     /// returning the relevant error.
     pub fn exists_or_commit_null(
         self,
         err_prefix: &str,
-    ) -> Result<(Record, State<'conn, RecordRow>), anyhow::Error> {
+    ) -> Result<(Record, State<'conn, EntryRecordRow>), anyhow::Error> {
         match self {
             RecordRowResponse::Exists(record, row) => Ok((record, row)),
             RecordRowResponse::NullRemoteId(remote_id, null_row) => {
@@ -113,7 +113,7 @@ impl<'conn> RecordRowResponse<'conn> {
 
 fn row_to_response<'conn, K: Into<String>, T: From<RemoteRecordRowResponse<'conn>>>(
     key: K,
-    row: State<'conn, RecordRow>,
+    row: State<'conn, EntryRecordRow>,
 ) -> Result<T, Error> {
     let RowData {
         data, canonical, ..
@@ -144,7 +144,7 @@ where
     C: Client,
 {
     match db.state_from_record_id(record_id, &config.alias_transform)? {
-        RecordIdState::Existent(key, row) => {
+        RecordIdState::Entry(key, row) => {
             info!("Found existing data for key {key}");
             row_to_response(key, row)
         }
@@ -188,7 +188,7 @@ where
     C: Client,
 {
     match db.state_from_remote_id(&remote_id)? {
-        RemoteIdState::Existent(row) => {
+        RemoteIdState::Entry(row) => {
             info!("Found existing data for key {remote_id}");
             row_to_response(remote_id, row)
         }
@@ -221,7 +221,9 @@ fn get_record_row_recursive<'conn, C: Client>(
     remote_id: RemoteId,
     client: &C,
     normalization: &Normalization,
-    exists_callback: impl FnOnce(&State<'conn, RecordRow>) -> Result<Option<String>, rusqlite::Error>,
+    exists_callback: impl FnOnce(
+        &State<'conn, EntryRecordRow>,
+    ) -> Result<Option<String>, rusqlite::Error>,
 ) -> Result<RemoteRecordRowResponse<'conn>, Error> {
     info!("Resolving remote record for {remote_id}");
     let mut history = NonEmpty::singleton(remote_id);
@@ -255,7 +257,7 @@ fn get_record_row_recursive<'conn, C: Client>(
                 ));
             }
             RemoteResponse::Reference(new_remote_id) => match missing.reset(&new_remote_id)? {
-                RemoteIdState::Existent(row) => {
+                RemoteIdState::Entry(row) => {
                     // not necessary to insert `new_remote_id` since we just saw that it
                     // is present in the database
                     row.add_refs(history.iter())?;

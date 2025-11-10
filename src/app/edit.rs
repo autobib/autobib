@@ -5,7 +5,7 @@ use anyhow::Result;
 use super::OnConflict;
 
 use crate::{
-    db::state::{RecordRow, State},
+    db::state::{EntryRecordRow, State},
     entry::{ConflictResolved, Entry, EntryData, MutableEntryData},
     error::MergeError,
     logger::{error, info, reraise, set_failed, suggest, warn},
@@ -13,10 +13,10 @@ use crate::{
     term::{Editor, EditorConfig, Input},
 };
 
-/// Edit a record and update the entry corresponding to the [`RecordRow`]. Returns the edited
+/// Edit a record and update the entry corresponding to the [`EntryRecordRow`]. Returns the edited
 /// record, saving the data.
 pub fn edit_record_and_update(
-    row: &State<RecordRow>,
+    row: &State<EntryRecordRow>,
     mut entry: Entry<MutableEntryData>,
     force_update: bool,
     canonical: impl std::fmt::Display,

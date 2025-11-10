@@ -575,7 +575,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
         } => {
             let cfg = config::load(&config_path, missing_ok)?;
             match record_db.state_from_record_id(citation_key, &cfg.alias_transform)? {
-                RecordIdState::Existent(record_id, row) => {
+                RecordIdState::Entry(record_id, row) => {
                     match report {
                         InfoReportType::All => {
                             let row_data = row.get_data()?;
@@ -882,7 +882,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
         } => {
             let cfg = config::load(&config_path, missing_ok)?;
             match record_db.state_from_record_id(citation_key, &cfg.alias_transform)? {
-                RecordIdState::Existent(citation_key, row) => {
+                RecordIdState::Entry(citation_key, row) => {
                     let RowData {
                         data: existing_raw_data,
                         canonical,
