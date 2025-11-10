@@ -20,7 +20,7 @@ pub(crate) type EntryTypeHeader = u8;
 /// A raw binary representation of the field key and fields of a BibTeX entry.
 ///
 /// This struct is immutable by design. For a mutable version which supports addition and deletion
-/// of fields, see [`RecordData`](super::RecordData).
+/// of fields, see [`MutableEntryData`](super::MutableEntryData).
 ///
 /// For a description of the binary format, see the [`db`](crate::db) module documentation.
 #[derive(Debug, Clone)]
@@ -50,7 +50,7 @@ impl RawEntryData {
         }
 
         // SAFETY: the invariants are upheld based on the
-        // `RecordData::insert` implementation.
+        // `MutableEntryData::insert` implementation.
         Self::from_byte_repr_unchecked(data)
     }
 }
