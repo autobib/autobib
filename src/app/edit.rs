@@ -56,7 +56,7 @@ pub fn edit_record_and_update(
 
     if data_changed || force_update {
         info!("Updating cached data for '{canonical}'");
-        row.save_to_changelog()?;
+        // FIXME: copied to changelog here
         row.update_entry_data(&entry.record_data)?;
     }
 
