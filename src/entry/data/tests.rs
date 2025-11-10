@@ -245,7 +245,7 @@ fn test_validate_data_ok() {
 fn test_validate_data_err() {
     // invalid version
     let malformed_data = vec![
-        1, 7, b'a', b'r', b't', b'i', b'c', b'l', b'e', 5, 9, 0, b't', b'i', b't', b'l', b'e',
+        2, 7, b'a', b'r', b't', b'i', b'c', b'l', b'e', 5, 9, 0, b't', b'i', b't', b'l', b'e',
         b'T', b'h', b'e', b' ', b'T', b'i', b't', b'l', b'e', 4, 4, 0, b'y', b'e', b'a', b'r',
         b'2', b'0', b'2', b'3',
     ];
