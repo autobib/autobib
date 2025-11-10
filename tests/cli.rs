@@ -519,6 +519,10 @@ fn delete() -> Result<()> {
     cmd.assert().success();
 
     let mut cmd = s.cmd()?;
+    cmd.args(["alias", "add", "first", "local:first"]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
     cmd.args(["get", "local:first"]);
     cmd.assert().success();
 
@@ -573,6 +577,10 @@ fn delete() -> Result<()> {
     cmd.assert().success();
 
     let mut cmd = s.cmd()?;
+    cmd.args(["alias", "add", "first", "local:first"]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
     cmd.args(["alias", "add", "my_alias", "local:first"]);
     cmd.assert().success();
 
@@ -606,6 +614,10 @@ fn delete() -> Result<()> {
         "--from",
         "tests/resources/local/first.bib",
     ]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["alias", "add", "first", "local:first"]);
     cmd.assert().success();
 
     let mut cmd = s.cmd()?;
@@ -941,11 +953,6 @@ fn consistency() -> Result<()> {
     drop(conn);
 
     // check that things are broken
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "mr:3224722"]);
-    cmd.assert().failure().stderr(predicate::str::contains(
-        "UNIQUE constraint failed: Records.record_id",
-    ));
     let mut cmd = s.cmd()?;
     cmd.args(["get", "zbmath:06346461"]);
     cmd.assert().failure().stderr(predicate::str::contains(

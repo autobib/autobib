@@ -24,7 +24,7 @@ use crate::{
     http::{BodyBytes, Client},
 };
 
-/// A resolver, which converts a `sub_id` into [`RecordData`].
+/// A resolver, which converts a `sub_id` into [`MutableEntryData`].
 type Resolver<C> = fn(&str, &C) -> Result<Option<MutableEntryData>, ProviderError>;
 
 /// A referrer, which converts a `sub_id` into [`RemoteId`].
@@ -206,7 +206,7 @@ pub fn is_reference<C: Client>(provider: &str) -> bool {
 
 /// The outcome of resolving a provider and making the remote call
 pub enum RemoteResponse {
-    /// The provider was a [`Resolver`] and returned [`RecordData`].
+    /// The provider was a [`Resolver`] and returned [`MutableEntryData`].
     Data(MutableEntryData),
     /// The provider was a [`Referrer`] and returned a new [`RemoteId`].
     Reference(RemoteId),
@@ -234,7 +234,7 @@ pub fn get_remote_response<C: Client>(
 
 /// A receiving struct type useful for deserializing BibTeX from a provider.
 ///
-/// This struct can be fallibly converted into a [`RecordData`].
+/// This struct can be fallibly converted into a [`MutableEntryData`].
 #[derive(Debug, Deserialize)]
 struct ProviderBibtex {
     entry_type: String,
