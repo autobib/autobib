@@ -4,5 +4,5 @@ CREATE TABLE Records (
     data BLOB NOT NULL,
     modified TEXT NOT NULL,
     parent INTEGER,
-    children BLOB NOT NULL,
+    children BLOB NOT NULL DEFAULT x''
 ) STRICT
