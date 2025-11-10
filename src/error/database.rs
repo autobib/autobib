@@ -14,6 +14,10 @@ pub enum DatabaseError {
         "Database file already exists and was modified by a different program. Open the database anyway with the `--read-only` flag."
     )]
     InvalidDatabase,
+    #[error(
+        "Database file is incompatible with the current binary, and the migration code is deprecated. Use an older version of `autobib` to update your database file."
+    )]
+    CannotMigrate(i32),
     #[error("Cannot open empty database in read-only mode")]
     EmptyReadOnly,
 }
