@@ -157,7 +157,7 @@ fn source() -> Result<()> {
         .stderr(predicate::str::is_empty());
 
     let mut cmd = s.cmd()?;
-    cmd.args(["source", "--file-type", "tex", "--stdin"])
+    cmd.args(["source", "--stdin", "tex"])
         .stdin(fs::File::open("tests/resources/source/main.tex")?);
     cmd.assert()
         .success()

@@ -840,9 +840,9 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 // only print the keys which were found
                 let mut all_citekeys: BTreeSet<RecordId> = BTreeSet::new();
 
-                if stdin {
+                if let Some(stdin_file_type) = stdin {
                     source::get_citekeys_from_stdin(
-                        file_type,
+                        stdin_file_type,
                         &mut all_citekeys,
                         &mut scratch,
                         |record_id| !skipped_keys.contains(record_id),
@@ -869,9 +869,9 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 // happens in the `validate_and_retrieve` function.
                 let mut all_citekeys: HashSet<RecordId> = HashSet::new();
 
-                if stdin {
+                if let Some(stdin_file_type) = stdin {
                     source::get_citekeys_from_stdin(
-                        file_type,
+                        stdin_file_type,
                         &mut all_citekeys,
                         &mut scratch,
                         |record_id| !skipped_keys.contains(record_id),

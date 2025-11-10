@@ -22,18 +22,17 @@ pub fn get_citekeys_from_file<T: Extend<RecordId>, P: AsRef<std::path::Path>>(
 }
 
 pub fn get_citekeys_from_stdin<T: Extend<RecordId>, E: FnMut(&RecordId) -> bool>(
-    file_type: Option<SourceFileType>,
+    file_type: SourceFileType,
     container: &mut T,
     scratch: &mut Vec<u8>,
     exclude: E,
 ) -> Result<(), anyhow::Error> {
-    let ft = file_type.unwrap_or(SourceFileType::Txt);
     scratch.clear();
     match stdin().read_to_end(scratch) {
         Ok(_) => {}
         Err(e) => bail!("Failed to read from standard input: '{e}'"),
     }
-    get_citekeys_filter(ft, scratch, container, exclude);
+    get_citekeys_filter(file_type, scratch, container, exclude);
 
     Ok(())
 }
