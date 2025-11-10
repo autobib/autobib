@@ -285,9 +285,6 @@ pub enum Command {
         /// Create the record using the provided BibTeX data.
         #[arg(short, long, value_name = "PATH", group = "input")]
         from: Option<PathBuf>,
-        /// Do not create the alias `<ID>` for `local:<ID>`.
-        #[arg(short = 'A', long)]
-        no_alias: bool,
     },
     /// Combine multiple records.
     Merge {
