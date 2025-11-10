@@ -2,7 +2,7 @@ use chrono::{DateTime, Local};
 use serde_bibtex::token::is_entry_key;
 
 use crate::{
-    Alias, RawRecordData, RemoteId,
+    Alias, RawEntryData, RemoteId,
     db::{CitationKey, Constraint, RowId, flatten_constraint_violation, get_row_id, sql},
     entry::EntryData,
     logger::debug,
@@ -19,7 +19,7 @@ impl DatabaseId for RecordRow {}
 /// The contents of a row in the `Records` table.
 pub struct RowData {
     /// The binary data associated with the row.
-    pub data: RawRecordData,
+    pub data: RawEntryData,
     /// The canonical record id associated with the row.
     pub canonical: RemoteId,
     /// The last time the row was modified.
@@ -32,7 +32,7 @@ impl TryFrom<&rusqlite::Row<'_>> for RowData {
     fn try_from(row: &rusqlite::Row<'_>) -> Result<Self, Self::Error> {
         Ok(Self {
             // SAFETY: we assume that the underlying database is correctly formatted
-            data: RawRecordData::from_byte_repr_unchecked(row.get("data")?),
+            data: RawEntryData::from_byte_repr_unchecked(row.get("data")?),
             canonical: RemoteId::from_string_unchecked(row.get("record_id")?),
             modified: row.get("modified")?,
         })
@@ -159,13 +159,13 @@ impl State<'_, RecordRow> {
     }
 
     /// A convenience wrapper around [`update`](Self::update) which first converts any type which
-    /// implements [`EntryData`] into a [`RawRecordData`].
+    /// implements [`EntryData`] into a [`RawEntryData`].
     pub fn update_entry_data<D: EntryData>(&self, data: &D) -> Result<(), rusqlite::Error> {
-        self.update(&RawRecordData::from_entry_data(data))
+        self.update(&RawEntryData::from_entry_data(data))
     }
 
     /// Replace the row data with new data.
-    pub fn update(&self, data: &RawRecordData) -> Result<(), rusqlite::Error> {
+    pub fn update(&self, data: &RawEntryData) -> Result<(), rusqlite::Error> {
         debug!("Updating row data for row '{}'", self.row_id());
         let mut updater = self.prepare(sql::update_cached_data())?;
         updater.execute((self.row_id(), Local::now(), data.to_byte_repr()))?;

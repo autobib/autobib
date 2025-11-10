@@ -54,7 +54,7 @@
 //! # record_data
 //! #     .check_and_insert("title".into(), "The Title".into())
 //! #     .unwrap();
-//! # let byte_repr = RawRecordData::from(&record_data).into_byte_repr();
+//! # let byte_repr = RawEntryData::from(&record_data).into_byte_repr();
 //! let expected = vec![
 //!     0, 7, b'a', b'r', b't', b'i', b'c', b'l', b'e', 5, 9, 0, b't', b'i', b't', b'l', b'e',
 //!     b'T', b'h', b'e', b' ', b'T', b'i', b't', b'l', b'e', 4, 4, 0, b'y', b'e', b'a', b'r',
@@ -272,7 +272,6 @@ impl RecordDatabase {
                 tx.execute(schema::records(), ())?;
                 tx.execute(schema::citation_keys(), ())?;
                 tx.execute(schema::null_records(), ())?;
-                tx.execute(schema::changelog(), ())?;
                 tx.commit()?;
 
                 debug!("Enabling write-ahead log");

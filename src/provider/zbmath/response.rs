@@ -1,8 +1,8 @@
 use serde::{Deserialize, de::Visitor};
 
-use super::super::{EntryType, RecordData, RecordDataError};
+use super::super::{EntryType, MutableEntryData, RecordDataError};
 
-impl TryFrom<Entry> for RecordData {
+impl TryFrom<Entry> for MutableEntryData {
     type Error = RecordDataError;
 
     fn try_from(value: Entry) -> Result<Self, Self::Error> {

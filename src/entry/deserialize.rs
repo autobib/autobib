@@ -3,7 +3,7 @@ use std::fmt;
 use serde::de::{self, Deserializer, Error, SeqAccess, Unexpected, Visitor};
 
 use super::{
-    Entry, EntryKey, EntryType, EntryTypeHeader, FieldKey, FieldValue, KeyHeader, RecordData,
+    Entry, EntryKey, EntryType, EntryTypeHeader, FieldKey, FieldValue, KeyHeader, MutableEntryData,
 };
 
 impl<'de> de::Deserialize<'de> for EntryType {
@@ -89,7 +89,7 @@ impl<'de> de::Deserialize<'de> for FieldValue {
     }
 }
 
-impl<'de> de::Deserialize<'de> for Entry<RecordData> {
+impl<'de> de::Deserialize<'de> for Entry<MutableEntryData> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -97,7 +97,7 @@ impl<'de> de::Deserialize<'de> for Entry<RecordData> {
         struct EntryVisitor;
 
         impl<'de> Visitor<'de> for EntryVisitor {
-            type Value = Entry<RecordData>;
+            type Value = Entry<MutableEntryData>;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
                 formatter.write_str("struct OwnedEntry")
@@ -119,7 +119,7 @@ impl<'de> de::Deserialize<'de> for Entry<RecordData> {
                 Ok(Entry {
                     key: EntryKey(entry_key), // SAFETY: serde_bibtex only returns keys satisfying
                     // the requiremens
-                    record_data: RecordData { entry_type, fields },
+                    record_data: MutableEntryData { entry_type, fields },
                 })
             }
         }

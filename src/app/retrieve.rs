@@ -11,7 +11,7 @@ use crate::{
         RecordDatabase,
         state::{NullRecordRow, RecordIdState, RecordRow, RowData, State},
     },
-    entry::{Entry, EntryKey, RawRecordData},
+    entry::{Entry, EntryKey, RawEntryData},
     error::Error,
     http::Client,
     logger::{error, reraise, suggest},
@@ -76,11 +76,11 @@ where
 /// Group valid entries by their canonical id in order to catch duplicate entries.
 fn group_valid_entries_by_canonical<T>(
     valid_entries: T,
-) -> BTreeMap<RemoteId, NonEmpty<Entry<RawRecordData>>>
+) -> BTreeMap<RemoteId, NonEmpty<Entry<RawEntryData>>>
 where
-    T: IntoIterator<Item = (Entry<RawRecordData>, RemoteId)>,
+    T: IntoIterator<Item = (Entry<RawEntryData>, RemoteId)>,
 {
-    let mut grouped_entries: BTreeMap<RemoteId, NonEmpty<Entry<RawRecordData>>> = BTreeMap::new();
+    let mut grouped_entries: BTreeMap<RemoteId, NonEmpty<Entry<RawEntryData>>> = BTreeMap::new();
     for (bibtex_entry, canonical) in valid_entries {
         match grouped_entries.entry(canonical) {
             Occupied(e) => e.into_mut().push(bibtex_entry),
@@ -104,7 +104,7 @@ pub fn retrieve_and_validate_entries<
     retrieve_only: bool,
     ignore_null: bool,
     config: &Config<F>,
-) -> BTreeMap<RemoteId, NonEmpty<Entry<RawRecordData>>> {
+) -> BTreeMap<RemoteId, NonEmpty<Entry<RawEntryData>>> {
     let valid_entries = citation_keys.filter_map(|citation_key| {
         retrieve_and_validate_single_entry(
             record_db,
@@ -131,7 +131,7 @@ pub fn retrieve_entries_read_only<
     retrieve_only: bool,
     ignore_null: bool,
     config: &Config<F>,
-) -> BTreeMap<RemoteId, NonEmpty<Entry<RawRecordData>>> {
+) -> BTreeMap<RemoteId, NonEmpty<Entry<RawEntryData>>> {
     let valid_entries = citation_keys.filter_map(|record_id| {
         retrieve_single_entry_read_only(record_db, record_id, retrieve_only, ignore_null, config)
             .unwrap_or_else(|error| {
@@ -149,7 +149,7 @@ fn retrieve_single_entry_read_only<F: FnOnce() -> Vec<(regex::Regex, String)>>(
     retrieve_only: bool,
     ignore_null: bool,
     config: &Config<F>,
-) -> Result<Option<(Entry<RawRecordData>, RemoteId)>, Error> {
+) -> Result<Option<(Entry<RawEntryData>, RemoteId)>, Error> {
     match record_db.state_from_record_id(citation_key, &config.alias_transform)? {
         RecordIdState::Existent(key, row) => {
             if retrieve_only {
@@ -198,7 +198,7 @@ fn retrieve_and_validate_single_entry<F, C>(
     retrieve_only: bool,
     ignore_null: bool,
     config: &Config<F>,
-) -> Result<Option<(Entry<RawRecordData>, RemoteId)>, Error>
+) -> Result<Option<(Entry<RawEntryData>, RemoteId)>, Error>
 where
     F: FnOnce() -> Vec<(regex::Regex, String)>,
     C: Client,

@@ -4,7 +4,7 @@ use rusqlite::types::ValueRef;
 
 use super::{Transaction, get_row_id, schema, sql};
 use crate::{
-    CitationKey, RawRecordData, RecordId, RemoteId, error::InvalidBytesError, logger::debug,
+    CitationKey, RawEntryData, RecordId, RemoteId, error::InvalidBytesError, logger::debug,
 };
 
 /// A possible fault that could occurr inside the database.
@@ -131,7 +131,6 @@ impl<'conn> DatabaseValidator<'conn> {
             ("Records", schema::records()),
             ("CitationKeys", schema::citation_keys()),
             ("NullRecords", schema::null_records()),
-            ("Changelog", schema::changelog()),
         ] {
             debug!("Checking schema for table '{tbl_name}'.");
             if let Some(fault) = check_table_schema(&self.tx, tbl_name, schema)? {
@@ -243,7 +242,7 @@ impl<'conn> DatabaseValidator<'conn> {
         let mut rows = retriever.query([])?;
 
         while let Some(row) = rows.next()? {
-            if let Err(err) = RawRecordData::<Vec<u8>>::from_byte_repr(row.get("data")?) {
+            if let Err(err) = RawEntryData::<Vec<u8>>::from_byte_repr(row.get("data")?) {
                 faults.push(DatabaseFault::InvalidRecordData(
                     row.get("key")?,
                     row.get("record_id")?,

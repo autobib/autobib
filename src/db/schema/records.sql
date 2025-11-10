@@ -1,6 +1,8 @@
 CREATE TABLE Records (
     key INTEGER PRIMARY KEY,
-    record_id TEXT NOT NULL UNIQUE,
+    record_id TEXT NOT NULL,
     data BLOB NOT NULL,
-    modified TEXT NOT NULL
+    modified TEXT NOT NULL,
+    parent INTEGER,
+    children BLOB NOT NULL,
 ) STRICT
