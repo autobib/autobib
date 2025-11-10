@@ -123,7 +123,7 @@ enum EPrintState<S> {
     MissingKey,
 }
 
-/// The outcome of resolving the conflict when using [`RecordData::merge_with_callback`].
+/// The outcome of resolving the conflict when using [`MutableEntryData::merge_with_callback`].
 pub enum ConflictResolved {
     /// Keep the current data.
     Current,
@@ -275,7 +275,7 @@ impl MutableEntryData {
 }
 
 impl<S: AsRef<str> + Ord> MutableEntryData<S> {
-    /// Initialize a new [`RecordData`] instance.
+    /// Initialize a new [`MutableEntryData`] instance.
     pub fn new(entry_type: EntryType<S>) -> Self {
         Self {
             entry_type,
