@@ -5,11 +5,6 @@ use serde_bibtex::token::is_balanced;
 use super::{BorrowedEntryData, EntryData, validate_ascii_identifier};
 use crate::error::InvalidBytesError;
 
-/// The current version of the binary data format.
-pub const fn binary_format_version() -> u8 {
-    0
-}
-
 /// The size (in bytes) of the version header.
 const DATA_HEADER_SIZE: usize = 1;
 
@@ -37,7 +32,7 @@ impl RawEntryData {
     pub fn from_entry_data<D: EntryData>(entry_data: &D) -> Self {
         let mut data = Vec::with_capacity(entry_data.raw_len());
 
-        data.push(binary_format_version());
+        data.push(0);
 
         let entry_type = entry_data.entry_type();
         let entry_type_len = EntryTypeHeader::try_from(entry_type.len()).unwrap();
