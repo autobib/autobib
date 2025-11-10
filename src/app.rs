@@ -645,12 +645,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 RecordIdState::InvalidRemoteId(err) => bail!("{err}"),
             }
         }
-        Command::Local {
-            id,
-            from,
-            rename_from,
-            no_alias,
-        } => {
+        Command::Local { id, from, no_alias } => {
             let alias = match Alias::from_str(&id) {
                 Ok(alias) => alias,
                 Err(e) => match e.kind {
@@ -662,49 +657,21 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             };
             let remote_id = RemoteId::local(&alias);
 
-            let (row, raw_data) = if let Some(old_id) = rename_from {
-                // Allowing for arbitrary `old_id` without validation and trimming
-                // so that local ids that were valid in an older version can be renamed.
-                // SAFETY: This is safe as a colon is present in the `full_id`.
-                let old_remote_id = RemoteId::from_string_unchecked("local:".to_owned() + &old_id);
-                match record_db
-                    .state_from_remote_id(&old_remote_id)?
-                    .delete_null()?
-                {
-                    ExistsOrUnknown::Existent(row) => {
-                        if !row.change_canonical_id(&remote_id)? {
-                            bail!("Local record '{remote_id}' already exists")
-                        }
-
-                        if let Ok(old_alias) = Alias::from_str(&old_id) {
-                            row.delete_alias_if_associated(&old_alias)?;
-                        }
-
+            let (row, raw_data) = match record_db.state_from_remote_id(&remote_id)?.delete_null()? {
+                ExistsOrUnknown::Existent(row) => {
+                    if from.is_some() {
+                        row.commit()?;
+                        bail!("Local record '{remote_id}' already exists")
+                    } else {
                         let raw_record_data = row.get_data()?.data;
                         (row, raw_record_data)
                     }
-                    ExistsOrUnknown::Unknown(missing) => {
-                        missing.commit()?;
-                        bail!("Local record '{old_remote_id}' does not exist");
-                    }
                 }
-            } else {
-                match record_db.state_from_remote_id(&remote_id)?.delete_null()? {
-                    ExistsOrUnknown::Existent(row) => {
-                        if from.is_some() {
-                            row.commit()?;
-                            bail!("Local record '{remote_id}' already exists")
-                        } else {
-                            let raw_record_data = row.get_data()?.data;
-                            (row, raw_record_data)
-                        }
-                    }
-                    ExistsOrUnknown::Unknown(missing) => {
-                        let data = data_from_path_or_default(from.as_ref())?;
-                        let raw_record_data = RawRecordData::from_entry_data(&data);
-                        let row = missing.insert(&raw_record_data, &remote_id)?;
-                        (row, raw_record_data)
-                    }
+                ExistsOrUnknown::Unknown(missing) => {
+                    let data = data_from_path_or_default(from.as_ref())?;
+                    let raw_record_data = RawRecordData::from_entry_data(&data);
+                    let row = missing.insert(&raw_record_data, &remote_id)?;
+                    (row, raw_record_data)
                 }
             };
 
