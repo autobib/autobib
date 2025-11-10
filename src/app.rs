@@ -645,7 +645,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 RecordIdState::InvalidRemoteId(err) => bail!("{err}"),
             }
         }
-        Command::Local { id, from, no_alias } => {
+        Command::Local { id, from } => {
             let alias = match Alias::from_str(&id) {
                 Ok(alias) => alias,
                 Err(e) => match e.kind {
@@ -675,26 +675,11 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 }
             };
 
-            let edit_key_candidate = if no_alias {
-                remote_id.name()
-            } else {
-                info!("Creating alias '{alias}' for '{remote_id}'");
-                match row.ensure_alias(&alias)? {
-                    Some(other_remote_id) => {
-                        warn!(
-                            "Alias '{alias}' already exists and refers to '{other_remote_id}'. '{remote_id}' will be a different record."
-                        );
-                        remote_id.name()
-                    }
-                    _ => alias.name(),
-                }
-            };
-
             if !cli.no_interactive {
                 edit_record_and_update(
                     &row,
                     Entry {
-                        key: EntryKey::try_new(edit_key_candidate.into())
+                        key: EntryKey::try_new(remote_id.name().into())
                             .unwrap_or_else(|_| EntryKey::placeholder()),
                         record_data: RecordData::from_entry_data(&raw_data),
                     },
