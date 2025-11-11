@@ -2,7 +2,7 @@
   arxiv = {1212.1873v6},
   author = {Hochman, Michael},
   doi = {10.4007/annals.2014.180.2.7},
-  month = {01},
+  month = {09},
   origdate = {2012-12-09},
   title = {On self-similar sets with overlaps and inverse theorems for entropy},
   version = {6},
