@@ -278,29 +278,13 @@ pub enum Command {
         #[arg(short, long, value_enum, default_value_t)]
         report: InfoReportType,
     },
-    /// Create or edit a local record with the given handle.
+    /// Create a local record with the given handle.
     Local {
         /// The name for the record.
         id: String,
         /// Create the record using the provided BibTeX data.
         #[arg(short, long, value_name = "PATH", group = "input")]
         from: Option<PathBuf>,
-    },
-    /// Combine multiple records.
-    Merge {
-        /// The highest priority record which will be retained.
-        into: RecordId,
-        /// Records to be merged.
-        from: Vec<RecordId>,
-        /// How to resolve conflicting field values.
-        #[arg(
-            short = 'n',
-            long,
-            value_enum,
-            default_value_if("no_interactive", ArgPredicate::IsPresent, "prefer-current"),
-            default_value_t
-        )]
-        on_conflict: OnConflict,
     },
     /// Show attachment directory associated with record.
     Path {
@@ -478,7 +462,6 @@ impl Command {
             Self::Delete { .. } => "delete",
             Self::Import { .. } => "import",
             Self::Local { .. } => "local",
-            Self::Merge { .. } => "merge",
             Self::Update { .. } => "update",
             Self::Edit { .. } => "edit",
             Self::Util { util_command } => return util_command.validate_read_only_compatibility(),
