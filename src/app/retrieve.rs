@@ -9,14 +9,15 @@ use crate::{
     config::Config,
     db::{
         RecordDatabase,
-        state::{EntryRecordRow, EntryRowData, NullRecordRow, RecordIdState, State},
+        state::{
+            EntryRow, EntryRowData, NullRecordRow, RecordIdState, ResolvedRecordRowState, State,
+        },
     },
     entry::{Entry, EntryKey, RawEntryData},
     error::Error,
     http::Client,
     logger::{error, reraise, suggest},
-    record::{Record, RecordRowResponse},
-    record::{RecordId, RemoteId, get_record_row},
+    record::{Record, RecordId, RecordRowResponse, RemoteId, get_record_row},
 };
 
 /// Lookup citation keys from the database, filtering out unknown and invalid remote ids and
@@ -42,13 +43,22 @@ where
 
     for record_id in citation_keys {
         match record_db.state_from_record_id(record_id, &config.alias_transform)? {
-            RecordIdState::Entry(key, row) => {
-                deduplicated
-                    .entry(row.get_canonical()?)
-                    .or_insert_with(HashSet::new)
-                    .insert(key);
-                row.commit()?;
-            }
+            RecordIdState::Entry(key, row) => match row.resolve()? {
+                ResolvedRecordRowState::Exists(entry_row_data, state) => {
+                    deduplicated
+                        .entry(entry_row_data.canonical)
+                        .or_insert_with(HashSet::new)
+                        .insert(key);
+                    state.commit()?;
+                }
+                ResolvedRecordRowState::Deleted(data, state) => {
+                    match data.replacement {
+                        Some(repl) => error!("Record '{key}' replaced with '{repl}'."),
+                        None => error!("Record '{key}' was deleted."),
+                    }
+                    state.commit()?;
+                }
+            },
             RecordIdState::NullRemoteId(mapped_remote_id, null_row) => {
                 null_callback(mapped_remote_id.mapped, null_row)?;
             }
@@ -156,13 +166,20 @@ fn retrieve_single_entry_read_only<F: FnOnce() -> Vec<(regex::Regex, String)>>(
                 row.commit()?;
                 Ok(None)
             } else {
-                let EntryRowData {
-                    data, canonical, ..
-                } = row.get_data()?;
-                let entry =
-                    validate_bibtex_key(key, &row).map(|key| (Entry::new(key, data), canonical));
-                row.commit()?;
-                Ok(entry)
+                match row.resolve()? {
+                    ResolvedRecordRowState::Exists(
+                        EntryRowData {
+                            data, canonical, ..
+                        },
+                        state,
+                    ) => {
+                        let entry = validate_bibtex_key(key, &state)
+                            .map(|key| (Entry::new(key, data), canonical));
+                        state.commit()?;
+                        Ok(entry)
+                    }
+                    ResolvedRecordRowState::Deleted(deleted_row_data, state) => todo!(),
+                }
             }
         }
         RecordIdState::NullRemoteId(remote_id, missing) => {
@@ -220,6 +237,16 @@ where
                 Ok(entry)
             }
         }
+        RecordRowResponse::Deleted(data, row) => {
+            if !ignore_null {
+                match data.replacement {
+                    Some(repl) => error!("Record '{}' replaced with '{repl}'.", data.key),
+                    None => error!("Record '{}' was deleted.", data.key),
+                }
+            }
+            row.commit()?;
+            Ok(None)
+        }
         RecordRowResponse::NullRemoteId(remote_id, missing) => {
             if !ignore_null {
                 error!("Null record: '{remote_id}'");
@@ -241,7 +268,7 @@ where
 }
 
 /// Validate a BibTeX key, logging errors and suggesting fixes.
-fn validate_bibtex_key(key: String, row: &State<EntryRecordRow>) -> Option<EntryKey<String>> {
+fn validate_bibtex_key(key: String, row: &State<EntryRow>) -> Option<EntryKey<String>> {
     match EntryKey::try_new(key) {
         Ok(bibtex_key) => Some(bibtex_key),
         Err(parse_result) => {
