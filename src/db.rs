@@ -399,7 +399,7 @@ impl RecordDatabase {
     /// via its [`Injector`].
     ///
     /// The provided `filter_map` closure plays a similar role to [`Iterator::filter_map`]
-    /// by transforming a [`EntryRowData`] into the picker item type, with the option to exclude
+    /// by transforming a [`RecordRowData`] into the picker item type, with the option to exclude
     /// the item from being sent to the matcher entirely by returning [`None`].
     pub fn inject_records<T, F: FnMut(EntryRowData) -> Option<T>, R: Render<T>>(
         &mut self,

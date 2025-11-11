@@ -27,7 +27,7 @@ use crate::{
     config,
     db::{
         DeleteAliasResult, RecordDatabase, RenameAliasResult,
-        state::{EntryRowData, ExistsOrUnknown, RecordIdState},
+        state::{EntryRowData, ExistsOrUnknown, RecordIdState, ResolvedRecordRowState},
         user_version,
     },
     entry::{Entry, EntryKey, MutableEntryData, RawEntryData},
@@ -268,6 +268,8 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 },
                 &cfg,
             )?;
+
+            // TODO: fixme
 
             for (canonical, to_delete) in deduplicated {
                 match record_db.state_from_remote_id(&canonical)?.exists() {
@@ -575,46 +577,47 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
         } => {
             let cfg = config::load(&config_path, missing_ok)?;
             match record_db.state_from_record_id(citation_key, &cfg.alias_transform)? {
-                RecordIdState::Entry(record_id, row) => {
-                    match report {
-                        InfoReportType::All => {
-                            let row_data = row.get_data()?;
-                            owriteln!("Canonical: {}", row_data.canonical)?;
-                            owriteln!(
-                                "Equivalent references: {}",
-                                row.get_referencing_keys()?.iter().join(", ")
-                            )?;
-                            owriteln!(
-                                "Valid BibTeX? {}",
-                                if is_entry_key(&record_id) {
-                                    "yes"
-                                } else {
-                                    "no"
-                                }
-                            )?;
-                            owriteln!("Data last modified: {}", row_data.modified)?;
-                        }
-                        InfoReportType::Canonical => {
-                            owriteln!("{}", row.get_canonical()?)?;
-                        }
+                RecordIdState::Entry(record_id, row) => match row.resolve()? {
+                    ResolvedRecordRowState::Exists(row_data, state) => {
+                        match report {
+                            InfoReportType::All => {
+                                println!("Canonical: {}", row_data.canonical);
+                                println!(
+                                    "Equivalent references: {}",
+                                    state.get_referencing_keys()?.iter().join(", ")
+                                );
+                                println!(
+                                    "Valid BibTeX? {}",
+                                    if is_entry_key(&record_id) {
+                                        "yes"
+                                    } else {
+                                        "no"
+                                    }
+                                );
+                                println!("Data last modified: {}", row_data.modified);
+                            }
+                            InfoReportType::Canonical => {
+                                println!("{}", state.get_canonical()?);
+                            }
 
-                        InfoReportType::Valid => {
-                            if !is_entry_key(&record_id) {
-                                error!("Invalid BibTeX: {record_id}");
+                            InfoReportType::Valid => {
+                                if !is_entry_key(&record_id) {
+                                    error!("Invalid BibTeX: {record_id}");
+                                }
                             }
-                        }
-                        InfoReportType::Equivalent => {
-                            let mut lock = stdout_lock_wrap();
-                            for re in row.get_referencing_keys()? {
-                                writeln!(lock, "{re}")?;
+                            InfoReportType::Equivalent => {
+                                for re in state.get_referencing_keys()? {
+                                    println!("{re}");
+                                }
                             }
-                        }
-                        InfoReportType::Modified => {
-                            owriteln!("{}", row.last_modified()?)?;
-                        }
-                    };
-                    row.commit()?;
-                }
+                            InfoReportType::Modified => {
+                                println!("{}", state.last_modified()?);
+                            }
+                        };
+                        state.commit()?;
+                    }
+                    ResolvedRecordRowState::Deleted(deleted_row_data, state) => todo!(),
+                },
                 RecordIdState::NullRemoteId(remote_id, null_row) => match report {
                     InfoReportType::All => {
                         owriteln!("Null record: {remote_id}")?;
@@ -658,14 +661,8 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             let remote_id = RemoteId::local(&alias);
 
             let (row, raw_data) = match record_db.state_from_remote_id(&remote_id)?.delete_null()? {
-                ExistsOrUnknown::Entry(row) => {
-                    if from.is_some() {
-                        row.commit()?;
-                        bail!("Local record '{remote_id}' already exists")
-                    } else {
-                        let raw_record_data = row.get_data()?.data;
-                        (row, raw_record_data)
-                    }
+                ExistsOrUnknown::Entry(_) => {
+                    bail!("Local record '{remote_id}' already exists")
                 }
                 ExistsOrUnknown::Unknown(missing) => {
                     let data = data_from_path_or_default(from.as_ref())?;
@@ -688,43 +685,6 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 )?;
             }
 
-            row.commit()?;
-        }
-        Command::Merge {
-            into,
-            from,
-            on_conflict,
-        } => {
-            let cfg = config::load(&config_path, missing_ok)?;
-            let (existing, row) = get_record_row(&mut record_db, into, client, &cfg)?
-                .exists_or_commit_null("Cannot merge into")?;
-
-            let new_data: Vec<EntryRowData> = from
-                .iter()
-                // filter keys which cannot be resolved or are equivalent to the merge target
-                .filter_map(|record_id| {
-                    // this implementation is automatically de-duplicating since an earlier merge
-                    // will result in a CitationKey entry which points to the row, which is then
-                    // dropped automatically.
-                    row.absorb(record_id, || {
-                        error!("Skipping key '{record_id}' which does not exist in the database!");
-                    })
-                    .transpose()
-                })
-                .collect::<Result<_, rusqlite::Error>>()?;
-
-            // merge data
-            let mut existing_record = MutableEntryData::from_entry_data(&existing.data);
-            merge_record_data(
-                on_conflict,
-                &mut existing_record,
-                new_data.iter().map(|row_data| &row_data.data),
-                &existing.key,
-            )?;
-
-            // update the row data with the modified data
-            // FIXME: Changelog
-            row.update(&RawEntryData::from_entry_data(&existing_record))?;
             row.commit()?;
         }
         Command::Path {
@@ -883,28 +843,34 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             let cfg = config::load(&config_path, missing_ok)?;
             match record_db.state_from_record_id(citation_key, &cfg.alias_transform)? {
                 RecordIdState::Entry(citation_key, row) => {
-                    let EntryRowData {
-                        data: existing_raw_data,
-                        canonical,
-                        ..
-                    } = row.get_data()?;
-                    let new_raw_data = match data_from_path_or_remote(from, canonical, client) {
-                        Ok((data, _)) => data,
-                        Err(err) => {
-                            row.commit()?;
-                            bail!(err);
+                    match row.resolve()? {
+                        ResolvedRecordRowState::Exists(
+                            EntryRowData {
+                                data, canonical, ..
+                            },
+                            state,
+                        ) => {
+                            let new_raw_data =
+                                match data_from_path_or_remote(from, canonical, client) {
+                                    Ok((data, _)) => data,
+                                    Err(err) => {
+                                        state.commit()?;
+                                        bail!(err);
+                                    }
+                                };
+                            let mut existing_record = MutableEntryData::from_entry_data(&data);
+                            merge_record_data(
+                                on_conflict,
+                                &mut existing_record,
+                                once(&new_raw_data),
+                                &citation_key,
+                            )?;
+                            // FIXME: changelog
+                            state.update(&RawEntryData::from_entry_data(&existing_record))?;
+                            state.commit()?;
                         }
-                    };
-                    let mut existing_record = MutableEntryData::from_entry_data(&existing_raw_data);
-                    merge_record_data(
-                        on_conflict,
-                        &mut existing_record,
-                        once(&new_raw_data),
-                        &citation_key,
-                    )?;
-                    // FIXME: changelog
-                    row.update(&RawEntryData::from_entry_data(&existing_record))?;
-                    row.commit()?;
+                        ResolvedRecordRowState::Deleted(deleted_row_data, state) => todo!(),
+                    }
                 }
                 RecordIdState::NullRemoteId(mapped_remote_id, null_row) => {
                     match data_from_path_or_remote(from, mapped_remote_id.mapped, client) {

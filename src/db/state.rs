@@ -28,7 +28,7 @@
 //!
 //! | From                      | To                       | Method              |
 //! |---------------------------|--------------------------|---------------------|
-//! | [`State<EntryRecordRow>`] | [`State<Missing>`]       | [`State::delete`]   |
+//! | [`State<RecordRow>`] | [`State<Missing>`]       | [`State::delete`]   |
 //! | [`State<NullRecordRow>`]  | [`State<Missing>`]       | [`State::delete`]   |
 //! | [`State<Missing>`]        | [`State<RecordRow>`]     | [`State::insert`]   |
 //! | [`State<Missing>`]        | [`State<NullRecordRow>`] | [`State::set_null`] |
@@ -41,7 +41,7 @@ mod record;
 
 use rusqlite::{CachedStatement, Error, Statement};
 
-pub use self::{missing::*, null::*, record::entry::*};
+pub use self::{missing::*, null::*, record::*};
 use super::{RowId, Transaction, get_null_row_id, get_row_id};
 use crate::{
     Alias, AliasOrRemoteId, MappedKey, RecordId, RemoteId, config::AliasTransform,
@@ -115,7 +115,7 @@ impl Unknown<'_> {
 #[derive(Debug)]
 pub enum RecordIdState<'conn> {
     /// The `Records` row exists.
-    Entry(String, State<'conn, EntryRecordRow>),
+    Entry(String, State<'conn, RecordRow>),
     /// The `Records` row does not exist and the `NullRecords` row exists.
     NullRemoteId(MappedKey, State<'conn, NullRecordRow>),
     /// The `Records` and `NullRecords` rows do not exist.
@@ -132,10 +132,10 @@ impl<'conn> RecordIdState<'conn> {
     fn existent(
         tx: Transaction<'conn>,
         row_id: RowId,
-        produce_key: impl FnOnce(&State<'conn, EntryRecordRow>) -> Result<String, rusqlite::Error>,
+        produce_key: impl FnOnce(&State<'conn, RecordRow>) -> Result<String, rusqlite::Error>,
     ) -> Result<Self, rusqlite::Error> {
         debug!("Beginning new transaction for row '{row_id}' in the `Records` table.");
-        let row = State::init(tx, EntryRecordRow(row_id));
+        let row = State::init(tx, RecordRow(row_id));
         let key = produce_key(&row)?;
         Ok(Self::Entry(key, row))
     }
@@ -234,7 +234,7 @@ impl<'conn> RecordIdState<'conn> {
 #[derive(Debug)]
 pub enum RemoteIdState<'conn> {
     /// The `Records` row exists.
-    Entry(State<'conn, EntryRecordRow>),
+    Entry(State<'conn, RecordRow>),
     /// The `Records` row does not exist and the `NullRecords` row exists.
     Null(State<'conn, NullRecordRow>),
     /// The `Records` and `NullRecords` rows do not exist.
@@ -245,7 +245,7 @@ pub enum RemoteIdState<'conn> {
 #[derive(Debug)]
 pub enum ExistsOrUnknown<'conn> {
     /// The `Records` row exists.
-    Entry(State<'conn, EntryRecordRow>),
+    Entry(State<'conn, RecordRow>),
     /// The `Records` and `NullRecords` rows do not exist.
     Unknown(State<'conn, Missing>),
 }
@@ -270,7 +270,7 @@ impl<'conn> RemoteIdState<'conn> {
         Ok(match get_row_id(&tx, remote_id)? {
             Some(row_id) => {
                 debug!("Beginning new transaction for row '{row_id}' in the `Records` table.");
-                Self::Entry(State::init(tx, EntryRecordRow(row_id)))
+                Self::Entry(State::init(tx, RecordRow(row_id)))
             }
             None => match get_null_row_id(&tx, remote_id)? {
                 Some(row_id) => {
@@ -287,8 +287,8 @@ impl<'conn> RemoteIdState<'conn> {
         })
     }
 
-    /// Extract the [`EntryRecordRow`] if possible, and otherwise return [`None`].
-    pub fn exists(self) -> Option<State<'conn, EntryRecordRow>> {
+    /// Extract the [`RecordRow`] if possible, and otherwise return [`None`].
+    pub fn exists(self) -> Option<State<'conn, RecordRow>> {
         match self {
             RemoteIdState::Entry(record_row) => Some(record_row),
             RemoteIdState::Null(null_row) => {

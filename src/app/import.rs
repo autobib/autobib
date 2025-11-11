@@ -11,7 +11,7 @@ use crate::{
     config::Config,
     db::{
         RecordDatabase,
-        state::{EntryRecordRow, Missing, RemoteIdState, State},
+        state::{EntryRow, Missing, RemoteIdState, ResolvedRecordRowState, State},
     },
     entry::{Entry, EntryKey, MutableEntryData, entries_from_bibtex},
     error::{self, RecordError},
@@ -148,12 +148,17 @@ where
                     }
                     DeterminedKey::RemoteId(mapped_key, maybe_alias) => {
                         match record_db.state_from_remote_id(&mapped_key.mapped)? {
-                            RemoteIdState::Entry(row) => Ok(ImportAction::Update(
-                                row,
-                                import_config.on_conflict,
-                                mapped_key.to_string(),
-                                maybe_alias,
-                            )),
+                            RemoteIdState::Entry(row) => match row.resolve()? {
+                                ResolvedRecordRowState::Exists(entry_row_data, state) => {
+                                    Ok(ImportAction::Update(
+                                        state,
+                                        import_config.on_conflict,
+                                        mapped_key.to_string(),
+                                        maybe_alias,
+                                    ))
+                                }
+                                ResolvedRecordRowState::Deleted(deleted_row_data, state) => todo!(),
+                            },
                             RemoteIdState::Null(null_row) => Ok(ImportAction::Insert(
                                 null_row.delete()?,
                                 mapped_key.mapped,
@@ -226,12 +231,7 @@ where
 enum ImportAction<'conn> {
     /// The entry already has data corresponding to the provided row; update the row with the
     /// entry.
-    Update(
-        State<'conn, EntryRecordRow>,
-        OnConflict,
-        String,
-        Option<Alias>,
-    ),
+    Update(State<'conn, EntryRow>, OnConflict, String, Option<Alias>),
     /// There is no data for the entry; data into the database.
     Insert(State<'conn, Missing>, RemoteId, Option<Alias>),
     /// A key could not be determined from the entry; prompt for a new key (if interactive).
@@ -240,7 +240,7 @@ enum ImportAction<'conn> {
 
 /// A helper function to create a new alias, with logging.
 fn create_alias(
-    row: State<'_, EntryRecordRow>,
+    row: State<'_, EntryRow>,
     remote_id: &str,
     no_alias: bool,
     maybe_alias: Option<Alias>,
@@ -363,6 +363,7 @@ where
                         record.key,
                         maybe_alias,
                     )),
+                    RemoteRecordRowResponse::Deleted(_, _) => todo!(),
                     RemoteRecordRowResponse::Null(remote_id, null_row) => Ok(ImportAction::Insert(
                         null_row.delete()?,
                         remote_id,
