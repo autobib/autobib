@@ -6,7 +6,6 @@
 //!
 //! In order to represent internal database state, see the [`state`] module, along with its
 //! documentation.
-mod binary;
 mod functions;
 mod migrate;
 mod schema;
@@ -24,8 +23,7 @@ use nucleo_picker::{Injector, Render};
 use rusqlite::{Connection, DropBehavior, OpenFlags, OptionalExtension, types::ValueRef};
 
 use self::{
-    binary::RawRecordData,
-    state::{RecordIdState, RemoteIdState, RowData},
+    state::{EntryRowData, RecordIdState, RemoteIdState},
     validate::{DatabaseFault, DatabaseValidator},
 };
 use crate::{
@@ -390,9 +388,9 @@ impl RecordDatabase {
     ///
     /// This is a convenience wrapper around [`Self::inject_records`] which simply sends all row data
     /// to the picker without filtering or mapping.
-    pub fn inject_all_records<R: Render<RowData>>(
+    pub fn inject_all_records<R: Render<EntryRowData>>(
         &mut self,
-        injector: Injector<RowData, R>,
+        injector: Injector<EntryRowData, R>,
     ) -> Result<(), rusqlite::Error> {
         self.inject_records(injector, Some)
     }
@@ -401,9 +399,9 @@ impl RecordDatabase {
     /// via its [`Injector`].
     ///
     /// The provided `filter_map` closure plays a similar role to [`Iterator::filter_map`]
-    /// by transforming a [`RowData`] into the picker item type, with the option to exclude
+    /// by transforming a [`EntryRowData`] into the picker item type, with the option to exclude
     /// the item from being sent to the matcher entirely by returning [`None`].
-    pub fn inject_records<T, F: FnMut(RowData) -> Option<T>, R: Render<T>>(
+    pub fn inject_records<T, F: FnMut(EntryRowData) -> Option<T>, R: Render<T>>(
         &mut self,
         injector: Injector<T, R>,
         mut filter_map: F,
@@ -411,7 +409,7 @@ impl RecordDatabase {
         debug!("Sending all database records to an injector.");
         let mut retriever = self.conn.prepare(sql::get_all_records())?;
 
-        for res in retriever.query_map([], |row| RowData::try_from(row))? {
+        for res in retriever.query_map([], |row| EntryRowData::try_from(row))? {
             if let Some(data) = filter_map(res?) {
                 injector.push(data);
             }
@@ -491,9 +489,7 @@ impl RecordDatabase {
 
 impl Drop for RecordDatabase {
     fn drop(&mut self) {
-        if let Err(err) = self.optimize() {
-            error!("Failed to optimize database on close: {err}");
-        }
+        let _ = self.optimize();
     }
 }
 

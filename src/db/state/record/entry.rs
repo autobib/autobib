@@ -8,16 +8,14 @@ use crate::{
     logger::debug,
 };
 
-use super::{DatabaseId, InDatabase, State};
+use super::{Missing, State};
 
 /// An identifier for a row in the `Records` table.
 #[derive(Debug)]
-pub struct EntryRecordRow(RowId);
-
-impl DatabaseId for EntryRecordRow {}
+pub struct EntryRecordRow(pub(in crate::db::state) RowId);
 
 /// The contents of a row in the `Records` table.
-pub struct RowData {
+pub struct EntryRowData {
     /// The binary data associated with the row.
     pub data: RawEntryData,
     /// The canonical record id associated with the row.
@@ -26,7 +24,7 @@ pub struct RowData {
     pub modified: DateTime<Local>,
 }
 
-impl TryFrom<&rusqlite::Row<'_>> for RowData {
+impl TryFrom<&rusqlite::Row<'_>> for EntryRowData {
     type Error = rusqlite::Error;
 
     fn try_from(row: &rusqlite::Row<'_>) -> Result<Self, Self::Error> {
@@ -39,25 +37,29 @@ impl TryFrom<&rusqlite::Row<'_>> for RowData {
     }
 }
 
-impl InDatabase for EntryRecordRow {
-    type Data = RowData;
-
-    const GET_STMT: &str = sql::get_record_data();
-
-    const DELETE_STMT: &str = sql::delete_record_row();
-
+impl<'conn> State<'conn, EntryRecordRow> {
     fn row_id(&self) -> RowId {
-        self.0
+        self.id.0
     }
 
-    fn from_row_id(id: RowId) -> Self {
-        Self(id)
+    /// Delete the row.
+    pub fn delete(self) -> Result<State<'conn, Missing>, rusqlite::Error> {
+        debug!("Deleting row '{}'", self.row_id());
+        self.prepare(sql::delete_record_row())?
+            .execute((self.row_id(),))?;
+        let Self { tx, .. } = self;
+        Ok(State::init(tx, Missing {}))
     }
-}
 
-impl State<'_, EntryRecordRow> {
+    /// Get the data associated with the row.
+    pub fn get_data(&self) -> Result<EntryRowData, rusqlite::Error> {
+        debug!("Retrieving data associated with row '{}'", self.row_id());
+        self.prepare_cached(sql::get_record_data())?
+            .query_row([self.row_id()], |row| row.try_into())
+    }
+
     /// Delete the data associated with the provided citation key and modify the entry in
-    /// `CitationKeys` to point to this row. Returns the resulting [`RowData`] if deletion was
+    /// `CitationKeys` to point to this row. Returns the resulting [`EntryRowData`] if deletion was
     /// successful, and otherwise `None`. Deletion will fail if citation key is not present in the
     /// database.
     ///
@@ -67,7 +69,7 @@ impl State<'_, EntryRecordRow> {
         &self,
         record_id: &K,
         missing_cb: impl FnOnce(),
-    ) -> Result<Option<RowData>, rusqlite::Error> {
+    ) -> Result<Option<EntryRowData>, rusqlite::Error> {
         Ok(match get_row_id(&self.tx, record_id)? {
             Some(row_id) if row_id != self.row_id() => {
                 // update rows in CitationKeys
@@ -77,7 +79,7 @@ impl State<'_, EntryRecordRow> {
                 // TODO: come up with a better abstraction that allows nested `Row`s.
 
                 // get the row data
-                let row_data: RowData = self
+                let row_data: EntryRowData = self
                     .prepare_cached(sql::get_record_data())?
                     .query_row([row_id], |row| row.try_into())?;
 
@@ -136,7 +138,7 @@ impl State<'_, EntryRecordRow> {
     #[inline]
     pub fn get_canonical(&self) -> Result<RemoteId, rusqlite::Error> {
         debug!("Getting canonical identifier for '{}'.", self.row_id());
-        let RowData { canonical, .. } = self.get_data()?;
+        let EntryRowData { canonical, .. } = self.get_data()?;
         Ok(canonical)
     }
 
@@ -144,7 +146,7 @@ impl State<'_, EntryRecordRow> {
     #[inline]
     pub fn last_modified(&self) -> Result<DateTime<Local>, rusqlite::Error> {
         debug!("Getting last modified time for row '{}'.", self.row_id());
-        let RowData { modified, .. } = self.get_data()?;
+        let EntryRowData { modified, .. } = self.get_data()?;
         Ok(modified)
     }
 
@@ -207,7 +209,7 @@ impl State<'_, EntryRecordRow> {
                 if existing_row_id == self.row_id() {
                     Ok(None)
                 } else {
-                    let RowData { canonical, .. } = self
+                    let EntryRowData { canonical, .. } = self
                         .tx
                         .prepare_cached(sql::get_record_data())?
                         .query_row([existing_row_id], |row| row.try_into())?;

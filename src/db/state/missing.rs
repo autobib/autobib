@@ -1,6 +1,6 @@
 use chrono::Local;
 
-use super::{DatabaseId, EntryRecordRow, NullRecordRow, State};
+use super::{EntryRecordRow, NullRecordRow, State};
 use crate::{
     RawEntryData, RemoteId,
     db::{CitationKey, sql},
@@ -12,21 +12,19 @@ use crate::{
 #[derive(Debug)]
 pub struct Missing;
 
-impl DatabaseId for Missing {}
-
 impl<'conn> State<'conn, Missing> {
     /// Set a null row, converting into a [`NullRecordRow`].
     pub fn set_null(
         self,
         remote_id: &RemoteId,
     ) -> Result<State<'conn, NullRecordRow>, rusqlite::Error> {
-        {
+        let row_id: i64 = {
             let mut setter = self.prepare_cached(sql::set_cached_null())?;
             let cache_time = Local::now();
-            setter.execute((remote_id.name(), cache_time))?;
-        }
-        // SAFETY: the `set_cached_null` statement is an INSERT.
-        Ok(unsafe { self.into_last_insert() })
+            setter.query_row((remote_id.name(), cache_time), |row| row.get(0))?
+        };
+
+        Ok(State::init(self.tx, NullRecordRow(row_id)))
     }
 
     /// Create the row, converting into a [`EntryRecordRow`].
@@ -40,13 +38,11 @@ impl<'conn> State<'conn, Missing> {
         refs: R,
     ) -> Result<State<'conn, EntryRecordRow>, rusqlite::Error> {
         debug!("Inserting data for canonical id '{canonical}'");
-        self.prepare_cached(sql::set_cached_data())?.execute((
-            canonical.name(),
-            data.to_byte_repr(),
-            &Local::now(),
-        ))?;
-        // SAFETY: the `set_cached_data` statement is an INSERT.
-        let row = unsafe { self.into_last_insert() };
+        let row_id: i64 = self.prepare_cached(sql::set_cached_data())?.query_row(
+            (canonical.name(), data.to_byte_repr(), &Local::now()),
+            |row| row.get(0),
+        )?;
+        let row = State::init(self.tx, EntryRecordRow(row_id));
         row.add_refs(refs)?;
         Ok(row)
     }
