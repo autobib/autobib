@@ -10,7 +10,7 @@ mod write;
 use std::{
     collections::{BTreeSet, HashSet},
     fs::{File, OpenOptions, create_dir_all, exists},
-    io::{IsTerminal, Read, Seek, copy},
+    io::{IsTerminal, Read, Seek, Write, copy, stdout},
     iter::once,
     path::{Path, PathBuf},
     str::FromStr,
@@ -36,6 +36,7 @@ use crate::{
     http::{BodyBytes, Client},
     logger::{debug, error, info, suggest, warn},
     normalize::{Normalization, Normalize},
+    output::owriteln,
     record::{Alias, Record, RecordId, RemoteId, get_record_row},
     term::Confirm,
 };
@@ -417,12 +418,12 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                                 let mut attachment_picker = choose_attachment(data);
                                 match attachment_picker.pick()? {
                                     Some(dir_entry) => {
-                                        println!("{}", dir_entry.path().display());
+                                        owriteln!("{}", dir_entry.path().display())?;
                                     }
                                     None => error!("No attachment selected."),
                                 }
                             } else {
-                                println!("{}", data.attachments.first().path().display());
+                                owriteln!("{}", data.attachments.first().path().display())?;
                             };
                         }
                         None => error!("No record selected."),
@@ -449,7 +450,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                                                 .iter()
                                                 .find(|id| id.provider() == provider)
                                             {
-                                                println!("{remote_id}");
+                                                owriteln!("{remote_id}")?;
                                                 return Ok(());
                                             }
                                         }
@@ -462,7 +463,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
 
                             // if there are no preferred providers or none matched, just print
                             // the canonical identifier
-                            println!("{}", row_data.canonical);
+                            owriteln!("{}", row_data.canonical)?;
                         }
                         None => error!("No item selected."),
                     }
@@ -578,23 +579,23 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     match report {
                         InfoReportType::All => {
                             let row_data = row.get_data()?;
-                            println!("Canonical: {}", row_data.canonical);
-                            println!(
+                            owriteln!("Canonical: {}", row_data.canonical)?;
+                            owriteln!(
                                 "Equivalent references: {}",
                                 row.get_referencing_keys()?.iter().join(", ")
-                            );
-                            println!(
+                            )?;
+                            owriteln!(
                                 "Valid BibTeX? {}",
                                 if is_entry_key(&record_id) {
                                     "yes"
                                 } else {
                                     "no"
                                 }
-                            );
-                            println!("Data last modified: {}", row_data.modified);
+                            )?;
+                            owriteln!("Data last modified: {}", row_data.modified)?;
                         }
                         InfoReportType::Canonical => {
-                            println!("{}", row.get_canonical()?);
+                            owriteln!("{}", row.get_canonical()?)?;
                         }
 
                         InfoReportType::Valid => {
@@ -603,21 +604,22 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                             }
                         }
                         InfoReportType::Equivalent => {
+                            let mut lock = stdout().lock();
                             for re in row.get_referencing_keys()? {
-                                println!("{re}");
+                                writeln!(lock, "{re}")?;
                             }
                         }
                         InfoReportType::Modified => {
-                            println!("{}", row.last_modified()?);
+                            owriteln!("{}", row.last_modified()?)?;
                         }
                     };
                     row.commit()?;
                 }
                 RecordIdState::NullRemoteId(remote_id, null_row) => match report {
                     InfoReportType::All => {
-                        println!("Null record: {remote_id}");
+                        owriteln!("Null record: {remote_id}")?;
                         let null_row_data = null_row.get_data()?;
-                        println!("Last attempted: {}", null_row_data.attempted);
+                        owriteln!("Last attempted: {}", null_row_data.attempted)?;
                     }
                     InfoReportType::Canonical => {
                         bail!("No canonical id for null record '{remote_id}'");
@@ -629,7 +631,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         bail!("No equivalent keys for null record '{remote_id}'");
                     }
                     InfoReportType::Modified => {
-                        println!("{}", null_row.get_null_attempted()?);
+                        owriteln!("{}", null_row.get_null_attempted()?)?;
                     }
                 },
                 RecordIdState::Unknown(unknown) => {
@@ -792,7 +794,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             // user that this is a directory
             target.push("");
 
-            println!("{}", target.display());
+            owriteln!("{}", target.display())?;
         }
         Command::Source {
             paths,
@@ -1007,9 +1009,8 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 }
             },
             UtilCommand::List { canonical } => {
-                record_db.map_citation_keys(canonical, |key_str| {
-                    println!("{key_str}");
-                })?;
+                let mut lock = stdout().lock();
+                record_db.map_citation_keys(canonical, |key_str| writeln!(lock, "{key_str}"))?;
             }
         },
     };
