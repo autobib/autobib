@@ -29,3 +29,8 @@ Changes since `v0.4.1`.
 - Added a `-t/--template` option for `autobib find` which allows manually specifying a template string to use when rendering.
   The precise expansion behaviour can also be modified with the `-s/--strict` flag.
   Read more in the [template syntax documentation](../template.md).
+
+## Changes to providers
+
+- Fixed arXiv API parsing issues resulting from arXiv API format changes.
+- Minor improvements to zbMATH response parsing.
