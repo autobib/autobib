@@ -29,7 +29,7 @@ crossterm = "0.29"
 data-encoding = "2.9"
 delegate = "0.13"
 edit = "0.1"
-etcetera = "0.10"
+etcetera = "0.11"
 itertools = "0.14"
 memchr = "2.7"
 mufmt = "0.4.0"
@@ -38,7 +38,7 @@ nucleo-picker = "0.9.0"
 rapidhash = "4.1"
 regex = "1.11"
 regex-syntax = "0.8"
-rsxiv = { version = "0.4", features = ["serde"] }
+rsxiv = { version = "0.4.2", features = ["serde"] }
 rusqlite = { version = "0.37", features = ["bundled", "chrono", "functions"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_bibtex = "0.7.0"
