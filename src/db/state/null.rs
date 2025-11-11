@@ -1,6 +1,6 @@
 use chrono::{DateTime, Local};
 
-use super::{DatabaseId, InDatabase, State};
+use super::{Missing, State};
 use crate::{
     db::{RowId, sql},
     logger::debug,
@@ -8,9 +8,7 @@ use crate::{
 
 /// An identifier for a row in the `NullRecords` table.
 #[derive(Debug)]
-pub struct NullRecordRow(RowId);
-
-impl DatabaseId for NullRecordRow {}
+pub struct NullRecordRow(pub(in crate::db::state) RowId);
 
 /// The contents of a row in the `Records` table.
 pub struct NullRowData {
@@ -28,23 +26,27 @@ impl TryFrom<&rusqlite::Row<'_>> for NullRowData {
     }
 }
 
-impl InDatabase for NullRecordRow {
-    type Data = NullRowData;
-
-    const GET_STMT: &str = sql::get_null_record_data();
-
-    const DELETE_STMT: &str = sql::delete_null_record_row();
-
+impl<'conn> State<'conn, NullRecordRow> {
     fn row_id(&self) -> RowId {
-        self.0
+        self.id.0
     }
 
-    fn from_row_id(id: RowId) -> Self {
-        Self(id)
+    /// Delete the null record.
+    pub fn delete(self) -> Result<State<'conn, Missing>, rusqlite::Error> {
+        debug!("Deleting 'NullRecords' row '{}'", self.row_id());
+        self.prepare(sql::delete_null_record_row())?
+            .execute((self.row_id(),))?;
+        let Self { tx, .. } = self;
+        Ok(State::init(tx, Missing {}))
     }
-}
 
-impl State<'_, NullRecordRow> {
+    /// Get the data associated with the row.
+    pub fn get_data(&self) -> Result<NullRowData, rusqlite::Error> {
+        debug!("Retrieving 'NullRecords' row '{}'", self.row_id());
+        self.prepare_cached(sql::get_null_record_data())?
+            .query_row([self.row_id()], |row| row.try_into())
+    }
+
     /// Get the time when the null was cached.
     pub fn get_null_attempted(&self) -> Result<DateTime<Local>, rusqlite::Error> {
         debug!("Getting attempted time for null row '{}'.", self.row_id());
