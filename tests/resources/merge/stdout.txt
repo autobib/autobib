@@ -5,7 +5,7 @@
   issue = {2},
   journal = {Ann. of Math. (2)},
   language = {English},
-  month = {01},
+  month = {09},
   mrnumber = {3224722},
   origdate = {2012-12-09},
   pages = {773--822},
