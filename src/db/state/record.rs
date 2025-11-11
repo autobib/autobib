@@ -8,6 +8,96 @@ use crate::{
     logger::debug,
 };
 
+pub trait InRecordsTable {
+    fn row_id(&self) -> RowId;
+}
+
+impl InRecordsTable for EntryRow {
+    fn row_id(&self) -> RowId {
+        self.0
+    }
+}
+
+impl InRecordsTable for RecordRow {
+    fn row_id(&self) -> RowId {
+        self.0
+    }
+}
+
+impl InRecordsTable for DeletedRow {
+    fn row_id(&self) -> RowId {
+        self.0
+    }
+}
+
+impl<'conn, I: InRecordsTable> State<'conn, I> {
+    fn row_id(&self) -> RowId {
+        self.id.row_id()
+    }
+
+    /// Get every key in the `CitationKeys` table which references the [`RecordRow`].
+    pub fn get_referencing_keys(&self) -> Result<Vec<String>, rusqlite::Error> {
+        self.get_referencing_keys_impl(Some)
+    }
+
+    /// Get every remote id in the `CitationKeys` table which references the [`RecordRow`].
+    pub fn get_referencing_remote_ids(&self) -> Result<Vec<RemoteId>, rusqlite::Error> {
+        self.get_referencing_keys_impl(RemoteId::from_alias_or_remote_id_unchecked)
+    }
+
+    /// Get keys equivalent to a given key that are valid BibTeX citation keys.
+    pub fn get_valid_referencing_keys(&self) -> Result<Vec<String>, rusqlite::Error> {
+        let mut referencing_keys = self.get_referencing_keys()?;
+        referencing_keys.retain(|k| is_entry_key(k));
+        Ok(referencing_keys)
+    }
+
+    /// Get a transformed version of every key in the `CitationKeys` table which references
+    /// the [`RecordRow`] for which the provided `filter_map` does not return `None`.
+    fn get_referencing_keys_impl<T, F: FnMut(String) -> Option<T>>(
+        &self,
+        mut filter_map: F,
+    ) -> Result<Vec<T>, rusqlite::Error> {
+        debug!("Getting referencing keys for '{}'.", self.row_id());
+        let mut selector = self.prepare(sql::get_all_referencing_citation_keys())?;
+        let rows = selector.query_map((self.row_id(),), |row| row.get(0))?;
+        let mut referencing = Vec::with_capacity(1);
+        for name_res in rows {
+            if let Some(mapped) = filter_map(name_res?) {
+                referencing.push(mapped);
+            }
+        }
+        Ok(referencing)
+    }
+
+    /// Insert [`CitationKey`] references for this row.
+    ///
+    /// The return value is `false` if the insertion failed and `CitationKeyInsertMode` is
+    /// `FailIfExists`, and otherwise `true`.
+    fn add_refs_impl<'a, K: CitationKey + 'a, R: Iterator<Item = &'a K>>(
+        &self,
+        refs: R,
+        mode: CitationKeyInsertMode,
+    ) -> Result<bool, rusqlite::Error> {
+        debug!("Inserting references to row_id '{}'", self.row_id());
+        for remote_id in refs {
+            let stmt = match mode {
+                CitationKeyInsertMode::Overwrite => sql::set_citation_key_overwrite(),
+                CitationKeyInsertMode::IgnoreIfExists => sql::set_citation_key_ignore(),
+                CitationKeyInsertMode::FailIfExists => sql::set_citation_key_fail(),
+            };
+            let mut key_writer = self.prepare(stmt)?;
+            match flatten_constraint_violation(
+                key_writer.execute((remote_id.name(), self.row_id())),
+            )? {
+                Constraint::Satisfied(_) => {}
+                Constraint::Violated => return Ok(false),
+            }
+        }
+        Ok(true)
+    }
+}
+
 use super::{Missing, State};
 
 #[derive(Debug)]
@@ -92,10 +182,6 @@ pub struct DeletedRow(pub(in crate::db::state) RowId);
 pub struct EntryRow(pub(in crate::db::state) RowId);
 
 impl<'conn> State<'conn, EntryRow> {
-    fn row_id(&self) -> RowId {
-        self.id.0
-    }
-
     pub fn get_data(&self) -> Result<EntryRowData, rusqlite::Error> {
         debug!(
             "Retrieving 'Records' data associated with row '{}'",
@@ -103,6 +189,13 @@ impl<'conn> State<'conn, EntryRow> {
         );
         self.prepare_cached(sql::get_record_data())?
             .query_row([self.row_id()], |row| row.try_into())
+    }
+
+    pub fn soft_delete(
+        self,
+        replacement: Option<RemoteId>,
+    ) -> Result<State<'conn, DeletedRow>, rusqlite::Error> {
+        todo!()
     }
 
     /// Delete the row.
@@ -153,41 +246,6 @@ impl<'conn> State<'conn, EntryRow> {
             }
             _ => None,
         })
-    }
-
-    /// Get every key in the `CitationKeys` table which references the [`RecordRow`].
-    pub fn get_referencing_keys(&self) -> Result<Vec<String>, rusqlite::Error> {
-        self.get_referencing_keys_impl(Some)
-    }
-
-    /// Get every remote id in the `CitationKeys` table which references the [`RecordRow`].
-    pub fn get_referencing_remote_ids(&self) -> Result<Vec<RemoteId>, rusqlite::Error> {
-        self.get_referencing_keys_impl(RemoteId::from_alias_or_remote_id_unchecked)
-    }
-
-    /// Get a transformed version of every key in the `CitationKeys` table which references
-    /// the [`RecordRow`] for which the provided `filter_map` does not return `None`.
-    fn get_referencing_keys_impl<T, F: FnMut(String) -> Option<T>>(
-        &self,
-        mut filter_map: F,
-    ) -> Result<Vec<T>, rusqlite::Error> {
-        debug!("Getting referencing keys for '{}'.", self.row_id());
-        let mut selector = self.prepare(sql::get_all_referencing_citation_keys())?;
-        let rows = selector.query_map((self.row_id(),), |row| row.get(0))?;
-        let mut referencing = Vec::with_capacity(1);
-        for name_res in rows {
-            if let Some(mapped) = filter_map(name_res?) {
-                referencing.push(mapped);
-            }
-        }
-        Ok(referencing)
-    }
-
-    /// Get keys equivalent to a given key that are valid BibTeX citation keys.
-    pub fn get_valid_referencing_keys(&self) -> Result<Vec<String>, rusqlite::Error> {
-        let mut referencing_keys = self.get_referencing_keys()?;
-        referencing_keys.retain(|k| is_entry_key(k));
-        Ok(referencing_keys)
     }
 
     /// Get the canonical [`RemoteId`].
@@ -307,33 +365,6 @@ impl<'conn> State<'conn, EntryRow> {
     ) -> Result<bool, rusqlite::Error> {
         self.add_refs_impl(refs, CitationKeyInsertMode::Overwrite)
     }
-
-    /// Insert [`CitationKey`] references for this row.
-    ///
-    /// The return value is `false` if the insertion failed and `CitationKeyInsertMode` is
-    /// `FailIfExists`, and otherwise `true`.
-    fn add_refs_impl<'a, K: CitationKey + 'a, R: Iterator<Item = &'a K>>(
-        &self,
-        refs: R,
-        mode: CitationKeyInsertMode,
-    ) -> Result<bool, rusqlite::Error> {
-        debug!("Inserting references to row_id '{}'", self.row_id());
-        for remote_id in refs {
-            let stmt = match mode {
-                CitationKeyInsertMode::Overwrite => sql::set_citation_key_overwrite(),
-                CitationKeyInsertMode::IgnoreIfExists => sql::set_citation_key_ignore(),
-                CitationKeyInsertMode::FailIfExists => sql::set_citation_key_fail(),
-            };
-            let mut key_writer = self.prepare(stmt)?;
-            match flatten_constraint_violation(
-                key_writer.execute((remote_id.name(), self.row_id())),
-            )? {
-                Constraint::Satisfied(_) => {}
-                Constraint::Violated => return Ok(false),
-            }
-        }
-        Ok(true)
-    }
 }
 
 pub enum ResolvedRecordRowState<'conn> {
@@ -342,43 +373,12 @@ pub enum ResolvedRecordRowState<'conn> {
 }
 
 impl<'conn> State<'conn, RecordRow> {
-    fn row_id(&self) -> RowId {
-        self.id.0
-    }
-
     /// Add a new alias for this row.
     ///
     /// The return value is `false` if the alias already exists, and otherwise `true`.
     #[inline]
     pub fn add_alias(&self, alias: &Alias) -> Result<bool, rusqlite::Error> {
         self.add_refs_impl(std::iter::once(alias), CitationKeyInsertMode::FailIfExists)
-    }
-
-    /// Insert [`CitationKey`] references for this row.
-    ///
-    /// The return value is `false` if the insertion failed and `CitationKeyInsertMode` is
-    /// `FailIfExists`, and otherwise `true`.
-    fn add_refs_impl<'a, K: CitationKey + 'a, R: Iterator<Item = &'a K>>(
-        &self,
-        refs: R,
-        mode: CitationKeyInsertMode,
-    ) -> Result<bool, rusqlite::Error> {
-        debug!("Inserting references to row_id '{}'", self.row_id());
-        for remote_id in refs {
-            let stmt = match mode {
-                CitationKeyInsertMode::Overwrite => sql::set_citation_key_overwrite(),
-                CitationKeyInsertMode::IgnoreIfExists => sql::set_citation_key_ignore(),
-                CitationKeyInsertMode::FailIfExists => sql::set_citation_key_fail(),
-            };
-            let mut key_writer = self.prepare(stmt)?;
-            match flatten_constraint_violation(
-                key_writer.execute((remote_id.name(), self.row_id())),
-            )? {
-                Constraint::Satisfied(_) => {}
-                Constraint::Violated => return Ok(false),
-            }
-        }
-        Ok(true)
     }
 
     pub fn get_data(&self) -> Result<RecordRowData, rusqlite::Error> {
@@ -417,43 +417,6 @@ impl<'conn> State<'conn, RecordRow> {
                 State::init(self.tx, DeletedRow(row_id)),
             ),
         })
-    }
-
-    /// Get every key in the `CitationKeys` table which references the [`RecordRow`].
-    pub fn get_referencing_keys(&self) -> Result<Vec<String>, rusqlite::Error> {
-        self.get_referencing_keys_impl(Some)
-    }
-
-    /// Get every remote id in the `CitationKeys` table which references the [`RecordRow`].
-    pub fn get_referencing_remote_ids(&self) -> Result<Vec<RemoteId>, rusqlite::Error> {
-        self.get_referencing_keys_impl(RemoteId::from_alias_or_remote_id_unchecked)
-    }
-
-    /// Get a transformed version of every key in the `CitationKeys` table which references
-    /// the [`RecordRow`] for which the provided `filter_map` does not return `None`.
-    fn get_referencing_keys_impl<T, F: FnMut(String) -> Option<T>>(
-        &self,
-        mut filter_map: F,
-    ) -> Result<Vec<T>, rusqlite::Error> {
-        debug!("Getting referencing keys for '{}'.", self.row_id());
-        let mut selector = self.prepare(sql::get_all_referencing_citation_keys())?;
-        let rows = selector.query_map((self.row_id(),), |row| row.get(0))?;
-        let mut referencing = Vec::with_capacity(1);
-        for name_res in rows {
-            if let Some(mapped) = filter_map(name_res?) {
-                referencing.push(mapped);
-            }
-        }
-        Ok(referencing)
-    }
-
-    /// Delete the row.
-    pub fn delete(self) -> Result<State<'conn, Missing>, rusqlite::Error> {
-        debug!("Deleting row '{}'", self.row_id());
-        self.prepare(sql::delete_record_row())?
-            .execute((self.row_id(),))?;
-        let Self { tx, .. } = self;
-        Ok(State::init(tx, Missing {}))
     }
 }
 
