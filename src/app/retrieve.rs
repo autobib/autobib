@@ -9,7 +9,7 @@ use crate::{
     config::Config,
     db::{
         RecordDatabase,
-        state::{EntryRecordRow, NullRecordRow, RecordIdState, RowData, State},
+        state::{EntryRecordRow, EntryRowData, NullRecordRow, RecordIdState, State},
     },
     entry::{Entry, EntryKey, RawEntryData},
     error::Error,
@@ -156,7 +156,7 @@ fn retrieve_single_entry_read_only<F: FnOnce() -> Vec<(regex::Regex, String)>>(
                 row.commit()?;
                 Ok(None)
             } else {
-                let RowData {
+                let EntryRowData {
                     data, canonical, ..
                 } = row.get_data()?;
                 let entry =

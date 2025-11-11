@@ -8,7 +8,7 @@ use nucleo_picker::Render;
 use self::parse::{Kind, Lexer, Token};
 
 use crate::{
-    db::{CitationKey, state::RowData},
+    db::{CitationKey, state::EntryRowData},
     entry::{EntryData, FieldKey, MutableEntryData, RawRecordFieldsIter},
     error::{ClapTemplateError, KeyParseError, KeyParseErrorKind},
 };
@@ -279,7 +279,7 @@ impl Template {
 
     /// Returns whether if this template can be rendered by the provided row data without having
     /// any non-optional undefined keys.
-    pub fn has_keys_contained_in(&self, row: &RowData) -> bool {
+    pub fn has_keys_contained_in(&self, row: &EntryRowData) -> bool {
         match self.strategy {
             Strategy::Sorted => self.contained_impl(
                 || BibtexFields::new(row),
@@ -315,7 +315,7 @@ pub struct BibtexFields<'a> {
 }
 
 impl<'a> BibtexFields<'a> {
-    pub fn new(row: &'a RowData) -> Self {
+    pub fn new(row: &'a EntryRowData) -> Self {
         Self {
             inner: row.data.raw_fields().peekable(),
         }
@@ -357,7 +357,7 @@ impl<'r, 'ast, 'state> fmt::Display for DisplayedRow<'r, 'ast, 'state> {
 }
 
 impl<'row, 'ast, 'state> DisplayedRow<'row, 'ast, 'state> {
-    fn from_data<F>(row_data: &'row RowData, ast: &'ast Expression, mut f: F) -> Self
+    fn from_data<F>(row_data: &'row EntryRowData, ast: &'ast Expression, mut f: F) -> Self
     where
         F: FnMut(&str) -> Option<&'state str>,
     {
@@ -395,7 +395,7 @@ impl<'row, 'ast, 'state> DisplayedRow<'row, 'ast, 'state> {
     }
 }
 
-pub struct ManifestSorted<'r>(&'r RowData);
+pub struct ManifestSorted<'r>(&'r EntryRowData);
 
 impl<'r> ManifestMut<Expression> for ManifestSorted<'r> {
     type Error = Infallible;
@@ -417,7 +417,7 @@ impl<'r> ManifestMut<Expression> for ManifestSorted<'r> {
     }
 }
 
-pub struct ManifestSmall<'r>(&'r RowData);
+pub struct ManifestSmall<'r>(&'r EntryRowData);
 
 impl<'r> Manifest<Expression> for ManifestSmall<'r> {
     type Error = Infallible;
@@ -429,7 +429,7 @@ impl<'r> Manifest<Expression> for ManifestSmall<'r> {
     }
 }
 
-pub struct ManifestLarge<'r>(&'r RowData);
+pub struct ManifestLarge<'r>(&'r EntryRowData);
 
 impl<'r> ManifestMut<Expression> for ManifestLarge<'r> {
     type Error = Infallible;
@@ -449,10 +449,10 @@ impl<'r> ManifestMut<Expression> for ManifestLarge<'r> {
     }
 }
 
-impl Render<RowData> for Template {
+impl Render<EntryRowData> for Template {
     type Str<'a> = String;
 
-    fn render<'a>(&self, item: &'a RowData) -> Self::Str<'a> {
+    fn render<'a>(&self, item: &'a EntryRowData) -> Self::Str<'a> {
         match self.strategy {
             Strategy::Sorted => {
                 let Ok(s) = self.template.render(&ManifestSorted(item));
@@ -489,7 +489,7 @@ mod tests {
                 data.check_and_insert(k.into(), v.into()).unwrap();
             }
 
-            let row_data = RowData {
+            let row_data = EntryRowData {
                 data: RawEntryData::from_entry_data(&data),
                 canonical: RemoteId::from_parts("local", "123").unwrap(),
                 modified: Local::now(),
@@ -556,7 +556,7 @@ mod tests {
                 data.check_and_insert(k.into(), v.into()).unwrap();
             }
 
-            let row_data = RowData {
+            let row_data = EntryRowData {
                 data: RawEntryData::from_entry_data(&data),
                 canonical: RemoteId::from_parts(provider, sub_id).unwrap(),
                 modified: Local::now(),

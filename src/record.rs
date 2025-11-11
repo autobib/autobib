@@ -11,8 +11,8 @@ use crate::{
     db::{
         RecordDatabase,
         state::{
-            EntryRecordRow, Missing, NullRecordRow, RecordIdState, RemoteIdState, RowData, State,
-            Unknown,
+            EntryRecordRow, EntryRowData, Missing, NullRecordRow, RecordIdState, RemoteIdState,
+            State, Unknown,
         },
     },
     entry::{MutableEntryData, RawEntryData},
@@ -115,7 +115,7 @@ fn row_to_response<'conn, K: Into<String>, T: From<RemoteRecordRowResponse<'conn
     key: K,
     row: State<'conn, EntryRecordRow>,
 ) -> Result<T, Error> {
-    let RowData {
+    let EntryRowData {
         data, canonical, ..
     } = row.get_data()?;
     Ok(RemoteRecordRowResponse::Exists(
@@ -261,7 +261,7 @@ fn get_record_row_recursive<'conn, C: Client>(
                     // not necessary to insert `new_remote_id` since we just saw that it
                     // is present in the database
                     row.add_refs(history.iter())?;
-                    let RowData {
+                    let EntryRowData {
                         data, canonical, ..
                     } = row.get_data()?;
                     let original = exists_callback(&row)?;

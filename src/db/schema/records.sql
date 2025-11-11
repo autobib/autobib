@@ -3,7 +3,7 @@ CREATE TABLE Records (
     record_id TEXT NOT NULL,
     data BLOB NOT NULL,
     modified TEXT NOT NULL,
+    variant INTEGER NOT NULL DEFAULT 0,
     parent INTEGER,
-    children BLOB NOT NULL DEFAULT x'',
-    active INTEGER NOT NULL DEFAULT 1
+    children BLOB NOT NULL DEFAULT x''
 ) STRICT

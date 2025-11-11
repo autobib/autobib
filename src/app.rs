@@ -27,7 +27,7 @@ use crate::{
     config,
     db::{
         DeleteAliasResult, RecordDatabase, RenameAliasResult,
-        state::{ExistsOrUnknown, RecordIdState, RowData},
+        state::{EntryRowData, ExistsOrUnknown, RecordIdState},
         user_version,
     },
     entry::{Entry, EntryKey, MutableEntryData, RawEntryData},
@@ -658,7 +658,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             let remote_id = RemoteId::local(&alias);
 
             let (row, raw_data) = match record_db.state_from_remote_id(&remote_id)?.delete_null()? {
-                ExistsOrUnknown::Existent(row) => {
+                ExistsOrUnknown::Entry(row) => {
                     if from.is_some() {
                         row.commit()?;
                         bail!("Local record '{remote_id}' already exists")
@@ -699,7 +699,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             let (existing, row) = get_record_row(&mut record_db, into, client, &cfg)?
                 .exists_or_commit_null("Cannot merge into")?;
 
-            let new_data: Vec<RowData> = from
+            let new_data: Vec<EntryRowData> = from
                 .iter()
                 // filter keys which cannot be resolved or are equivalent to the merge target
                 .filter_map(|record_id| {
@@ -883,7 +883,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             let cfg = config::load(&config_path, missing_ok)?;
             match record_db.state_from_record_id(citation_key, &cfg.alias_transform)? {
                 RecordIdState::Entry(citation_key, row) => {
-                    let RowData {
+                    let EntryRowData {
                         data: existing_raw_data,
                         canonical,
                         ..
