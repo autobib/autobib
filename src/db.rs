@@ -73,6 +73,7 @@ use std::path::Path;
 
 use chrono::{Local, TimeDelta};
 use delegate::delegate;
+use either::Either;
 use functions::{AppFunction, register_application_function};
 use nucleo_picker::{Injector, Render};
 use rusqlite::{Connection, DropBehavior, OpenFlags, OptionalExtension, types::ValueRef};
@@ -486,26 +487,25 @@ impl RecordDatabase {
     /// `f` to each key.
     ///
     /// If `canonical` is true, only iterate over canonical keys.
-    pub fn map_citation_keys<F: FnMut(&str)>(
+    pub fn map_citation_keys<F: FnMut(&str) -> Result<(), std::io::Error>>(
         &mut self,
         canonical: bool,
         mut f: F,
-    ) -> Result<(), rusqlite::Error> {
+    ) -> Result<(), Either<rusqlite::Error, std::io::Error>> {
         let mut selector = if canonical {
             self.conn.prepare(sql::get_all_canonical_citation_keys())
         } else {
             self.conn.prepare(sql::get_all_citation_keys())
-        }?;
+        }
+        .map_err(Either::Left)?;
 
-        selector
-            .query_map([], |row| {
-                if let ValueRef::Text(bytes) = row.get_ref_unwrap(0) {
-                    // SAFETY: the underlying data is always valid utf-8
-                    f(std::str::from_utf8(bytes).unwrap());
-                }
-                Ok(())
-            })?
-            .for_each(drop);
+        let mut rows = selector.query([]).map_err(Either::Left)?;
+        while let Some(row) = rows.next().map_err(Either::Left)? {
+            if let ValueRef::Text(bytes) = row.get_ref_unwrap(0) {
+                // SAFETY: the underlying data is always valid utf-8
+                f(std::str::from_utf8(bytes).unwrap()).map_err(Either::Right)?;
+            }
+        }
 
         Ok(())
     }

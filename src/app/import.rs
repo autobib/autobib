@@ -18,6 +18,7 @@ use crate::{
     http::Client,
     logger::{error, info, set_failed, warn},
     normalize::{Normalization, Normalize},
+    output::owriteln,
     provider::{determine_remote_id_candidates, is_canonical},
     record::{
         Alias, MappedAliasOrRemoteId, MappedKey, RecordId, RemoteId, RemoteRecordRowResponse,
@@ -66,8 +67,8 @@ where
                     ImportOutcome::Success => {}
                     ImportOutcome::Failure(error, entry) => {
                         if import_config.log_failures {
-                            println!("% Import failed: {error}");
-                            println!("{entry}");
+                            owriteln!("% Import failed: {error}")?;
+                            owriteln!("{entry}")?;
                             set_failed();
                         } else {
                             error!(

@@ -8,6 +8,7 @@ pub mod format;
 mod http;
 mod logger;
 mod normalize;
+mod output;
 mod path_hash;
 pub mod provider;
 mod record;
