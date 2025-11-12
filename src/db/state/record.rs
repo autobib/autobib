@@ -1,5 +1,4 @@
 use chrono::{DateTime, Local};
-use serde_bibtex::token::is_entry_key;
 
 use crate::{
     Alias, RawEntryData, RemoteId,
@@ -9,18 +8,18 @@ use crate::{
 
 use super::{Missing, State};
 
+#[derive(Debug)]
+pub struct DeletedRow(RowId);
+
+#[derive(Debug)]
+pub struct EntryRow(pub(super) RowId);
+
 /// States which correspond to a row in the 'Records' table.
 pub trait InRecordsTable {
     fn row_id(&self) -> RowId;
 }
 
 impl InRecordsTable for EntryRow {
-    fn row_id(&self) -> RowId {
-        self.0
-    }
-}
-
-impl InRecordsTable for RecordRow {
     fn row_id(&self) -> RowId {
         self.0
     }
@@ -99,16 +98,6 @@ impl<I: InRecordsTable> RecordsLookup<I> for RemoteId {
     }
 }
 
-impl<I: InRecordsTable> RecordsLookup<I> for RecordRowData {
-    fn lookup<'conn>(state: &State<'conn, I>) -> Result<Self, rusqlite::Error> {
-        state
-            .prepare_cached(
-                "SELECT record_id, modified, data, variant FROM Records WHERE key = ?1",
-            )?
-            .query_row([state.row_id()], |row| row.try_into())
-    }
-}
-
 impl RecordsLookup<EntryRow> for EntryRowData {
     fn lookup<'conn>(state: &State<'conn, EntryRow>) -> Result<Self, rusqlite::Error> {
         state
@@ -153,26 +142,9 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
         Ok(State::init(self.tx, Missing {}))
     }
 
-    /// Get every key in the `CitationKeys` table which references the [`RecordRow`].
-    pub fn get_referencing_keys(&self) -> Result<Vec<String>, rusqlite::Error> {
-        self.get_referencing_keys_impl(Some)
-    }
-
-    /// Get every remote id in the `CitationKeys` table which references the [`RecordRow`].
-    pub fn get_referencing_remote_ids(&self) -> Result<Vec<RemoteId>, rusqlite::Error> {
-        self.get_referencing_keys_impl(RemoteId::from_alias_or_remote_id_unchecked)
-    }
-
-    /// Get keys equivalent to a given key that are valid BibTeX citation keys.
-    pub fn get_valid_referencing_keys(&self) -> Result<Vec<String>, rusqlite::Error> {
-        let mut referencing_keys = self.get_referencing_keys()?;
-        referencing_keys.retain(|k| is_entry_key(k));
-        Ok(referencing_keys)
-    }
-
     /// Get the canonical [`RemoteId`].
     #[inline]
-    pub fn get_canonical(&self) -> Result<RemoteId, rusqlite::Error> {
+    pub fn canonical(&self) -> Result<RemoteId, rusqlite::Error> {
         debug!("Getting canonical identifier for '{}'.", self.row_id());
         RemoteId::lookup(self)
     }
@@ -184,9 +156,19 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
         DateTime::lookup(self)
     }
 
+    /// Get every key in the `CitationKeys` table which references this row.
+    pub fn referencing_keys(&self) -> Result<Vec<String>, rusqlite::Error> {
+        self.referencing_keys_impl(Some)
+    }
+
+    /// Get every remote id in the `CitationKeys` table which references this row.
+    pub fn referencing_remote_ids(&self) -> Result<Vec<RemoteId>, rusqlite::Error> {
+        self.referencing_keys_impl(RemoteId::from_alias_or_remote_id_unchecked)
+    }
+
     /// Get a transformed version of every key in the `CitationKeys` table which references
     /// the [`RecordRow`] for which the provided `filter_map` does not return `None`.
-    fn get_referencing_keys_impl<T, F: FnMut(String) -> Option<T>>(
+    fn referencing_keys_impl<T, F: FnMut(String) -> Option<T>>(
         &self,
         mut filter_map: F,
     ) -> Result<Vec<T>, rusqlite::Error> {
@@ -200,6 +182,18 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
             }
         }
         Ok(referencing)
+    }
+
+    /// Insert [`RemoteId`] references for this row.
+    ///
+    /// The return value is `false` if the insertion failed and `CitationKeyInsertMode` is
+    /// `FailIfExists`, and otherwise `true`.
+    #[inline]
+    pub fn add_refs<'a, R: Iterator<Item = &'a RemoteId>>(
+        &self,
+        refs: R,
+    ) -> Result<bool, rusqlite::Error> {
+        self.add_refs_impl(refs, CitationKeyInsertMode::Overwrite)
     }
 
     /// Insert [`CitationKey`] references for this row.
@@ -234,39 +228,7 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
         }
         Ok(true)
     }
-
-    fn replace_impl<R: RecordsDataCol>(&self, data: &R) -> Result<i64, rusqlite::Error> {
-        // read the current value of 'record_id' and 'children'
-        let existing = RecordContext::lookup(self)?;
-
-        // insert a new row into Records containing:
-        //
-        // - the previous value of 'record_id'
-        // - the new data
-        // - the current timestamp
-        // - the correct variant
-        // - the key of the row being replaced, in parent_key
-        //
-        // the remaining fields use their default values
-        let new_key: i64 = self.prepare("INSERT INTO Records (record_id, data, modified, variant, parent_key) VALUES (?1, ?2, ?3, ?4, ?5) RETURNING key")?
-            .query_row((existing.record_id.name(), data.data_blob(), Local::now(), data.variant(), self.row_id()), |row| row.get(0))?;
-
-        // update the `children` field with the existing records
-        let mut new_children = existing.children;
-        new_children.extend(new_key.to_le_bytes());
-        self.prepare("UPDATE Records SET children = ?1 WHERE key = ?2")?
-            .execute((new_children, self.row_id()))?;
-
-        // update the `CitationKeys` table values
-        self.prepare("UPDATE CitationKeys SET record_key = ?1 WHERE record_key = ?2")?
-            .execute((new_key, self.row_id()))?;
-
-        Ok(new_key)
-    }
 }
-
-#[derive(Debug)]
-pub struct RecordRow(pub(in crate::db::state) RowId);
 
 /// The row data associated with a row in the `Records` table. The precise value depends on the
 /// `variant` column.
@@ -277,24 +239,21 @@ pub enum RecordRowVariant {
     Deleted(Option<RemoteId>),
 }
 
+#[derive(Debug)]
 pub struct EntryRowData {
     pub data: RawEntryData,
-    pub canonical: RemoteId,
     pub modified: DateTime<Local>,
+    pub canonical: RemoteId,
 }
 
+#[derive(Debug)]
 pub struct DeletedRowData {
     pub replacement: Option<RemoteId>,
     pub canonical: RemoteId,
     pub modified: DateTime<Local>,
 }
 
-pub struct RecordRowData {
-    pub variant: RecordRowVariant,
-    pub canonical: RemoteId,
-    pub modified: DateTime<Local>,
-}
-
+// TODO: remove this implementation
 impl TryFrom<&rusqlite::Row<'_>> for EntryRowData {
     type Error = rusqlite::Error;
 
@@ -324,42 +283,6 @@ impl RecordContext {
             .map(|chunk| i64::from_le_bytes(chunk.try_into().unwrap()))
     }
 }
-
-impl TryFrom<&rusqlite::Row<'_>> for RecordRowData {
-    type Error = rusqlite::Error;
-
-    fn try_from(row: &rusqlite::Row<'_>) -> Result<Self, Self::Error> {
-        let variant: i64 = row.get("variant")?;
-        let data = match variant {
-            0 => RecordRowVariant::Entry(RawEntryData::from_byte_repr_unchecked(row.get("data")?)),
-            1 => {
-                let s: String = row.get("data")?;
-                let remote_id = if s.is_empty() {
-                    None
-                } else {
-                    Some(RemoteId::from_string_unchecked(s))
-                };
-                RecordRowVariant::Deleted(remote_id)
-            }
-            v => {
-                panic!("Corrupted database: 'Records' table contains row with invalid variant {v}")
-            }
-        };
-        let canonical = RemoteId::from_string_unchecked(row.get("record_id")?);
-        let modified = row.get("modified")?;
-        Ok(Self {
-            variant: data,
-            canonical,
-            modified,
-        })
-    }
-}
-
-#[derive(Debug)]
-pub struct DeletedRow(pub(in crate::db::state) RowId);
-
-#[derive(Debug)]
-pub struct EntryRow(pub(in crate::db::state) RowId);
 
 impl<'conn> State<'conn, EntryRow> {
     /// Get the bibliographic data associated with this row.
@@ -411,12 +334,7 @@ impl<'conn> State<'conn, EntryRow> {
                 if existing_row_id == self.row_id() {
                     Ok(None)
                 } else {
-                    let RecordRowData { canonical, .. } = self
-                        .tx
-                        .prepare_cached(
-                            "SELECT record_id, modified, data, variant FROM Records WHERE key = ?1",
-                        )?
-                        .query_row([existing_row_id], |row| row.try_into())?;
+                    let EntryRowData { canonical, .. } = EntryRowData::lookup(self)?;
                     Ok(Some(canonical))
                 }
             }
@@ -444,64 +362,104 @@ impl<'conn> State<'conn, EntryRow> {
         Ok(())
     }
 
-    /// Insert [`CitationKey`] references for this row.
-    ///
-    /// The return value is `false` if the insertion failed and `CitationKeyInsertMode` is
-    /// `FailIfExists`, and otherwise `true`.
-    #[inline]
-    pub fn add_refs<'a, R: Iterator<Item = &'a RemoteId>>(
-        &self,
-        refs: R,
-    ) -> Result<bool, rusqlite::Error> {
-        self.add_refs_impl(refs, CitationKeyInsertMode::Overwrite)
+    fn replace_impl<R: RecordsDataCol>(&self, data: &R) -> Result<i64, rusqlite::Error> {
+        // read the current value of 'record_id' and 'children'
+        let existing = RecordContext::lookup(self)?;
+
+        // insert a new row into Records containing:
+        //
+        // - the previous value of 'record_id'
+        // - the new data
+        // - the current timestamp
+        // - the correct variant
+        // - the key of the row being replaced, in parent_key
+        //
+        // the remaining fields use their default values
+        let new_key: i64 = self.prepare("INSERT INTO Records (record_id, data, modified, variant, parent_key) VALUES (?1, ?2, ?3, ?4, ?5) RETURNING key")?
+            .query_row((existing.record_id.name(), data.data_blob(), Local::now(), data.variant(), self.row_id()), |row| row.get(0))?;
+
+        // update the `children` field with the existing records
+        let mut new_children = existing.children;
+        new_children.extend(new_key.to_le_bytes());
+        self.prepare("UPDATE Records SET children = ?1 WHERE key = ?2")?
+            .execute((new_children, self.row_id()))?;
+
+        // update the `CitationKeys` table values
+        self.prepare("UPDATE CitationKeys SET record_key = ?1 WHERE record_key = ?2")?
+            .execute((new_key, self.row_id()))?;
+
+        Ok(new_key)
     }
 }
 
-impl<'conn> State<'conn, RecordRow> {
-    /// Resolve this row by looking at the data to decide if it is an entry, or it is a deletion
-    /// marker.
-    pub fn resolve(self) -> Result<EntryOrDeletedRow<'conn>, rusqlite::Error> {
-        let RecordRowData {
-            variant,
-            modified,
-            canonical,
-        } = RecordRowData::lookup(&self)?;
+/// A row in the 'Records' table which either exists or was deleted.
+pub enum EntryOrDeletedRow<'conn> {
+    Entry(EntryRowData, State<'conn, EntryRow>),
+    Deleted(DeletedRowData, State<'conn, DeletedRow>),
+}
 
-        let row_id = self.row_id();
+impl<'conn> EntryOrDeletedRow<'conn> {
+    /// Lookup up a row in the 'Records' table, which either exists or was deleted.
+    pub(super) fn init(
+        tx: super::Transaction<'conn>,
+        row_id: i64,
+    ) -> Result<Self, rusqlite::Error> {
+        /// Helper function so that rustfmt has an easier time
+        #[inline]
+        fn convert(
+            row: &rusqlite::Row<'_>,
+        ) -> Result<(RecordRowVariant, DateTime<Local>, RemoteId), rusqlite::Error> {
+            let variant: i64 = row.get("variant")?;
+            let data = match variant {
+                0 => RecordRowVariant::Entry(RawEntryData::from_byte_repr_unchecked(
+                    row.get("data")?,
+                )),
+                1 => {
+                    let s: String = row.get("data")?;
+                    let remote_id = if s.is_empty() {
+                        None
+                    } else {
+                        Some(RemoteId::from_string_unchecked(s))
+                    };
+                    RecordRowVariant::Deleted(remote_id)
+                }
+                v => {
+                    panic!(
+                        "Corrupted database: 'Records' table contains row with invalid variant {v}"
+                    )
+                }
+            };
+            let canonical = RemoteId::from_string_unchecked(row.get("record_id")?);
+            let modified = row.get("modified")?;
+            Ok((data, modified, canonical))
+        }
+
+        let (variant, modified, canonical) = {
+            tx.prepare_cached(
+                "SELECT record_id, modified, data, variant FROM Records WHERE key = ?1",
+            )?
+            .query_row([row_id], |row| convert(row))?
+        };
 
         Ok(match variant {
-            RecordRowVariant::Entry(data) => EntryOrDeletedRow::Exists(
+            RecordRowVariant::Entry(data) => EntryOrDeletedRow::Entry(
                 EntryRowData {
                     data,
                     modified,
                     canonical,
                 },
-                State::init(self.tx, EntryRow(row_id)),
+                State::init(tx, EntryRow(row_id)),
             ),
-            RecordRowVariant::Deleted(into) => EntryOrDeletedRow::Deleted(
+            RecordRowVariant::Deleted(replacement) => EntryOrDeletedRow::Deleted(
                 DeletedRowData {
-                    replacement: into,
+                    replacement,
                     modified,
                     canonical,
                 },
-                State::init(self.tx, DeletedRow(row_id)),
+                State::init(tx, DeletedRow(row_id)),
             ),
         })
     }
-
-    /// Add a new alias for this row.
-    ///
-    /// This method is only used to add an alias when one is requested by an alias transform in in [`super::RecordIdState::determine`]. In general we should not be adding aliases to rows which are deleted.
-    #[inline]
-    pub(super) fn add_alias_transform(&self, alias: &Alias) -> Result<bool, rusqlite::Error> {
-        self.add_refs_impl(std::iter::once(alias), CitationKeyInsertMode::FailIfExists)
-    }
-}
-
-/// All possible states record row, which either exists or was deleted.
-pub enum EntryOrDeletedRow<'conn> {
-    Exists(EntryRowData, State<'conn, EntryRow>),
-    Deleted(DeletedRowData, State<'conn, DeletedRow>),
 }
 
 /// The type of citation key insertion to perform.

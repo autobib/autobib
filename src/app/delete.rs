@@ -2,7 +2,7 @@ use crate::{
     Config, RecordId, RemoteId,
     db::{
         RecordDatabase,
-        state::{self, EntryOrDeletedRow, RecordIdState},
+        state::{self, RecordIdState},
     },
     logger::{error, reraise, suggest},
 };
@@ -21,12 +21,10 @@ pub fn soft_delete<F: FnOnce() -> Vec<(regex::Regex, String)>>(
         citation_key,
         record_db,
         config,
-        |original_name, state| match state.resolve()? {
-            EntryOrDeletedRow::Exists(_, state) => state.soft_delete(replace)?.commit(),
-            EntryOrDeletedRow::Deleted(_, state) => {
-                error!("Cannot delete key which was previously deleted: {original_name}");
-                state.commit()
-            }
+        |_, state| state.soft_delete(replace)?.commit(),
+        |original_name, state| {
+            error!("Cannot delete key which was previously deleted: {original_name}");
+            state.commit()
         },
     )
 }
@@ -39,24 +37,31 @@ pub fn hard_delete<F: FnOnce() -> Vec<(regex::Regex, String)>>(
     record_db: &mut RecordDatabase,
     config: &Config<F>,
 ) -> Result<(), rusqlite::Error> {
-    delete_impl(citation_key, record_db, config, |_, state| {
-        state.hard_delete()?.commit()
-    })
+    delete_impl(
+        citation_key,
+        record_db,
+        config,
+        |_, state| state.hard_delete()?.commit(),
+        |_, state| state.hard_delete()?.commit(),
+    )
 }
 
 /// Handle the cases where the key is not in the database and defer deletion to the callback.
-fn delete_impl<F, D>(
+fn delete_impl<F, R, D>(
     citation_key: RecordId,
     record_db: &mut RecordDatabase,
     config: &Config<F>,
-    callback: D,
+    entry_callback: R,
+    deleted_callback: D,
 ) -> Result<(), rusqlite::Error>
 where
     F: FnOnce() -> Vec<(regex::Regex, String)>,
-    D: FnOnce(String, state::State<'_, state::RecordRow>) -> Result<(), rusqlite::Error>,
+    R: FnOnce(String, state::State<'_, state::EntryRow>) -> Result<(), rusqlite::Error>,
+    D: FnOnce(String, state::State<'_, state::DeletedRow>) -> Result<(), rusqlite::Error>,
 {
     match record_db.state_from_record_id(citation_key, &config.alias_transform)? {
-        RecordIdState::Entry(original_name, state) => callback(original_name, state)?,
+        RecordIdState::Entry(original_name, _, state) => entry_callback(original_name, state)?,
+        RecordIdState::Deleted(original_name, _, state) => deleted_callback(original_name, state)?,
         RecordIdState::NullRemoteId(mapped_key, state) => {
             state.commit()?;
             error!("Cannot delete null record data: {mapped_key}");

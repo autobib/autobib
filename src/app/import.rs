@@ -11,7 +11,7 @@ use crate::{
     config::Config,
     db::{
         RecordDatabase,
-        state::{EntryOrDeletedRow, EntryRow, Missing, RemoteIdState, State},
+        state::{EntryRow, Missing, RemoteIdState, State},
     },
     entry::{Entry, EntryKey, MutableEntryData, entries_from_bibtex},
     error::{self, RecordError},
@@ -148,17 +148,13 @@ where
                     }
                     DeterminedKey::RemoteId(mapped_key, maybe_alias) => {
                         match record_db.state_from_remote_id(&mapped_key.mapped)? {
-                            RemoteIdState::Entry(row) => match row.resolve()? {
-                                EntryOrDeletedRow::Exists(entry_row_data, state) => {
-                                    Ok(ImportAction::Update(
-                                        state,
-                                        import_config.on_conflict,
-                                        mapped_key.to_string(),
-                                        maybe_alias,
-                                    ))
-                                }
-                                EntryOrDeletedRow::Deleted(deleted_row_data, state) => todo!(),
-                            },
+                            RemoteIdState::Entry(_, state) => Ok(ImportAction::Update(
+                                state,
+                                import_config.on_conflict,
+                                mapped_key.to_string(),
+                                maybe_alias,
+                            )),
+                            RemoteIdState::Deleted(_, _) => todo!(),
                             RemoteIdState::Null(null_row) => Ok(ImportAction::Insert(
                                 null_row.delete()?,
                                 mapped_key.mapped,
@@ -195,10 +191,17 @@ where
             |alias, record_db| {
                 let remote_id = RemoteId::local(&alias);
                 match record_db.state_from_remote_id(&remote_id)? {
-                    RemoteIdState::Entry(row) => {
+                    RemoteIdState::Entry(_, row) => {
                         row.commit()?;
                         Ok(ImportAction::PromptNewKey(anyhow!(
                             "Local id '{remote_id}' already exists.",
+                        )))
+                    }
+                    RemoteIdState::Deleted(_, row) => {
+                        // FIXME
+                        row.commit()?;
+                        Ok(ImportAction::PromptNewKey(anyhow!(
+                            "Local id '{remote_id}' was previously soft-deleted.",
                         )))
                     }
                     RemoteIdState::Null(null_row) => Ok(ImportAction::Insert(
@@ -391,10 +394,17 @@ fn handle_local_alias(
 ) -> Result<ImportAction<'_>, error::Error> {
     let remote_id = RemoteId::local(&alias);
     match record_db.state_from_remote_id(&remote_id)? {
-        RemoteIdState::Entry(row) => {
+        RemoteIdState::Entry(_, row) => {
             row.commit()?;
             Ok(ImportAction::PromptNewKey(anyhow!(
                 "Local id '{remote_id}' already exists.",
+            )))
+        }
+        RemoteIdState::Deleted(_, row) => {
+            // FIXME
+            row.commit()?;
+            Ok(ImportAction::PromptNewKey(anyhow!(
+                "Local id '{remote_id}' previously existed but was soft-deleted.",
             )))
         }
         RemoteIdState::Null(null_row) => Ok(ImportAction::Insert(
