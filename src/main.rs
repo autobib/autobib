@@ -14,10 +14,12 @@ pub mod provider;
 mod record;
 pub mod term;
 
-use std::{io, process::exit};
+use std::process::exit;
 
 use clap::{CommandFactory, Parser};
 use clap_complete::aot::generate;
+
+use crate::output::stdout_lock_wrap;
 
 use self::{
     app::{Cli, Command, run_cli},
@@ -60,7 +62,7 @@ The following is a description of the error which occured:
     if let Command::Completions { shell } = cli.command {
         let mut clap_command = Cli::command();
         let bin_name = clap_command.get_name().to_owned();
-        generate(shell, &mut clap_command, bin_name, &mut io::stdout());
+        generate(shell, &mut clap_command, bin_name, &mut stdout_lock_wrap());
         return;
     }
 

@@ -14,6 +14,7 @@ use crate::{
     CitationKey,
     entry::{Entry, EntryData},
     logger::warn,
+    output::stdout_lock_wrap,
     record::RemoteId,
 };
 
@@ -45,7 +46,7 @@ pub fn init_outfile<P: AsRef<Path>>(
 }
 
 pub fn output_keys<'a>(keys: impl Iterator<Item = &'a crate::RecordId>) -> Result<(), io::Error> {
-    let mut stdout = io::BufWriter::new(io::stdout());
+    let mut stdout = io::BufWriter::new(stdout_lock_wrap());
     for key in keys {
         stdout.write_all(key.name().as_bytes())?;
         stdout.write_all(b"\n")?;
@@ -72,10 +73,11 @@ pub fn output_entries<D: EntryData>(
             if stdout.is_terminal() {
                 // do not write an extra newline if interactive and there is nothing to write
                 if !grouped_entries.is_empty() {
-                    write_entries(stdout, grouped_entries)?;
+                    // no need to use `stdout_lock_wrap` as broken pipe error cannot occur
+                    write_entries(stdout.lock(), grouped_entries)?;
                 }
             } else {
-                let writer = io::BufWriter::new(stdout);
+                let writer = io::BufWriter::new(stdout_lock_wrap());
                 write_entries(writer, grouped_entries)?;
             }
         }
