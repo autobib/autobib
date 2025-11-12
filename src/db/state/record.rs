@@ -384,47 +384,6 @@ impl<'conn> State<'conn, EntryRow> {
         })
     }
 
-    /// Delete the data associated with the provided citation key and modify the entry in
-    /// `CitationKeys` to point to this row. Returns the resulting [`RecordRowData`] if deletion was
-    /// successful, and otherwise `None`. Deletion will fail if citation key is not present in the
-    /// database.
-    ///
-    /// The `missing_cb` is called if the provided citation key is not present in the database.
-    /// Citation keys which are equivalent to the row are skipped.
-    pub fn absorb<K: CitationKey>(
-        &self,
-        record_id: &K,
-        missing_cb: impl FnOnce(),
-    ) -> Result<Option<RecordRowData>, rusqlite::Error> {
-        Ok(match get_row_id(&self.tx, record_id)? {
-            Some(row_id) if row_id != self.row_id() => {
-                // update rows in CitationKeys
-                self.prepare(sql::redirect_citation_key())?
-                    .execute((self.row_id(), row_id))?;
-
-                // TODO: come up with a better abstraction that allows nested `Row`s.
-
-                // get the row data
-                let row_data: RecordRowData = self
-                    .prepare_cached(sql::get_record_data())?
-                    .query_row([row_id], |row| row.try_into())?;
-
-                // FIXME: previously copied to changelog here
-
-                // delete the row
-                self.prepare_cached(sql::delete_record_row())?
-                    .execute([row_id])?;
-
-                Some(row_data)
-            }
-            None => {
-                missing_cb();
-                None
-            }
-            _ => None,
-        })
-    }
-
     /// A convenience wrapper around [`update`](Self::update) which first converts any type which
     /// implements [`EntryData`] into a [`RawEntryData`].
     pub fn update_entry_data<D: EntryData>(&self, data: &D) -> Result<(), rusqlite::Error> {
@@ -505,23 +464,10 @@ impl<'conn> State<'conn, EntryRow> {
     }
 }
 
-pub enum ResolvedRecordRowState<'conn> {
-    Exists(EntryRowData, State<'conn, EntryRow>),
-    Deleted(DeletedRowData, State<'conn, DeletedRow>),
-}
-
 impl<'conn> State<'conn, RecordRow> {
-    /// Add a new alias for this row.
-    ///
-    /// This method is only used to add an alias when one is requested by an alias transform in in [`super::RecordIdState::determine`].
-    #[inline]
-    pub(super) fn add_alias_transform(&self, alias: &Alias) -> Result<bool, rusqlite::Error> {
-        self.add_refs_impl(std::iter::once(alias), CitationKeyInsertMode::FailIfExists)
-    }
-
     /// Resolve this row by looking at the data to decide if it is an entry, or it is a deletion
     /// marker.
-    pub fn resolve(self) -> Result<ResolvedRecordRowState<'conn>, rusqlite::Error> {
+    pub fn resolve(self) -> Result<EntryOrDeletedRow<'conn>, rusqlite::Error> {
         let RecordRowData {
             variant,
             modified,
@@ -531,7 +477,7 @@ impl<'conn> State<'conn, RecordRow> {
         let row_id = self.row_id();
 
         Ok(match variant {
-            RecordRowVariant::Entry(data) => ResolvedRecordRowState::Exists(
+            RecordRowVariant::Entry(data) => EntryOrDeletedRow::Exists(
                 EntryRowData {
                     data,
                     modified,
@@ -539,7 +485,7 @@ impl<'conn> State<'conn, RecordRow> {
                 },
                 State::init(self.tx, EntryRow(row_id)),
             ),
-            RecordRowVariant::Deleted(into) => ResolvedRecordRowState::Deleted(
+            RecordRowVariant::Deleted(into) => EntryOrDeletedRow::Deleted(
                 DeletedRowData {
                     replacement: into,
                     modified,
@@ -549,6 +495,20 @@ impl<'conn> State<'conn, RecordRow> {
             ),
         })
     }
+
+    /// Add a new alias for this row.
+    ///
+    /// This method is only used to add an alias when one is requested by an alias transform in in [`super::RecordIdState::determine`]. In general we should not be adding aliases to rows which are deleted.
+    #[inline]
+    pub(super) fn add_alias_transform(&self, alias: &Alias) -> Result<bool, rusqlite::Error> {
+        self.add_refs_impl(std::iter::once(alias), CitationKeyInsertMode::FailIfExists)
+    }
+}
+
+/// All possible states record row, which either exists or was deleted.
+pub enum EntryOrDeletedRow<'conn> {
+    Exists(EntryRowData, State<'conn, EntryRow>),
+    Deleted(DeletedRowData, State<'conn, DeletedRow>),
 }
 
 /// The type of citation key insertion to perform.
