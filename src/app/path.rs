@@ -7,11 +7,12 @@ use std::{
 use anyhow::bail;
 
 use crate::{
+    Config,
+    db::{RecordDatabase, state::RecordIdState},
     entry::{Entry, MutableEntryData},
-    http::Client,
     logger::info,
     path_hash::PathHash,
-    record::{RecursiveRemoteResponse, RemoteId, get_remote_response_recursive},
+    record::{RecordId, RemoteId},
 };
 
 /// Get the attachment root directory, either as a default from the data directory or using the
@@ -51,36 +52,39 @@ pub fn get_attachment_dir(
     Ok(attachments_root)
 }
 
-/// Either obtain data from a `.bib` file at the provided path, or look up data from the
-/// provider.
-pub fn data_from_path_or_remote<P: AsRef<Path>, C: Client>(
-    maybe_path: Option<P>,
-    remote_id: RemoteId,
-    client: &C,
-) -> Result<(MutableEntryData, RemoteId), anyhow::Error> {
-    match maybe_path {
-        Some(path) => Ok((data_from_path(path)?, remote_id)),
-        _ => match get_remote_response_recursive(remote_id, client)? {
-            RecursiveRemoteResponse::Exists(record_data, canonical) => Ok((record_data, canonical)),
-            RecursiveRemoteResponse::Null(null_remote_id) => {
-                bail!("Remote data for canonical id '{null_remote_id}' is null");
-            }
-        },
-    }
-}
-
-/// Either obtain data from a `.bib` file at the provided path, or return the default data.
-pub fn data_from_path_or_default<P: AsRef<Path>>(
-    maybe_path: Option<P>,
+pub fn data_from_key<F: FnOnce() -> Vec<(regex::Regex, String)>>(
+    record_db: &mut RecordDatabase,
+    record_id: RecordId,
+    cfg: &Config<F>,
 ) -> Result<MutableEntryData, anyhow::Error> {
-    match maybe_path {
-        Some(path) => data_from_path(path),
-        _ => Ok(MutableEntryData::default()),
+    match record_db.state_from_record_id(record_id, &cfg.alias_transform)? {
+        RecordIdState::Entry(_, entry_row_data, state) => {
+            state.commit()?;
+            Ok(MutableEntryData::from_entry_data(&entry_row_data.data))
+        }
+        RecordIdState::Deleted(_, _, state) => {
+            state.commit()?;
+            bail!("Cannot read update data from deleted row");
+        }
+        RecordIdState::NullRemoteId(_, state) => {
+            state.commit()?;
+            bail!("Cannot read update data from null record");
+        }
+        RecordIdState::Unknown(unknown) => {
+            unknown.combine_and_commit()?;
+            bail!("Cannot read update data from record not present in database");
+        }
+        RecordIdState::UndefinedAlias(_) => {
+            bail!("Cannot read update data from undefined alias");
+        }
+        RecordIdState::InvalidRemoteId(record_error) => {
+            bail!("Cannot read update data: {record_error}");
+        }
     }
 }
 
 /// Obtain data from a bibtex record at a provided path.
-fn data_from_path<P: AsRef<Path>>(path: P) -> Result<MutableEntryData, anyhow::Error> {
+pub fn data_from_path<P: AsRef<Path>>(path: P) -> Result<MutableEntryData, anyhow::Error> {
     let bibtex = read_to_string(path)?;
     let entry = Entry::<MutableEntryData>::from_str(&bibtex)?;
     Ok(entry.record_data)

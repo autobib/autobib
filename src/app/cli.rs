@@ -280,12 +280,17 @@ pub enum Command {
         report: InfoReportType,
     },
     /// Create a local record with the given handle.
+    ///
+    /// By default, you will be prompted to edit the local record before adding it to the
+    /// database. Disable this behaviour with `--no-interactive`.
+    ///
+    /// This fails if the local identifier already exists in the database.
     Local {
         /// The name for the record.
         id: String,
         /// Create the record using the provided BibTeX data.
-        #[arg(short, long, value_name = "PATH", group = "input")]
-        from: Option<PathBuf>,
+        #[arg(short = 'b', long, value_name = "PATH", group = "input")]
+        from_bibtex: Option<PathBuf>,
     },
     /// Show attachment directory associated with record.
     Path {
@@ -339,15 +344,18 @@ pub enum Command {
     /// By default, you will be prompted if there is a conflict between the current and incoming
     /// records.
     ///
-    /// To override this behaviour, use `-p current` or `-p incoming`.
+    /// To override this behaviour, use `-n prefer-current` or `-n prefer-incoming`.
     /// If the terminal is not interactive or the `--no-interactive` global option is set, this
-    /// will result in an error if the `-p current` or `-p incoming` is not explicitly set.
+    /// will result in an error if the `-n prefer-current` or `-n prefer-incoming` is not explicitly set.
     Update {
         /// The citation key to update.
         citation_key: RecordId,
-        /// Read update data from local path.
-        #[arg(short, long, value_name = "PATH")]
-        from: Option<PathBuf>,
+        /// Read update data from a BibTeX entry in a file.
+        #[arg(short = 'b', long, value_name = "PATH", group = "update_from")]
+        from_bibtex: Option<PathBuf>,
+        /// Read update data from other record data.
+        #[arg(short = 'k', long, value_name = "CITATION_KEY", group = "update_from")]
+        from_key: Option<RecordId>,
         /// How to resolve conflicting field values.
         #[arg(
             short = 'n',

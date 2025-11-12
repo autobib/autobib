@@ -4,12 +4,13 @@ use std::collections::{
 };
 
 use nonempty::NonEmpty;
+use serde_bibtex::token::is_entry_key;
 
 use crate::{
     config::Config,
     db::{
         RecordDatabase,
-        state::{EntryOrDeletedRow, EntryRow, EntryRowData, RecordIdState, State},
+        state::{EntryRow, EntryRowData, RecordIdState, State},
     },
     entry::{Entry, EntryKey, RawEntryData},
     error::Error,
@@ -96,26 +97,32 @@ fn retrieve_single_entry_read_only<F: FnOnce() -> Vec<(regex::Regex, String)>>(
     config: &Config<F>,
 ) -> Result<Option<(Entry<RawEntryData>, RemoteId)>, Error> {
     match record_db.state_from_record_id(citation_key, &config.alias_transform)? {
-        RecordIdState::Entry(key, row) => {
+        RecordIdState::Entry(
+            key,
+            EntryRowData {
+                data, canonical, ..
+            },
+            state,
+        ) => {
             if retrieve_only {
-                row.commit()?;
+                state.commit()?;
                 Ok(None)
             } else {
-                match row.resolve()? {
-                    EntryOrDeletedRow::Exists(
-                        EntryRowData {
-                            data, canonical, ..
-                        },
-                        state,
-                    ) => {
-                        let entry = validate_bibtex_key(key, &state)
-                            .map(|key| (Entry::new(key, data), canonical));
-                        state.commit()?;
-                        Ok(entry)
-                    }
-                    EntryOrDeletedRow::Deleted(deleted_row_data, state) => todo!(),
+                let entry =
+                    validate_bibtex_key(key, &state).map(|key| (Entry::new(key, data), canonical));
+                state.commit()?;
+                Ok(entry)
+            }
+        }
+        RecordIdState::Deleted(key, deleted_row_data, state) => {
+            if !ignore_null {
+                error!("Deleted record: '{key}'");
+                if let Some(repl) = deleted_row_data.replacement {
+                    suggest!("Use the replacement key '{repl}'");
                 }
             }
+            state.commit()?;
+            Ok(None)
         }
         RecordIdState::NullRemoteId(remote_id, missing) => {
             if !ignore_null {
@@ -156,7 +163,7 @@ where
     C: Client,
 {
     match get_record_row(record_db, citation_key, client, config)? {
-        RecordRowResponse::Exists(record, row) => {
+        RecordRowResponse::Exists(record_data, row) => {
             if retrieve_only {
                 row.commit()?;
                 Ok(None)
@@ -165,21 +172,21 @@ where
                     key,
                     data,
                     canonical,
-                } = record;
+                } = record_data;
                 let entry =
                     validate_bibtex_key(key, &row).map(|key| (Entry::new(key, data), canonical));
                 row.commit()?;
                 Ok(entry)
             }
         }
-        RecordRowResponse::Deleted(data, row) => {
+        RecordRowResponse::Deleted(deleted_row_data, deleted) => {
             if !ignore_null {
-                match data.replacement {
-                    Some(repl) => error!("Record '{}' replaced with '{repl}'.", data.key),
-                    None => error!("Record '{}' was deleted.", data.key),
+                error!("Deleted record: '{}'", deleted_row_data.key);
+                if let Some(repl) = deleted_row_data.replacement {
+                    suggest!("Perhaps use the replacement key: '{repl}'");
                 }
             }
-            row.commit()?;
+            deleted.commit()?;
             Ok(None)
         }
         RecordRowResponse::NullRemoteId(remote_id, missing) => {
@@ -207,8 +214,10 @@ fn validate_bibtex_key(key: String, row: &State<EntryRow>) -> Option<EntryKey<St
     match EntryKey::try_new(key) {
         Ok(bibtex_key) => Some(bibtex_key),
         Err(parse_result) => {
-            match row.get_valid_referencing_keys() {
-                Ok(alternative_keys) => {
+            match row.referencing_keys() {
+                Ok(mut alternative_keys) => {
+                    alternative_keys.retain(|k| is_entry_key(k));
+
                     if !alternative_keys.is_empty() {
                         reraise(&parse_result);
                         suggest!(
@@ -220,14 +229,12 @@ fn validate_bibtex_key(key: String, row: &State<EntryRow>) -> Option<EntryKey<St
                         suggest!(
                             "Create an alias which does not contain whitespace or disallowed characters: {{}}(),=\\#%\""
                         );
-                    }
+                    };
                 }
-                Err(error2) => {
-                    reraise(&parse_result);
-                    error!("Another error occurred while retrieving equivalent keys!");
-                    reraise(&error2);
+                Err(e) => {
+                    reraise(&e);
                 }
-            }
+            };
             None
         }
     }

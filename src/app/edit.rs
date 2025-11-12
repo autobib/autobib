@@ -14,17 +14,17 @@ use crate::{
     term::{Editor, EditorConfig, Input},
 };
 
-/// Edit a record and update the entry corresponding to the [`RecordRow`]. Returns the edited
+/// Edit a record and update the entry corresponding to the [`EntryRow`]. Returns the edited
 /// record, saving the data.
-pub fn edit_record_and_update(
-    row: State<EntryRow>,
-    mut entry: Entry<MutableEntryData>,
+pub fn edit_record_and_update<'conn>(
+    row: State<'conn, EntryRow>,
+    entry: &mut Entry<MutableEntryData>,
     force_update: bool,
     canonical: impl std::fmt::Display,
-) -> Result<(State<EntryRow>, Entry<MutableEntryData>), anyhow::Error> {
+) -> Result<State<'conn, EntryRow>, anyhow::Error> {
     let editor = Editor::new(EditorConfig { suffix: ".bib" });
 
-    let data_changed = if let Some(new_entry) = editor.edit(&entry)? {
+    let data_changed = if let Some(new_entry) = editor.edit(entry)? {
         let Entry {
             key: ref new_key,
             record_data: ref new_record_data,
@@ -47,7 +47,7 @@ pub fn edit_record_and_update(
 
         let data_changed = new_record_data != entry.data();
 
-        entry = new_entry;
+        *entry = new_entry;
 
         data_changed
     } else {
@@ -57,11 +57,10 @@ pub fn edit_record_and_update(
 
     if data_changed || force_update {
         info!("Updating cached data for '{canonical}'");
-        // FIXME: copied to changelog here
         let new_row = row.modify(&RawEntryData::from_entry_data(&entry.record_data))?;
-        Ok((new_row, entry))
+        Ok(new_row)
     } else {
-        Ok((row, entry))
+        Ok(row)
     }
 }
 
