@@ -30,8 +30,8 @@ pub enum KeyParseErrorKind {
     ExtraBracket,
     #[error("Unexpected character: {0}")]
     UnexpectedChar(char),
-    #[error("Invalid literal: {0}")]
-    InvalidLiteral(#[from] serde_json::Error),
+    #[error("Invalid JSON literal")]
+    InvalidLiteral,
     #[error("A conditional block is missing a value.")]
     IncompleteConditional,
     #[error("Expected {0}, received {1}")]
