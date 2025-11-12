@@ -11,8 +11,8 @@ use crate::{
     db::{
         RecordDatabase,
         state::{
-            DeletedRow, EntryOrDeletedRow, EntryRow, EntryRowData, Missing, NullRecordRow,
-            RecordIdState, RecordRow, RemoteIdState, State, Unknown,
+            DeletedRow, DeletedRowData, EntryRow, EntryRowData, Missing, NullRecordRow,
+            RecordIdState, RemoteIdState, State, Unknown,
         },
     },
     entry::{MutableEntryData, RawEntryData},
@@ -34,6 +34,16 @@ pub struct Record {
     pub canonical: RemoteId,
 }
 
+impl Record {
+    fn new<K: Into<String>>(key: K, entry_row_data: EntryRowData) -> Self {
+        Self {
+            key: key.into(),
+            data: entry_row_data.data,
+            canonical: entry_row_data.canonical,
+        }
+    }
+}
+
 /// The fundamental record type for a record which was deleted.
 #[derive(Debug)]
 pub struct DeletedRecord {
@@ -43,6 +53,16 @@ pub struct DeletedRecord {
     pub replacement: Option<RemoteId>,
     /// The canonical identifier.
     pub canonical: RemoteId,
+}
+
+impl DeletedRecord {
+    fn new<K: Into<String>>(key: K, deleted_row_data: DeletedRowData) -> Self {
+        Self {
+            key: key.into(),
+            replacement: deleted_row_data.replacement,
+            canonical: deleted_row_data.canonical,
+        }
+    }
 }
 
 /// The response type of [`get_record_row_remote`].
@@ -115,9 +135,16 @@ impl<'conn> RecordRowResponse<'conn> {
     ) -> Result<(Record, State<'conn, EntryRow>), anyhow::Error> {
         match self {
             RecordRowResponse::Exists(record, row) => Ok((record, row)),
-            RecordRowResponse::Deleted(new, deleted_row) => {
+            RecordRowResponse::Deleted(data, deleted_row) => {
                 deleted_row.commit()?;
-                bail!("FIXME: {new:?}");
+                if let Some(repl) = data.replacement {
+                    bail!(
+                        "{err_prefix} deleted record '{}' (replaced by key '{repl}')",
+                        data.key
+                    );
+                } else {
+                    bail!("{err_prefix} deleted record '{}'", data.key);
+                }
             }
             RecordRowResponse::NullRemoteId(remote_id, null_row) => {
                 null_row.commit()?;
@@ -129,34 +156,6 @@ impl<'conn> RecordRowResponse<'conn> {
             RecordRowResponse::NullAlias(alias) => {
                 bail!("{err_prefix} undefined alias '{alias}'");
             }
-        }
-    }
-}
-
-fn row_to_response<'conn, K: Into<String>, T: From<RemoteRecordRowResponse<'conn>>>(
-    key: K,
-    row: State<'conn, RecordRow>,
-) -> Result<T, Error> {
-    match row.resolve()? {
-        EntryOrDeletedRow::Exists(entry_row_data, state) => Ok(RemoteRecordRowResponse::Exists(
-            Record {
-                key: key.into(),
-                data: entry_row_data.data,
-                canonical: entry_row_data.canonical,
-            },
-            state,
-        )
-        .into()),
-        EntryOrDeletedRow::Deleted(deleted_row_data, state) => {
-            Ok(RemoteRecordRowResponse::Deleted(
-                DeletedRecord {
-                    key: key.into(),
-                    replacement: deleted_row_data.replacement,
-                    canonical: deleted_row_data.canonical,
-                },
-                state,
-            )
-            .into())
         }
     }
 }
@@ -176,23 +175,35 @@ where
     C: Client,
 {
     match db.state_from_record_id(record_id, &config.alias_transform)? {
-        RecordIdState::Entry(key, row) => {
+        RecordIdState::Entry(key, data, row) => {
             info!("Found existing data for key {key}");
-            row_to_response(key, row)
+            Ok(RecordRowResponse::Exists(Record::new(key, data), row))
         }
+        RecordIdState::Deleted(key, data, row) => Ok(RecordRowResponse::Deleted(
+            DeletedRecord::new(key, data),
+            row,
+        )),
         RecordIdState::NullRemoteId(remote_id, null_row) => {
             Ok(RecordRowResponse::NullRemoteId(remote_id.mapped, null_row))
         }
         RecordIdState::UndefinedAlias(alias) => Ok(RecordRowResponse::NullAlias(alias)),
         RecordIdState::InvalidRemoteId(err) => Ok(RecordRowResponse::InvalidRemoteId(err)),
         RecordIdState::Unknown(Unknown::MappedAlias(alias, mapped, missing)) => {
-            get_record_row_recursive(missing, mapped, client, &config.on_insert, |row| {
-                // create the new alias
-                if config.alias_transform.create() {
-                    row.add_alias(&alias)?;
-                }
-                Ok(Some(alias.into()))
-            })
+            get_record_row_recursive(
+                missing,
+                mapped,
+                client,
+                &config.on_insert,
+                |row, alias| {
+                    // create the new alias
+                    if config.alias_transform.create() {
+                        row.add_alias(&alias)?;
+                    }
+                    Ok(Some(alias.into()))
+                },
+                |_, alias| Ok(Some(alias.into())),
+                alias,
+            )
             .map(Into::into)
         }
         RecordIdState::Unknown(Unknown::RemoteId(maybe_normalized, missing)) => {
@@ -201,7 +212,9 @@ where
                 maybe_normalized.mapped,
                 client,
                 &config.on_insert,
-                |_| Ok(maybe_normalized.original),
+                |_, t| Ok(t),
+                |_, t| Ok(t),
+                maybe_normalized.original,
             )
             .map(Into::into)
         }
@@ -220,14 +233,27 @@ where
     C: Client,
 {
     match db.state_from_remote_id(&remote_id)? {
-        RemoteIdState::Entry(row) => {
+        RemoteIdState::Entry(data, row) => {
             info!("Found existing data for key {remote_id}");
-            row_to_response(remote_id, row)
+            Ok(RemoteRecordRowResponse::Exists(
+                Record::new(remote_id, data),
+                row,
+            ))
         }
+        RemoteIdState::Deleted(data, row) => Ok(RemoteRecordRowResponse::Deleted(
+            DeletedRecord::new(remote_id, data),
+            row,
+        )),
         RemoteIdState::Null(null_row) => Ok(RemoteRecordRowResponse::Null(remote_id, null_row)),
-        RemoteIdState::Unknown(missing) => {
-            get_record_row_recursive(missing, remote_id, client, &config.on_insert, |_| Ok(None))
-        }
+        RemoteIdState::Unknown(missing) => get_record_row_recursive(
+            missing,
+            remote_id,
+            client,
+            &config.on_insert,
+            |_, ()| Ok(None),
+            |_, ()| Ok(None),
+            (),
+        ),
     }
 }
 
@@ -242,18 +268,25 @@ fn into_last<T>(ne: NonEmpty<T>) -> T {
 ///
 /// The `exists_callback` is called if the remote record exists, and is passed a reference to the
 /// row which will eventually be returned. The closure can optionally return a string which
-/// will be used as the bibtex key in the resulting returned [`Record`]. If the closure does not
-/// returns nothing, the original [`RemoteId`] is used as the bibtex key.
+/// will be used as the bibtex key in the resulting returned [`Record`]. If the closure
+/// returns `None`, the original [`RemoteId`] is used as the bibtex key.
+///
+/// The `deleted_callback` is called if the record exists in the database, but it was deleted.
 ///
 /// At each intermediate stage, attempt to read any data possible from the database
 /// inside the transaction implicit in the [`State<Missing>`], and write any new data to the
 /// database.
-fn get_record_row_recursive<'conn, C: Client>(
+fn get_record_row_recursive<'conn, O, C: Client>(
     mut missing: State<'conn, Missing>,
     remote_id: RemoteId,
     client: &C,
     normalization: &Normalization,
-    exists_callback: impl FnOnce(&State<'conn, EntryRow>) -> Result<Option<String>, rusqlite::Error>,
+    exists_callback: impl FnOnce(&State<'conn, EntryRow>, O) -> Result<Option<String>, rusqlite::Error>,
+    deleted_callback: impl FnOnce(
+        &State<'conn, DeletedRow>,
+        O,
+    ) -> Result<Option<String>, rusqlite::Error>,
+    original: O,
 ) -> Result<RemoteRecordRowResponse<'conn>, Error> {
     info!("Resolving remote record for {remote_id}");
     let mut history = NonEmpty::singleton(remote_id);
@@ -267,10 +300,10 @@ fn get_record_row_recursive<'conn, C: Client>(
                 let row = unsafe {
                     missing.insert_with_refs(&raw_record_data, history.last(), history.iter())?
                 };
-                let original = exists_callback(&row)?;
+                let maybe_key = exists_callback(&row, original)?;
 
                 let NonEmpty { head, mut tail } = history;
-                let (key, canonical) = match (original, tail.pop()) {
+                let (key, canonical) = match (maybe_key, tail.pop()) {
                     (Some(key), Some(canonical)) => (key, canonical),
                     (Some(key), None) => (key, head),
                     (None, Some(canonical)) => (head.into(), canonical),
@@ -287,29 +320,44 @@ fn get_record_row_recursive<'conn, C: Client>(
                 ));
             }
             RemoteResponse::Reference(new_remote_id) => match missing.reset(&new_remote_id)? {
-                RemoteIdState::Entry(row) => {
-                    match row.resolve()? {
-                        EntryOrDeletedRow::Exists(
-                            EntryRowData {
-                                data, canonical, ..
-                            },
-                            state,
-                        ) => {
-                            // not necessary to insert `new_remote_id` since we just saw that it
-                            // is present in the database
-                            state.add_refs(history.iter())?;
-                            let original = exists_callback(&state)?;
-                            break Ok(RemoteRecordRowResponse::Exists(
-                                Record {
-                                    key: original.unwrap_or(history.head.into()),
-                                    data,
-                                    canonical,
-                                },
-                                state,
-                            ));
-                        }
-                        EntryOrDeletedRow::Deleted(deleted_row_data, state) => todo!(),
-                    }
+                RemoteIdState::Entry(
+                    EntryRowData {
+                        data, canonical, ..
+                    },
+                    state,
+                ) => {
+                    // not necessary to insert `new_remote_id` since we just saw that it
+                    // is present in the database
+                    state.add_refs(history.iter())?;
+                    let maybe_key = exists_callback(&state, original)?;
+                    break Ok(RemoteRecordRowResponse::Exists(
+                        Record {
+                            key: maybe_key.unwrap_or(history.head.into()),
+                            data,
+                            canonical,
+                        },
+                        state,
+                    ));
+                }
+                RemoteIdState::Deleted(
+                    DeletedRowData {
+                        replacement,
+                        canonical,
+                        ..
+                    },
+                    state,
+                ) => {
+                    // we still add the refs to the deleted row
+                    state.add_refs(history.iter())?;
+                    let maybe_key = deleted_callback(&state, original)?;
+                    break Ok(RemoteRecordRowResponse::Deleted(
+                        DeletedRecord {
+                            key: maybe_key.unwrap_or(history.head.into()),
+                            replacement,
+                            canonical,
+                        },
+                        state,
+                    ));
                 }
                 RemoteIdState::Null(null_records_row) => {
                     null_records_row.commit()?;
