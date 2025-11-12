@@ -1,4 +1,5 @@
 mod cli;
+mod delete;
 mod edit;
 mod import;
 mod path;
@@ -38,21 +39,18 @@ use crate::{
     normalize::{Normalization, Normalize},
     output::{owriteln, stdout_lock_wrap},
     record::{Alias, Record, RecordId, RemoteId, get_record_row},
-    term::Confirm,
 };
 
 use self::{
     cli::{AliasCommand, FindMode, InfoReportType, OnConflict, UtilCommand},
+    delete::{hard_delete, soft_delete},
     edit::{edit_record_and_update, merge_record_data},
     path::{
         data_from_path_or_default, data_from_path_or_remote, get_attachment_dir,
         get_attachment_root,
     },
     picker::{choose_attachment, choose_attachment_path, choose_canonical_id},
-    retrieve::{
-        filter_and_deduplicate_by_canonical, retrieve_and_validate_entries,
-        retrieve_entries_read_only,
-    },
+    retrieve::{retrieve_and_validate_entries, retrieve_entries_read_only},
     write::{init_outfile, output_entries, output_keys},
 };
 
@@ -253,73 +251,42 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
         }
         Command::Delete {
             citation_keys,
-            force,
+            replace,
+            hard,
         } => {
             let cfg = config::load(&config_path, missing_ok)?;
-            let deduplicated = filter_and_deduplicate_by_canonical(
-                citation_keys.into_iter(),
-                &mut record_db,
-                force,
-                |remote_id, null_row| {
-                    null_row.commit()?;
-                    error!("Null record found for '{remote_id}'");
-                    suggest!("Delete null records using `autobib util evict`.");
-                    Ok(())
-                },
-                &cfg,
-            )?;
-
-            // TODO: fixme
-
-            for (canonical, to_delete) in deduplicated {
-                match record_db.state_from_remote_id(&canonical)?.exists() {
-                    Some(row) => {
-                        if !force {
-                            let mut unreferenced = row
-                                .get_referencing_keys()?
-                                .into_iter()
-                                .filter(|key| !to_delete.contains(key))
-                                .peekable();
-
-                            // there are associated keys which are not present in the deletion list
-                            if unreferenced.peek().is_some() {
-                                if cli.no_interactive {
-                                    // non-interactive: skip the key
-                                    row.commit()?;
-                                    error!(
-                                        "Record with canonical identifier '{canonical}' has associated keys which are not requested for deletion: {}",
-                                        unreferenced.join(", ")
-                                    );
-                                    suggest!("Re-run with `--force` to delete anyway.");
-                                    continue;
-                                } else {
-                                    // interactive: prompt for deletion
-                                    eprintln!(
-                                        "Deleting record with canonical identifier '{canonical}' will also delete associated keys:"
-                                    );
-                                    for key in unreferenced {
-                                        eprintln!("  {key}");
-                                    }
-                                    let prompt = Confirm::new("Delete anyway?", false);
-                                    if !prompt.confirm()? {
-                                        row.commit()?;
-                                        error!(
-                                            "Aborted deletion of '{canonical}' via keys: '{}'",
-                                            to_delete.iter().join(", ")
-                                        );
-                                        continue;
-                                    }
-                                }
+            if hard {
+                for key in citation_keys {
+                    hard_delete(key, &mut record_db, &cfg)?;
+                }
+            } else {
+                let replacement_canonical_id = match replace {
+                    None => None,
+                    Some(replacement) => Some(
+                        match record_db.state_from_record_id(replacement, &cfg.alias_transform)? {
+                            RecordIdState::Entry(_, state) => state.get_canonical()?,
+                            RecordIdState::NullRemoteId(mapped_key, state) => {
+                                state.commit()?;
+                                bail!(
+                                    "Invalid replacement key {mapped_key} corresponds to a null record."
+                                );
                             }
-                        }
-                        // FIXME: changelog
-                        row.delete()?.commit()?;
-                    }
-                    _ => {
-                        error!(
-                            "Database changed during deletion operation! Record {canonical} is no longer present in the database."
-                        );
-                    }
+                            RecordIdState::Unknown(unknown) => {
+                                let maybe_normalized = unknown.combine_and_commit()?;
+                                bail!(
+                                    "Invalid replacement key {maybe_normalized}: does not exist in the database."
+                                );
+                            }
+                            RecordIdState::UndefinedAlias(alias) => {
+                                bail!("Invalid replacement key: alias '{alias}' is undefined")
+                            }
+                            RecordIdState::InvalidRemoteId(record_error) => bail!("{record_error}"),
+                        },
+                    ),
+                };
+
+                for key in citation_keys {
+                    soft_delete(key, &replacement_canonical_id, &mut record_db, &cfg)?;
                 }
             }
         }

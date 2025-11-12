@@ -169,21 +169,22 @@ pub enum Command {
     DefaultConfig,
     /// Delete records and associated keys.
     ///
-    /// Delete a record, and all referencing keys (such as aliases) which are associated with the
-    /// record. If there are multiple referencing keys, they will be listed so that you can confirm
-    /// deletion. This can be ignored with the `--force` option.
+    /// By default, this performs a soft delete, where the current data and keys are retained
+    /// but future attempts to read them will result in an error. The data can be recovered with
+    /// `autobib undo`. The key provided with the `--replace` option will be used to suggest
+    /// replacements.
     ///
-    /// To delete an alias without deleting the underlying data, use the `autobib alias delete`
-    /// command.
+    /// With the `--hard` option, the data as well as all keys are deleted permanently. This is
+    /// incompatible with the `--replace` option.
     Delete {
         /// The citation keys to delete.
         citation_keys: Vec<RecordId>,
-        /// Delete without prompting.
-        ///
-        /// Deletion will fail if user confirmation is required,the program is running
-        /// non-interactively, and this option is not set.
-        #[arg(short, long)]
-        force: bool,
+        /// A replacement key.
+        #[arg(short, long, group = "delete_mode")]
+        replace: Option<RecordId>,
+        /// Hard deletion which also removes aliases and cannot be undone.
+        #[arg(short, long, group = "delete_mode")]
+        hard: bool,
     },
     /// Edit existing records.
     ///

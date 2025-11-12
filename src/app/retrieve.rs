@@ -1,5 +1,5 @@
 use std::collections::{
-    BTreeMap, HashMap, HashSet,
+    BTreeMap,
     btree_map::Entry::{Occupied, Vacant},
 };
 
@@ -9,9 +9,7 @@ use crate::{
     config::Config,
     db::{
         RecordDatabase,
-        state::{
-            EntryRow, EntryRowData, NullRecordRow, RecordIdState, ResolvedRecordRowState, State,
-        },
+        state::{EntryRow, EntryRowData, RecordIdState, ResolvedRecordRowState, State},
     },
     entry::{Entry, EntryKey, RawEntryData},
     error::Error,
@@ -19,69 +17,6 @@ use crate::{
     logger::{error, reraise, suggest},
     record::{Record, RecordId, RecordRowResponse, RemoteId, get_record_row},
 };
-
-/// Lookup citation keys from the database, filtering out unknown and invalid remote ids and
-/// undefined aliases.
-///
-/// The resulting hash map has keys which are the set of all unique canonical identifiers
-/// corresponding to those citation keys which were present in the database, and values which are
-/// the corresponding referencing citation keys which were initially present in the list.
-///
-/// The resulting hash set contains all of the null identifiers.
-pub fn filter_and_deduplicate_by_canonical<T, N, F: FnOnce() -> Vec<(regex::Regex, String)>>(
-    citation_keys: T,
-    record_db: &mut RecordDatabase,
-    ignore_errors: bool,
-    mut null_callback: N,
-    config: &Config<F>,
-) -> Result<HashMap<RemoteId, HashSet<String>>, rusqlite::Error>
-where
-    T: Iterator<Item = RecordId>,
-    N: FnMut(RemoteId, State<NullRecordRow>) -> Result<(), rusqlite::Error>,
-{
-    let mut deduplicated = HashMap::new();
-
-    for record_id in citation_keys {
-        match record_db.state_from_record_id(record_id, &config.alias_transform)? {
-            RecordIdState::Entry(key, row) => match row.resolve()? {
-                ResolvedRecordRowState::Exists(entry_row_data, state) => {
-                    deduplicated
-                        .entry(entry_row_data.canonical)
-                        .or_insert_with(HashSet::new)
-                        .insert(key);
-                    state.commit()?;
-                }
-                ResolvedRecordRowState::Deleted(data, state) => {
-                    match data.replacement {
-                        Some(repl) => error!("Record '{key}' replaced with '{repl}'."),
-                        None => error!("Record '{key}' was deleted."),
-                    }
-                    state.commit()?;
-                }
-            },
-            RecordIdState::NullRemoteId(mapped_remote_id, null_row) => {
-                null_callback(mapped_remote_id.mapped, null_row)?;
-            }
-            RecordIdState::Unknown(unknown) => {
-                let maybe_normalized = unknown.combine_and_commit()?;
-                if !ignore_errors {
-                    error!("Identifier not in database: {maybe_normalized}");
-                }
-            }
-            RecordIdState::UndefinedAlias(alias) => {
-                if !ignore_errors {
-                    error!("Undefined alias: '{alias}'");
-                }
-            }
-            RecordIdState::InvalidRemoteId(err) => {
-                if !ignore_errors {
-                    reraise(&err);
-                }
-            }
-        }
-    }
-    Ok(deduplicated)
-}
 
 /// Group valid entries by their canonical id in order to catch duplicate entries.
 fn group_valid_entries_by_canonical<T>(
