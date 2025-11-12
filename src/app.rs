@@ -28,7 +28,7 @@ use crate::{
     config,
     db::{
         DeleteAliasResult, RecordDatabase, RenameAliasResult,
-        state::{EntryRowData, ExistsOrUnknown, RecordIdState, ResolvedRecordRowState},
+        state::{EntryOrDeletedRow, EntryRowData, ExistsOrUnknown, RecordIdState},
         user_version,
     },
     entry::{Entry, EntryKey, MutableEntryData, RawEntryData},
@@ -545,7 +545,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             let cfg = config::load(&config_path, missing_ok)?;
             match record_db.state_from_record_id(citation_key, &cfg.alias_transform)? {
                 RecordIdState::Entry(record_id, row) => match row.resolve()? {
-                    ResolvedRecordRowState::Exists(row_data, state) => {
+                    EntryOrDeletedRow::Exists(row_data, state) => {
                         match report {
                             InfoReportType::All => {
                                 println!("Canonical: {}", row_data.canonical);
@@ -583,7 +583,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         };
                         state.commit()?;
                     }
-                    ResolvedRecordRowState::Deleted(deleted_row_data, state) => todo!(),
+                    EntryOrDeletedRow::Deleted(deleted_row_data, state) => todo!(),
                 },
                 RecordIdState::NullRemoteId(remote_id, null_row) => match report {
                     InfoReportType::All => {
@@ -811,7 +811,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             match record_db.state_from_record_id(citation_key, &cfg.alias_transform)? {
                 RecordIdState::Entry(citation_key, row) => {
                     match row.resolve()? {
-                        ResolvedRecordRowState::Exists(
+                        EntryOrDeletedRow::Exists(
                             EntryRowData {
                                 data, canonical, ..
                             },
@@ -836,7 +836,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                             state.update(&RawEntryData::from_entry_data(&existing_record))?;
                             state.commit()?;
                         }
-                        ResolvedRecordRowState::Deleted(deleted_row_data, state) => todo!(),
+                        EntryOrDeletedRow::Deleted(deleted_row_data, state) => todo!(),
                     }
                 }
                 RecordIdState::NullRemoteId(mapped_remote_id, null_row) => {

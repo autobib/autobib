@@ -11,7 +11,7 @@ use crate::{
     config::Config,
     db::{
         RecordDatabase,
-        state::{EntryRow, Missing, RemoteIdState, ResolvedRecordRowState, State},
+        state::{EntryOrDeletedRow, EntryRow, Missing, RemoteIdState, State},
     },
     entry::{Entry, EntryKey, MutableEntryData, entries_from_bibtex},
     error::{self, RecordError},
@@ -149,7 +149,7 @@ where
                     DeterminedKey::RemoteId(mapped_key, maybe_alias) => {
                         match record_db.state_from_remote_id(&mapped_key.mapped)? {
                             RemoteIdState::Entry(row) => match row.resolve()? {
-                                ResolvedRecordRowState::Exists(entry_row_data, state) => {
+                                EntryOrDeletedRow::Exists(entry_row_data, state) => {
                                     Ok(ImportAction::Update(
                                         state,
                                         import_config.on_conflict,
@@ -157,7 +157,7 @@ where
                                         maybe_alias,
                                     ))
                                 }
-                                ResolvedRecordRowState::Deleted(deleted_row_data, state) => todo!(),
+                                EntryOrDeletedRow::Deleted(deleted_row_data, state) => todo!(),
                             },
                             RemoteIdState::Null(null_row) => Ok(ImportAction::Insert(
                                 null_row.delete()?,

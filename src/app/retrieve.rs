@@ -9,7 +9,7 @@ use crate::{
     config::Config,
     db::{
         RecordDatabase,
-        state::{EntryRow, EntryRowData, RecordIdState, ResolvedRecordRowState, State},
+        state::{EntryOrDeletedRow, EntryRow, EntryRowData, RecordIdState, State},
     },
     entry::{Entry, EntryKey, RawEntryData},
     error::Error,
@@ -102,7 +102,7 @@ fn retrieve_single_entry_read_only<F: FnOnce() -> Vec<(regex::Regex, String)>>(
                 Ok(None)
             } else {
                 match row.resolve()? {
-                    ResolvedRecordRowState::Exists(
+                    EntryOrDeletedRow::Exists(
                         EntryRowData {
                             data, canonical, ..
                         },
@@ -113,7 +113,7 @@ fn retrieve_single_entry_read_only<F: FnOnce() -> Vec<(regex::Regex, String)>>(
                         state.commit()?;
                         Ok(entry)
                     }
-                    ResolvedRecordRowState::Deleted(deleted_row_data, state) => todo!(),
+                    EntryOrDeletedRow::Deleted(deleted_row_data, state) => todo!(),
                 }
             }
         }

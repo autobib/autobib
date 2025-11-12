@@ -2,7 +2,7 @@ use crate::{
     Config, RecordId, RemoteId,
     db::{
         RecordDatabase,
-        state::{self, RecordIdState, ResolvedRecordRowState},
+        state::{self, EntryOrDeletedRow, RecordIdState},
     },
     logger::{error, reraise, suggest},
 };
@@ -22,8 +22,8 @@ pub fn soft_delete<F: FnOnce() -> Vec<(regex::Regex, String)>>(
         record_db,
         config,
         |original_name, state| match state.resolve()? {
-            ResolvedRecordRowState::Exists(_, state) => state.soft_delete(replace)?.commit(),
-            ResolvedRecordRowState::Deleted(_, state) => {
+            EntryOrDeletedRow::Exists(_, state) => state.soft_delete(replace)?.commit(),
+            EntryOrDeletedRow::Deleted(_, state) => {
                 error!("Cannot delete key which was previously deleted: {original_name}");
                 state.commit()
             }

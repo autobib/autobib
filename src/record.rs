@@ -11,8 +11,8 @@ use crate::{
     db::{
         RecordDatabase,
         state::{
-            DeletedRow, EntryRow, EntryRowData, Missing, NullRecordRow, RecordIdState, RecordRow,
-            RemoteIdState, ResolvedRecordRowState, State, Unknown,
+            DeletedRow, EntryOrDeletedRow, EntryRow, EntryRowData, Missing, NullRecordRow,
+            RecordIdState, RecordRow, RemoteIdState, State, Unknown,
         },
     },
     entry::{MutableEntryData, RawEntryData},
@@ -138,18 +138,16 @@ fn row_to_response<'conn, K: Into<String>, T: From<RemoteRecordRowResponse<'conn
     row: State<'conn, RecordRow>,
 ) -> Result<T, Error> {
     match row.resolve()? {
-        ResolvedRecordRowState::Exists(entry_row_data, state) => {
-            Ok(RemoteRecordRowResponse::Exists(
-                Record {
-                    key: key.into(),
-                    data: entry_row_data.data,
-                    canonical: entry_row_data.canonical,
-                },
-                state,
-            )
-            .into())
-        }
-        ResolvedRecordRowState::Deleted(deleted_row_data, state) => {
+        EntryOrDeletedRow::Exists(entry_row_data, state) => Ok(RemoteRecordRowResponse::Exists(
+            Record {
+                key: key.into(),
+                data: entry_row_data.data,
+                canonical: entry_row_data.canonical,
+            },
+            state,
+        )
+        .into()),
+        EntryOrDeletedRow::Deleted(deleted_row_data, state) => {
             Ok(RemoteRecordRowResponse::Deleted(
                 DeletedRecord {
                     key: key.into(),
@@ -291,7 +289,7 @@ fn get_record_row_recursive<'conn, C: Client>(
             RemoteResponse::Reference(new_remote_id) => match missing.reset(&new_remote_id)? {
                 RemoteIdState::Entry(row) => {
                     match row.resolve()? {
-                        ResolvedRecordRowState::Exists(
+                        EntryOrDeletedRow::Exists(
                             EntryRowData {
                                 data, canonical, ..
                             },
@@ -310,7 +308,7 @@ fn get_record_row_recursive<'conn, C: Client>(
                                 state,
                             ));
                         }
-                        ResolvedRecordRowState::Deleted(deleted_row_data, state) => todo!(),
+                        EntryOrDeletedRow::Deleted(deleted_row_data, state) => todo!(),
                     }
                 }
                 RemoteIdState::Null(null_records_row) => {
