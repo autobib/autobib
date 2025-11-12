@@ -29,6 +29,7 @@ Changes since `v0.4.1`.
 - Added a `-t/--template` option for `autobib find` which allows manually specifying a template string to use when rendering.
   The precise expansion behaviour can also be modified with the `-s/--strict` flag.
   Read more in the [template syntax documentation](../template.md).
+- `autobib source` now supports reading from standard input with the `--stdin` flag, which accepts a single argument specifying the file type of standard input.
 
 ## Changes to providers
 
