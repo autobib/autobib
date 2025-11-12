@@ -616,6 +616,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             }
         }
         Command::Local { id, from } => {
+            // check if the provided identifier is a valid alias
             let alias = match Alias::from_str(&id) {
                 Ok(alias) => alias,
                 Err(e) => match e.kind {
@@ -627,32 +628,31 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             };
             let remote_id = RemoteId::local(&alias);
 
-            let (row, raw_data) = match record_db.state_from_remote_id(&remote_id)?.delete_null()? {
-                ExistsOrUnknown::Entry(_) => {
+            // insert the data
+            match record_db.state_from_remote_id(&remote_id)?.delete_null()? {
+                ExistsOrUnknown::Entry(state) => {
+                    state.commit()?;
                     bail!("Local record '{remote_id}' already exists")
                 }
                 ExistsOrUnknown::Unknown(missing) => {
                     let data = data_from_path_or_default(from.as_ref())?;
-                    let raw_record_data = RawEntryData::from_entry_data(&data);
-                    let row = missing.insert(&raw_record_data, &remote_id)?;
-                    (row, raw_record_data)
+                    let raw_data = RawEntryData::from_entry_data(&data);
+                    let row = missing.insert(&raw_data, &remote_id)?;
+                    if !cli.no_interactive {
+                        edit_record_and_update(
+                            &row,
+                            Entry {
+                                key: EntryKey::try_new(remote_id.name().into())
+                                    .unwrap_or_else(|_| EntryKey::placeholder()),
+                                record_data: MutableEntryData::from_entry_data(&raw_data),
+                            },
+                            false,
+                            &remote_id,
+                        )?;
+                    }
+                    row.commit()?;
                 }
             };
-
-            if !cli.no_interactive {
-                edit_record_and_update(
-                    &row,
-                    Entry {
-                        key: EntryKey::try_new(remote_id.name().into())
-                            .unwrap_or_else(|_| EntryKey::placeholder()),
-                        record_data: MutableEntryData::from_entry_data(&raw_data),
-                    },
-                    false,
-                    &remote_id,
-                )?;
-            }
-
-            row.commit()?;
         }
         Command::Path {
             citation_key,
