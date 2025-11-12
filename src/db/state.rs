@@ -202,7 +202,7 @@ impl<'conn> RecordIdState<'conn> {
                         if let Some(row_id) = get_row_id(&tx, &remote_id)? {
                             return Self::existent(tx, row_id, move |row| {
                                 if alias_transform.create() {
-                                    row.add_alias(&alias)?;
+                                    row.add_alias_transform(&alias)?;
                                 }
                                 Ok(alias.into())
                             });
