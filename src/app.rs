@@ -10,7 +10,7 @@ mod write;
 use std::{
     collections::{BTreeSet, HashSet},
     fs::{File, OpenOptions, create_dir_all, exists},
-    io::{IsTerminal, Read, Seek, Write, copy, stdout},
+    io::{IsTerminal, Read, Seek, Write, copy},
     iter::once,
     path::{Path, PathBuf},
     str::FromStr,
@@ -36,7 +36,7 @@ use crate::{
     http::{BodyBytes, Client},
     logger::{debug, error, info, suggest, warn},
     normalize::{Normalization, Normalize},
-    output::owriteln,
+    output::{owriteln, stdout_lock_wrap},
     record::{Alias, Record, RecordId, RemoteId, get_record_row},
     term::Confirm,
 };
@@ -249,7 +249,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             );
         }
         Command::DefaultConfig => {
-            config::write_default(&mut std::io::stdout())?;
+            config::write_default(&mut stdout_lock_wrap())?;
         }
         Command::Delete {
             citation_keys,
@@ -604,7 +604,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                             }
                         }
                         InfoReportType::Equivalent => {
-                            let mut lock = stdout().lock();
+                            let mut lock = stdout_lock_wrap();
                             for re in row.get_referencing_keys()? {
                                 writeln!(lock, "{re}")?;
                             }
@@ -1009,7 +1009,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 }
             },
             UtilCommand::List { canonical } => {
-                let mut lock = stdout().lock();
+                let mut lock = stdout_lock_wrap();
                 record_db.map_citation_keys(canonical, |key_str| writeln!(lock, "{key_str}"))?;
             }
         },

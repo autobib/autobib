@@ -132,6 +132,7 @@ dependencies = [
  "either",
  "etcetera",
  "itertools",
+ "libc",
  "log",
  "memchr",
  "mufmt",
