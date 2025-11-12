@@ -439,29 +439,6 @@ impl<'conn> State<'conn, EntryRow> {
         Ok(())
     }
 
-    /// Change the canonical id of the row.
-    ///
-    /// Returns `false` if the new canonical id already exists, and `true` otherwise.
-    pub fn change_canonical_id(&self, new_id: &RemoteId) -> Result<bool, rusqlite::Error> {
-        let old_id = self.get_canonical()?;
-        debug!(
-            "Changing the canonical id for row '{}' from '{old_id}' to '{new_id}'",
-            self.row_id()
-        );
-        let result = self.prepare(sql::update_canonical_id())?.execute((
-            self.row_id(),
-            Local::now(),
-            new_id.to_string(),
-        ));
-        if let Constraint::Violated = flatten_constraint_violation(result)? {
-            return Ok(false);
-        }
-        self.add_refs_impl(std::iter::once(new_id), CitationKeyInsertMode::FailIfExists)?;
-        self.prepare(sql::delete_citation_key())?
-            .execute((old_id.name(),))?;
-        Ok(true)
-    }
-
     /// Add a new alias for this row.
     ///
     /// The return value is `false` if the alias already exists, and otherwise `true`.
@@ -536,12 +513,14 @@ pub enum ResolvedRecordRowState<'conn> {
 impl<'conn> State<'conn, RecordRow> {
     /// Add a new alias for this row.
     ///
-    /// The return value is `false` if the alias already exists, and otherwise `true`.
+    /// This method is only used to add an alias when one is requested by an alias transform in in [`super::RecordIdState::determine`].
     #[inline]
-    pub fn add_alias(&self, alias: &Alias) -> Result<bool, rusqlite::Error> {
+    pub(super) fn add_alias_transform(&self, alias: &Alias) -> Result<bool, rusqlite::Error> {
         self.add_refs_impl(std::iter::once(alias), CitationKeyInsertMode::FailIfExists)
     }
 
+    /// Resolve this row by looking at the data to decide if it is an entry, or it is a deletion
+    /// marker.
     pub fn resolve(self) -> Result<ResolvedRecordRowState<'conn>, rusqlite::Error> {
         let RecordRowData {
             variant,
