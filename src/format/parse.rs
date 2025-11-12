@@ -179,7 +179,11 @@ impl<'a> Lexer<'a> {
                         let cutoff = idx + 2;
                         let s = match serde_json::from_str(&self.remainder()[..cutoff]) {
                             Ok(s) => s,
-                            Err(_) => todo!(),
+                            Err(_) => {
+                                return Err(
+                                    self.step_err(cutoff, KeyParseErrorKind::InvalidLiteral)
+                                );
+                            }
                         };
                         return Ok(Some(self.step_ok(cutoff, Kind::String(s))));
                     }
