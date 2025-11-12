@@ -1,12 +1,7 @@
 use chrono::Local;
 
 use super::{EntryRow, NullRecordRow, State};
-use crate::{
-    RawEntryData, RemoteId,
-    db::{CitationKey, sql},
-    entry::EntryData,
-    logger::debug,
-};
+use crate::{RawEntryData, RemoteId, db::CitationKey, entry::EntryData, logger::debug};
 
 /// A database id which is missing.
 #[derive(Debug)]
@@ -19,7 +14,7 @@ impl<'conn> State<'conn, Missing> {
         remote_id: &RemoteId,
     ) -> Result<State<'conn, NullRecordRow>, rusqlite::Error> {
         let row_id: i64 = {
-            let mut setter = self.prepare_cached(sql::set_cached_null())?;
+            let mut setter = self.prepare_cached("INSERT OR REPLACE INTO NullRecords (record_id, attempted) values (?1, ?2) RETURNING rowid")?;
             let cache_time = Local::now();
             setter.query_row((remote_id.name(), cache_time), |row| row.get(0))?
         };
@@ -38,7 +33,7 @@ impl<'conn> State<'conn, Missing> {
         refs: R,
     ) -> Result<State<'conn, EntryRow>, rusqlite::Error> {
         debug!("Inserting data for canonical id '{canonical}'");
-        let row_id: i64 = self.prepare_cached(sql::set_cached_data())?.query_row(
+        let row_id: i64 = self.prepare_cached("INSERT OR ABORT INTO Records (record_id, data, modified) values (?1, ?2, ?3) RETURNING key")?.query_row(
             (canonical.name(), data.to_byte_repr(), &Local::now()),
             |row| row.get(0),
         )?;

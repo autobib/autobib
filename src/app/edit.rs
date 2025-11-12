@@ -5,6 +5,7 @@ use anyhow::Result;
 use super::OnConflict;
 
 use crate::{
+    RawEntryData,
     db::state::{EntryRow, State},
     entry::{ConflictResolved, Entry, EntryData, MutableEntryData},
     error::MergeError,
@@ -16,11 +17,11 @@ use crate::{
 /// Edit a record and update the entry corresponding to the [`RecordRow`]. Returns the edited
 /// record, saving the data.
 pub fn edit_record_and_update(
-    row: &State<EntryRow>,
+    row: State<EntryRow>,
     mut entry: Entry<MutableEntryData>,
     force_update: bool,
     canonical: impl std::fmt::Display,
-) -> Result<Entry<MutableEntryData>, anyhow::Error> {
+) -> Result<(State<EntryRow>, Entry<MutableEntryData>), anyhow::Error> {
     let editor = Editor::new(EditorConfig { suffix: ".bib" });
 
     let data_changed = if let Some(new_entry) = editor.edit(&entry)? {
@@ -57,10 +58,11 @@ pub fn edit_record_and_update(
     if data_changed || force_update {
         info!("Updating cached data for '{canonical}'");
         // FIXME: copied to changelog here
-        row.update_entry_data(&entry.record_data)?;
+        let new_row = row.modify(&RawEntryData::from_entry_data(&entry.record_data))?;
+        Ok((new_row, entry))
+    } else {
+        Ok((row, entry))
     }
-
-    Ok(entry)
 }
 
 /// Merge an iterator of [`EntryData`] into existing data, using the merge rules as specified

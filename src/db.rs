@@ -9,7 +9,7 @@
 mod functions;
 mod migrate;
 mod schema;
-mod sql;
+// mod sql;
 pub mod state;
 mod validate;
 
@@ -55,7 +55,7 @@ fn get_row_id<K: CitationKey>(
     tx: &Transaction,
     record_id: &K,
 ) -> Result<Option<RowId>, rusqlite::Error> {
-    tx.prepare_cached(sql::get_record_key())?
+    tx.prepare_cached("SELECT record_key FROM CitationKeys WHERE name = ?1")?
         .query_row([record_id.name()], |row| row.get("record_key"))
         .optional()
 }
@@ -65,7 +65,7 @@ pub fn get_null_row_id(
     tx: &Transaction,
     remote_id: &RemoteId,
 ) -> Result<Option<RowId>, rusqlite::Error> {
-    tx.prepare_cached(sql::get_null_record_key())?
+    tx.prepare_cached("SELECT rowid FROM NullRecords WHERE record_id = ?1")?
         .query_row([remote_id.name()], |row| row.get("rowid"))
         .optional()
 }
@@ -301,7 +301,7 @@ impl RecordDatabase {
     /// for more detail.
     pub fn optimize(&mut self) -> Result<(), rusqlite::Error> {
         debug!("Optimizing database");
-        self.conn.execute(sql::optimize(), ())?;
+        self.conn.execute("PRAGMA optimize", ())?;
         Ok(())
     }
 
@@ -347,8 +347,10 @@ impl RecordDatabase {
                 warn!(
                     "Repairing dangling record by inserting or overwriting existing citation key with name {canonical}"
                 );
-                tx.prepare(sql::set_citation_key_overwrite())?
-                    .execute((canonical, key))?;
+                tx.prepare(
+                    "INSERT OR REPLACE INTO CitationKeys (name, record_key) values (?1, ?2",
+                )?
+                .execute((canonical, key))?;
                 Ok(true)
             }
             DatabaseFault::NullCitationKeys(_) => {
@@ -407,7 +409,9 @@ impl RecordDatabase {
         mut filter_map: F,
     ) -> Result<(), rusqlite::Error> {
         debug!("Sending all database records to an injector.");
-        let mut retriever = self.conn.prepare(sql::get_all_records())?;
+        let mut retriever = self
+            .conn
+            .prepare("SELECT record_id, modified, data FROM Records WHERE variant = 0")?;
 
         for res in retriever.query_map([], |row| EntryRowData::try_from(row))? {
             if let Some(data) = filter_map(res?) {
@@ -428,11 +432,11 @@ impl RecordDatabase {
         mut f: F,
     ) -> Result<(), Either<rusqlite::Error, std::io::Error>> {
         let mut selector = if canonical {
-            self.conn.prepare(sql::get_all_canonical_citation_keys())
+            self.conn
+                .prepare("SELECT record_id FROM Records WHERE variant = 0")
         } else {
-            self.conn.prepare(sql::get_all_citation_keys())
-        }
-        .map_err(Either::Left)?;
+            self.conn.prepare("SELECT name FROM CitationKeys INNER JOIN Records ON CitationKeys.record_key = Records.key WHERE Records.variant = 0")
+        }?;
 
         let mut rows = selector.query([]).map_err(Either::Left)?;
         while let Some(row) = rows.next().map_err(Either::Left)? {
@@ -451,7 +455,9 @@ impl RecordDatabase {
         old: &Alias,
         new: &Alias,
     ) -> Result<RenameAliasResult, rusqlite::Error> {
-        let mut updater = self.conn.prepare(sql::rename_citation_key())?;
+        let mut updater = self
+            .conn
+            .prepare("UPDATE CitationKeys SET name = ?1 WHERE name = ?2")?;
         match flatten_constraint_violation(updater.execute((new.name(), old.name())))? {
             Constraint::Satisfied(_) => Ok(RenameAliasResult::Renamed),
             Constraint::Violated => Ok(RenameAliasResult::TargetExists),
@@ -460,7 +466,9 @@ impl RecordDatabase {
 
     /// Delete an alias, returning the status of the deletion.
     pub fn delete_alias(&mut self, alias: &Alias) -> Result<DeleteAliasResult, rusqlite::Error> {
-        let mut deleter = self.conn.prepare(sql::delete_citation_key())?;
+        let mut deleter = self
+            .conn
+            .prepare("DELETE FROM CitationKeys WHERE name = ?1")?;
         if deleter.execute((alias.name(),))? == 0 {
             Ok(DeleteAliasResult::Missing)
         } else {
@@ -470,7 +478,7 @@ impl RecordDatabase {
 
     /// Delete all rows from `NullRecords`.
     pub fn evict_cache(&mut self) -> Result<(), rusqlite::Error> {
-        let num_deleted = self.conn.prepare(sql::clear_null_records())?.execute(())?;
+        let num_deleted = self.conn.prepare("DELETE FROM NullRecords")?.execute(())?;
         info!("Removed {num_deleted} cached null records.");
         Ok(())
     }
@@ -480,7 +488,7 @@ impl RecordDatabase {
         let threshold = Local::now() - TimeDelta::seconds(seconds.into());
         let num_deleted = self
             .conn
-            .prepare(sql::clear_null_records_before())?
+            .prepare("DELETE FROM NullRecords WHERE attempted <= ?1")?
             .execute((threshold,))?;
         info!("Removed {num_deleted} cached null records.");
         Ok(())

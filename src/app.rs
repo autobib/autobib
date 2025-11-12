@@ -323,18 +323,19 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         // if anything changed
                         let mut editable_data = MutableEntryData::from_entry_data(&data);
                         if editable_data.normalize(&nl) {
-                            // FIXME: changelog
-                            row.update_entry_data(&editable_data)?;
+                            row.modify(&RawEntryData::from_entry_data(&editable_data))?
+                                .commit()?;
+                        } else {
+                            row.commit()?;
                         }
-                        row.commit()?;
                     }
                 } else {
                     let mut editable_data = MutableEntryData::from_entry_data(&data);
                     let changed = editable_data.normalize(&nl);
                     let entry_key =
                         EntryKey::try_new(key).unwrap_or_else(|_| EntryKey::placeholder());
-                    edit_record_and_update(
-                        &row,
+                    let (row, _) = edit_record_and_update(
+                        row,
                         Entry::new(entry_key, editable_data),
                         changed,
                         canonical,
@@ -639,8 +640,8 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     let raw_data = RawEntryData::from_entry_data(&data);
                     let row = missing.insert(&raw_data, &remote_id)?;
                     if !cli.no_interactive {
-                        edit_record_and_update(
-                            &row,
+                        let (row, _) = edit_record_and_update(
+                            row,
                             Entry {
                                 key: EntryKey::try_new(remote_id.name().into())
                                     .unwrap_or_else(|_| EntryKey::placeholder()),
@@ -649,8 +650,10 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                             false,
                             &remote_id,
                         )?;
+                        row.commit()?;
+                    } else {
+                        row.commit()?;
                     }
-                    row.commit()?;
                 }
             };
         }
@@ -833,10 +836,14 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                                 &citation_key,
                             )?;
                             // FIXME: changelog
-                            state.update(&RawEntryData::from_entry_data(&existing_record))?;
-                            state.commit()?;
+                            let new_row =
+                                state.modify(&RawEntryData::from_entry_data(&existing_record))?;
+                            new_row.commit()?;
                         }
-                        EntryOrDeletedRow::Deleted(deleted_row_data, state) => todo!(),
+                        EntryOrDeletedRow::Deleted(_, state) => {
+                            state.commit()?;
+                            bail!("Cannot update deleted row '{citation_key}'.");
+                        }
                     }
                 }
                 RecordIdState::NullRemoteId(mapped_remote_id, null_row) => {

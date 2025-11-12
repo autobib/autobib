@@ -1,10 +1,7 @@
 use chrono::{DateTime, Local};
 
 use super::{Missing, State};
-use crate::{
-    db::{RowId, sql},
-    logger::debug,
-};
+use crate::{db::RowId, logger::debug};
 
 /// An identifier for a row in the `NullRecords` table.
 #[derive(Debug)]
@@ -34,7 +31,7 @@ impl<'conn> State<'conn, NullRecordRow> {
     /// Delete the null record.
     pub fn delete(self) -> Result<State<'conn, Missing>, rusqlite::Error> {
         debug!("Deleting 'NullRecords' row '{}'", self.row_id());
-        self.prepare(sql::delete_null_record_row())?
+        self.prepare("DELETE FROM NullRecords WHERE rowid = ?1")?
             .execute((self.row_id(),))?;
         let Self { tx, .. } = self;
         Ok(State::init(tx, Missing {}))
@@ -43,7 +40,7 @@ impl<'conn> State<'conn, NullRecordRow> {
     /// Get the data associated with the row.
     pub fn get_data(&self) -> Result<NullRowData, rusqlite::Error> {
         debug!("Retrieving 'NullRecords' row '{}'", self.row_id());
-        self.prepare_cached(sql::get_null_record_data())?
+        self.prepare_cached("SELECT attempted FROM NullRecords WHERE rowid = ?1")?
             .query_row([self.row_id()], |row| row.try_into())
     }
 

@@ -3,8 +3,7 @@ use serde_bibtex::token::is_entry_key;
 
 use crate::{
     Alias, RawEntryData, RemoteId,
-    db::{CitationKey, Constraint, RowId, flatten_constraint_violation, get_row_id, sql},
-    entry::EntryData,
+    db::{CitationKey, Constraint, RowId, flatten_constraint_violation, get_row_id},
     logger::debug,
 };
 
@@ -192,7 +191,7 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
         mut filter_map: F,
     ) -> Result<Vec<T>, rusqlite::Error> {
         debug!("Getting referencing keys for '{}'.", self.row_id());
-        let mut selector = self.prepare(sql::get_all_referencing_citation_keys())?;
+        let mut selector = self.prepare("SELECT name FROM CitationKeys WHERE record_key = ?1")?;
         let rows = selector.query_map((self.row_id(),), |row| row.get(0))?;
         let mut referencing = Vec::with_capacity(1);
         for name_res in rows {
@@ -215,9 +214,15 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
         debug!("Inserting references to row_id '{}'", self.row_id());
         for remote_id in refs {
             let stmt = match mode {
-                CitationKeyInsertMode::Overwrite => sql::set_citation_key_overwrite(),
-                CitationKeyInsertMode::IgnoreIfExists => sql::set_citation_key_ignore(),
-                CitationKeyInsertMode::FailIfExists => sql::set_citation_key_fail(),
+                CitationKeyInsertMode::Overwrite => {
+                    "INSERT OR REPLACE INTO CitationKeys (name, record_key) values (?1, ?2)"
+                }
+                CitationKeyInsertMode::IgnoreIfExists => {
+                    "INSERT OR IGNORE INTO CitationKeys (name, record_key) values (?1, ?2)"
+                }
+                CitationKeyInsertMode::FailIfExists => {
+                    "INSERT INTO CitationKeys (name, record_key) values (?1, ?2)"
+                }
             };
             let mut key_writer = self.prepare(stmt)?;
             match flatten_constraint_violation(
@@ -366,8 +371,8 @@ impl<'conn> State<'conn, EntryRow> {
         EntryRowData::lookup(self)
     }
 
-    /// Replace this row with new data, preserving the old row as the parent row.
-    pub fn replace(self, data: &RawEntryData) -> Result<Self, rusqlite::Error> {
+    /// Insert new data, preserving the old row as the parent row.
+    pub fn modify(self, data: &RawEntryData) -> Result<Self, rusqlite::Error> {
         let new_key = self.replace_impl(data)?;
         Ok(Self::init(self.tx, EntryRow(new_key)))
     }
@@ -382,20 +387,6 @@ impl<'conn> State<'conn, EntryRow> {
             tx: self.tx,
             id: DeletedRow(new_key),
         })
-    }
-
-    /// A convenience wrapper around [`update`](Self::update) which first converts any type which
-    /// implements [`EntryData`] into a [`RawEntryData`].
-    pub fn update_entry_data<D: EntryData>(&self, data: &D) -> Result<(), rusqlite::Error> {
-        self.update(&RawEntryData::from_entry_data(data))
-    }
-
-    /// Replace the row data with new data.
-    pub fn update(&self, data: &RawEntryData) -> Result<(), rusqlite::Error> {
-        debug!("Updating row data for row '{}'", self.row_id());
-        let mut updater = self.prepare(sql::update_cached_data())?;
-        updater.execute((self.row_id(), Local::now(), data.to_byte_repr()))?;
-        Ok(())
     }
 
     /// Add a new alias for this row.
@@ -422,13 +413,15 @@ impl<'conn> State<'conn, EntryRow> {
                 } else {
                     let RecordRowData { canonical, .. } = self
                         .tx
-                        .prepare_cached(sql::get_record_data())?
+                        .prepare_cached(
+                            "SELECT record_id, modified, data, variant FROM Records WHERE key = ?1",
+                        )?
                         .query_row([existing_row_id], |row| row.try_into())?;
                     Ok(Some(canonical))
                 }
             }
             None => {
-                self.prepare(sql::set_citation_key_fail())?
+                self.prepare("INSERT INTO CitationKeys (name, record_key) values (?1, ?2)")?
                     .execute((alias.name(), self.row_id()))?;
                 Ok(None)
             }
@@ -445,7 +438,7 @@ impl<'conn> State<'conn, EntryRow> {
         if let Some(row_id) = get_row_id(&self.tx, alias)?
             && row_id == self.row_id()
         {
-            self.prepare(sql::delete_citation_key())?
+            self.prepare("DELETE FROM CitationKeys WHERE name = ?1")?
                 .execute((alias.name(),))?;
         }
         Ok(())

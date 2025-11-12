@@ -3,7 +3,7 @@ use std::str::FromStr;
 use anyhow::anyhow;
 
 use crate::{
-    CitationKey,
+    CitationKey, RawEntryData,
     app::{
         cli::{ImportMode, OnConflict},
         edit::merge_record_data,
@@ -290,9 +290,8 @@ where
                     std::iter::once(entry.data()),
                     &remote_id,
                 )?;
-                // FIXME: changelog
-                row.update_entry_data(&existing_record)?;
-                create_alias(row, &remote_id, no_alias, maybe_alias)?;
+                let new_row = row.modify(&RawEntryData::from_entry_data(&existing_record))?;
+                create_alias(new_row, &remote_id, no_alias, maybe_alias)?;
                 return Ok(ImportOutcome::Success);
             }
             ImportAction::Insert(missing, remote_id, maybe_alias) => {
