@@ -153,7 +153,7 @@ impl<'conn> RecordIdState<'conn> {
         key: K,
     ) -> Result<Self, rusqlite::Error> {
         debug!("Beginning new transaction for row '{row_id}' in the `Records` table.");
-        match EntryOrDeletedRow::init(tx, row_id)? {
+        match State::init(tx, RecordRow(row_id)).determine()? {
             EntryOrDeletedRow::Entry(entry_row_data, state) => {
                 let key = produce_key_entry(&state, key)?;
                 Ok(Self::Entry(key, entry_row_data, state))
@@ -306,7 +306,7 @@ impl<'conn> RemoteIdState<'conn> {
         Ok(match get_row_id(&tx, remote_id)? {
             Some(row_id) => {
                 debug!("Beginning new transaction for row '{row_id}' in the `Records` table.");
-                match EntryOrDeletedRow::init(tx, row_id)? {
+                match State::init(tx, RecordRow(row_id)).determine()? {
                     EntryOrDeletedRow::Entry(entry_row_data, state) => {
                         RemoteIdState::Entry(entry_row_data, state)
                     }
@@ -329,12 +329,4 @@ impl<'conn> RemoteIdState<'conn> {
             },
         })
     }
-
-    //     /// Extract the [`EntryRow`] if possible, and otherwise return [`None`].
-    //     fn exists(self) -> Option<State<'conn, EntryRow>> {
-    //         match self {
-    //             RemoteIdState::Entry(_, record_row) => Some(record_row),
-    //             _ => None,
-    //         }
-    //     }
 }

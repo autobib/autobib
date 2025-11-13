@@ -126,7 +126,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 match record_db.rename_alias(&alias, &new)? {
                     RenameAliasResult::Renamed => {}
                     RenameAliasResult::TargetExists => {
-                        bail!("Citation key already exists: '{new}'");
+                        bail!("Alias already exists: '{new}'");
                     }
                 }
             }
