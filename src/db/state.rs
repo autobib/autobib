@@ -44,8 +44,10 @@ use rusqlite::{CachedStatement, Error, Statement};
 pub use self::{missing::*, null::*, record::*};
 use super::{RowId, Transaction, get_null_row_id, get_row_id};
 use crate::{
-    Alias, AliasOrRemoteId, MappedKey, RecordId, RemoteId, config::AliasTransform,
-    error::RecordError, logger::debug,
+    Alias, AliasOrRemoteId, MappedKey, RecordId, RemoteId,
+    config::AliasTransform,
+    error::RecordError,
+    logger::{debug, error, reraise},
 };
 
 /// A representation of the current database state corresponding to a [`RecordId`].
@@ -258,6 +260,35 @@ impl<'conn> RecordIdState<'conn> {
                 Ok(Self::InvalidRemoteId(record_error))
             }
         }
+    }
+
+    /// Combine the entry and deleted data into a unified `RecordRow` state, and commit any other
+    /// states, reporting an error to standard error.
+    pub fn flatten(
+        self,
+    ) -> Result<Option<(String, RecordRowData, State<'conn, RecordRow>)>, rusqlite::Error> {
+        Ok(match self {
+            Self::Entry(s, data, state) => Some((s, data.into(), state.forget())),
+            Self::Deleted(s, data, state) => Some((s, data.into(), state.forget())),
+            Self::NullRemoteId(mapped_key, state) => {
+                state.commit()?;
+                error!("Null remote id: {mapped_key}");
+                None
+            }
+            Self::Unknown(unknown) => {
+                let maybe_normalized = unknown.combine_and_commit()?;
+                error!("Record not in database: {maybe_normalized}");
+                None
+            }
+            Self::UndefinedAlias(alias) => {
+                error!("Undefined alias: '{alias}'");
+                None
+            }
+            Self::InvalidRemoteId(record_error) => {
+                reraise(&record_error);
+                None
+            }
+        })
     }
 }
 

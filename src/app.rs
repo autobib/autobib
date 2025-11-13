@@ -28,7 +28,7 @@ use crate::{
     config,
     db::{
         DeleteAliasResult, RecordDatabase, RenameAliasResult,
-        state::{ExistsOrUnknown, RecordIdState, RemoteIdState},
+        state::{ExistsOrUnknown, RecordIdState, RecordRowMoveResult, RemoteIdState},
         user_version,
     },
     entry::{Entry, EntryKey, MutableEntryData, RawEntryData},
@@ -735,6 +735,41 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
 
             owriteln!("{}", target.display())?;
         }
+        Command::Redo {
+            citation_key,
+            index,
+        } => {
+            let cfg = config::load(&config_path, missing_ok)?;
+            if let Some((_, data, state)) = record_db
+                .state_from_record_id(citation_key, &cfg.alias_transform)?
+                .flatten()?
+            {
+                info!("Performed undo for canonical id '{}'", data.canonical);
+                match state.to_child(index)? {
+                    RecordRowMoveResult::Updated(state) => {
+                        state.commit()?;
+                    }
+                    RecordRowMoveResult::Unchanged(state, child_count) => {
+                        state.commit()?;
+                        if child_count == 0 {
+                            error!("No changes to redo");
+                        } else if index.is_none() {
+                            error!(
+                                "Canonical id '{}' has {child_count} divergent changes",
+                                data.canonical
+                            );
+                            suggest!(
+                                "Review the changes with `autobib hist` and choose a specific change using the INDEX argument."
+                            );
+                        } else {
+                            error!(
+                                "Index out of range: there only {child_count} divergent changes"
+                            );
+                        }
+                    }
+                }
+            }
+        }
         Command::Source {
             paths,
             file_type,
@@ -859,6 +894,24 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
 
                 if !retrieve_only {
                     output_entries(outfile, append, valid_entries)?;
+                }
+            }
+        }
+        Command::Undo { citation_key } => {
+            let cfg = config::load(&config_path, missing_ok)?;
+            if let Some((_, data, state)) = record_db
+                .state_from_record_id(citation_key, &cfg.alias_transform)?
+                .flatten()?
+            {
+                info!("Performed undo for canonical id '{}'", data.canonical);
+                match state.to_parent()? {
+                    RecordRowMoveResult::Updated(state) => {
+                        state.commit()?;
+                    }
+                    RecordRowMoveResult::Unchanged(state, ()) => {
+                        state.commit()?;
+                        bail!("No previous version for canonical id '{}'", data.canonical);
+                    }
                 }
             }
         }
