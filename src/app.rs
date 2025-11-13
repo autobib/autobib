@@ -12,7 +12,7 @@ mod write;
 use std::{
     collections::{BTreeSet, HashSet},
     fs::{File, OpenOptions, create_dir_all, exists},
-    io::{IsTerminal, Read, Seek, copy},
+    io::{IsTerminal, Read, Seek, Write, copy},
     path::{Path, PathBuf},
     str::FromStr,
 };
@@ -245,7 +245,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             );
         }
         Command::DefaultConfig => {
-            config::write_default(&mut stdout_lock_wrap())?;
+            config::write_default(stdout_lock_wrap())?;
         }
         Command::Delete {
             citation_keys,
@@ -550,23 +550,26 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 RecordIdState::Entry(record_id, row_data, state) => {
                     match report {
                         InfoReportType::All => {
-                            println!("Canonical: {}", row_data.canonical);
-                            println!(
+                            let mut lock = stdout_lock_wrap();
+                            writeln!(lock, "Canonical: {}", row_data.canonical)?;
+                            writeln!(
+                                lock,
                                 "Equivalent references: {}",
                                 state.referencing_keys()?.iter().join(", ")
-                            );
-                            println!(
+                            )?;
+                            writeln!(
+                                lock,
                                 "Valid BibTeX? {}",
                                 if is_entry_key(&record_id) {
                                     "yes"
                                 } else {
                                     "no"
                                 }
-                            );
-                            println!("Data last modified: {}", row_data.modified);
+                            )?;
+                            writeln!(lock, "Data last modified: {}", row_data.modified)?;
                         }
                         InfoReportType::Canonical => {
-                            println!("{}", state.canonical()?);
+                            owriteln!("{}", state.canonical()?)?;
                         }
 
                         InfoReportType::Valid => {
@@ -575,40 +578,44 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                             }
                         }
                         InfoReportType::Equivalent => {
+                            let mut lock = stdout_lock_wrap();
                             for re in state.referencing_keys()? {
-                                println!("{re}");
+                                writeln!(lock, "{re}")?;
                             }
                         }
                         InfoReportType::Modified => {
-                            println!("{}", state.last_modified()?);
+                            owriteln!("{}", state.last_modified()?)?;
                         }
                     };
                     state.commit()?;
                 }
                 RecordIdState::Deleted(record_id, deleted_row_data, state) => match report {
                     InfoReportType::All => {
+                        let mut lock = stdout_lock_wrap();
                         if let Some(repl) = deleted_row_data.replacement {
-                            println!("Deleted and replaced by reference: {repl}");
+                            writeln!(lock, "Deleted and replaced by reference: {repl}")?;
                         } else {
-                            println!("Deleted record");
+                            writeln!(lock, "Deleted record")?;
                         }
-                        println!("Canonical: {}", deleted_row_data.canonical);
-                        println!(
+                        writeln!(lock, "Canonical: {}", deleted_row_data.canonical)?;
+                        writeln!(
+                            lock,
                             "Equivalent references: {}",
                             state.referencing_keys()?.iter().join(", ")
-                        );
-                        println!(
+                        )?;
+                        writeln!(
+                            lock,
                             "Valid BibTeX? {}",
                             if is_entry_key(&record_id) {
                                 "yes"
                             } else {
                                 "no"
                             }
-                        );
-                        println!("Data last modified: {}", deleted_row_data.modified);
+                        )?;
+                        writeln!(lock, "Data last modified: {}", deleted_row_data.modified)?;
                     }
                     InfoReportType::Canonical => {
-                        println!("{}", state.canonical()?);
+                        owriteln!("{}", state.canonical()?)?;
                     }
                     InfoReportType::Valid => {
                         if !is_entry_key(&record_id) {
@@ -616,15 +623,15 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         }
                     }
                     InfoReportType::Equivalent => {
+                        let mut lock = stdout_lock_wrap();
                         for re in state.referencing_keys()? {
-                            println!("{re}");
+                            writeln!(lock, "{re}")?;
                         }
                     }
                     InfoReportType::Modified => {
-                        println!("{}", state.last_modified()?);
+                        owriteln!("{}", state.last_modified()?)?;
                     }
                 },
-                // },
                 RecordIdState::NullRemoteId(remote_id, null_row) => match report {
                     InfoReportType::All => {
                         owriteln!("Null record: {remote_id}")?;

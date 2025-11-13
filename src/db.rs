@@ -436,7 +436,7 @@ impl RecordDatabase {
                 .prepare("SELECT record_id FROM Records INNER JOIN CitationKeys ON CitationKeys.record_key = Records.key WHERE variant = 0")
         } else {
             self.conn.prepare("SELECT name FROM CitationKeys INNER JOIN Records ON CitationKeys.record_key = Records.key WHERE Records.variant = 0")
-        }?;
+        }.map_err(Either::Left)?;
 
         let mut rows = selector.query([]).map_err(Either::Left)?;
         while let Some(row) = rows.next().map_err(Either::Left)? {
