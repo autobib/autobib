@@ -8,9 +8,15 @@ use crate::{
 
 use super::{Missing, State};
 
+/// A row which is present in the 'Records' table, but with unknown type.
+#[derive(Debug)]
+pub struct RecordRow(pub(super) RowId);
+
+/// A soft deletion marker row in the 'Records' table.
 #[derive(Debug)]
 pub struct DeletedRow(RowId);
 
+/// An entry in the 'Records' table.
 #[derive(Debug)]
 pub struct EntryRow(pub(super) RowId);
 
@@ -26,6 +32,11 @@ impl InRecordsTable for EntryRow {
 }
 
 impl InRecordsTable for DeletedRow {
+    fn row_id(&self) -> RowId {
+        self.0
+    }
+}
+impl InRecordsTable for RecordRow {
     fn row_id(&self) -> RowId {
         self.0
     }
@@ -232,7 +243,7 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
 
 /// The row data associated with a row in the `Records` table. The precise value depends on the
 /// `variant` column.
-pub enum RecordRowVariant {
+enum RecordRowVariant {
     /// Variant `0`, which is regular data
     Entry(RawEntryData),
     /// Variant `1`, which is a row which has been deleted
@@ -346,22 +357,6 @@ impl<'conn> State<'conn, EntryRow> {
         }
     }
 
-    /// Check if the given alias exists and points to this row, and delete the alias if it does.
-    #[inline]
-    pub fn delete_alias_if_associated(&self, alias: &Alias) -> Result<(), rusqlite::Error> {
-        debug!(
-            "Checking if alias '{alias}' refers to row_id '{}' and deleting the alias if yes",
-            self.row_id()
-        );
-        if let Some(row_id) = get_row_id(&self.tx, alias)?
-            && row_id == self.row_id()
-        {
-            self.prepare("DELETE FROM CitationKeys WHERE name = ?1")?
-                .execute((alias.name(),))?;
-        }
-        Ok(())
-    }
-
     fn replace_impl<R: RecordsDataCol>(&self, data: &R) -> Result<i64, rusqlite::Error> {
         // read the current value of 'record_id' and 'children'
         let existing = RecordContext::lookup(self)?;
@@ -392,18 +387,8 @@ impl<'conn> State<'conn, EntryRow> {
     }
 }
 
-/// A row in the 'Records' table which either exists or was deleted.
-pub enum EntryOrDeletedRow<'conn> {
-    Entry(EntryRowData, State<'conn, EntryRow>),
-    Deleted(DeletedRowData, State<'conn, DeletedRow>),
-}
-
-impl<'conn> EntryOrDeletedRow<'conn> {
-    /// Lookup up a row in the 'Records' table, which either exists or was deleted.
-    pub(super) fn init(
-        tx: super::Transaction<'conn>,
-        row_id: i64,
-    ) -> Result<Self, rusqlite::Error> {
+impl<'conn> State<'conn, RecordRow> {
+    pub fn determine(self) -> Result<EntryOrDeletedRow<'conn>, rusqlite::Error> {
         /// Helper function so that rustfmt has an easier time
         #[inline]
         fn convert(
@@ -434,12 +419,13 @@ impl<'conn> EntryOrDeletedRow<'conn> {
             Ok((data, modified, canonical))
         }
 
-        let (variant, modified, canonical) = {
-            tx.prepare_cached(
+        let row_id = self.row_id();
+
+        let (variant, modified, canonical) = self
+            .prepare_cached(
                 "SELECT record_id, modified, data, variant FROM Records WHERE key = ?1",
             )?
-            .query_row([row_id], convert)?
-        };
+            .query_row([row_id], convert)?;
 
         Ok(match variant {
             RecordRowVariant::Entry(data) => EntryOrDeletedRow::Entry(
@@ -448,7 +434,7 @@ impl<'conn> EntryOrDeletedRow<'conn> {
                     modified,
                     canonical,
                 },
-                State::init(tx, EntryRow(row_id)),
+                State::init(self.tx, EntryRow(row_id)),
             ),
             RecordRowVariant::Deleted(replacement) => EntryOrDeletedRow::Deleted(
                 DeletedRowData {
@@ -456,10 +442,16 @@ impl<'conn> EntryOrDeletedRow<'conn> {
                     modified,
                     canonical,
                 },
-                State::init(tx, DeletedRow(row_id)),
+                State::init(self.tx, DeletedRow(row_id)),
             ),
         })
     }
+}
+
+/// A row in the 'Records' table which either exists or was deleted.
+pub enum EntryOrDeletedRow<'conn> {
+    Entry(EntryRowData, State<'conn, EntryRow>),
+    Deleted(DeletedRowData, State<'conn, DeletedRow>),
 }
 
 /// The type of citation key insertion to perform.
