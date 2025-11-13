@@ -5,63 +5,30 @@ use anyhow::Result;
 use super::OnConflict;
 
 use crate::{
-    RawEntryData,
     db::state::{EntryRow, State},
-    entry::{ConflictResolved, Entry, EntryData, MutableEntryData},
+    entry::{ConflictResolved, EntryData, MutableEntryData},
     error::MergeError,
-    logger::{error, info, reraise, set_failed, suggest, warn},
+    logger::{error, info, reraise, suggest, warn},
     record::Alias,
     term::{Editor, EditorConfig, Input},
 };
 
-/// Edit a record and update the entry corresponding to the [`EntryRow`]. Returns the edited
-/// record, saving the data.
-pub fn edit_record_and_update<'conn>(
-    row: State<'conn, EntryRow>,
-    entry: &mut Entry<MutableEntryData>,
-    force_update: bool,
-    canonical: impl std::fmt::Display,
-) -> Result<State<'conn, EntryRow>, anyhow::Error> {
-    let editor = Editor::new(EditorConfig { suffix: ".bib" });
-
-    let data_changed = if let Some(new_entry) = editor.edit(entry)? {
-        let Entry {
-            key: ref new_key,
-            record_data: ref new_record_data,
-        } = new_entry;
-
-        if new_key != entry.key() {
-            match Alias::from_str(new_key.as_ref()) {
-                Ok(alias) => {
-                    info!("Creating new alias '{alias}' for '{canonical}'");
-                    if let Some(other_remote_id) = row.ensure_alias(&alias)? {
-                        warn!("Alias '{alias}' already exists and refers to '{other_remote_id}'.");
-                    }
-                }
-                Err(err) => {
-                    error!("New key {} is not a valid alias: {err}.", new_key.as_ref());
-                    suggest!("Any edits to the entry key are only used to create new aliases.");
-                }
+/// Given a candidate alias string, check if it is a valid alias, and if it is, try to add it as an
+/// alias for the given row. If the alias does not exist, or it exists and points to the row, this
+/// does not result in an error.
+pub fn create_alias_if_valid(key: &str, row: &State<EntryRow>) -> Result<(), rusqlite::Error> {
+    match Alias::from_str(key) {
+        Ok(alias) => {
+            if let Some(other_remote_id) = row.ensure_alias(&alias)? {
+                warn!("Alias '{alias}' already exists and refers to '{other_remote_id}'.");
             }
         }
-
-        let data_changed = new_record_data != entry.data();
-
-        *entry = new_entry;
-
-        data_changed
-    } else {
-        set_failed();
-        false
-    };
-
-    if data_changed || force_update {
-        info!("Updating cached data for '{canonical}'");
-        let new_row = row.modify(&RawEntryData::from_entry_data(&entry.record_data))?;
-        Ok(new_row)
-    } else {
-        Ok(row)
+        Err(err) => {
+            error!("Bibtex key '{key}' is not a valid alias: {err}.");
+            suggest!("Edits to the entry key are only used to create new aliases.");
+        }
     }
+    Ok(())
 }
 
 /// Merge an iterator of [`EntryData`] into existing data, using the merge rules as specified

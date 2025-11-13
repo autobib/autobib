@@ -183,7 +183,7 @@ pub enum Command {
         #[arg(short, long, group = "delete_mode")]
         replace: Option<RecordId>,
         /// Hard deletion which also removes aliases and cannot be undone.
-        #[arg(short, long, group = "delete_mode")]
+        #[arg(long, group = "delete_mode")]
         hard: bool,
     },
     /// Edit existing records.
