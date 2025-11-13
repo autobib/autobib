@@ -56,8 +56,8 @@ fn delete_impl<F, R, D>(
 ) -> Result<(), rusqlite::Error>
 where
     F: FnOnce() -> Vec<(regex::Regex, String)>,
-    R: FnOnce(String, state::State<'_, state::EntryRow>) -> Result<(), rusqlite::Error>,
-    D: FnOnce(String, state::State<'_, state::DeletedRow>) -> Result<(), rusqlite::Error>,
+    R: FnOnce(String, state::State<'_, state::EntryRecordKey>) -> Result<(), rusqlite::Error>,
+    D: FnOnce(String, state::State<'_, state::DeletedRecordKey>) -> Result<(), rusqlite::Error>,
 {
     match record_db.state_from_record_id(citation_key, &config.alias_transform)? {
         RecordIdState::Entry(original_name, _, state) => entry_callback(original_name, state)?,

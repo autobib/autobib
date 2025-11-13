@@ -10,7 +10,7 @@ use crate::{
     config::Config,
     db::{
         RecordDatabase,
-        state::{EntryRow, EntryRowData, RecordIdState, State},
+        state::{EntryRecordKey, EntryRowData, RecordIdState, State},
     },
     entry::{Entry, EntryKey, RawEntryData},
     error::Error,
@@ -210,7 +210,7 @@ where
 }
 
 /// Validate a BibTeX key, logging errors and suggesting fixes.
-fn validate_bibtex_key(key: String, row: &State<EntryRow>) -> Option<EntryKey<String>> {
+fn validate_bibtex_key(key: String, row: &State<EntryRecordKey>) -> Option<EntryKey<String>> {
     match EntryKey::try_new(key) {
         Ok(bibtex_key) => Some(bibtex_key),
         Err(parse_result) => {
