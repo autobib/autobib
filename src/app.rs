@@ -6,13 +6,13 @@ mod path;
 mod picker;
 mod retrieve;
 mod source;
+mod update;
 mod write;
 
 use std::{
     collections::{BTreeSet, HashSet},
     fs::{File, OpenOptions, create_dir_all, exists},
-    io::{IsTerminal, Read, Seek, Write, copy},
-    iter::once,
+    io::{IsTerminal, Read, Seek, copy},
     path::{Path, PathBuf},
     str::FromStr,
 };
@@ -28,7 +28,7 @@ use crate::{
     config,
     db::{
         DeleteAliasResult, RecordDatabase, RenameAliasResult,
-        state::{EntryRowData, ExistsOrUnknown, RecordIdState, RemoteIdState},
+        state::{ExistsOrUnknown, RecordIdState, RemoteIdState},
         user_version,
     },
     entry::{Entry, EntryKey, MutableEntryData, RawEntryData},
@@ -45,12 +45,10 @@ use self::{
     cli::{AliasCommand, FindMode, InfoReportType, OnConflict, UtilCommand},
     delete::{hard_delete, soft_delete},
     edit::{edit_record_and_update, merge_record_data},
-    path::{
-        data_from_path_or_default, data_from_path_or_remote, get_attachment_dir,
-        get_attachment_root,
-    },
+    path::{data_from_key, data_from_path, get_attachment_dir, get_attachment_root},
     picker::{choose_attachment, choose_attachment_path, choose_canonical_id},
     retrieve::{retrieve_and_validate_entries, retrieve_entries_read_only},
+    update::update,
     write::{init_outfile, output_entries, output_keys},
 };
 
@@ -657,7 +655,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 RecordIdState::InvalidRemoteId(err) => bail!("{err}"),
             }
         }
-        Command::Local { id, from } => {
+        Command::Local { id, from_bibtex } => {
             // check if the provided identifier is a valid alias
             let alias = match Alias::from_str(&id) {
                 Ok(alias) => alias,
@@ -683,7 +681,12 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     )
                 }
                 ExistsOrUnknown::Unknown(missing) => {
-                    let data = data_from_path_or_default(from.as_ref())?;
+                    let data = if let Some(path) = from_bibtex {
+                        data_from_path(path)?
+                    } else {
+                        MutableEntryData::default()
+                    };
+
                     let raw_data = RawEntryData::from_entry_data(&data);
                     let row = missing.insert(&raw_data, &remote_id)?;
                     if !cli.no_interactive {
@@ -854,64 +857,26 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
         }
         Command::Update {
             citation_key,
-            from,
+            from_bibtex,
+            from_key,
             on_conflict,
         } => {
             let cfg = config::load(&config_path, missing_ok)?;
-            match record_db.state_from_record_id(citation_key, &cfg.alias_transform)? {
-                RecordIdState::Entry(
-                    citation_key,
-                    EntryRowData {
-                        data, canonical, ..
-                    },
-                    state,
-                ) => {
-                    let new_raw_data = match data_from_path_or_remote(from, canonical, client) {
-                        Ok((data, _)) => data,
-                        Err(err) => {
-                            state.commit()?;
-                            bail!(err);
-                        }
-                    };
-                    let mut existing_record = MutableEntryData::from_entry_data(&data);
-                    merge_record_data(
-                        on_conflict,
-                        &mut existing_record,
-                        once(&new_raw_data),
-                        &citation_key,
-                    )?;
-                    let new_row = state.modify(&RawEntryData::from_entry_data(&existing_record))?;
-                    new_row.commit()?;
-                }
-                RecordIdState::Deleted(citation_key, _, state) => {
-                    state.commit()?;
-                    bail!("Cannot update deleted row '{citation_key}'.");
-                }
-                RecordIdState::NullRemoteId(mapped_remote_id, null_row) => {
-                    match data_from_path_or_remote(from, mapped_remote_id.mapped, client) {
-                        Ok((data, canonical)) => {
-                            info!("Existing row was null; inserting new data.");
-                            let row = null_row.delete()?.insert_entry_data(&data, &canonical)?;
-                            row.commit()?;
-                        }
-                        Err(err) => {
-                            null_row.commit()?;
-                            bail!(err);
-                        }
-                    };
-                }
-                RecordIdState::Unknown(unknown) => {
-                    let maybe_normalized = unknown.combine_and_commit()?;
-                    error!("Record does not exist in database: {maybe_normalized}");
-                    if !maybe_normalized.mapped.is_local() {
-                        suggest!("Use `autobib get` to retrieve record");
-                    }
-                }
-                RecordIdState::UndefinedAlias(alias) => {
-                    bail!("Undefined alias: '{alias}'");
-                }
-                RecordIdState::InvalidRemoteId(err) => bail!("{err}"),
-            }
+
+            let provided_data = if let Some(record_id) = from_key {
+                Some(data_from_key(&mut record_db, record_id, &cfg)?)
+            } else if let Some(path) = from_bibtex {
+                Some(data_from_path(path)?)
+            } else {
+                None
+            };
+
+            update(
+                on_conflict,
+                record_db.state_from_record_id(citation_key, &cfg.alias_transform)?,
+                provided_data,
+                client,
+            )?;
         }
         Command::Util { util_command } => match util_command {
             UtilCommand::Check { fix } => {
