@@ -23,7 +23,7 @@ pub fn soft_delete<F: FnOnce() -> Vec<(regex::Regex, String)>>(
         config,
         |_, state| state.soft_delete(replace)?.commit(),
         |original_name, state| {
-            error!("Cannot delete key which was previously deleted: {original_name}");
+            error!("Key corresponds to record which is already deleted: '{original_name}'");
             state.commit()
         },
     )

@@ -183,7 +183,7 @@ pub enum Command {
         #[arg(short, long, group = "delete_mode")]
         replace: Option<RecordId>,
         /// Hard deletion which also removes aliases and cannot be undone.
-        #[arg(short, long, group = "delete_mode")]
+        #[arg(long, group = "delete_mode")]
         hard: bool,
     },
     /// Edit existing records.
@@ -300,6 +300,21 @@ pub enum Command {
         #[arg(short, long)]
         mkdir: bool,
     },
+    /// Redo previously undone changes.
+    ///
+    /// If no arguments are provided, the redo will succeed if there is a unique change originating
+    /// from the current state.
+    ///
+    /// The optional INDEX refers to the 0-indexed change, ordered from oldest to newest.
+    /// Negative values of INDEX are permitted and count backwards from newest to oldest.
+    ///
+    /// For example, INDEX 0 is the oldest change and INDEX -1 is the newest change.
+    Redo {
+        /// The citation key to modify.
+        citation_key: RecordId,
+        /// The index of the redo, ordered from oldest to newest.
+        index: Option<isize>,
+    },
     /// Generate records by searching for citation keys inside files.
     ///
     /// This is essentially a call to `autobib get`, except with a custom search which attempts
@@ -338,6 +353,11 @@ pub enum Command {
         /// Ignore null records and aliases.
         #[arg(long)]
         ignore_null: bool,
+    },
+    /// Undo the most recent change to a citation key.
+    Undo {
+        /// The citation key to modify.
+        citation_key: RecordId,
     },
     /// Update data associated with an existing citation key.
     ///
@@ -473,6 +493,8 @@ impl Command {
             Self::Local { .. } => "local",
             Self::Update { .. } => "update",
             Self::Edit { .. } => "edit",
+            Self::Undo { .. } => "undo",
+            Self::Redo { .. } => "redo",
             Self::Util { util_command } => return util_command.validate_read_only_compatibility(),
         };
         Err(ReadOnlyInvalid::Command(invalid_cmd))

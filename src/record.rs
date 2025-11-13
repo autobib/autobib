@@ -125,7 +125,7 @@ impl<'conn> From<RemoteRecordRowResponse<'conn>> for RecordRowResponse<'conn> {
 
 impl<'conn> RecordRowResponse<'conn> {
     /// Either return the record and corresponding state transaction wrapper, or raise an error. In
-    /// order to commit the new changes, the resulting [`RecordRow`] must be committed.
+    /// order to commit the new changes, the resulting [`EntryRow`] must be committed.
     ///
     /// If the record is null, the corresponding transaction is automatically committed before
     /// returning the relevant error.
