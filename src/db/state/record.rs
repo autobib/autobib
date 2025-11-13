@@ -109,48 +109,30 @@ impl<I: InRecordsTable> RecordsLookup<I> for RemoteId {
     }
 }
 
+impl RecordRowData {
+    /// This special implementation is needed for the depth-first traversal methods
+    fn lookup_raw(tx: &super::Transaction, row_id: i64) -> rusqlite::Result<Self> {
+        tx.prepare_cached("SELECT record_id, modified, data, variant FROM Records WHERE key = ?1")?
+            .query_row((row_id,), |row| {
+                let data = EntryDataOrReplacement::from_bytes_and_variant(
+                    row.get("data")?,
+                    row.get("variant")?,
+                );
+                let canonical = RemoteId::from_string_unchecked(row.get("record_id")?);
+                let modified = row.get("modified")?;
+
+                Ok(Self {
+                    data,
+                    modified,
+                    canonical,
+                })
+            })
+    }
+}
+
 impl<I: InRecordsTable> RecordsLookup<I> for RecordRowData {
     fn lookup<'conn>(state: &State<'conn, I>) -> Result<Self, rusqlite::Error> {
-        /// Helper function so that rustfmt has an easier time
-        #[inline]
-        fn convert(row: &rusqlite::Row<'_>) -> Result<RecordRowData, rusqlite::Error> {
-            let variant: i64 = row.get("variant")?;
-            let data = match variant {
-                0 => EntryDataOrReplacement::Entry(RawEntryData::from_byte_repr_unchecked(
-                    row.get("data")?,
-                )),
-                1 => {
-                    let data_bytes: Vec<u8> = row.get("data")?;
-                    let remote_id = if data_bytes.is_empty() {
-                        None
-                    } else {
-                        Some(RemoteId::from_string_unchecked(
-                            data_bytes.try_into().expect("Invalid database: 'data' column for deleted row contains non-UTF8 blob data."),
-                        ))
-                    };
-                    EntryDataOrReplacement::Deleted(remote_id)
-                }
-                v => {
-                    panic!(
-                        "Corrupted database: 'Records' table contains row with invalid variant {v}"
-                    )
-                }
-            };
-            let canonical = RemoteId::from_string_unchecked(row.get("record_id")?);
-            let modified = row.get("modified")?;
-
-            Ok(RecordRowData {
-                data,
-                modified,
-                canonical,
-            })
-        }
-
-        state
-            .prepare_cached(
-                "SELECT record_id, modified, data, variant FROM Records WHERE key = ?1",
-            )?
-            .query_row((state.row_id(),), convert)
+        Self::lookup_raw(&state.tx, state.row_id())
     }
 }
 
@@ -208,11 +190,92 @@ impl<'conn, O: InRecordsTable, E> RecordRowMoveResult<'conn, O, E> {
     }
 }
 
+/// Changelog implementation
+impl<'conn, I: InRecordsTable> State<'conn, I> {
+    /// Get the parent ID of a row.
+    fn parent_id(&self, row_id: i64) -> rusqlite::Result<Option<i64>> {
+        self.prepare_cached("SELECT parent_key FROM Records WHERE key = ?1")?
+            .query_row((row_id,), |row| row.get(0))
+    }
+
+    /// Get the ID of the root.
+    fn root_id(&self) -> rusqlite::Result<i64> {
+        let mut row_id = self.row_id();
+        while let Some(parent) = self.parent_id(row_id)? {
+            row_id = parent;
+        }
+        Ok(row_id)
+    }
+
+    /// Traverse the ancestors from the current record to the root record, and
+    /// apply the provided closure to every visited record.
+    pub fn ancestors<F>(&self, mut f: F) -> rusqlite::Result<()>
+    where
+        F: FnMut(RecordRowData),
+    {
+        let mut row_id = self.row_id();
+
+        loop {
+            f(RecordRowData::lookup_raw(&self.tx, row_id)?);
+
+            row_id = if let Some(parent) = self.parent_id(row_id)? {
+                parent
+            } else {
+                break Ok(());
+            }
+        }
+    }
+
+    /// Push the child IDs of a row onto a stack, returning the number of children that were
+    /// pushed.
+    ///
+    /// The child IDs are written in reverse order, so that the oldest changes are traversed
+    /// first.
+    fn push_child_ids_to_stack(
+        &self,
+        row_id: i64,
+        stack: &mut Vec<i64>,
+    ) -> rusqlite::Result<usize> {
+        let children: Vec<u8> = self
+            .prepare_cached("SELECT children FROM Records WHERE key = ?1")?
+            .query_row((row_id,), |row| row.get(0))?;
+
+        let chunks = children.as_chunks().0;
+        let num_children = chunks.len();
+        stack.extend(chunks.iter().rev().map(|chunk| i64::from_le_bytes(*chunk)));
+
+        Ok(num_children)
+    }
+
+    /// Traverse the tree depth-first, starting at the root and applying the provided closure to
+    /// every visited record. The children are visited in order from oldest to newest.
+    ///
+    /// The first argument of the closure is the number of children of the node, and the second
+    /// argument is the data associated with the node.
+    ///
+    /// The child count can be used to determine the precise location in the tree, since each
+    /// backtrack will jump to the first parent with remaining children.
+    pub fn traverse_depth_first<F>(&self, mut f: F) -> rusqlite::Result<()>
+    where
+        F: FnMut(usize, RecordRowData),
+    {
+        let mut stack = vec![self.root_id()?];
+
+        while let Some(row_id) = stack.pop() {
+            let n = self.push_child_ids_to_stack(row_id, &mut stack)?;
+            let data = RecordRowData::lookup_raw(&self.tx, row_id)?;
+            f(n, data);
+        }
+        Ok(())
+    }
+}
+
 impl<'conn, I: InRecordsTable> State<'conn, I> {
     fn row_id(&self) -> RowId {
         self.id.row_id()
     }
 
+    /// Forget whatever kind of row this is, and just replace it with a general [`RecordRow`].
     pub fn forget(self) -> State<'conn, RecordRow> {
         let row_id = self.row_id();
         State::init(self.tx, RecordRow(row_id))
@@ -378,6 +441,27 @@ pub enum EntryDataOrReplacement {
     Deleted(Option<RemoteId>),
 }
 
+impl EntryDataOrReplacement {
+    fn from_bytes_and_variant(data_bytes: Vec<u8>, variant: i64) -> Self {
+        match variant {
+            0 => Self::Entry(RawEntryData::from_byte_repr_unchecked(data_bytes)),
+            1 => {
+                let remote_id = if data_bytes.is_empty() {
+                    None
+                } else {
+                    Some(RemoteId::from_string_unchecked(
+                            data_bytes.try_into().expect("Invalid database: 'data' column for deleted row contains non-UTF8 blob data."),
+                        ))
+                };
+                Self::Deleted(remote_id)
+            }
+            v => {
+                panic!("Corrupted database: 'Records' table contains row with invalid variant {v}")
+            }
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct EntryRowData {
     pub data: RawEntryData,
@@ -460,8 +544,10 @@ impl RecordContext {
     /// Returns an iterator over all child keys in order of creation.
     fn child_keys(&self) -> impl DoubleEndedIterator<Item = i64> {
         self.children
-            .chunks_exact(8)
-            .map(|chunk| i64::from_le_bytes(chunk.try_into().unwrap()))
+            .as_chunks()
+            .0
+            .iter()
+            .map(|chunk| i64::from_le_bytes(*chunk))
     }
 
     fn child_count(&self) -> usize {

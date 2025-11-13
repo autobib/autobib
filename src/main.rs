@@ -13,7 +13,6 @@ mod path_hash;
 pub mod provider;
 mod record;
 pub mod term;
-pub mod tree;
 
 use std::process::exit;
 
