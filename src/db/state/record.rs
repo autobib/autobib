@@ -438,7 +438,7 @@ impl<'conn> EntryOrDeletedRow<'conn> {
             tx.prepare_cached(
                 "SELECT record_id, modified, data, variant FROM Records WHERE key = ?1",
             )?
-            .query_row([row_id], |row| convert(row))?
+            .query_row([row_id], convert)?
         };
 
         Ok(match variant {
