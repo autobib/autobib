@@ -22,7 +22,7 @@ impl<'conn> State<'conn, Missing> {
         Ok(State::init(self.tx, NullRecordRow(row_id)))
     }
 
-    /// Create the row, converting into a [`RecordRow`].
+    /// Create the row, converting into a [`EntryRow`].
     ///
     /// # Safety
     /// The 'canonical' remote id must be present in the provided `refs` iterator.
@@ -53,7 +53,7 @@ impl<'conn> State<'conn, Missing> {
         self.insert(&raw_record_data, canonical)
     }
 
-    /// Create the row and also insert a link in the `CitationKeys` table, converting into a [`RecordRow`].
+    /// Create the row and also insert a link in the `CitationKeys` table, converting into a [`EntryRow`].
     pub fn insert(
         self,
         data: &RawEntryData,

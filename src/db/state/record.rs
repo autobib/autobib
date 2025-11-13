@@ -109,6 +109,51 @@ impl<I: InRecordsTable> RecordsLookup<I> for RemoteId {
     }
 }
 
+impl<I: InRecordsTable> RecordsLookup<I> for RecordRowData {
+    fn lookup<'conn>(state: &State<'conn, I>) -> Result<Self, rusqlite::Error> {
+        /// Helper function so that rustfmt has an easier time
+        #[inline]
+        fn convert(row: &rusqlite::Row<'_>) -> Result<RecordRowData, rusqlite::Error> {
+            let variant: i64 = row.get("variant")?;
+            let data = match variant {
+                0 => EntryDataOrReplacement::Entry(RawEntryData::from_byte_repr_unchecked(
+                    row.get("data")?,
+                )),
+                1 => {
+                    let data_bytes: Vec<u8> = row.get("data")?;
+                    let remote_id = if data_bytes.is_empty() {
+                        None
+                    } else {
+                        Some(RemoteId::from_string_unchecked(
+                            data_bytes.try_into().expect("Invalid database: 'data' column for deleted row contains non-UTF8 blob data."),
+                        ))
+                    };
+                    EntryDataOrReplacement::Deleted(remote_id)
+                }
+                v => {
+                    panic!(
+                        "Corrupted database: 'Records' table contains row with invalid variant {v}"
+                    )
+                }
+            };
+            let canonical = RemoteId::from_string_unchecked(row.get("record_id")?);
+            let modified = row.get("modified")?;
+
+            Ok(RecordRowData {
+                data,
+                modified,
+                canonical,
+            })
+        }
+
+        state
+            .prepare_cached(
+                "SELECT record_id, modified, data, variant FROM Records WHERE key = ?1",
+            )?
+            .query_row((state.row_id(),), convert)
+    }
+}
+
 impl RecordsLookup<EntryRow> for EntryRowData {
     fn lookup<'conn>(state: &State<'conn, EntryRow>) -> Result<Self, rusqlite::Error> {
         state
@@ -482,8 +527,7 @@ impl<'conn> State<'conn, EntryRow> {
                 if existing_row_id == self.row_id() {
                     Ok(None)
                 } else {
-                    let EntryRowData { canonical, .. } = EntryRowData::lookup(self)?;
-                    Ok(Some(canonical))
+                    Ok(Some(RemoteId::lookup(self)?))
                 }
             }
             None => {
@@ -524,45 +568,15 @@ impl<'conn> State<'conn, EntryRow> {
 
 impl<'conn> State<'conn, RecordRow> {
     pub fn determine(self) -> Result<EntryOrDeletedRow<'conn>, rusqlite::Error> {
-        /// Helper function so that rustfmt has an easier time
-        #[inline]
-        fn convert(
-            row: &rusqlite::Row<'_>,
-        ) -> Result<(EntryDataOrReplacement, DateTime<Local>, RemoteId), rusqlite::Error> {
-            let variant: i64 = row.get("variant")?;
-            let data = match variant {
-                0 => EntryDataOrReplacement::Entry(RawEntryData::from_byte_repr_unchecked(
-                    row.get("data")?,
-                )),
-                1 => {
-                    let s: String = row.get("data")?;
-                    let remote_id = if s.is_empty() {
-                        None
-                    } else {
-                        Some(RemoteId::from_string_unchecked(s))
-                    };
-                    EntryDataOrReplacement::Deleted(remote_id)
-                }
-                v => {
-                    panic!(
-                        "Corrupted database: 'Records' table contains row with invalid variant {v}"
-                    )
-                }
-            };
-            let canonical = RemoteId::from_string_unchecked(row.get("record_id")?);
-            let modified = row.get("modified")?;
-            Ok((data, modified, canonical))
-        }
+        let RecordRowData {
+            data,
+            modified,
+            canonical,
+        } = RecordRowData::lookup(&self)?;
 
         let row_id = self.row_id();
 
-        let (variant, modified, canonical) = self
-            .prepare_cached(
-                "SELECT record_id, modified, data, variant FROM Records WHERE key = ?1",
-            )?
-            .query_row([row_id], convert)?;
-
-        Ok(match variant {
+        Ok(match data {
             EntryDataOrReplacement::Entry(data) => EntryOrDeletedRow::Entry(
                 EntryRowData {
                     data,

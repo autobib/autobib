@@ -35,16 +35,17 @@ use crate::{
     error::AliasErrorKind,
     format::Template,
     http::{BodyBytes, Client},
-    logger::{debug, error, info, suggest, warn},
+    logger::{debug, error, info, set_failed, suggest, warn},
     normalize::{Normalization, Normalize},
     output::{owriteln, stdout_lock_wrap},
     record::{Alias, Record, RecordId, RemoteId, get_record_row},
+    term::Editor,
 };
 
 use self::{
     cli::{AliasCommand, FindMode, InfoReportType, OnConflict, UtilCommand},
     delete::{hard_delete, soft_delete},
-    edit::{edit_record_and_update, merge_record_data},
+    edit::{create_alias_if_valid, merge_record_data},
     path::{data_from_key, data_from_path, get_attachment_dir, get_attachment_root},
     picker::{choose_attachment, choose_attachment_path, choose_canonical_id},
     retrieve::{retrieve_and_validate_entries, retrieve_entries_read_only},
@@ -309,15 +310,9 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             };
 
             for key in citation_keys {
-                let (
-                    Record {
-                        key,
-                        data,
-                        canonical,
-                    },
-                    row,
-                ) = get_record_row(&mut record_db, key, client, &cfg)?
-                    .exists_or_commit_null("Cannot edit")?;
+                let (Record { key, data, .. }, row) =
+                    get_record_row(&mut record_db, key, client, &cfg)?
+                        .exists_or_commit_null("Cannot edit")?;
 
                 if cli.no_interactive {
                     if nl.is_identity() {
@@ -335,17 +330,27 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         }
                     }
                 } else {
-                    let mut editable_data = MutableEntryData::from_entry_data(&data);
-                    let changed = editable_data.normalize(&nl);
-                    let entry_key =
-                        EntryKey::try_new(key).unwrap_or_else(|_| EntryKey::placeholder());
-                    let row = edit_record_and_update(
-                        row,
-                        &mut Entry::new(entry_key, editable_data),
-                        changed,
-                        canonical,
-                    )?;
-                    row.commit()?;
+                    let mut record_data = MutableEntryData::from_entry_data(&data);
+                    let changed = record_data.normalize(&nl);
+                    let entry = Entry {
+                        key: EntryKey::try_new(key).unwrap_or_else(|_| EntryKey::placeholder()),
+                        record_data,
+                    };
+
+                    if let Some(Entry { key, record_data }) = Editor::new_bibtex().edit(&entry)? {
+                        let new_row = row.modify(&RawEntryData::from_entry_data(&record_data))?;
+                        create_alias_if_valid(key.as_ref(), &new_row)?;
+                        new_row.commit()?;
+                    } else if changed {
+                        // even though the data did not change after editing,
+                        // it was still modified anyway so we save the changes
+                        row.modify(&RawEntryData::from_entry_data(&entry.record_data))?
+                            .commit()?;
+                    } else {
+                        // we return an error here, since this was an interactive edit
+                        row.commit()?;
+                        error!("Record data unchanged");
+                    }
                 }
             }
         }
@@ -688,29 +693,36 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     )
                 }
                 ExistsOrUnknown::Unknown(missing) => {
-                    let data = if let Some(path) = from_bibtex {
-                        data_from_path(path)?
+                    if let Some(path) = from_bibtex {
+                        let data = data_from_path(path)?;
+                        missing
+                            .insert(&RawEntryData::from_entry_data(&data), &remote_id)?
+                            .commit()?;
+                    } else if cli.no_interactive {
+                        let data = MutableEntryData::<&'static str>::default();
+                        missing
+                            .insert(&RawEntryData::from_entry_data(&data), &remote_id)?
+                            .commit()?;
+                        warn!("Inserted local data with no contents in non-interactive mode");
                     } else {
-                        MutableEntryData::default()
-                    };
+                        let record_data = MutableEntryData::<String>::default();
+                        let entry = Entry {
+                            key: EntryKey::try_new(remote_id.name().into())
+                                .unwrap_or_else(|_| EntryKey::placeholder()),
+                            record_data,
+                        };
 
-                    let raw_data = RawEntryData::from_entry_data(&data);
-                    let row = missing.insert(&raw_data, &remote_id)?;
-                    if !cli.no_interactive {
-                        let row = edit_record_and_update(
-                            row,
-                            &mut Entry {
-                                key: EntryKey::try_new(remote_id.name().into())
-                                    .unwrap_or_else(|_| EntryKey::placeholder()),
-                                record_data: MutableEntryData::from_entry_data(&raw_data),
-                            },
-                            false,
-                            &remote_id,
-                        )?;
-                        row.commit()?;
-                    } else {
-                        row.commit()?;
-                    }
+                        if let Some(Entry { key, record_data }) =
+                            Editor::new_bibtex().edit(&entry)?
+                        {
+                            let row = missing
+                                .insert(&RawEntryData::from_entry_data(&record_data), &remote_id)?;
+                            create_alias_if_valid(key.as_ref(), &row)?;
+                            row.commit()?;
+                        } else {
+                            set_failed();
+                        }
+                    };
                 }
             };
         }
