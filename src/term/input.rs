@@ -1,6 +1,6 @@
 use std::{
     fmt::Display,
-    io::{Result, Write, stdin, stdout},
+    io::{Result, Write, stderr, stdin},
 };
 
 pub struct Input<S> {
@@ -14,9 +14,12 @@ impl<S: Display> Input<S> {
     }
 
     pub fn input(&self) -> Result<String> {
-        let mut stdout = stdout();
-        write!(stdout, "{}: ", self.message)?;
-        stdout.flush()?;
+        {
+            let mut stderr = stderr().lock();
+            write!(stderr, "{}: ", self.message)?;
+            stderr.flush()?;
+        }
+        // lock is released as it goes out of scope
 
         let mut input = String::new();
         stdin().read_line(&mut input)?;
