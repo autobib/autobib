@@ -219,7 +219,9 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
     }
 
     /// Update the active row to be the parent of this row.
-    pub fn to_parent(self) -> Result<RecordRowMoveResult<'conn, I, ()>, rusqlite::Error> {
+    pub fn set_parent_as_active(
+        self,
+    ) -> Result<RecordRowMoveResult<'conn, I, ()>, rusqlite::Error> {
         let context = RecordContext::lookup(&self)?;
         RecordRowMoveResult::from_rowid(self, context.parent.ok_or(()))
     }
@@ -231,7 +233,7 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
     /// backwards.
     ///
     /// The returned index on error is the number of children.
-    pub fn to_child(
+    pub fn set_child_as_active(
         self,
         index: Option<isize>,
     ) -> Result<RecordRowMoveResult<'conn, I, usize>, rusqlite::Error> {

@@ -757,7 +757,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 .flatten()?
             {
                 info!("Performed undo for canonical id '{}'", data.canonical);
-                match state.to_child(index)? {
+                match state.set_child_as_active(index)? {
                     RecordRowMoveResult::Updated(state) => {
                         state.commit()?;
                     }
@@ -916,7 +916,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 .flatten()?
             {
                 info!("Performed undo for canonical id '{}'", data.canonical);
-                match state.to_parent()? {
+                match state.set_parent_as_active()? {
                     RecordRowMoveResult::Updated(state) => {
                         state.commit()?;
                     }
