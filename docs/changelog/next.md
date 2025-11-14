@@ -12,3 +12,4 @@ Changes since `v0.5.0`.
 
 - Fixed a bug where the program panicked on broken pipe errors when writing to stdout.
   Now the program terminates silently on such errors.
+- Fixes an unexpected error when passing a template string containing an invalid JSON literal.
