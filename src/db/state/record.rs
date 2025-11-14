@@ -1,4 +1,5 @@
 use chrono::{DateTime, Local};
+use rusqlite::OptionalExtension;
 
 use crate::{
     Alias, RawEntryData, RemoteId,
@@ -88,30 +89,34 @@ impl RecordsDataCol for EntryDataOrReplacement {
 /// Types which can be converted from a row in the 'Records' table, assuming the row has the
 /// correct state.
 trait RecordsLookup<I: InRecordsTable>: Sized {
-    fn lookup<'conn>(state: &State<'conn, I>) -> Result<Self, rusqlite::Error>;
+    unsafe fn lookup_unchecked(tx: &super::Transaction, row_id: i64) -> rusqlite::Result<Self>;
+
+    fn lookup<'conn>(state: &State<'conn, I>) -> Result<Self, rusqlite::Error> {
+        unsafe { Self::lookup_unchecked(&state.tx, state.row_id()) }
+    }
 }
 
 impl<I: InRecordsTable> RecordsLookup<I> for DateTime<Local> {
-    fn lookup<'conn>(state: &State<'conn, I>) -> Result<Self, rusqlite::Error> {
-        state
-            .prepare("SELECT modified FROM Records WHERE key = ?1")?
-            .query_row([state.row_id()], |row| row.get("modified"))
+    unsafe fn lookup_unchecked(
+        tx: &super::Transaction,
+        row_id: i64,
+    ) -> Result<Self, rusqlite::Error> {
+        tx.prepare("SELECT modified FROM Records WHERE key = ?1")?
+            .query_row([row_id], |row| row.get("modified"))
     }
 }
 
 impl<I: InRecordsTable> RecordsLookup<I> for RemoteId {
-    fn lookup<'conn>(state: &State<'conn, I>) -> Result<Self, rusqlite::Error> {
-        state
-            .prepare("SELECT record_id FROM Records WHERE key = ?1")?
-            .query_row([state.row_id()], |row| {
+    unsafe fn lookup_unchecked(tx: &super::Transaction, row_id: i64) -> rusqlite::Result<Self> {
+        tx.prepare("SELECT record_id FROM Records WHERE key = ?1")?
+            .query_row([row_id], |row| {
                 row.get("record_id").map(Self::from_string_unchecked)
             })
     }
 }
 
-impl RecordRowData {
-    /// This special implementation is needed for the depth-first traversal methods
-    fn lookup_raw(tx: &super::Transaction, row_id: i64) -> rusqlite::Result<Self> {
+impl<I: InRecordsTable> RecordsLookup<I> for RecordRowData {
+    unsafe fn lookup_unchecked(tx: &super::Transaction, row_id: i64) -> rusqlite::Result<Self> {
         tx.prepare_cached("SELECT record_id, modified, data, variant FROM Records WHERE key = ?1")?
             .query_row((row_id,), |row| {
                 let data = EntryDataOrReplacement::from_bytes_and_variant(
@@ -130,27 +135,17 @@ impl RecordRowData {
     }
 }
 
-impl<I: InRecordsTable> RecordsLookup<I> for RecordRowData {
-    fn lookup<'conn>(state: &State<'conn, I>) -> Result<Self, rusqlite::Error> {
-        Self::lookup_raw(&state.tx, state.row_id())
-    }
-}
-
 impl RecordsLookup<EntryRow> for EntryRowData {
-    fn lookup<'conn>(state: &State<'conn, EntryRow>) -> Result<Self, rusqlite::Error> {
-        state
-            .prepare_cached(
-                "SELECT record_id, modified, data, variant FROM Records WHERE key = ?1",
-            )?
-            .query_row([state.row_id()], |row| row.try_into())
+    unsafe fn lookup_unchecked(tx: &super::Transaction, row_id: i64) -> rusqlite::Result<Self> {
+        tx.prepare_cached("SELECT record_id, modified, data, variant FROM Records WHERE key = ?1")?
+            .query_row((row_id,), |row| row.try_into())
     }
 }
 
 impl<I: InRecordsTable> RecordsLookup<I> for RecordContext {
-    fn lookup<'conn>(state: &State<'conn, I>) -> Result<Self, rusqlite::Error> {
-        state
-            .prepare_cached("SELECT record_id, parent_key, children FROM Records WHERE key = ?1")?
-            .query_row([state.row_id()], |row| {
+    unsafe fn lookup_unchecked(tx: &super::Transaction, row_id: i64) -> rusqlite::Result<Self> {
+        tx.prepare_cached("SELECT record_id, parent_key, children FROM Records WHERE key = ?1")?
+            .query_row((row_id,), |row| {
                 let record_id = RemoteId::from_string_unchecked(row.get("record_id")?);
                 let parent = row.get("parent_key")?;
                 let children = row.get("children")?;
@@ -216,7 +211,7 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
         let mut row_id = self.row_id();
 
         loop {
-            f(RecordRowData::lookup_raw(&self.tx, row_id)?);
+            f(unsafe { <RecordRowData as RecordsLookup<I>>::lookup_unchecked(&self.tx, row_id) }?);
 
             row_id = if let Some(parent) = self.parent_id(row_id)? {
                 parent
@@ -263,11 +258,17 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
 
         while let Some(row_id) = stack.pop() {
             let n = self.push_child_ids_to_stack(row_id, &mut stack)?;
-            let data = RecordRowData::lookup_raw(&self.tx, row_id)?;
+            let data =
+                unsafe { <RecordRowData as RecordsLookup<I>>::lookup_unchecked(&self.tx, row_id) }?;
             f(n, data);
         }
         Ok(())
     }
+}
+
+pub enum SetActiveError {
+    RowIdUndefined,
+    DifferentCanonical(RemoteId),
 }
 
 impl<'conn, I: InRecordsTable> State<'conn, I> {
@@ -279,6 +280,29 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
     pub fn forget(self) -> State<'conn, RecordRow> {
         let row_id = self.row_id();
         State::init(self.tx, RecordRow(row_id))
+    }
+
+    /// Update the active row to a specific revision.
+    ///
+    /// The row-id must correspond to a row in the 'Records' table with a canonical id which is the same
+    /// as the canonical id of this row.
+    pub fn set_active(
+        self,
+        row_id: i64,
+    ) -> Result<RecordRowMoveResult<'conn, I, SetActiveError>, rusqlite::Error> {
+        let canonical = RemoteId::lookup(&self)?;
+
+        // check if the row id corresponds to a row in the records table, and moreover that the
+        // corresonding canonical id is the same
+        let row_id_or_err = match unsafe {
+            <RemoteId as RecordsLookup<I>>::lookup_unchecked(&self.tx, row_id).optional()?
+        } {
+            Some(target_canonical) if target_canonical == canonical => Ok(row_id),
+            Some(other_canonical) => Err(SetActiveError::DifferentCanonical(other_canonical)),
+            None => Err(SetActiveError::RowIdUndefined),
+        };
+
+        RecordRowMoveResult::from_rowid(self, row_id_or_err)
     }
 
     /// Update the active row to be the parent of this row.
