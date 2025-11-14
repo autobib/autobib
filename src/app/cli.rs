@@ -169,21 +169,22 @@ pub enum Command {
     DefaultConfig,
     /// Delete records and associated keys.
     ///
-    /// Delete a record, and all referencing keys (such as aliases) which are associated with the
-    /// record. If there are multiple referencing keys, they will be listed so that you can confirm
-    /// deletion. This can be ignored with the `--force` option.
+    /// By default, this performs a soft delete, where the current data and keys are retained
+    /// but future attempts to read them will result in an error. The data can be recovered with
+    /// `autobib undo`. The key provided with the `--replace` option will be used to suggest
+    /// replacements.
     ///
-    /// To delete an alias without deleting the underlying data, use the `autobib alias delete`
-    /// command.
+    /// With the `--hard` option, the data as well as all keys are deleted permanently. This is
+    /// incompatible with the `--replace` option.
     Delete {
         /// The citation keys to delete.
         citation_keys: Vec<RecordId>,
-        /// Delete without prompting.
-        ///
-        /// Deletion will fail if user confirmation is required,the program is running
-        /// non-interactively, and this option is not set.
-        #[arg(short, long)]
-        force: bool,
+        /// A replacement key.
+        #[arg(short, long, group = "delete_mode")]
+        replace: Option<RecordId>,
+        /// Hard deletion which also removes aliases and cannot be undone.
+        #[arg(long, group = "delete_mode")]
+        hard: bool,
     },
     /// Edit existing records.
     ///
@@ -278,35 +279,18 @@ pub enum Command {
         #[arg(short, long, value_enum, default_value_t)]
         report: InfoReportType,
     },
-    /// Create or edit a local record with the given handle.
+    /// Create a local record with the given handle.
+    ///
+    /// By default, you will be prompted to edit the local record before adding it to the
+    /// database. Disable this behaviour with `--no-interactive`.
+    ///
+    /// This fails if the local identifier already exists in the database.
     Local {
         /// The name for the record.
         id: String,
-        /// Create local record from BibTeX file.
-        #[arg(short, long, value_name = "PATH", group = "input")]
-        from: Option<PathBuf>,
-        /// Rename an existing local record.
-        #[arg(long, value_name = "EXISTING_ID", group = "input")]
-        rename_from: Option<String>,
-        /// Do not create the alias `<ID>` for `local:<ID>`.
-        #[arg(short = 'A', long)]
-        no_alias: bool,
-    },
-    /// Combine multiple records.
-    Merge {
-        /// The highest priority record which will be retained.
-        into: RecordId,
-        /// Records to be merged.
-        from: Vec<RecordId>,
-        /// How to resolve conflicting field values.
-        #[arg(
-            short = 'n',
-            long,
-            value_enum,
-            default_value_if("no_interactive", ArgPredicate::IsPresent, "prefer-current"),
-            default_value_t
-        )]
-        on_conflict: OnConflict,
+        /// Create the record using the provided BibTeX data.
+        #[arg(short = 'b', long, value_name = "PATH", group = "input")]
+        from_bibtex: Option<PathBuf>,
     },
     /// Show attachment directory associated with record.
     Path {
@@ -315,6 +299,21 @@ pub enum Command {
         /// Also create the directory.
         #[arg(short, long)]
         mkdir: bool,
+    },
+    /// Redo previously undone changes.
+    ///
+    /// If no arguments are provided, the redo will succeed if there is a unique change originating
+    /// from the current state.
+    ///
+    /// The optional INDEX refers to the 0-indexed change, ordered from oldest to newest.
+    /// Negative values of INDEX are permitted and count backwards from newest to oldest.
+    ///
+    /// For example, INDEX 0 is the oldest change and INDEX -1 is the newest change.
+    Redo {
+        /// The citation key to modify.
+        citation_key: RecordId,
+        /// The index of the redo, ordered from oldest to newest.
+        index: Option<isize>,
     },
     /// Generate records by searching for citation keys inside files.
     ///
@@ -355,20 +354,28 @@ pub enum Command {
         #[arg(long)]
         ignore_null: bool,
     },
+    /// Undo the most recent change to a citation key.
+    Undo {
+        /// The citation key to modify.
+        citation_key: RecordId,
+    },
     /// Update data associated with an existing citation key.
     ///
     /// By default, you will be prompted if there is a conflict between the current and incoming
     /// records.
     ///
-    /// To override this behaviour, use `-p current` or `-p incoming`.
+    /// To override this behaviour, use `-n prefer-current` or `-n prefer-incoming`.
     /// If the terminal is not interactive or the `--no-interactive` global option is set, this
-    /// will result in an error if the `-p current` or `-p incoming` is not explicitly set.
+    /// will result in an error if the `-n prefer-current` or `-n prefer-incoming` is not explicitly set.
     Update {
         /// The citation key to update.
         citation_key: RecordId,
-        /// Read update data from local path.
-        #[arg(short, long, value_name = "PATH")]
-        from: Option<PathBuf>,
+        /// Read update data from a BibTeX entry in a file.
+        #[arg(short = 'b', long, value_name = "PATH", group = "update_from")]
+        from_bibtex: Option<PathBuf>,
+        /// Read update data from other record data.
+        #[arg(short = 'k', long, value_name = "CITATION_KEY", group = "update_from")]
+        from_key: Option<RecordId>,
         /// How to resolve conflicting field values.
         #[arg(
             short = 'n',
@@ -484,9 +491,10 @@ impl Command {
             Self::Delete { .. } => "delete",
             Self::Import { .. } => "import",
             Self::Local { .. } => "local",
-            Self::Merge { .. } => "merge",
             Self::Update { .. } => "update",
             Self::Edit { .. } => "edit",
+            Self::Undo { .. } => "undo",
+            Self::Redo { .. } => "redo",
             Self::Util { util_command } => return util_command.validate_read_only_compatibility(),
         };
         Err(ReadOnlyInvalid::Command(invalid_cmd))

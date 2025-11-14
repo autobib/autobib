@@ -9,7 +9,7 @@ use serde_bibtex::{MacroDictionary, de::Deserializer, to_string_unchecked};
 
 pub use self::data::{
     BorrowedEntryData, ConflictResolved, EntryData, EntryKey, EntryType, FieldKey, FieldValue,
-    RawRecordData, RawRecordFieldsIter, RecordData,
+    MutableEntryData, RawEntryData, RawRecordFieldsIter,
 };
 pub(crate) use self::data::{EntryTypeHeader, KeyHeader, ValueHeader};
 
@@ -74,15 +74,15 @@ impl<D: EntryData> Serialize for Entry<D> {
 
 pub fn entries_from_bibtex(
     bibtex: &[u8],
-) -> impl Iterator<Item = Result<Entry<RecordData>, BibtexDataError>> + use<'_> {
+) -> impl Iterator<Item = Result<Entry<MutableEntryData>, BibtexDataError>> + use<'_> {
     let mut dct = MacroDictionary::default();
     dct.set_month_macros();
     Deserializer::from_slice_with_macros(bibtex, dct)
-        .into_iter_regular_entry::<Entry<RecordData>>()
+        .into_iter_regular_entry::<Entry<MutableEntryData>>()
         .map(|res_entry| res_entry.map_err(Into::into))
 }
 
-impl FromStr for Entry<RecordData> {
+impl FromStr for Entry<MutableEntryData> {
     type Err = BibtexDataError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {

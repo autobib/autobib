@@ -2,9 +2,9 @@ use std::{fmt, num::NonZero, str::FromStr};
 
 use rusqlite::types::ValueRef;
 
-use super::{Transaction, get_row_id, schema, sql};
+use super::{Transaction, get_row_id, schema};
 use crate::{
-    CitationKey, RawRecordData, RecordId, RemoteId, error::InvalidBytesError, logger::debug,
+    CitationKey, RawEntryData, RecordId, RemoteId, error::InvalidBytesError, logger::debug,
 };
 
 /// A possible fault that could occurr inside the database.
@@ -98,7 +98,7 @@ pub fn check_table_schema(
     table_name: &str,
     expected_schema: &str,
 ) -> Result<Option<DatabaseFault>, rusqlite::Error> {
-    let mut table_selector = tx.prepare(super::sql::get_table_schema())?;
+    let mut table_selector = tx.prepare("SELECT sql FROM sqlite_schema WHERE name = ?1")?;
     let mut record_rows = table_selector.query([table_name])?;
     match record_rows.next()? {
         Some(row) => {
@@ -131,7 +131,6 @@ impl<'conn> DatabaseValidator<'conn> {
             ("Records", schema::records()),
             ("CitationKeys", schema::citation_keys()),
             ("NullRecords", schema::null_records()),
-            ("Changelog", schema::changelog()),
         ] {
             debug!("Checking schema for table '{tbl_name}'.");
             if let Some(fault) = check_table_schema(&self.tx, tbl_name, schema)? {
@@ -239,11 +238,13 @@ impl<'conn> DatabaseValidator<'conn> {
     /// Validate binary data in the `Records` table.
     pub fn binary_data(&self, faults: &mut Vec<DatabaseFault>) -> Result<(), rusqlite::Error> {
         debug!("Checking binary data correctness");
-        let mut retriever = self.tx.prepare(sql::get_all_record_data())?;
+        let mut retriever = self
+            .tx
+            .prepare("SELECT record_id, data FROM Records WHERE variant = 0")?;
         let mut rows = retriever.query([])?;
 
         while let Some(row) = rows.next()? {
-            if let Err(err) = RawRecordData::<Vec<u8>>::from_byte_repr(row.get("data")?) {
+            if let Err(err) = RawEntryData::<Vec<u8>>::from_byte_repr(row.get("data")?) {
                 faults.push(DatabaseFault::InvalidRecordData(
                     row.get("key")?,
                     row.get("record_id")?,

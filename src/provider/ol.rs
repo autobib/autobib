@@ -6,7 +6,7 @@ use serde::Deserialize;
 use crate::logger::info;
 
 use super::{
-    BodyBytes, Client, EntryType, ProviderError, RecordData, StatusCode, ValidationOutcome,
+    BodyBytes, Client, EntryType, MutableEntryData, ProviderError, StatusCode, ValidationOutcome,
 };
 
 static OL_IDENTIFIER_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[0-9]{7,8}M$").unwrap());
@@ -44,7 +44,10 @@ struct OpenLibraryRecord {
     title: Option<String>,
 }
 
-pub fn get_record<C: Client>(id: &str, client: &C) -> Result<Option<RecordData>, ProviderError> {
+pub fn get_record<C: Client>(
+    id: &str,
+    client: &C,
+) -> Result<Option<MutableEntryData>, ProviderError> {
     let response = client.get(format!("https://openlibrary.org/books/OL{id}.json"))?;
 
     let mut body = match response.status() {
@@ -68,7 +71,7 @@ pub fn get_record<C: Client>(id: &str, client: &C) -> Result<Option<RecordData>,
             publishers,
             ..
         }) => {
-            let mut record_data = RecordData::new(EntryType::book());
+            let mut record_data = MutableEntryData::new(EntryType::book());
 
             if let Some(address) = publish_places.into_iter().next() {
                 record_data.check_and_insert("address".into(), address)?;

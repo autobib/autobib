@@ -19,13 +19,13 @@ use ureq::http::StatusCode;
 // re-imports exposed to provider implementations
 use crate::{
     MappedKey, RemoteId,
-    entry::{EntryData, EntryType, RecordData},
+    entry::{EntryData, EntryType, MutableEntryData},
     error::{ProviderError, RecordDataError},
     http::{BodyBytes, Client},
 };
 
-/// A resolver, which converts a `sub_id` into [`RecordData`].
-type Resolver<C> = fn(&str, &C) -> Result<Option<RecordData>, ProviderError>;
+/// A resolver, which converts a `sub_id` into [`MutableEntryData`].
+type Resolver<C> = fn(&str, &C) -> Result<Option<MutableEntryData>, ProviderError>;
 
 /// A referrer, which converts a `sub_id` into [`RemoteId`].
 type Referrer<C> = fn(&str, &C) -> Result<Option<RemoteId>, ProviderError>;
@@ -206,8 +206,8 @@ pub fn is_reference<C: Client>(provider: &str) -> bool {
 
 /// The outcome of resolving a provider and making the remote call
 pub enum RemoteResponse {
-    /// The provider was a [`Resolver`] and returned [`RecordData`].
-    Data(RecordData),
+    /// The provider was a [`Resolver`] and returned [`MutableEntryData`].
+    Data(MutableEntryData),
     /// The provider was a [`Referrer`] and returned a new [`RemoteId`].
     Reference(RemoteId),
     /// The provider returned `None`.
@@ -234,7 +234,7 @@ pub fn get_remote_response<C: Client>(
 
 /// A receiving struct type useful for deserializing BibTeX from a provider.
 ///
-/// This struct can be fallibly converted into a [`RecordData`].
+/// This struct can be fallibly converted into a [`MutableEntryData`].
 #[derive(Debug, Deserialize)]
 struct ProviderBibtex {
     entry_type: String,
@@ -297,7 +297,7 @@ macro_rules! convert_field {
     };
 }
 
-impl TryFrom<ProviderBibtex> for RecordData {
+impl TryFrom<ProviderBibtex> for MutableEntryData {
     type Error = RecordDataError;
 
     fn try_from(value: ProviderBibtex) -> Result<Self, Self::Error> {
