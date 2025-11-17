@@ -3,42 +3,74 @@ use rusqlite::OptionalExtension;
 
 use crate::{
     Alias, RawEntryData, RemoteId,
-    db::{CitationKey, Constraint, RowId, flatten_constraint_violation, get_row_id},
+    db::{CitationKey, Constraint, flatten_constraint_violation, get_row_id},
     logger::debug,
 };
 
 use super::{Missing, State};
 
-/// A row which is present in the 'Records' table, but with unknown type.
-#[derive(Debug)]
-pub struct RecordRow(pub(super) RowId);
+/// An unvalidated `key`, which may or may not correspond to a row in the 'Records' table.
+///
+/// Keys are represented as hexadecimal strings, and can be parsed from hex strings in a
+/// case-insensitive fashion.
+///
+/// In principle, keys could be negative, but in practice, SQLite will never insert negative values
+/// for the key automatically (unless negative keys are already present), and we never manually input values for the `key` column.
+pub struct UnvalidatedKey(i64);
 
-/// A soft deletion marker row in the 'Records' table.
-#[derive(Debug)]
-pub struct DeletedRow(RowId);
-
-/// An entry in the 'Records' table.
-#[derive(Debug)]
-pub struct EntryRow(pub(super) RowId);
-
-/// States which correspond to a row in the 'Records' table.
-pub trait InRecordsTable {
-    fn row_id(&self) -> RowId;
+macro_rules! impl_key_display {
+    ($v:ident) => {
+        impl std::fmt::Display for $v {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "{:x}", self.0)
+            }
+        }
+    };
 }
 
-impl InRecordsTable for EntryRow {
-    fn row_id(&self) -> RowId {
+impl_key_display!(UnvalidatedKey);
+impl_key_display!(RecordKey);
+impl_key_display!(DeletedRecordKey);
+impl_key_display!(EntryRecordKey);
+
+impl std::str::FromStr for UnvalidatedKey {
+    type Err = std::num::ParseIntError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        i64::from_str_radix(s, 16).map(Self)
+    }
+}
+
+/// The `key` of a row in the 'Records' table, with unknown type.
+#[derive(Debug)]
+pub struct RecordKey(pub(super) i64);
+
+/// The `key` of a soft-deleted row in the 'Records' table.
+#[derive(Debug)]
+pub struct DeletedRecordKey(i64);
+
+/// The `key` of a regular entry in the 'Records' table.
+#[derive(Debug)]
+pub struct EntryRecordKey(pub(super) i64);
+
+/// Any type which represents a `key` corresponding to a row in the 'Records' table.
+pub trait AsRecordKey {
+    fn row_id(&self) -> i64;
+}
+
+impl AsRecordKey for EntryRecordKey {
+    fn row_id(&self) -> i64 {
         self.0
     }
 }
 
-impl InRecordsTable for DeletedRow {
-    fn row_id(&self) -> RowId {
+impl AsRecordKey for DeletedRecordKey {
+    fn row_id(&self) -> i64 {
         self.0
     }
 }
-impl InRecordsTable for RecordRow {
-    fn row_id(&self) -> RowId {
+impl AsRecordKey for RecordKey {
+    fn row_id(&self) -> i64 {
         self.0
     }
 }
@@ -88,7 +120,7 @@ impl RecordsDataCol for EntryDataOrReplacement {
 
 /// Types which can be converted from a row in the 'Records' table, assuming the row has the
 /// correct state.
-trait RecordsLookup<I: InRecordsTable>: Sized {
+trait RecordsLookup<I: AsRecordKey>: Sized {
     unsafe fn lookup_unchecked(tx: &super::Transaction, row_id: i64) -> rusqlite::Result<Self>;
 
     fn lookup<'conn>(state: &State<'conn, I>) -> Result<Self, rusqlite::Error> {
@@ -96,7 +128,7 @@ trait RecordsLookup<I: InRecordsTable>: Sized {
     }
 }
 
-impl<I: InRecordsTable> RecordsLookup<I> for DateTime<Local> {
+impl<I: AsRecordKey> RecordsLookup<I> for DateTime<Local> {
     unsafe fn lookup_unchecked(
         tx: &super::Transaction,
         row_id: i64,
@@ -106,7 +138,7 @@ impl<I: InRecordsTable> RecordsLookup<I> for DateTime<Local> {
     }
 }
 
-impl<I: InRecordsTable> RecordsLookup<I> for RemoteId {
+impl<I: AsRecordKey> RecordsLookup<I> for RemoteId {
     unsafe fn lookup_unchecked(tx: &super::Transaction, row_id: i64) -> rusqlite::Result<Self> {
         tx.prepare("SELECT record_id FROM Records WHERE key = ?1")?
             .query_row([row_id], |row| {
@@ -115,7 +147,7 @@ impl<I: InRecordsTable> RecordsLookup<I> for RemoteId {
     }
 }
 
-impl<I: InRecordsTable> RecordsLookup<I> for RecordRowData {
+impl<I: AsRecordKey> RecordsLookup<I> for RecordRowData {
     unsafe fn lookup_unchecked(tx: &super::Transaction, row_id: i64) -> rusqlite::Result<Self> {
         tx.prepare_cached("SELECT record_id, modified, data, variant FROM Records WHERE key = ?1")?
             .query_row((row_id,), |row| {
@@ -135,14 +167,14 @@ impl<I: InRecordsTable> RecordsLookup<I> for RecordRowData {
     }
 }
 
-impl RecordsLookup<EntryRow> for EntryRowData {
+impl RecordsLookup<EntryRecordKey> for EntryRowData {
     unsafe fn lookup_unchecked(tx: &super::Transaction, row_id: i64) -> rusqlite::Result<Self> {
         tx.prepare_cached("SELECT record_id, modified, data, variant FROM Records WHERE key = ?1")?
             .query_row((row_id,), |row| row.try_into())
     }
 }
 
-impl<I: InRecordsTable> RecordsLookup<I> for RecordContext {
+impl<I: AsRecordKey> RecordsLookup<I> for RecordContext {
     unsafe fn lookup_unchecked(tx: &super::Transaction, row_id: i64) -> rusqlite::Result<Self> {
         tx.prepare_cached("SELECT record_id, parent_key, children FROM Records WHERE key = ?1")?
             .query_row((row_id,), |row| {
@@ -162,12 +194,12 @@ impl<I: InRecordsTable> RecordsLookup<I> for RecordContext {
 /// The result after applying a movement command.
 pub enum RecordRowMoveResult<'conn, O, E> {
     /// The movement command succeeded.
-    Updated(State<'conn, RecordRow>),
+    Updated(State<'conn, RecordKey>),
     /// The movement command failed, so the original row is returned along with some error context.
     Unchanged(State<'conn, O>, E),
 }
 
-impl<'conn, O: InRecordsTable, E> RecordRowMoveResult<'conn, O, E> {
+impl<'conn, O: AsRecordKey, E> RecordRowMoveResult<'conn, O, E> {
     fn from_rowid(
         original: State<'conn, O>,
         candidate: Result<i64, E>,
@@ -177,7 +209,7 @@ impl<'conn, O: InRecordsTable, E> RecordRowMoveResult<'conn, O, E> {
                 original.update_citation_keys(row_id)?;
                 Ok(RecordRowMoveResult::Updated(State::init(
                     original.tx,
-                    RecordRow(row_id),
+                    RecordKey(row_id),
                 )))
             }
             Err(e) => Ok(RecordRowMoveResult::Unchanged(original, e)),
@@ -186,7 +218,7 @@ impl<'conn, O: InRecordsTable, E> RecordRowMoveResult<'conn, O, E> {
 }
 
 /// Changelog implementation
-impl<'conn, I: InRecordsTable> State<'conn, I> {
+impl<'conn, I: AsRecordKey> State<'conn, I> {
     /// Get the parent ID of a row.
     fn parent_id(&self, row_id: i64) -> rusqlite::Result<Option<i64>> {
         self.prepare_cached("SELECT parent_key FROM Records WHERE key = ?1")?
@@ -271,15 +303,16 @@ pub enum SetActiveError {
     DifferentCanonical(RemoteId),
 }
 
-impl<'conn, I: InRecordsTable> State<'conn, I> {
-    fn row_id(&self) -> RowId {
+impl<'conn, I: AsRecordKey> State<'conn, I> {
+    fn row_id(&self) -> i64 {
         self.id.row_id()
     }
 
-    /// Forget whatever kind of row this is, and just replace it with a general [`RecordRow`].
-    pub fn forget(self) -> State<'conn, RecordRow> {
+    /// Forget whatever kind of row this is, and just replace it with a generic row in the
+    /// 'Records' table.
+    pub fn forget(self) -> State<'conn, RecordKey> {
         let row_id = self.row_id();
-        State::init(self.tx, RecordRow(row_id))
+        State::init(self.tx, RecordKey(row_id))
     }
 
     /// Update the active row to a specific revision.
@@ -392,7 +425,7 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
     }
 
     /// Get a transformed version of every key in the `CitationKeys` table which references
-    /// the [`RecordRow`] for which the provided `filter_map` does not return `None`.
+    /// the current row for which the provided `filter_map` does not return `None`.
     fn referencing_keys_impl<T, F: FnMut(String) -> Option<T>>(
         &self,
         mut filter_map: F,
@@ -589,7 +622,7 @@ impl RecordContext {
     }
 }
 
-impl<'conn> State<'conn, EntryRow> {
+impl<'conn> State<'conn, EntryRecordKey> {
     /// Get the bibliographic data associated with this row.
     pub fn get_data(&self) -> Result<EntryRowData, rusqlite::Error> {
         debug!(
@@ -602,18 +635,18 @@ impl<'conn> State<'conn, EntryRow> {
     /// Insert new data, preserving the old row as the parent row.
     pub fn modify(self, data: &RawEntryData) -> Result<Self, rusqlite::Error> {
         let new_key = self.replace_impl(data)?;
-        Ok(Self::init(self.tx, EntryRow(new_key)))
+        Ok(Self::init(self.tx, EntryRecordKey(new_key)))
     }
 
     /// Replace this row with a deletion marker, preserving the old row as the parent row.
     pub fn soft_delete(
         self,
         replacement: &Option<RemoteId>,
-    ) -> Result<State<'conn, DeletedRow>, rusqlite::Error> {
+    ) -> Result<State<'conn, DeletedRecordKey>, rusqlite::Error> {
         let new_key = self.replace_impl(replacement)?;
         Ok(State {
             tx: self.tx,
-            id: DeletedRow(new_key),
+            id: DeletedRecordKey(new_key),
         })
     }
 
@@ -678,7 +711,7 @@ impl<'conn> State<'conn, EntryRow> {
     }
 }
 
-impl<'conn> State<'conn, RecordRow> {
+impl<'conn> State<'conn, RecordKey> {
     pub fn determine(self) -> Result<EntryOrDeletedRow<'conn>, rusqlite::Error> {
         let RecordRowData {
             data,
@@ -695,7 +728,7 @@ impl<'conn> State<'conn, RecordRow> {
                     modified,
                     canonical,
                 },
-                State::init(self.tx, EntryRow(row_id)),
+                State::init(self.tx, EntryRecordKey(row_id)),
             ),
             EntryDataOrReplacement::Deleted(replacement) => EntryOrDeletedRow::Deleted(
                 DeletedRowData {
@@ -703,7 +736,7 @@ impl<'conn> State<'conn, RecordRow> {
                     modified,
                     canonical,
                 },
-                State::init(self.tx, DeletedRow(row_id)),
+                State::init(self.tx, DeletedRecordKey(row_id)),
             ),
         })
     }
@@ -711,8 +744,8 @@ impl<'conn> State<'conn, RecordRow> {
 
 /// A row in the 'Records' table which either exists or was deleted.
 pub enum EntryOrDeletedRow<'conn> {
-    Entry(EntryRowData, State<'conn, EntryRow>),
-    Deleted(DeletedRowData, State<'conn, DeletedRow>),
+    Entry(EntryRowData, State<'conn, EntryRecordKey>),
+    Deleted(DeletedRowData, State<'conn, DeletedRecordKey>),
 }
 
 /// The type of citation key insertion to perform.

@@ -11,7 +11,7 @@ use crate::{
     db::{
         RecordDatabase,
         state::{
-            DeletedRow, DeletedRowData, EntryRow, EntryRowData, Missing, NullRecordRow,
+            DeletedRecordKey, DeletedRowData, EntryRecordKey, EntryRowData, Missing, NullRecordRow,
             RecordIdState, RemoteIdState, State, Unknown,
         },
     },
@@ -75,9 +75,9 @@ impl DeletedRecord {
 #[derive(Debug)]
 pub enum RemoteRecordRowResponse<'conn> {
     /// The record exists.
-    Exists(Record, State<'conn, EntryRow>),
+    Exists(Record, State<'conn, EntryRecordKey>),
     /// The record was deleted.
-    Deleted(DeletedRecord, State<'conn, DeletedRow>),
+    Deleted(DeletedRecord, State<'conn, DeletedRecordKey>),
     /// The record is null.
     Null(RemoteId, State<'conn, NullRecordRow>),
 }
@@ -96,9 +96,9 @@ pub enum RemoteRecordRowResponse<'conn> {
 #[derive(Debug)]
 pub enum RecordRowResponse<'conn> {
     /// The record exists.
-    Exists(Record, State<'conn, EntryRow>),
+    Exists(Record, State<'conn, EntryRecordKey>),
     /// The record was deleted.
-    Deleted(DeletedRecord, State<'conn, DeletedRow>),
+    Deleted(DeletedRecord, State<'conn, DeletedRecordKey>),
     /// The record is null.
     NullRemoteId(RemoteId, State<'conn, NullRecordRow>),
     /// The identifier has an invalid form.
@@ -125,14 +125,14 @@ impl<'conn> From<RemoteRecordRowResponse<'conn>> for RecordRowResponse<'conn> {
 
 impl<'conn> RecordRowResponse<'conn> {
     /// Either return the record and corresponding state transaction wrapper, or raise an error. In
-    /// order to commit the new changes, the resulting [`EntryRow`] must be committed.
+    /// order to commit the new changes, the resulting [`State`] must be committed.
     ///
     /// If the record is null, the corresponding transaction is automatically committed before
     /// returning the relevant error.
     pub fn exists_or_commit_null(
         self,
         err_prefix: &str,
-    ) -> Result<(Record, State<'conn, EntryRow>), anyhow::Error> {
+    ) -> Result<(Record, State<'conn, EntryRecordKey>), anyhow::Error> {
         match self {
             RecordRowResponse::Exists(record, row) => Ok((record, row)),
             RecordRowResponse::Deleted(data, deleted_row) => {
@@ -281,9 +281,12 @@ fn get_record_row_recursive<'conn, O, C: Client>(
     remote_id: RemoteId,
     client: &C,
     normalization: &Normalization,
-    exists_callback: impl FnOnce(&State<'conn, EntryRow>, O) -> Result<Option<String>, rusqlite::Error>,
+    exists_callback: impl FnOnce(
+        &State<'conn, EntryRecordKey>,
+        O,
+    ) -> Result<Option<String>, rusqlite::Error>,
     deleted_callback: impl FnOnce(
-        &State<'conn, DeletedRow>,
+        &State<'conn, DeletedRecordKey>,
         O,
     ) -> Result<Option<String>, rusqlite::Error>,
     original: O,

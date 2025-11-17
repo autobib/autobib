@@ -1,6 +1,6 @@
 use chrono::Local;
 
-use super::{EntryRow, NullRecordRow, State};
+use super::{EntryRecordKey, NullRecordRow, State};
 use crate::{RawEntryData, RemoteId, db::CitationKey, entry::EntryData, logger::debug};
 
 /// A database id which is missing.
@@ -22,7 +22,7 @@ impl<'conn> State<'conn, Missing> {
         Ok(State::init(self.tx, NullRecordRow(row_id)))
     }
 
-    /// Create the row, converting into a [`EntryRow`].
+    /// Create the row.
     ///
     /// # Safety
     /// The 'canonical' remote id must be present in the provided `refs` iterator.
@@ -31,13 +31,13 @@ impl<'conn> State<'conn, Missing> {
         data: &RawEntryData,
         canonical: &RemoteId,
         refs: R,
-    ) -> Result<State<'conn, EntryRow>, rusqlite::Error> {
+    ) -> Result<State<'conn, EntryRecordKey>, rusqlite::Error> {
         debug!("Inserting data for canonical id '{canonical}'");
         let row_id: i64 = self.prepare_cached("INSERT OR ABORT INTO Records (record_id, data, modified) values (?1, ?2, ?3) RETURNING key")?.query_row(
             (canonical.name(), data.to_byte_repr(), &Local::now()),
             |row| row.get(0),
         )?;
-        let row = State::init(self.tx, EntryRow(row_id));
+        let row = State::init(self.tx, EntryRecordKey(row_id));
         row.add_refs(refs)?;
         Ok(row)
     }
@@ -48,17 +48,17 @@ impl<'conn> State<'conn, Missing> {
         self,
         data: &D,
         canonical: &RemoteId,
-    ) -> Result<State<'conn, EntryRow>, rusqlite::Error> {
+    ) -> Result<State<'conn, EntryRecordKey>, rusqlite::Error> {
         let raw_record_data = RawEntryData::from_entry_data(data);
         self.insert(&raw_record_data, canonical)
     }
 
-    /// Create the row and also insert a link in the `CitationKeys` table, converting into a [`EntryRow`].
+    /// Create the row and also insert a link in the `CitationKeys` table.
     pub fn insert(
         self,
         data: &RawEntryData,
         canonical: &RemoteId,
-    ) -> Result<State<'conn, EntryRow>, rusqlite::Error> {
+    ) -> Result<State<'conn, EntryRecordKey>, rusqlite::Error> {
         // SAFETY: 'canonical' is passed as a ref.
         let row = unsafe { self.insert_with_refs(data, canonical, std::iter::once(canonical))? };
         Ok(row)

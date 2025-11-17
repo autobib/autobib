@@ -117,9 +117,9 @@ impl Unknown<'_> {
 #[derive(Debug)]
 pub enum RecordIdState<'conn> {
     /// The `Records` row exists.
-    Entry(String, EntryRowData, State<'conn, EntryRow>),
+    Entry(String, EntryRowData, State<'conn, EntryRecordKey>),
     /// The `Records` row was deleted.
-    Deleted(String, DeletedRowData, State<'conn, DeletedRow>),
+    Deleted(String, DeletedRowData, State<'conn, DeletedRecordKey>),
     /// The `Records` row does not exist and the `NullRecords` row exists.
     NullRemoteId(MappedKey, State<'conn, NullRecordRow>),
     /// The `Records` and `NullRecords` rows do not exist.
@@ -147,15 +147,18 @@ impl<'conn> RecordIdState<'conn> {
     fn existent_with_callback<K>(
         tx: Transaction<'conn>,
         row_id: RowId,
-        produce_key_entry: impl FnOnce(&State<'conn, EntryRow>, K) -> Result<String, rusqlite::Error>,
+        produce_key_entry: impl FnOnce(
+            &State<'conn, EntryRecordKey>,
+            K,
+        ) -> Result<String, rusqlite::Error>,
         produce_key_deleted: impl FnOnce(
-            &State<'conn, DeletedRow>,
+            &State<'conn, DeletedRecordKey>,
             K,
         ) -> Result<String, rusqlite::Error>,
         key: K,
     ) -> Result<Self, rusqlite::Error> {
         debug!("Beginning new transaction for row '{row_id}' in the `Records` table.");
-        match State::init(tx, RecordRow(row_id)).determine()? {
+        match State::init(tx, RecordKey(row_id)).determine()? {
             EntryOrDeletedRow::Entry(entry_row_data, state) => {
                 let key = produce_key_entry(&state, key)?;
                 Ok(Self::Entry(key, entry_row_data, state))
@@ -266,7 +269,7 @@ impl<'conn> RecordIdState<'conn> {
     /// states, reporting an error to standard error.
     pub fn flatten(
         self,
-    ) -> Result<Option<(String, RecordRowData, State<'conn, RecordRow>)>, rusqlite::Error> {
+    ) -> Result<Option<(String, RecordRowData, State<'conn, RecordKey>)>, rusqlite::Error> {
         Ok(match self {
             Self::Entry(s, data, state) => Some((s, data.into(), state.forget())),
             Self::Deleted(s, data, state) => Some((s, data.into(), state.forget())),
@@ -296,9 +299,9 @@ impl<'conn> RecordIdState<'conn> {
 #[derive(Debug)]
 pub enum RemoteIdState<'conn> {
     /// The `Records` row exists.
-    Entry(EntryRowData, State<'conn, EntryRow>),
+    Entry(EntryRowData, State<'conn, EntryRecordKey>),
     /// The `Records` row was deleted.
-    Deleted(DeletedRowData, State<'conn, DeletedRow>),
+    Deleted(DeletedRowData, State<'conn, DeletedRecordKey>),
     /// The `Records` row does not exist and the `NullRecords` row exists.
     Null(State<'conn, NullRecordRow>),
     /// The `Records` and `NullRecords` rows do not exist.
@@ -309,9 +312,9 @@ pub enum RemoteIdState<'conn> {
 #[derive(Debug)]
 pub enum ExistsOrUnknown<'conn> {
     /// The `Records` row exists.
-    Entry(EntryRowData, State<'conn, EntryRow>),
+    Entry(EntryRowData, State<'conn, EntryRecordKey>),
     /// The `Records` row was deleted.
-    Deleted(DeletedRowData, State<'conn, DeletedRow>),
+    Deleted(DeletedRowData, State<'conn, DeletedRecordKey>),
     /// The `Records` and `NullRecords` rows do not exist.
     Unknown(State<'conn, Missing>),
 }
@@ -337,7 +340,7 @@ impl<'conn> RemoteIdState<'conn> {
         Ok(match get_row_id(&tx, remote_id)? {
             Some(row_id) => {
                 debug!("Beginning new transaction for row '{row_id}' in the `Records` table.");
-                match State::init(tx, RecordRow(row_id)).determine()? {
+                match State::init(tx, RecordKey(row_id)).determine()? {
                     EntryOrDeletedRow::Entry(entry_row_data, state) => {
                         RemoteIdState::Entry(entry_row_data, state)
                     }

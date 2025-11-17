@@ -5,7 +5,7 @@ use anyhow::Result;
 use super::OnConflict;
 
 use crate::{
-    db::state::{EntryRow, State},
+    db::state::{EntryRecordKey, State},
     entry::{ConflictResolved, EntryData, MutableEntryData},
     error::MergeError,
     logger::{error, info, reraise, suggest, warn},
@@ -16,7 +16,10 @@ use crate::{
 /// Given a candidate alias string, check if it is a valid alias, and if it is, try to add it as an
 /// alias for the given row. If the alias does not exist, or it exists and points to the row, this
 /// does not result in an error.
-pub fn create_alias_if_valid(key: &str, row: &State<EntryRow>) -> Result<(), rusqlite::Error> {
+pub fn create_alias_if_valid(
+    key: &str,
+    row: &State<EntryRecordKey>,
+) -> Result<(), rusqlite::Error> {
     match Alias::from_str(key) {
         Ok(alias) => {
             if let Some(other_remote_id) = row.ensure_alias(&alias)? {
