@@ -1,0 +1,59 @@
+name: Homebrew formula bump
+
+on:
+  release:
+    types: [published]
+
+env:
+  TAP_NAME: autobib/autobib
+
+jobs:
+  bump-formula:
+    environment: homebrew-tap
+    runs-on: macos-latest
+    steps:
+      - name: Get release version
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        shell: bash
+        run: |
+          if [[ "$RELEASE_TAG" =~ ^v.* ]]; then
+            release_version="${RELEASE_TAG:1}"
+            echo "Release version: $release_version."
+            echo "release_version=$release_version" >> $GITHUB_ENV
+          else
+            echo "Unrecognised release tag: $RELEASE_TAG."
+            exit 1
+          fi
+      - name: Set up Homebrew
+        id: set-up-homebrew
+        # Substituting `Homebrew/actions/setup-homebrew@main` as
+        # (1) it caused inexplicable errors in the bump step in the absence of RubyGems cache;
+        # (2) it writes supplied token to disk as global git config, which causes other conflicts.
+        run: |
+          brew update --auto-update
+          HOMEBREW_REPOSITORY="$(brew --repo)"
+          gems_path="$HOMEBREW_REPOSITORY/Library/Homebrew/vendor/bundle/ruby/"
+          gems_hash="$(shasum -a 256 "$HOMEBREW_REPOSITORY/Library/Homebrew/Gemfile.lock" | cut -f1 -d' ')"
+          echo "gems-path=$gems_path" >> "$GITHUB_OUTPUT"
+          echo "gems-hash=$gems_hash" >> "$GITHUB_OUTPUT"
+      - name: Tap custom repo
+        run: |
+          brew tap ${{ env.TAP_NAME }}
+      - name: Cache Homebrew Bundler RubyGems
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.set-up-homebrew.outputs.gems-path }}
+          key: brew-rubygems-${{ steps.set-up-homebrew.outputs.gems-hash }}
+          restore-keys: brew-rubygems-
+
+      # Edit the `autobib.rb` formula in the tap repo, push the commit,
+      # and create a pull request
+      - name: Bump formula and create PR
+        env:
+          HOMEBREW_GITHUB_API_TOKEN: ${{ secrets.HOMEBREW_TAP_PR_ACCESS_TOKEN }}
+          HOMEBREW_GIT_NAME: ${{ vars.HOMEBREW_TAP_COMMITTER_NAME }}
+          HOMEBREW_GIT_EMAIL: ${{ vars.HOMEBREW_TAP_COMMITTER_EMAIL }}
+        run: |
+          brew bump-formula-pr --no-fork --strict --online \
+            --version ${{ env.release_version }} ${{ env.TAP_NAME }}/autobib
