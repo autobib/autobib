@@ -21,7 +21,6 @@ jobs:
   create-release:
     name: Create release
     runs-on: ubuntu-latest
-    environment: release
 
     steps:
       - uses: actions/checkout@v5
@@ -226,7 +225,7 @@ jobs:
     name: Publish release to crates.io
     needs: [create-release, generate-licenses, upload-binary]
     runs-on: ubuntu-latest
-    environment: release
+    environment: crates.io
     permissions:
       id-token: write
     steps:
