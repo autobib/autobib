@@ -9,9 +9,12 @@
 6. Submit a PR with a title like "Release vX.Y.Z".
 7. Wait for CI to succeed, merge the PR.
 8. Create (and push) a new tag on the release commit of the form `vX.Y.Z`.
-   The release workflow will automatically compile the binaries and publish to `crates.io`.
-   It will also create a draft release with all of the release binaries.
+    The release workflow will automatically compile the binaries and publish to `crates.io`.
+    It will also create a draft release with all of the release binaries.
 9. Go to the 'releases' tab on GitHub and publish the draft release.
+    This will trigger the Homebrew workflow, which creates a PR on the autobib/homebrew-autobib tap repo to update the formula, and in turn starts a workflow on that repo to test and bottle the updated formula.
+10. Wait for the bottling workflow to complete on the tap repo PR, then apply the `pr-pull` label.
+    The label triggers another workflow on the tap repo that pushes the formula bump and new bottle hashes onto the main branch, and closes the PR.
 
 ## Automation
 
