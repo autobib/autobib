@@ -95,6 +95,9 @@ impl TryFrom<Entry> for RecordData {
                 Pages::Range { start, end } => {
                     record_data.check_and_insert("pages".into(), format!("{start}--{end}"))?;
                 }
+                Pages::Other(s) => {
+                    record_data.check_and_insert("pages".into(), s)?;
+                }
             }
         }
 
@@ -271,6 +274,7 @@ impl LinkType {
 pub enum Pages {
     Total { _frontmatter: String, total: u64 },
     Range { start: u64, end: u64 },
+    Other(String),
 }
 
 impl<'de> Deserialize<'de> for Pages {
@@ -304,9 +308,7 @@ impl<'de> Deserialize<'de> for Pages {
                                 total,
                             })
                         }
-                        None => Err(E::custom(format!(
-                            "unexpected value for page / page count: {value}"
-                        ))),
+                        None => Ok(Pages::Other(value.into())),
                     },
                     None => match value.split_once("-") {
                         Some((l, r)) => {
@@ -314,9 +316,7 @@ impl<'de> Deserialize<'de> for Pages {
                             let end: u64 = r.parse().map_err(E::custom)?;
                             Ok(Pages::Range { start, end })
                         }
-                        None => Err(E::custom(format!(
-                            "unexpected value for page / page count: {value}"
-                        ))),
+                        None => Ok(Pages::Other(value.into())),
                     },
                 }
             }
