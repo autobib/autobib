@@ -14,8 +14,6 @@ macro_rules! schema {
     };
 }
 
-schema!(changelog, "The citation keys table.");
-
 schema!(citation_keys, "The citation keys table.");
 
 schema!(records, "The citation keys table.");

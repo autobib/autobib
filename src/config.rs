@@ -107,7 +107,7 @@ pub struct LazyAliasTransform<F> {
 }
 
 #[cold]
-pub fn write_default<W: ?Sized + io::Write>(writer: &mut W) -> Result<(), io::Error> {
+pub fn write_default<W: io::Write>(mut writer: W) -> Result<(), io::Error> {
     writer
         .write(include_str!("config/default_config.toml").as_bytes())
         .map(|_| ())

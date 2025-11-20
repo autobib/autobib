@@ -8,8 +8,8 @@ use nucleo_picker::Render;
 use self::parse::{Kind, Lexer, Token};
 
 use crate::{
-    db::{CitationKey, state::RowData},
-    entry::{EntryData, FieldKey, RawRecordFieldsIter, RecordData},
+    db::{CitationKey, state::EntryRowData},
+    entry::{EntryData, FieldKey, MutableEntryData, RawRecordFieldsIter},
     error::{ClapTemplateError, KeyParseError, KeyParseErrorKind},
 };
 
@@ -279,7 +279,7 @@ impl Template {
 
     /// Returns whether if this template can be rendered by the provided row data without having
     /// any non-optional undefined keys.
-    pub fn has_keys_contained_in(&self, row: &RowData) -> bool {
+    pub fn has_keys_contained_in(&self, row: &EntryRowData) -> bool {
         match self.strategy {
             Strategy::Sorted => self.contained_impl(
                 || BibtexFields::new(row),
@@ -287,7 +287,7 @@ impl Template {
             ),
             Strategy::Small => self.contained_impl(|| (), |k, ()| row.data.contains_field(k)),
             Strategy::Large => self.contained_impl(
-                || RecordData::borrow_entry_data(&row.data),
+                || MutableEntryData::borrow_entry_data(&row.data),
                 |k, data| data.contains_field(k),
             ),
         }
@@ -315,7 +315,7 @@ pub struct BibtexFields<'a> {
 }
 
 impl<'a> BibtexFields<'a> {
-    pub fn new(row: &'a RowData) -> Self {
+    pub fn new(row: &'a EntryRowData) -> Self {
         Self {
             inner: row.data.raw_fields().peekable(),
         }
@@ -357,7 +357,7 @@ impl<'r, 'ast, 'state> fmt::Display for DisplayedRow<'r, 'ast, 'state> {
 }
 
 impl<'row, 'ast, 'state> DisplayedRow<'row, 'ast, 'state> {
-    fn from_data<F>(row_data: &'row RowData, ast: &'ast Expression, mut f: F) -> Self
+    fn from_data<F>(row_data: &'row EntryRowData, ast: &'ast Expression, mut f: F) -> Self
     where
         F: FnMut(&str) -> Option<&'state str>,
     {
@@ -395,7 +395,7 @@ impl<'row, 'ast, 'state> DisplayedRow<'row, 'ast, 'state> {
     }
 }
 
-pub struct ManifestSorted<'r>(&'r RowData);
+pub struct ManifestSorted<'r>(&'r EntryRowData);
 
 impl<'r> ManifestMut<Expression> for ManifestSorted<'r> {
     type Error = Infallible;
@@ -417,7 +417,7 @@ impl<'r> ManifestMut<Expression> for ManifestSorted<'r> {
     }
 }
 
-pub struct ManifestSmall<'r>(&'r RowData);
+pub struct ManifestSmall<'r>(&'r EntryRowData);
 
 impl<'r> Manifest<Expression> for ManifestSmall<'r> {
     type Error = Infallible;
@@ -429,15 +429,15 @@ impl<'r> Manifest<Expression> for ManifestSmall<'r> {
     }
 }
 
-pub struct ManifestLarge<'r>(&'r RowData);
+pub struct ManifestLarge<'r>(&'r EntryRowData);
 
 impl<'r> ManifestMut<Expression> for ManifestLarge<'r> {
     type Error = Infallible;
 
-    type State<'s> = RecordData<&'s str>;
+    type State<'s> = MutableEntryData<&'s str>;
 
     fn init_state(&self) -> Self::State<'_> {
-        RecordData::borrow_entry_data(&self.0.data)
+        MutableEntryData::borrow_entry_data(&self.0.data)
     }
 
     fn manifest_mut(
@@ -449,10 +449,10 @@ impl<'r> ManifestMut<Expression> for ManifestLarge<'r> {
     }
 }
 
-impl Render<RowData> for Template {
+impl Render<EntryRowData> for Template {
     type Str<'a> = String;
 
-    fn render<'a>(&self, item: &'a RowData) -> Self::Str<'a> {
+    fn render<'a>(&self, item: &'a EntryRowData) -> Self::Str<'a> {
         match self.strategy {
             Strategy::Sorted => {
                 let Ok(s) = self.template.render(&ManifestSorted(item));
@@ -472,7 +472,7 @@ impl Render<RowData> for Template {
 
 #[cfg(test)]
 mod tests {
-    use crate::{entry::RawRecordData, record::RemoteId};
+    use crate::{entry::RawEntryData, record::RemoteId};
 
     use chrono::Local;
 
@@ -484,13 +484,13 @@ mod tests {
             println!("Testing template: {s}");
 
             let template = Template::compile(s).unwrap();
-            let mut data = RecordData::<String>::default();
+            let mut data = MutableEntryData::<String>::default();
             for (k, v) in keys {
                 data.check_and_insert(k.into(), v.into()).unwrap();
             }
 
-            let row_data = RowData {
-                data: RawRecordData::from_entry_data(&data),
+            let row_data = EntryRowData {
+                data: RawEntryData::from_entry_data(&data),
                 canonical: RemoteId::from_parts("local", "123").unwrap(),
                 modified: Local::now(),
             };
@@ -551,19 +551,19 @@ mod tests {
             println!("Testing template: {s}");
 
             let template = Template::compile(s).unwrap();
-            let mut data = RecordData::<String>::default();
+            let mut data = MutableEntryData::<String>::default();
             for (k, v) in keys {
                 data.check_and_insert(k.into(), v.into()).unwrap();
             }
 
-            let row_data = RowData {
-                data: RawRecordData::from_entry_data(&data),
+            let row_data = EntryRowData {
+                data: RawEntryData::from_entry_data(&data),
                 canonical: RemoteId::from_parts(provider, sub_id).unwrap(),
                 modified: Local::now(),
             };
 
             println!("{:?}", row_data.data.get_field("b"));
-            println!("{:?}", RecordData::from_entry_data(&row_data.data));
+            println!("{:?}", MutableEntryData::from_entry_data(&row_data.data));
 
             assert_eq!(template.strategy, strategy);
             assert_eq!(template.render(&row_data), rendered);

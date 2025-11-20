@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export RUSTFLAGS="-D warnings"
+export RUSTDOCFLAGS="-D warnings"
+
 PROJECT_ROOT="$(cargo locate-project --message-format plain)"
 cd "$(dirname "${PROJECT_ROOT}")"
 
