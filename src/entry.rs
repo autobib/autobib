@@ -17,18 +17,18 @@ use crate::error::BibtexDataError;
 
 /// A single regular entry in a BibTeX bibliography.
 #[derive(Debug, PartialEq)]
-pub struct Entry<D> {
-    pub key: EntryKey<String>,
+pub struct Entry<D, S = String> {
+    pub key: EntryKey<S>,
     pub record_data: D,
 }
 
-impl<D: EntryData> Entry<D> {
+impl<D: EntryData, S> Entry<D, S> {
     /// Create a new entry with the provided key and record data.
-    pub fn new(key: EntryKey<String>, record_data: D) -> Self {
+    pub fn new(key: EntryKey<S>, record_data: D) -> Self {
         Self { key, record_data }
     }
 
-    pub fn key(&self) -> &EntryKey<String> {
+    pub fn key(&self) -> &EntryKey<S> {
         &self.key
     }
 
@@ -59,10 +59,10 @@ impl<D: EntryData> Serialize for RecordDataWrapper<&'_ D> {
     }
 }
 
-impl<D: EntryData> Serialize for Entry<D> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+impl<D: EntryData, S: AsRef<str>> Serialize for Entry<D, S> {
+    fn serialize<T>(&self, serializer: T) -> Result<T::Ok, T::Error>
     where
-        S: Serializer,
+        T: Serializer,
     {
         let mut state = serializer.serialize_struct("Entry", 3)?;
         state.serialize_field("entry_type", &self.entry_type())?;
@@ -102,7 +102,7 @@ impl FromStr for Entry<MutableEntryData> {
     }
 }
 
-impl<D: EntryData> fmt::Display for Entry<D> {
+impl<D: EntryData, S: AsRef<str>> fmt::Display for Entry<D, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // SAFETY: the RecordData::try_new and RecordData::check_and_insert methods only accept
         //         entry types and field keys which satisfy stricter requirements than the
