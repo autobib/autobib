@@ -411,7 +411,7 @@ impl RecordDatabase {
         debug!("Sending all database records to an injector.");
         let mut retriever = self
             .conn
-            .prepare("SELECT record_id, modified, data FROM Records INNER JOIN CitationKeys ON Records.key = CitationKeys.record_key WHERE variant = 0")?;
+            .prepare("SELECT record_id, modified, data FROM Records WHERE key IN (SELECT record_key FROM CitationKeys) AND variant = 0")?;
 
         for res in retriever.query_map([], |row| EntryRowData::try_from(row))? {
             if let Some(data) = filter_map(res?) {
@@ -433,7 +433,7 @@ impl RecordDatabase {
     ) -> Result<(), Either<rusqlite::Error, std::io::Error>> {
         let mut selector = if canonical {
             self.conn
-                .prepare("SELECT record_id FROM Records INNER JOIN CitationKeys ON CitationKeys.record_key = Records.key WHERE variant = 0")
+                .prepare("SELECT record_id FROM Records WHERE key IN (SELECT record_key FROM CitationKeys) AND variant = 0")
         } else {
             self.conn.prepare("SELECT name FROM CitationKeys INNER JOIN Records ON CitationKeys.record_key = Records.key WHERE Records.variant = 0")
         }.map_err(Either::Left)?;

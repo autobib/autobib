@@ -292,6 +292,14 @@ pub enum Command {
         #[arg(short = 'b', long, value_name = "PATH", group = "input")]
         from_bibtex: Option<PathBuf>,
     },
+    /// Display the revision history associated with the given handle.
+    Log {
+        /// The citation key to show the revision history.
+        citation_key: RecordId,
+        /// Show all changes instead of only the history of the active version.
+        #[arg(short, long)]
+        all: bool,
+    },
     /// Show attachment directory associated with record.
     Path {
         /// Show path for this key.
@@ -484,6 +492,7 @@ impl Command {
             | Self::Completions { .. }
             | Self::DefaultConfig
             | Self::Find { .. }
+            | Self::Log { .. }
             | Self::Path { mkdir: false, .. } => return Ok(()),
             Self::Path { mkdir: true, .. } => return Err(ReadOnlyInvalid::Argument("--mkdir")),
             Self::Alias { .. } => "alias",

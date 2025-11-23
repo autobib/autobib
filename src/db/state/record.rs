@@ -7,33 +7,33 @@ use crate::{
     logger::debug,
 };
 
-use super::{Missing, State};
+use super::{Missing, State, Transaction};
 
 /// An unvalidated `key`, which may or may not correspond to a row in the 'Records' table.
 ///
-/// Keys are represented as hexadecimal strings, and can be parsed from hex strings in a
+/// Keys are represented as hexadecimal strings prefixed by the `#` character, and can be parsed in a
 /// case-insensitive fashion.
 ///
 /// In principle, keys could be negative, but in practice, SQLite will never insert negative values
 /// for the key automatically (unless negative keys are already present), and we never manually input values for the `key` column.
-pub struct UnvalidatedKey(i64);
+pub struct Unvalidated(i64);
 
 macro_rules! impl_key_display {
     ($v:ident) => {
         impl std::fmt::Display for $v {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(f, "{:x}", self.0)
+                write!(f, "#{:x}", self.0)
             }
         }
     };
 }
 
-impl_key_display!(UnvalidatedKey);
+impl_key_display!(Unvalidated);
 impl_key_display!(RecordKey);
 impl_key_display!(DeletedRecordKey);
 impl_key_display!(EntryRecordKey);
 
-impl std::str::FromStr for UnvalidatedKey {
+impl std::str::FromStr for Unvalidated {
     type Err = std::num::ParseIntError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -120,26 +120,23 @@ impl RecordsDataCol for EntryDataOrReplacement {
 
 /// Types which can be converted from a row in the 'Records' table, assuming the row has the
 /// correct state.
-trait RecordsLookup<I: AsRecordKey>: Sized {
-    unsafe fn lookup_unchecked(tx: &super::Transaction, row_id: i64) -> rusqlite::Result<Self>;
+pub(super) trait RecordsLookup<I: AsRecordKey>: Sized {
+    fn lookup_unchecked(tx: &Transaction, row_id: i64) -> rusqlite::Result<Self>;
 
     fn lookup<'conn>(state: &State<'conn, I>) -> Result<Self, rusqlite::Error> {
-        unsafe { Self::lookup_unchecked(&state.tx, state.row_id()) }
+        Self::lookup_unchecked(&state.tx, state.row_id())
     }
 }
 
 impl<I: AsRecordKey> RecordsLookup<I> for DateTime<Local> {
-    unsafe fn lookup_unchecked(
-        tx: &super::Transaction,
-        row_id: i64,
-    ) -> Result<Self, rusqlite::Error> {
+    fn lookup_unchecked(tx: &Transaction, row_id: i64) -> Result<Self, rusqlite::Error> {
         tx.prepare("SELECT modified FROM Records WHERE key = ?1")?
             .query_row([row_id], |row| row.get("modified"))
     }
 }
 
 impl<I: AsRecordKey> RecordsLookup<I> for RemoteId {
-    unsafe fn lookup_unchecked(tx: &super::Transaction, row_id: i64) -> rusqlite::Result<Self> {
+    fn lookup_unchecked(tx: &Transaction, row_id: i64) -> rusqlite::Result<Self> {
         tx.prepare("SELECT record_id FROM Records WHERE key = ?1")?
             .query_row([row_id], |row| {
                 row.get("record_id").map(Self::from_string_unchecked)
@@ -148,7 +145,7 @@ impl<I: AsRecordKey> RecordsLookup<I> for RemoteId {
 }
 
 impl<I: AsRecordKey> RecordsLookup<I> for RecordRowData {
-    unsafe fn lookup_unchecked(tx: &super::Transaction, row_id: i64) -> rusqlite::Result<Self> {
+    fn lookup_unchecked(tx: &Transaction, row_id: i64) -> rusqlite::Result<Self> {
         tx.prepare_cached("SELECT record_id, modified, data, variant FROM Records WHERE key = ?1")?
             .query_row((row_id,), |row| {
                 let data = EntryDataOrReplacement::from_bytes_and_variant(
@@ -168,26 +165,35 @@ impl<I: AsRecordKey> RecordsLookup<I> for RecordRowData {
 }
 
 impl RecordsLookup<EntryRecordKey> for EntryRowData {
-    unsafe fn lookup_unchecked(tx: &super::Transaction, row_id: i64) -> rusqlite::Result<Self> {
+    fn lookup_unchecked(tx: &Transaction, row_id: i64) -> rusqlite::Result<Self> {
         tx.prepare_cached("SELECT record_id, modified, data, variant FROM Records WHERE key = ?1")?
             .query_row((row_id,), |row| row.try_into())
     }
 }
 
 impl<I: AsRecordKey> RecordsLookup<I> for RecordContext {
-    unsafe fn lookup_unchecked(tx: &super::Transaction, row_id: i64) -> rusqlite::Result<Self> {
-        tx.prepare_cached("SELECT record_id, parent_key, children FROM Records WHERE key = ?1")?
-            .query_row((row_id,), |row| {
-                let record_id = RemoteId::from_string_unchecked(row.get("record_id")?);
-                let parent = row.get("parent_key")?;
-                let children = row.get("children")?;
+    fn lookup_unchecked(tx: &Transaction, row_id: i64) -> rusqlite::Result<Self> {
+        tx.prepare_cached(
+            "SELECT record_id, data, modified, variant, parent_key, children FROM Records WHERE key = ?1",
+        )?
+        .query_row((row_id,), |row| {
+            let data = EntryDataOrReplacement::from_bytes_and_variant(
+                row.get("data")?,
+                row.get("variant")?,
+            );
+            let canonical = RemoteId::from_string_unchecked(row.get("record_id")?);
+            let modified = row.get("modified")?;
+            let parent = row.get("parent_key")?;
+            let children = row.get("children")?;
 
-                Ok(Self {
-                    record_id,
-                    parent,
-                    children,
-                })
+            Ok(Self {
+                canonical,
+                data,
+                modified,
+                parent,
+                children,
             })
+        })
     }
 }
 
@@ -217,94 +223,13 @@ impl<'conn, O: AsRecordKey, E> RecordRowMoveResult<'conn, O, E> {
     }
 }
 
-/// Changelog implementation
-impl<'conn, I: AsRecordKey> State<'conn, I> {
-    /// Get the parent ID of a row.
-    fn parent_id(&self, row_id: i64) -> rusqlite::Result<Option<i64>> {
-        self.prepare_cached("SELECT parent_key FROM Records WHERE key = ?1")?
-            .query_row((row_id,), |row| row.get(0))
-    }
-
-    /// Get the ID of the root.
-    fn root_id(&self) -> rusqlite::Result<i64> {
-        let mut row_id = self.row_id();
-        while let Some(parent) = self.parent_id(row_id)? {
-            row_id = parent;
-        }
-        Ok(row_id)
-    }
-
-    /// Traverse the ancestors from the current record to the root record, and
-    /// apply the provided closure to every visited record.
-    pub fn ancestors<F>(&self, mut f: F) -> rusqlite::Result<()>
-    where
-        F: FnMut(RecordRowData),
-    {
-        let mut row_id = self.row_id();
-
-        loop {
-            f(unsafe { <RecordRowData as RecordsLookup<I>>::lookup_unchecked(&self.tx, row_id) }?);
-
-            row_id = if let Some(parent) = self.parent_id(row_id)? {
-                parent
-            } else {
-                break Ok(());
-            }
-        }
-    }
-
-    /// Push the child IDs of a row onto a stack, returning the number of children that were
-    /// pushed.
-    ///
-    /// The child IDs are written in reverse order, so that the oldest changes are traversed
-    /// first.
-    fn push_child_ids_to_stack(
-        &self,
-        row_id: i64,
-        stack: &mut Vec<i64>,
-    ) -> rusqlite::Result<usize> {
-        let children: Vec<u8> = self
-            .prepare_cached("SELECT children FROM Records WHERE key = ?1")?
-            .query_row((row_id,), |row| row.get(0))?;
-
-        let chunks = children.as_chunks().0;
-        let num_children = chunks.len();
-        stack.extend(chunks.iter().rev().map(|chunk| i64::from_le_bytes(*chunk)));
-
-        Ok(num_children)
-    }
-
-    /// Traverse the tree depth-first, starting at the root and applying the provided closure to
-    /// every visited record. The children are visited in order from oldest to newest.
-    ///
-    /// The first argument of the closure is the number of children of the node, and the second
-    /// argument is the data associated with the node.
-    ///
-    /// The child count can be used to determine the precise location in the tree, since each
-    /// backtrack will jump to the first parent with remaining children.
-    pub fn traverse_depth_first<F>(&self, mut f: F) -> rusqlite::Result<()>
-    where
-        F: FnMut(usize, RecordRowData),
-    {
-        let mut stack = vec![self.root_id()?];
-
-        while let Some(row_id) = stack.pop() {
-            let n = self.push_child_ids_to_stack(row_id, &mut stack)?;
-            let data =
-                unsafe { <RecordRowData as RecordsLookup<I>>::lookup_unchecked(&self.tx, row_id) }?;
-            f(n, data);
-        }
-        Ok(())
-    }
-}
-
 pub enum SetActiveError {
     RowIdUndefined,
     DifferentCanonical(RemoteId),
 }
 
 impl<'conn, I: AsRecordKey> State<'conn, I> {
-    fn row_id(&self) -> i64 {
+    pub(super) fn row_id(&self) -> i64 {
         self.id.row_id()
     }
 
@@ -327,13 +252,12 @@ impl<'conn, I: AsRecordKey> State<'conn, I> {
 
         // check if the row id corresponds to a row in the records table, and moreover that the
         // corresonding canonical id is the same
-        let row_id_or_err = match unsafe {
-            <RemoteId as RecordsLookup<I>>::lookup_unchecked(&self.tx, row_id).optional()?
-        } {
-            Some(target_canonical) if target_canonical == canonical => Ok(row_id),
-            Some(other_canonical) => Err(SetActiveError::DifferentCanonical(other_canonical)),
-            None => Err(SetActiveError::RowIdUndefined),
-        };
+        let row_id_or_err =
+            match <RemoteId as RecordsLookup<I>>::lookup_unchecked(&self.tx, row_id).optional()? {
+                Some(target_canonical) if target_canonical == canonical => Ok(row_id),
+                Some(other_canonical) => Err(SetActiveError::DifferentCanonical(other_canonical)),
+                None => Err(SetActiveError::RowIdUndefined),
+            };
 
         RecordRowMoveResult::from_rowid(self, row_id_or_err)
     }
@@ -591,15 +515,17 @@ impl TryFrom<&rusqlite::Row<'_>> for EntryRowData {
     }
 }
 
-struct RecordContext {
-    record_id: RemoteId,
-    parent: Option<i64>,
-    children: Vec<u8>,
+pub struct RecordContext {
+    pub data: EntryDataOrReplacement,
+    pub canonical: RemoteId,
+    pub modified: DateTime<Local>,
+    pub(super) parent: Option<i64>,
+    pub(super) children: Vec<u8>,
 }
 
 impl RecordContext {
     /// Returns an iterator over all child keys in order of creation.
-    fn child_keys(&self) -> impl DoubleEndedIterator<Item = i64> {
+    pub(super) fn child_keys(&self) -> impl DoubleEndedIterator<Item = i64> + ExactSizeIterator {
         self.children
             .as_chunks()
             .0
@@ -607,7 +533,7 @@ impl RecordContext {
             .map(|chunk| i64::from_le_bytes(*chunk))
     }
 
-    fn child_count(&self) -> usize {
+    pub(super) fn child_count(&self) -> usize {
         self.children.len() / 8
     }
 
@@ -697,7 +623,7 @@ impl<'conn> State<'conn, EntryRecordKey> {
         //
         // the remaining fields use their default values
         let new_key: i64 = self.prepare("INSERT INTO Records (record_id, data, modified, variant, parent_key) VALUES (?1, ?2, ?3, ?4, ?5) RETURNING key")?
-            .query_row((existing.record_id.name(), data.data_blob(), Local::now(), data.variant(), self.row_id()), |row| row.get(0))?;
+            .query_row((existing.canonical.name(), data.data_blob(), Local::now(), data.variant(), self.row_id()), |row| row.get(0))?;
 
         // update the `children` field with the existing records
         let mut new_children = existing.children;

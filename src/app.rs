@@ -2,6 +2,7 @@ mod cli;
 mod delete;
 mod edit;
 mod import;
+mod log;
 mod path;
 mod picker;
 mod retrieve;
@@ -24,6 +25,7 @@ use serde_bibtex::token::is_entry_key;
 
 use crate::{
     CitationKey,
+    app::log::print_log,
     cite_search::{SourceFileType, get_citekeys},
     config,
     db::{
@@ -339,7 +341,9 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
 
                     if let Some(Entry { key, record_data }) = Editor::new_bibtex().edit(&entry)? {
                         let new_row = row.modify(&RawEntryData::from_entry_data(&record_data))?;
-                        create_alias_if_valid(key.as_ref(), &new_row)?;
+                        if key.as_ref() != entry.key.as_ref() {
+                            create_alias_if_valid(key.as_ref(), &new_row)?;
+                        }
                         new_row.commit()?;
                     } else if changed {
                         // even though the data did not change after editing,
@@ -717,7 +721,9 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         {
                             let row = missing
                                 .insert(&RawEntryData::from_entry_data(&record_data), &remote_id)?;
-                            create_alias_if_valid(key.as_ref(), &row)?;
+                            if key.as_ref() != remote_id.name() {
+                                create_alias_if_valid(key.as_ref(), &row)?;
+                            }
                             row.commit()?;
                         } else {
                             set_failed();
@@ -725,6 +731,16 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     };
                 }
             };
+        }
+        Command::Log { citation_key, all } => {
+            let cfg = config::load(&config_path, missing_ok)?;
+            if let Some((_, _, state)) = record_db
+                .state_from_record_id(citation_key, &cfg.alias_transform)?
+                .flatten()?
+            {
+                print_log(&state, all)?;
+                state.commit()?;
+            }
         }
         Command::Path {
             citation_key,
@@ -771,7 +787,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                                 data.canonical
                             );
                             suggest!(
-                                "Review the changes with `autobib hist` and choose a specific change using the INDEX argument."
+                                "Review the changes with `autobib log --all` and choose a specific change using the INDEX argument."
                             );
                         } else {
                             error!(

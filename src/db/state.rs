@@ -38,6 +38,7 @@
 mod missing;
 mod null;
 mod record;
+pub mod revisions;
 
 use rusqlite::{CachedStatement, Error, Statement};
 

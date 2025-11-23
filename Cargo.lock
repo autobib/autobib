@@ -139,6 +139,7 @@ dependencies = [
  "nonempty",
  "nucleo-picker",
  "predicates",
+ "ramify",
  "rapidhash",
  "regex",
  "regex-syntax",
@@ -1198,6 +1199,12 @@ name = "r-efi"
 version = "5.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "69cdb34c158ceb288df11e18b4bd39de994f6657d83847bdffdbd7f346754b0f"
+
+[[package]]
+name = "ramify"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0da62ff440a07163e8b819aebfc1a735395b1ae27265ba82841672e44c671d94"
 
 [[package]]
 name = "rapidhash"
