@@ -22,7 +22,7 @@ pub struct FormatRev(i64);
 
 impl fmt::Display for FormatRev {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "#{:0>3x}", self.0)
+        write!(f, "#{:0>4x}", self.0)
     }
 }
 
