@@ -3,7 +3,7 @@ use std::io::Write;
 use ramify::{Config, Generator, branch_writer};
 
 use crate::{
-    db::state::{RecordKey, State},
+    db::state::{InRecordsTable, State},
     output::stdout_lock_wrap,
 };
 
@@ -15,9 +15,12 @@ branch_writer! {
     }
 }
 
-pub fn print_log<'conn>(state: &State<'conn, RecordKey>, all: bool) -> anyhow::Result<()> {
+pub fn print_log<'conn, I: InRecordsTable>(
+    state: &State<'conn, I>,
+    all: bool,
+) -> anyhow::Result<()> {
     if all {
-        let root = state.root()?;
+        let root = state.current()?.root()?;
         let mut config = Config::<InvertedStyle>::new();
         config.row_padding = 2;
         config.annotation_margin = 2;

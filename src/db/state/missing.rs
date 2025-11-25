@@ -1,7 +1,46 @@
 use chrono::Local;
 
-use super::{EntryRecordKey, NullRecordRow, State};
+use super::{EntryRecordKey, NotEntry, NullRecordRow, State};
 use crate::{RawEntryData, RemoteId, db::CitationKey, entry::EntryData, logger::debug};
+
+/// Types which know how to insert new data.
+///
+/// The precise behaviour depends on the implementation. For data which does not exist in the
+/// database, this adds a new row to the 'Records' table, and for data which is already present,
+/// this adds a new child vertex with the corresponding data.
+pub trait RecordsInsert<'conn> {
+    fn insert(
+        self,
+        data: &RawEntryData,
+        canonical: &RemoteId,
+    ) -> Result<State<'conn, EntryRecordKey>, rusqlite::Error>;
+}
+
+impl<'conn> RecordsInsert<'conn> for State<'conn, Missing> {
+    fn insert(
+        self,
+        data: &RawEntryData,
+        canonical: &RemoteId,
+    ) -> Result<State<'conn, EntryRecordKey>, rusqlite::Error> {
+        self.insert_new(data, canonical)
+    }
+}
+
+impl<'conn, I: NotEntry> RecordsInsert<'conn> for State<'conn, I> {
+    fn insert(
+        self,
+        data: &RawEntryData,
+        _: &RemoteId,
+    ) -> Result<State<'conn, EntryRecordKey>, rusqlite::Error> {
+        self.reinsert(data)
+    }
+}
+
+impl<'conn> RecordsInsert<'conn> for State<'conn, EntryRecordKey> {
+    fn insert(self, data: &RawEntryData, _: &RemoteId) -> Result<Self, rusqlite::Error> {
+        self.modify(data)
+    }
+}
 
 /// A database id which is missing.
 #[derive(Debug)]
@@ -26,7 +65,7 @@ impl<'conn> State<'conn, Missing> {
     ///
     /// # Safety
     /// The 'canonical' remote id must be present in the provided `refs` iterator.
-    pub(crate) unsafe fn insert_with_refs<'a, R: Iterator<Item = &'a RemoteId>>(
+    pub(crate) fn insert_with_refs<'a, R: Iterator<Item = &'a RemoteId>>(
         self,
         data: &RawEntryData,
         canonical: &RemoteId,
@@ -50,17 +89,17 @@ impl<'conn> State<'conn, Missing> {
         canonical: &RemoteId,
     ) -> Result<State<'conn, EntryRecordKey>, rusqlite::Error> {
         let raw_record_data = RawEntryData::from_entry_data(data);
-        self.insert(&raw_record_data, canonical)
+        self.insert_new(&raw_record_data, canonical)
     }
 
     /// Create the row and also insert a link in the `CitationKeys` table.
-    pub fn insert(
+    pub fn insert_new(
         self,
         data: &RawEntryData,
         canonical: &RemoteId,
     ) -> Result<State<'conn, EntryRecordKey>, rusqlite::Error> {
         // SAFETY: 'canonical' is passed as a ref.
-        let row = unsafe { self.insert_with_refs(data, canonical, std::iter::once(canonical))? };
+        let row = self.insert_with_refs(data, canonical, std::iter::once(canonical))?;
         Ok(row)
     }
 }

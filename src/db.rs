@@ -23,12 +23,13 @@ use nucleo_picker::{Injector, Render};
 use rusqlite::{Connection, DropBehavior, OpenFlags, OptionalExtension, types::ValueRef};
 
 use self::{
-    state::{EntryRowData, RecordIdState, RemoteIdState},
+    state::{RecordIdState, RecordRow, RemoteIdState},
     validate::{DatabaseFault, DatabaseValidator},
 };
 use crate::{
     Alias, RecordId, RemoteId,
     config::AliasTransform,
+    entry::RawEntryData,
     error::DatabaseError,
     logger::{debug, error, info, warn},
 };
@@ -390,9 +391,9 @@ impl RecordDatabase {
     ///
     /// This is a convenience wrapper around [`Self::inject_records`] which simply sends all row data
     /// to the picker without filtering or mapping.
-    pub fn inject_all_records<R: Render<EntryRowData>>(
+    pub fn inject_all_records<R: Render<RecordRow<RawEntryData>>>(
         &mut self,
-        injector: Injector<EntryRowData, R>,
+        injector: Injector<RecordRow<RawEntryData>, R>,
     ) -> Result<(), rusqlite::Error> {
         self.inject_records(injector, Some)
     }
@@ -401,9 +402,9 @@ impl RecordDatabase {
     /// via its [`Injector`].
     ///
     /// The provided `filter_map` closure plays a similar role to [`Iterator::filter_map`]
-    /// by transforming a [`EntryRowData`] into the picker item type, with the option to exclude
+    /// by transforming a [`RecordRow`] into the picker item type, with the option to exclude
     /// the item from being sent to the matcher entirely by returning [`None`].
-    pub fn inject_records<T, F: FnMut(EntryRowData) -> Option<T>, R: Render<T>>(
+    pub fn inject_records<T, F: FnMut(RecordRow<RawEntryData>) -> Option<T>, R: Render<T>>(
         &mut self,
         injector: Injector<T, R>,
         mut filter_map: F,
@@ -411,9 +412,9 @@ impl RecordDatabase {
         debug!("Sending all database records to an injector.");
         let mut retriever = self
             .conn
-            .prepare("SELECT record_id, modified, data FROM Records WHERE key IN (SELECT record_key FROM CitationKeys) AND variant = 0")?;
+            .prepare("SELECT record_id, modified, data, variant FROM Records WHERE key IN (SELECT record_key FROM CitationKeys) AND variant = 0")?;
 
-        for res in retriever.query_map([], |row| EntryRowData::try_from(row))? {
+        for res in retriever.query_map([], RecordRow::<RawEntryData>::from_row_unchecked)? {
             if let Some(data) = filter_map(res?) {
                 injector.push(data);
             }

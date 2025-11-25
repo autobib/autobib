@@ -66,6 +66,10 @@ pub fn data_from_key<F: FnOnce() -> Vec<(regex::Regex, String)>>(
             state.commit()?;
             bail!("Cannot read update data from deleted row");
         }
+        RecordIdState::Void(_, _, state) => {
+            state.commit()?;
+            bail!("Cannot read update data from voided row");
+        }
         RecordIdState::NullRemoteId(_, state) => {
             state.commit()?;
             bail!("Cannot read update data from null record");

@@ -8,7 +8,8 @@ use nucleo_picker::{Picker, PickerOptions, Render};
 use walkdir::{DirEntry, WalkDir};
 
 use crate::{
-    db::{RecordDatabase, state::EntryRowData},
+    db::{RecordDatabase, state::RecordRow},
+    entry::RawEntryData,
     format::Template,
     path_hash::PathHash,
 };
@@ -104,12 +105,13 @@ pub fn choose_attachment_path<F: FnMut(&Path) -> bool + Send + 'static>(
 }
 
 /// Returns a picker which returns the record data associated with the picked item.
+#[allow(clippy::type_complexity)]
 pub fn choose_canonical_id(
     mut record_db: RecordDatabase,
     template: Template,
     strict: bool,
 ) -> (
-    Picker<EntryRowData, Template>,
+    Picker<RecordRow<RawEntryData>, Template>,
     thread::JoinHandle<Result<RecordDatabase, rusqlite::Error>>,
 ) {
     // initialize picker
@@ -135,10 +137,10 @@ pub fn choose_canonical_id(
     (picker, handle)
 }
 
-/// A wrapper around a [`EntryRowData`] which also contains a list of attachments associated with the
+/// A wrapper around a [`RecordRow`] which also contains a list of attachments associated with the
 /// record.
 pub struct AttachmentData {
-    pub row_data: EntryRowData,
+    pub row_data: RecordRow<RawEntryData>,
     pub attachments: NonEmpty<DirEntry>,
     pub attachment_root: PathBuf,
 }

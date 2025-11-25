@@ -39,6 +39,7 @@ mod missing;
 mod null;
 mod record;
 pub mod revisions;
+mod version;
 
 use rusqlite::{CachedStatement, Error, Statement};
 
@@ -47,6 +48,7 @@ use super::{RowId, Transaction, get_null_row_id, get_row_id};
 use crate::{
     Alias, AliasOrRemoteId, MappedKey, RecordId, RemoteId,
     config::AliasTransform,
+    entry::RawEntryData,
     error::RecordError,
     logger::{debug, error, reraise},
 };
@@ -118,9 +120,18 @@ impl Unknown<'_> {
 #[derive(Debug)]
 pub enum RecordIdState<'conn> {
     /// The `Records` row exists.
-    Entry(String, EntryRowData, State<'conn, EntryRecordKey>),
+    Entry(
+        String,
+        RecordRow<RawEntryData>,
+        State<'conn, EntryRecordKey>,
+    ),
     /// The `Records` row was deleted.
-    Deleted(String, DeletedRowData, State<'conn, DeletedRecordKey>),
+    Deleted(
+        String,
+        RecordRow<Option<RemoteId>>,
+        State<'conn, DeletedRecordKey>,
+    ),
+    Void(String, RecordRow<()>, State<'conn, VoidRecordKey>),
     /// The `Records` row does not exist and the `NullRecords` row exists.
     NullRemoteId(MappedKey, State<'conn, NullRecordRow>),
     /// The `Records` and `NullRecords` rows do not exist.
@@ -139,7 +150,14 @@ impl<'conn> RecordIdState<'conn> {
         row_id: RowId,
         key: impl Into<String>,
     ) -> Result<Self, rusqlite::Error> {
-        Self::existent_with_callback(tx, row_id, |_, s| Ok(s.into()), |_, s| Ok(s.into()), key)
+        Self::existent_with_callback(
+            tx,
+            row_id,
+            |_, s| Ok(s.into()),
+            |_, s| Ok(s.into()),
+            |_, s| Ok(s.into()),
+            key,
+        )
     }
 
     /// Create a new `Existent` variant from the provided [`Transaction`] and [`RowId`], using the
@@ -156,17 +174,25 @@ impl<'conn> RecordIdState<'conn> {
             &State<'conn, DeletedRecordKey>,
             K,
         ) -> Result<String, rusqlite::Error>,
+        produce_key_void: impl FnOnce(
+            &State<'conn, VoidRecordKey>,
+            K,
+        ) -> Result<String, rusqlite::Error>,
         key: K,
     ) -> Result<Self, rusqlite::Error> {
         debug!("Beginning new transaction for row '{row_id}' in the `Records` table.");
-        match State::init(tx, RecordKey(row_id)).determine()? {
-            EntryOrDeletedRow::Entry(entry_row_data, state) => {
+        match State::init(tx, ArbitraryKey(row_id)).determine()? {
+            EntryOrDeleted::Entry(data, state) => {
                 let key = produce_key_entry(&state, key)?;
-                Ok(Self::Entry(key, entry_row_data, state))
+                Ok(Self::Entry(key, data, state))
             }
-            EntryOrDeletedRow::Deleted(deleted_row_data, state) => {
+            EntryOrDeleted::Deleted(data, state) => {
                 let key = produce_key_deleted(&state, key)?;
-                Ok(Self::Deleted(key, deleted_row_data, state))
+                Ok(Self::Deleted(key, data, state))
+            }
+            EntryOrDeleted::Void(data, state) => {
+                let key = produce_key_void(&state, key)?;
+                Ok(Self::Void(key, data, state))
             }
         }
     }
@@ -192,7 +218,7 @@ impl<'conn> RecordIdState<'conn> {
             }
             None => {
                 debug!("Beginning new transaction for unknown remote id.");
-                Ok(produce_missing(context, State::init(tx, Missing {})))
+                Ok(produce_missing(context, State::init(tx, Missing)))
             }
         }
     }
@@ -241,6 +267,7 @@ impl<'conn> RecordIdState<'conn> {
                                     Ok(alias.into())
                                 },
                                 |_, alias| Ok(alias.into()),
+                                |_, alias| Ok(alias.into()),
                                 alias,
                             );
                         }
@@ -266,14 +293,11 @@ impl<'conn> RecordIdState<'conn> {
         }
     }
 
-    /// Combine the entry and deleted data into a unified `RecordRow` state, and commit any other
-    /// states, reporting an error to standard error.
-    pub fn flatten(
-        self,
-    ) -> Result<Option<(String, RecordRowData, State<'conn, RecordKey>)>, rusqlite::Error> {
+    pub fn require_record(self) -> rusqlite::Result<Option<(String, EntryOrDeleted<'conn>)>> {
         Ok(match self {
-            Self::Entry(s, data, state) => Some((s, data.into(), state.forget())),
-            Self::Deleted(s, data, state) => Some((s, data.into(), state.forget())),
+            Self::Entry(s, data, state) => Some((s, EntryOrDeleted::Entry(data, state))),
+            Self::Deleted(s, data, state) => Some((s, EntryOrDeleted::Deleted(data, state))),
+            Self::Void(s, data, state) => Some((s, EntryOrDeleted::Void(data, state))),
             Self::NullRemoteId(mapped_key, state) => {
                 state.commit()?;
                 error!("Null remote id: {mapped_key}");
@@ -294,15 +318,50 @@ impl<'conn> RecordIdState<'conn> {
             }
         })
     }
+
+    //     /// Combine the entry and deleted data into a unified `RecordRow` state, and commit any other
+    //     /// states, reporting an error to standard error.
+    //     pub fn flatten(
+    //         self,
+    //     ) -> Result<
+    //         Option<(String, RecordRow<ArbitraryData>, State<'conn, ArbitraryKey>)>,
+    //         rusqlite::Error,
+    //     > {
+    //         Ok(match self {
+    //             Self::Entry(s, data, state) => Some((s, data.into(), state.forget())),
+    //             Self::Deleted(s, data, state) => Some((s, data.into(), state.forget())),
+    //             Self::Void(s, state) => Some((s, ().into(), state.forget())),
+    //             Self::NullRemoteId(mapped_key, state) => {
+    //                 state.commit()?;
+    //                 error!("Null remote id: {mapped_key}");
+    //                 None
+    //             }
+    //             Self::Unknown(unknown) => {
+    //                 let maybe_normalized = unknown.combine_and_commit()?;
+    //                 error!("Record not in database: {maybe_normalized}");
+    //                 None
+    //             }
+    //             Self::UndefinedAlias(alias) => {
+    //                 error!("Undefined alias: '{alias}'");
+    //                 None
+    //             }
+    //             Self::InvalidRemoteId(record_error) => {
+    //                 reraise(&record_error);
+    //                 None
+    //             }
+    //         })
+    //     }
 }
 
 /// A representation of the database state beginning with an arbitrary [`RemoteId`].
 #[derive(Debug)]
 pub enum RemoteIdState<'conn> {
     /// The `Records` row exists.
-    Entry(EntryRowData, State<'conn, EntryRecordKey>),
+    Entry(RecordRow<RawEntryData>, State<'conn, EntryRecordKey>),
     /// The `Records` row was deleted.
-    Deleted(DeletedRowData, State<'conn, DeletedRecordKey>),
+    Deleted(RecordRow<Option<RemoteId>>, State<'conn, DeletedRecordKey>),
+    /// The `Records` row is void.
+    Void(RecordRow<()>, State<'conn, VoidRecordKey>),
     /// The `Records` row does not exist and the `NullRecords` row exists.
     Null(State<'conn, NullRecordRow>),
     /// The `Records` and `NullRecords` rows do not exist.
@@ -313,9 +372,11 @@ pub enum RemoteIdState<'conn> {
 #[derive(Debug)]
 pub enum ExistsOrUnknown<'conn> {
     /// The `Records` row exists.
-    Entry(EntryRowData, State<'conn, EntryRecordKey>),
+    Entry(RecordRow<RawEntryData>, State<'conn, EntryRecordKey>),
     /// The `Records` row was deleted.
-    Deleted(DeletedRowData, State<'conn, DeletedRecordKey>),
+    Deleted(RecordRow<Option<RemoteId>>, State<'conn, DeletedRecordKey>),
+    /// The `Records` row is void.
+    Void(RecordRow<()>, State<'conn, VoidRecordKey>),
     /// The `Records` and `NullRecords` rows do not exist.
     Unknown(State<'conn, Missing>),
 }
@@ -326,6 +387,7 @@ impl<'conn> RemoteIdState<'conn> {
         Ok(match self {
             RemoteIdState::Entry(data, state) => ExistsOrUnknown::Entry(data, state),
             RemoteIdState::Deleted(data, state) => ExistsOrUnknown::Deleted(data, state),
+            RemoteIdState::Void(data, state) => ExistsOrUnknown::Void(data, state),
             RemoteIdState::Null(state) => ExistsOrUnknown::Unknown(state.delete()?),
             RemoteIdState::Unknown(state) => ExistsOrUnknown::Unknown(state),
         })
@@ -341,13 +403,14 @@ impl<'conn> RemoteIdState<'conn> {
         Ok(match get_row_id(&tx, remote_id)? {
             Some(row_id) => {
                 debug!("Beginning new transaction for row '{row_id}' in the `Records` table.");
-                match State::init(tx, RecordKey(row_id)).determine()? {
-                    EntryOrDeletedRow::Entry(entry_row_data, state) => {
+                match State::init(tx, ArbitraryKey(row_id)).determine()? {
+                    EntryOrDeleted::Entry(entry_row_data, state) => {
                         RemoteIdState::Entry(entry_row_data, state)
                     }
-                    EntryOrDeletedRow::Deleted(deleted_row_data, state) => {
+                    EntryOrDeleted::Deleted(deleted_row_data, state) => {
                         RemoteIdState::Deleted(deleted_row_data, state)
                     }
+                    EntryOrDeleted::Void(data, state) => RemoteIdState::Void(data, state),
                 }
             }
             None => match get_null_row_id(&tx, remote_id)? {
@@ -359,7 +422,7 @@ impl<'conn> RemoteIdState<'conn> {
                 }
                 None => {
                     debug!("Beginning new transaction for unknown remote id.");
-                    Self::Unknown(State::init(tx, Missing {}))
+                    Self::Unknown(State::init(tx, Missing))
                 }
             },
         })
