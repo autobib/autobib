@@ -5,10 +5,11 @@ use anyhow::bail;
 use crate::{
     RemoteId,
     app::{cli::OnConflict, merge_record_data},
-    db::state::{EntryRowData, RecordIdState},
+    db::state::{RecordIdState, RecordRow},
     entry::{MutableEntryData, RawEntryData},
     http::Client,
     logger::{error, suggest},
+    normalize::{Normalization, Normalize},
     record::{RecursiveRemoteResponse, get_remote_response_recursive},
 };
 
@@ -24,48 +25,92 @@ pub fn update<C: Client>(
     record_id_state: RecordIdState,
     provided_data: Option<MutableEntryData>,
     client: &C,
+    normalization: &Normalization,
+    revive: bool,
 ) -> Result<(), anyhow::Error> {
     match record_id_state {
         RecordIdState::Entry(
             citation_key,
-            EntryRowData {
+            RecordRow {
                 data, canonical, ..
             },
             state,
         ) => {
-            let new_raw_data = if let Some(data) = provided_data {
-                data
-            } else if canonical.is_local() {
-                bail!(
-                    "Cannot update local record using remote data: use `autobib edit` or the `--from-bibtex` or `--from-key` options."
+            if revive {
+                state.commit()?;
+                bail!("Record already exists");
+            } else {
+                let mut new_raw_data = if let Some(data) = provided_data {
+                    data
+                } else if canonical.is_local() {
+                    state.commit()?;
+                    bail!(
+                        "Cannot update local record using remote data: use `autobib edit` or the `--from-bibtex` or `--from-key` options."
+                    );
+                } else {
+                    data_from_remote(canonical, client)?.0
+                };
+
+                new_raw_data.normalize(normalization);
+
+                let mut existing_record = MutableEntryData::from_entry_data(&data);
+                merge_record_data(
+                    on_conflict,
+                    &mut existing_record,
+                    once(&new_raw_data),
+                    &citation_key,
+                )?;
+
+                state
+                    .modify(&RawEntryData::from_entry_data(&existing_record))?
+                    .commit()?;
+            }
+        }
+        RecordIdState::Deleted(citation_key, data, state) => {
+            if revive {
+                let mut raw_data = if data.canonical.is_local() {
+                    state.commit()?;
+                    bail!(
+                        "Cannot update local record using remote data: use `autobib edit` or the `--from-bibtex` or `--from-key` options."
+                    );
+                } else {
+                    data_from_remote(data.canonical, client)?.0
+                };
+
+                raw_data.normalize(normalization);
+                state
+                    .reinsert(&RawEntryData::from_entry_data(&raw_data))?
+                    .commit()?;
+            } else {
+                state.commit()?;
+                error!("Cannot update soft-deleted row '{citation_key}'.");
+                suggest!("Undo first, or use `autobib update --revive` to insert new data.");
+            }
+        }
+        RecordIdState::Void(key, data, void) => {
+            void.commit()?;
+            error!("Record exists but has been voided: {key}");
+            if data.canonical.is_local() {
+                suggest!(
+                    "Use `autobib local` to insert new data, or find an existing version using `autobib log --all`."
                 );
             } else {
-                data_from_remote(canonical, client)?.0
-            };
-
-            let mut existing_record = MutableEntryData::from_entry_data(&data);
-            merge_record_data(
-                on_conflict,
-                &mut existing_record,
-                once(&new_raw_data),
-                &citation_key,
-            )?;
-            state
-                .modify(&RawEntryData::from_entry_data(&existing_record))?
-                .commit()?;
-        }
-        RecordIdState::Deleted(citation_key, _, state) => {
-            state.commit()?;
-            bail!("Cannot update soft-deleted row '{citation_key}'.");
+                suggest!(
+                    "Use `autobib get` to get new data, or find an existing version using `autobib log --all`."
+                );
+                suggest!("Use `autobib hist revive` to insert new data.");
+            }
         }
         RecordIdState::NullRemoteId(mapped_remote_id, null_row) => {
             if provided_data.is_some() {
+                null_row.commit()?;
                 // cannot update a null record with provided data
                 bail!("Null record can only be updated with remote data");
             } else {
                 // do not need to check is_local since local ids cannot be in the null records
                 // table
-                let (data, canonical) = data_from_remote(mapped_remote_id.mapped, client)?;
+                let (mut data, canonical) = data_from_remote(mapped_remote_id.mapped, client)?;
+                data.normalize(normalization);
                 null_row
                     .delete()?
                     .insert_entry_data(&data, &canonical)?

@@ -154,6 +154,7 @@ where
                                 mapped_key.to_string(),
                                 maybe_alias,
                             )),
+                            RemoteIdState::Void(_, _) => todo!(),
                             RemoteIdState::Deleted(_, _) => todo!(),
                             RemoteIdState::Null(null_row) => Ok(ImportAction::Insert(
                                 null_row.delete()?,
@@ -203,6 +204,9 @@ where
                         Ok(ImportAction::PromptNewKey(anyhow!(
                             "Local id '{remote_id}' was previously soft-deleted.",
                         )))
+                    }
+                    RemoteIdState::Void(_, _) => {
+                        todo!()
                     }
                     RemoteIdState::Null(null_row) => Ok(ImportAction::Insert(
                         null_row.delete()?,
@@ -412,6 +416,7 @@ fn handle_local_alias(
                 "Local id '{remote_id}' previously existed but was soft-deleted.",
             )))
         }
+        RemoteIdState::Void(_, _) => todo!(),
         RemoteIdState::Null(null_row) => Ok(ImportAction::Insert(
             null_row.delete()?,
             remote_id,

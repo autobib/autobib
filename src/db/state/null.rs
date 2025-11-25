@@ -34,7 +34,7 @@ impl<'conn> State<'conn, NullRecordRow> {
         self.prepare("DELETE FROM NullRecords WHERE rowid = ?1")?
             .execute((self.row_id(),))?;
         let Self { tx, .. } = self;
-        Ok(State::init(tx, Missing {}))
+        Ok(State::init(tx, Missing))
     }
 
     /// Get the data associated with the row.

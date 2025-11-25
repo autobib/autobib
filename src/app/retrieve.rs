@@ -10,7 +10,7 @@ use crate::{
     config::Config,
     db::{
         RecordDatabase,
-        state::{EntryRecordKey, EntryRowData, RecordIdState, State},
+        state::{EntryRecordKey, RecordIdState, RecordRow, State},
     },
     entry::{Entry, EntryKey, RawEntryData},
     error::Error,
@@ -99,7 +99,7 @@ fn retrieve_single_entry_read_only<F: FnOnce() -> Vec<(regex::Regex, String)>>(
     match record_db.state_from_record_id(citation_key, &config.alias_transform)? {
         RecordIdState::Entry(
             key,
-            EntryRowData {
+            RecordRow::<RawEntryData> {
                 data, canonical, ..
             },
             state,
@@ -117,11 +117,16 @@ fn retrieve_single_entry_read_only<F: FnOnce() -> Vec<(regex::Regex, String)>>(
         RecordIdState::Deleted(key, deleted_row_data, state) => {
             if !ignore_null {
                 error!("Deleted record: '{key}'");
-                if let Some(repl) = deleted_row_data.replacement {
+                if let Some(repl) = deleted_row_data.data {
                     suggest!("Use the replacement key '{repl}'");
                 }
             }
             state.commit()?;
+            Ok(None)
+        }
+        RecordIdState::Void(key, _, void) => {
+            void.commit()?;
+            error!("Record exists but has been voided: {key}");
             Ok(None)
         }
         RecordIdState::NullRemoteId(remote_id, missing) => {
@@ -182,7 +187,7 @@ where
         RecordRowResponse::Deleted(deleted_row_data, deleted) => {
             if !ignore_null {
                 error!("Deleted record: '{}'", deleted_row_data.key);
-                if let Some(repl) = deleted_row_data.replacement {
+                if let Some(repl) = deleted_row_data.data {
                     suggest!("Perhaps use the replacement key: '{repl}'");
                 }
             }

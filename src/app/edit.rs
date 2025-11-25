@@ -1,15 +1,20 @@
-use std::str::FromStr;
+use std::{path::PathBuf, str::FromStr};
 
 use anyhow::Result;
 
 use super::OnConflict;
 
 use crate::{
-    db::state::{EntryRecordKey, State},
-    entry::{ConflictResolved, EntryData, MutableEntryData},
+    app::data_from_path,
+    db::{
+        CitationKey,
+        state::{EntryRecordKey, RecordsInsert, State},
+    },
+    entry::{ConflictResolved, Entry, EntryData, EntryKey, MutableEntryData, RawEntryData},
     error::MergeError,
-    logger::{error, info, reraise, suggest, warn},
-    record::Alias,
+    logger::{error, info, reraise, set_failed, suggest, warn},
+    normalize::{Normalization, Normalize},
+    record::{Alias, RemoteId},
     term::{Editor, EditorConfig, Input},
 };
 
@@ -31,6 +36,52 @@ pub fn create_alias_if_valid(
             suggest!("Edits to the entry key are only used to create new aliases.");
         }
     }
+    Ok(())
+}
+
+/// Insert new data for the given state.
+///
+/// If data is not available at the provided path, prompt the user for data.
+///
+/// If the row does not exist in the 'Records' table, this inserts a new row as the unique entry.
+/// If the row exists, this adds the new row as a child of the existing row.
+pub fn insert<'conn, S: RecordsInsert<'conn>>(
+    missing: S,
+    from_bibtex: Option<PathBuf>,
+    remote_id: &RemoteId,
+    no_interactive: bool,
+    normalization: &Normalization,
+) -> anyhow::Result<()> {
+    if let Some(path) = from_bibtex {
+        let mut data = data_from_path(path)?;
+        data.normalize(normalization);
+        missing
+            .insert(&RawEntryData::from_entry_data(&data), remote_id)?
+            .commit()?;
+    } else if no_interactive {
+        let data = MutableEntryData::<&'static str>::default();
+        missing
+            .insert(&RawEntryData::from_entry_data(&data), remote_id)?
+            .commit()?;
+        warn!("Inserted local data with no contents in non-interactive mode");
+    } else {
+        let record_data = MutableEntryData::<String>::default();
+        let entry = Entry {
+            key: EntryKey::try_new(remote_id.name().into())
+                .unwrap_or_else(|_| EntryKey::placeholder()),
+            record_data,
+        };
+
+        if let Some(Entry { key, record_data }) = Editor::new_bibtex().edit(&entry)? {
+            let row = missing.insert(&RawEntryData::from_entry_data(&record_data), remote_id)?;
+            if key.as_ref() != remote_id.name() {
+                create_alias_if_valid(key.as_ref(), &row)?;
+            }
+            row.commit()?;
+        } else {
+            set_failed();
+        }
+    };
     Ok(())
 }
 

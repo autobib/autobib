@@ -26,6 +26,10 @@ pub fn soft_delete<F: FnOnce() -> Vec<(regex::Regex, String)>>(
             error!("Key corresponds to record which is already deleted: '{original_name}'");
             state.commit()
         },
+        |original_name, state| {
+            error!("Key corresponds to voided record: '{original_name}'");
+            state.commit()
+        },
     )
 }
 
@@ -43,25 +47,29 @@ pub fn hard_delete<F: FnOnce() -> Vec<(regex::Regex, String)>>(
         config,
         |_, state| state.hard_delete()?.commit(),
         |_, state| state.hard_delete()?.commit(),
+        |_, state| state.hard_delete()?.commit(),
     )
 }
 
 /// Handle the cases where the key is not in the database and defer deletion to the callback.
-fn delete_impl<F, R, D>(
+fn delete_impl<F, R, D, V>(
     citation_key: RecordId,
     record_db: &mut RecordDatabase,
     config: &Config<F>,
     entry_callback: R,
     deleted_callback: D,
+    voided_callback: V,
 ) -> Result<(), rusqlite::Error>
 where
     F: FnOnce() -> Vec<(regex::Regex, String)>,
     R: FnOnce(String, state::State<'_, state::EntryRecordKey>) -> Result<(), rusqlite::Error>,
     D: FnOnce(String, state::State<'_, state::DeletedRecordKey>) -> Result<(), rusqlite::Error>,
+    V: FnOnce(String, state::State<'_, state::VoidRecordKey>) -> Result<(), rusqlite::Error>,
 {
     match record_db.state_from_record_id(citation_key, &config.alias_transform)? {
         RecordIdState::Entry(original_name, _, state) => entry_callback(original_name, state)?,
         RecordIdState::Deleted(original_name, _, state) => deleted_callback(original_name, state)?,
+        RecordIdState::Void(original_name, _, state) => voided_callback(original_name, state)?,
         RecordIdState::NullRemoteId(mapped_key, state) => {
             state.commit()?;
             error!("Cannot delete null record data: {mapped_key}");

@@ -9,6 +9,8 @@ pub enum ProviderError {
     InvalidIdFromProvider(String),
     #[error("Reference source returned a key corresponding to a null record: '{0}'")]
     UnexpectedNullRemoteFromProvider(String),
+    #[error("Provider returned null record for identifier '{0}' which previously returned data!")]
+    UnexpectedNullFromPreviousData(String),
     #[error("Network failure: {0}")]
     NetworkFailure(#[from] ureq::Error),
     #[error("Cannot retrieve remote data for key with local provenance: '{0}'")]

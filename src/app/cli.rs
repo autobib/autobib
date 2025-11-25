@@ -171,7 +171,7 @@ pub enum Command {
     ///
     /// By default, this performs a soft delete, where the current data and keys are retained
     /// but future attempts to read them will result in an error. The data can be recovered with
-    /// `autobib undo`. The key provided with the `--replace` option will be used to suggest
+    /// `autobib hist undo`. The key provided with the `--replace` option will be used to suggest
     /// replacements.
     ///
     /// With the `--hard` option, the data as well as all keys are deleted permanently. This is
@@ -245,6 +245,11 @@ pub enum Command {
         #[arg(long)]
         ignore_null: bool,
     },
+    /// Commands to manipulate version history.
+    Hist {
+        #[command(subcommand)]
+        hist_command: HistCommand,
+    },
     /// Import records from a BibTeX file.
     Import {
         /// The BibTeX file(s) from which to import.
@@ -308,21 +313,6 @@ pub enum Command {
         #[arg(short, long)]
         mkdir: bool,
     },
-    /// Redo previously undone changes.
-    ///
-    /// If no arguments are provided, the redo will succeed if there is a unique change originating
-    /// from the current state.
-    ///
-    /// The optional INDEX refers to the 0-indexed change, ordered from oldest to newest.
-    /// Negative values of INDEX are permitted and count backwards from newest to oldest.
-    ///
-    /// For example, INDEX 0 is the oldest change and INDEX -1 is the newest change.
-    Redo {
-        /// The citation key to modify.
-        citation_key: RecordId,
-        /// The index of the redo, ordered from oldest to newest.
-        index: Option<isize>,
-    },
     /// Generate records by searching for citation keys inside files.
     ///
     /// This is essentially a call to `autobib get`, except with a custom search which attempts
@@ -362,11 +352,6 @@ pub enum Command {
         #[arg(long)]
         ignore_null: bool,
     },
-    /// Undo the most recent change to a citation key.
-    Undo {
-        /// The citation key to modify.
-        citation_key: RecordId,
-    },
     /// Update data associated with an existing citation key.
     ///
     /// By default, you will be prompted if there is a conflict between the current and incoming
@@ -393,6 +378,9 @@ pub enum Command {
             default_value_t
         )]
         on_conflict: OnConflict,
+        /// Retrieve new data if the record is deleted.
+        #[arg(long)]
+        revive: bool,
     },
     /// Utilities to manage database.
     Util {
@@ -502,12 +490,61 @@ impl Command {
             Self::Local { .. } => "local",
             Self::Update { .. } => "update",
             Self::Edit { .. } => "edit",
-            Self::Undo { .. } => "undo",
-            Self::Redo { .. } => "redo",
+            Self::Hist { .. } => "hist",
             Self::Util { util_command } => return util_command.validate_read_only_compatibility(),
         };
         Err(ReadOnlyInvalid::Command(invalid_cmd))
     }
+}
+
+/// Commands to manipulate version history.
+#[derive(Debug, Subcommand)]
+pub enum HistCommand {
+    /// Redo previously undone changes.
+    ///
+    /// If no arguments are provided, the redo will succeed if there is a unique change originating
+    /// from the current state.
+    ///
+    /// The optional INDEX refers to the 0-indexed change, ordered from oldest to newest.
+    /// Negative values of INDEX are permitted and count backwards from newest to oldest.
+    ///
+    /// For example, INDEX 0 is the oldest change and INDEX -1 is the newest change.
+    Redo {
+        /// The citation key to modify.
+        citation_key: RecordId,
+        /// The index of the redo, ordered from oldest to newest.
+        index: Option<isize>,
+        /// Redo beyond a deleted state.
+        #[arg(short, long)]
+        revive: bool,
+    },
+    /// Insert new data for a deleted record, concealing any prior changes.
+    ///
+    /// Usually you want to use `autobib hist undo`, and then `edit` the resulting record.
+    /// This method is useful if there is no prior state or if you want to intentionally conceal prior changes.
+    Revive {
+        /// The citation key to revive.
+        citation_key: RecordId,
+        /// Create the record using the provided BibTeX data.
+        #[arg(short = 'b', long, value_name = "PATH", group = "input")]
+        from_bibtex: Option<PathBuf>,
+    },
+    /// Undo the most recent change to a citation key.
+    Undo {
+        /// The citation key to modify.
+        citation_key: RecordId,
+        /// Undo into a deleted state.
+        #[arg(short, long)]
+        delete: bool,
+    },
+    /// Void a record.
+    ///
+    /// A voided record is equivalent to a record which is not in the database, but the previous
+    /// history is still recoverable.
+    Void {
+        /// The citation key to modify.
+        citation_key: RecordId,
+    },
 }
 
 /// Utilities to manage database.
