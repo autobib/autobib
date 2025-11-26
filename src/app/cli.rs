@@ -5,6 +5,7 @@ use std::{
 };
 
 use anyhow::Result;
+use chrono::{DateTime, Local};
 use clap::{
     CommandFactory, Parser, Subcommand, ValueEnum, builder::ArgPredicate, error::ErrorKind,
 };
@@ -14,7 +15,7 @@ use crossterm::style::Stylize;
 
 use crate::{
     cite_search::SourceFileType,
-    db::state::Revision,
+    db::state::RevisionId,
     error::ShortError,
     format::Template,
     record::{Alias, RecordId},
@@ -523,13 +524,17 @@ pub enum HistCommand {
         revive: bool,
     },
     /// Set the active version to a specific revision.
-    ///
-    /// Determine the correct revision number using `autobib log`.
     Reset {
         /// The citation key to reset.
         citation_key: RecordId,
-        /// The target revision.
-        revision: Revision,
+        /// Set using a revision number.
+        #[arg(long, group = "reset_target")]
+        rev: Option<RevisionId>,
+        /// Reset the state to how it looked at a given time.
+        ///
+        /// This is an ISO 8601 datetime, so make sure to indicate the timezone as well.
+        #[arg(long, group = "reset_target")]
+        before: Option<DateTime<Local>>,
     },
     /// Insert new data for a deleted record, concealing any prior changes.
     ///

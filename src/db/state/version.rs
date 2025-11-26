@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, str::FromStr};
 
 use super::{ArbitraryData, CompleteRecordRow, InRecordsTable, RecordRow, State, Transaction};
 
@@ -14,11 +14,20 @@ pub struct Version<'tx, 'conn> {
     child_row_ids: Vec<u8>,
 }
 
-pub struct RevisionId(i64);
+#[derive(Debug, Clone, Copy)]
+pub struct RevisionId(pub(super) i64);
 
 impl fmt::Display for RevisionId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:0>4x}", self.0)
+        write!(f, "rev {:0>4x}", self.0)
+    }
+}
+
+impl FromStr for RevisionId {
+    type Err = std::num::ParseIntError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        i64::from_str_radix(s, 16).map(RevisionId)
     }
 }
 
