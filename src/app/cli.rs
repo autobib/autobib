@@ -301,7 +301,10 @@ pub enum Command {
     Log {
         /// The citation key to show the revision history.
         citation_key: RecordId,
-        /// Show all changes instead of only the history of the active version.
+        /// Show parallel changes, instead of only the history of the active version.
+        #[arg(short, long)]
+        tree: bool,
+        /// Also traverse pass deletion markers.
         #[arg(short, long)]
         all: bool,
     },

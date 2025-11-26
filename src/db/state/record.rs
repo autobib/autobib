@@ -627,7 +627,7 @@ impl<'conn, I: NotVoid> State<'conn, I> {
 
     /// Void this record row.
     pub fn void(self) -> rusqlite::Result<State<'conn, VoidRecordKey>> {
-        let root = self.current()?.root()?;
+        let root = self.current()?.root(true)?;
         let root_row_id = root.row_id;
 
         let new_row_id = match root.row.data {

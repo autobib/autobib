@@ -1,4 +1,4 @@
-use std::io::{self, StdoutLock, Write};
+use std::io::{self, IsTerminal, StdoutLock, Write};
 
 macro_rules! owriteln {
     ($($arg:tt)*) => {{
@@ -73,6 +73,13 @@ impl Write for StdoutWriter {
 
     fn write_vectored(&mut self, bufs: &[io::IoSlice<'_>]) -> io::Result<usize> {
         check_for_broken_pipe(self.sol.write_vectored(bufs))
+    }
+}
+
+impl StdoutWriter {
+    pub fn supports_styled_output(&self) -> bool {
+        // FIXME: maybe this isn't the best?
+        self.sol.is_terminal()
     }
 }
 

@@ -5,6 +5,7 @@ use super::{ArbitraryData, CompleteRecordRow, InRecordsTable, RecordRow, State, 
 /// A specific version of a record row.
 ///
 /// The lifetime is tied to the transaction in which the version is guaranteed to be valid.
+#[derive(Debug)]
 pub struct Version<'tx, 'conn> {
     pub row: RecordRow<ArbitraryData>,
     pub(super) row_id: i64,
@@ -47,6 +48,18 @@ impl<'tx, 'conn> Version<'tx, 'conn> {
         })
     }
 
+    pub fn is_deleted(&self) -> bool {
+        matches!(self.row.data, ArbitraryData::Deleted(_))
+    }
+
+    pub fn is_entry(&self) -> bool {
+        matches!(self.row.data, ArbitraryData::Entry(_))
+    }
+
+    pub fn is_void(&self) -> bool {
+        matches!(self.row.data, ArbitraryData::Void)
+    }
+
     /// Returns the parent row, if any.
     pub fn parent(&self) -> rusqlite::Result<Option<Self>> {
         match self.parent_row_id {
@@ -56,9 +69,13 @@ impl<'tx, 'conn> Version<'tx, 'conn> {
     }
 
     /// Returns the root version, or none.
-    pub fn root(mut self) -> rusqlite::Result<Self> {
+    pub fn root(mut self, all: bool) -> rusqlite::Result<Self> {
         while let Some(parent) = self.parent()? {
-            self = parent;
+            if parent.is_entry() || all {
+                self = parent;
+            } else {
+                return Ok(self);
+            }
         }
         Ok(self)
     }

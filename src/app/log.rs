@@ -3,7 +3,7 @@ use std::io::Write;
 use ramify::{Config, Generator, branch_writer};
 
 use crate::{
-    db::state::{InRecordsTable, State},
+    db::state::{InRecordsTable, State, tree::RamifierConfig},
     output::stdout_lock_wrap,
 };
 
@@ -17,14 +17,25 @@ branch_writer! {
 
 pub fn print_log<'conn, I: InRecordsTable>(
     state: &State<'conn, I>,
+    tree: bool,
     all: bool,
+    oneline: bool,
 ) -> anyhow::Result<()> {
-    if all {
-        let root = state.current()?.root()?;
+    let mut stdout = stdout_lock_wrap();
+    let styled = stdout.supports_styled_output();
+    let ramifier_config = RamifierConfig {
+        all,
+        oneline,
+        styled,
+    };
+
+    if tree {
+        let root = state.current()?.root(all)?;
         let mut config = Config::<InvertedStyle>::new();
         config.row_padding = 2;
         config.annotation_margin = 2;
-        let mut generator = Generator::init(root, state.full_history_ramifier(), config);
+        let mut generator =
+            Generator::init(root, state.full_history_ramifier(ramifier_config), config);
         let mut branch_diagram = String::new();
 
         let mut limit = state.changelog_size()?;
@@ -37,7 +48,6 @@ pub fn print_log<'conn, I: InRecordsTable>(
             }
         }
 
-        let mut stdout = stdout_lock_wrap();
         for line in branch_diagram.lines().rev() {
             writeln!(&mut stdout, "{line}")?;
         }
@@ -46,8 +56,8 @@ pub fn print_log<'conn, I: InRecordsTable>(
         let mut config = Config::<ramify::writer::RoundedCornersWide>::new();
         config.row_padding = 2;
         config.annotation_margin = 2;
-        let mut generator = Generator::init(current, state.ancestor_ramifier(), config);
-        let mut stdout = stdout_lock_wrap();
+        let mut generator =
+            Generator::init(current, state.ancestor_ramifier(ramifier_config), config);
         let mut limit = state.changelog_size()?;
 
         while generator.try_write_vertex(&mut stdout)? {
