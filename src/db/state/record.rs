@@ -1,5 +1,3 @@
-use std::str::FromStr;
-
 use chrono::{DateTime, Local};
 use rusqlite::OptionalExtension;
 
@@ -9,7 +7,7 @@ use crate::{
     logger::debug,
 };
 
-use super::{Missing, State, Transaction};
+use super::{Missing, State, Transaction, version::RevisionId};
 
 /// Any type which represents a `key` corresponding to a row in the 'Records' table.
 pub trait InRecordsTable {
@@ -253,11 +251,11 @@ pub enum DisambiguatedRecordRow<'conn> {
 }
 
 impl<'conn> DisambiguatedRecordRow<'conn> {
-    pub fn forget(self) -> State<'conn, ArbitraryKey> {
+    pub fn forget(self) -> (RecordRow<ArbitraryData>, State<'conn, ArbitraryKey>) {
         match self {
-            Self::Entry(_, state) => state.forget(),
-            Self::Deleted(_, state) => state.forget(),
-            Self::Void(_, state) => state.forget(),
+            Self::Entry(data, state) => (data.into(), state.forget()),
+            Self::Deleted(data, state) => (data.into(), state.forget()),
+            Self::Void(data, state) => (data.into(), state.forget()),
         }
     }
 }
@@ -364,13 +362,7 @@ impl<'conn, N, O: InRecordsTable, E> RecordRowMoveResult<'conn, N, O, E> {
         N: FromRowId,
     {
         match candidate {
-            Ok(row_id) => {
-                original.update_citation_keys(row_id)?;
-                Ok(RecordRowMoveResult::Updated(State::init(
-                    original.tx,
-                    N::from_row_id(row_id),
-                )))
-            }
+            Ok(row_id) => original.transmute(row_id).map(RecordRowMoveResult::Updated),
             Err(e) => Ok(RecordRowMoveResult::Unchanged(original, e)),
         }
     }
@@ -381,20 +373,15 @@ pub enum SetActiveError {
     DifferentCanonical(RemoteId),
 }
 
-#[derive(Debug, Clone)]
-pub struct Revision(i64);
-
-impl FromStr for Revision {
-    type Err = std::num::ParseIntError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        i64::from_str_radix(s, 16).map(Revision)
-    }
-}
-
 impl<'conn, I: InRecordsTable> State<'conn, I> {
     pub(super) fn row_id(&self) -> i64 {
         self.id.row_id()
+    }
+
+    /// Perform unchecked conversion to a new row id, updating the rows in the CitationKeys table.
+    fn transmute<N: FromRowId>(self, new_row_id: i64) -> rusqlite::Result<State<'conn, N>> {
+        self.update_citation_keys(new_row_id)?;
+        Ok(State::init(self.tx, N::from_row_id(new_row_id)))
     }
 
     /// Obtain the data for this row.
@@ -430,8 +417,7 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
         CompleteRecordRow::load_unchecked(&self.tx, self.row_id())
     }
 
-    /// Forget whatever kind of row this is, and just replace it with a generic row in the
-    /// 'Records' table.
+    /// Forget the specific type of row that this is.
     pub fn forget(self) -> State<'conn, ArbitraryKey> {
         let row_id = self.row_id();
         State::init(self.tx, ArbitraryKey(row_id))
@@ -443,7 +429,7 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
     /// as the canonical id of this row, this returns an error.
     pub fn set_active(
         self,
-        Revision(row_id): Revision,
+        RevisionId(row_id): RevisionId,
     ) -> Result<RecordRowMoveResult<'conn, ArbitraryKey, I, SetActiveError>, rusqlite::Error> {
         let self_canonical = self.canonical()?;
 
@@ -456,6 +442,14 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
         };
 
         RecordRowMoveResult::from_rowid(self, row_id_or_err)
+    }
+
+    pub fn rewind(self, before: DateTime<Local>) -> rusqlite::Result<State<'conn, ArbitraryKey>> {
+        // FIXME: avoid this?
+        let canonical = self.canonical()?;
+        let new_row_id: i64 = self.prepare("SELECT key FROM Records WHERE record_id = ?1 AND modified <= ?2 ORDER BY modified DESC LIMIT 1")?
+            .query_row((canonical.name(), &before), |row| row.get(0))?;
+        self.transmute(new_row_id)
     }
 
     /// Update the citation keys table by setting any rows which reference the current row to
@@ -732,6 +726,12 @@ impl From<Option<RemoteId>> for ArbitraryData {
     }
 }
 
+impl From<()> for ArbitraryData {
+    fn from((): ()) -> Self {
+        Self::Void
+    }
+}
+
 impl From<RecordRow<RawEntryData>> for RecordRow<ArbitraryData> {
     fn from(row: RecordRow<RawEntryData>) -> Self {
         Self::convert(row)
@@ -740,6 +740,12 @@ impl From<RecordRow<RawEntryData>> for RecordRow<ArbitraryData> {
 
 impl From<RecordRow<Option<RemoteId>>> for RecordRow<ArbitraryData> {
     fn from(row: RecordRow<Option<RemoteId>>) -> Self {
+        Self::convert(row)
+    }
+}
+
+impl From<RecordRow<()>> for RecordRow<ArbitraryData> {
+    fn from(row: RecordRow<()>) -> Self {
         Self::convert(row)
     }
 }

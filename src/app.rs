@@ -534,12 +534,13 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                             suggest!(
                                 "Redo from a deleted state using `autobib hist redo --revive`"
                             );
+                            suggest!("Insert new data with `autobib hist revive`");
                             state.commit()?;
                         } else {
                             error!("No changes to redo");
+                            suggest!("Insert new data with `autobib hist revive`");
                             state.commit()?;
                         }
-                        suggest!("Insert new data with `autobib hist revive`");
                     }
                     Some((_, DisambiguatedRecordRow::Void(_, state))) => {
                         if revive {
@@ -549,40 +550,48 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                             suggest!(
                                 "Redo from a voided state using `autobib hist redo --revive`, or insert new data"
                             );
+                            suggest!("Insert new data with `autobib hist revive`");
                             state.commit()?;
                         } else {
                             error!("No changes to redo");
+                            suggest!("Insert new data with `autobib hist revive`");
                             state.commit()?;
                         }
-                        suggest!("Insert new data with `autobib hist revive`");
                     }
                     None => {}
                 }
             }
             HistCommand::Reset {
                 citation_key,
-                revision,
+                rev,
+                before,
             } => {
                 let cfg = config::load(&config_path, missing_ok)?;
                 if let Some((_, disambiguated)) = record_db
                     .state_from_record_id(citation_key, &cfg.alias_transform)?
                     .require_record()?
                 {
-                    match disambiguated.forget().set_active(revision)? {
-                        RecordRowMoveResult::Updated(state) => state.commit()?,
-                        RecordRowMoveResult::Unchanged(state, err) => {
-                            state.commit()?;
-                            match err {
-                                SetActiveError::RowIdUndefined => {
-                                    error!("Revision does not exist in the 'Records' table");
-                                }
-                                SetActiveError::DifferentCanonical(remote_id) => {
-                                    error!(
-                                        "Revision exists, but it corresponds to a different record with canonical identifier '{remote_id}'"
-                                    );
+                    let (_, state) = disambiguated.forget();
+
+                    if let Some(revision) = rev {
+                        match state.set_active(revision)? {
+                            RecordRowMoveResult::Updated(state) => state.commit()?,
+                            RecordRowMoveResult::Unchanged(state, err) => {
+                                state.commit()?;
+                                match err {
+                                    SetActiveError::RowIdUndefined => {
+                                        error!("Revision does not exist in the 'Records' table");
+                                    }
+                                    SetActiveError::DifferentCanonical(remote_id) => {
+                                        error!(
+                                            "Revision exists, but it corresponds to a different record with canonical identifier '{remote_id}'"
+                                        );
+                                    }
                                 }
                             }
                         }
+                    } else if let Some(dt) = before {
+                        state.rewind(dt)?.commit()?;
                     }
                 }
             }
@@ -832,7 +841,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 .state_from_record_id(citation_key, &cfg.alias_transform)?
                 .require_record()?
             {
-                let state = entry_or_deleted.forget();
+                let (_, state) = entry_or_deleted.forget();
                 print_log(&state, tree, all, false)?;
                 state.commit()?;
             }

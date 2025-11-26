@@ -28,21 +28,61 @@ impl<'a, 'tx, 'conn> fmt::Display for LogEntry<'a, 'tx, 'conn> {
 
         let hex = StyledContent::new(style, self.version.rev_id());
 
+        let style = if self.styled {
+            ContentStyle::default().italic().grey()
+        } else {
+            ContentStyle::default()
+        };
+
+        let edit_msg = match &self.version.row.data {
+            ArbitraryData::Entry(_) => self
+                .version
+                .row
+                .modified
+                .format("Modified on %b %d, %Y at %X%Z"),
+            ArbitraryData::Deleted(_) => self
+                .version
+                .row
+                .modified
+                .format("Deleted on %b %d, %Y at %X%Z"),
+            ArbitraryData::Void => self.version.row.modified.format("Void"),
+        };
+
+        let modified = StyledContent::new(style, edit_msg);
+
         match &self.version.row.data {
             ArbitraryData::Entry(raw_entry_data) => {
-                writeln!(buf, "  @{}{{{hex},", raw_entry_data.entry_type())?;
+                writeln!(buf, "{hex}\n{modified}\n")?;
+                writeln!(
+                    buf,
+                    "   @{}{{{},",
+                    if self.styled {
+                        raw_entry_data.entry_type().green()
+                    } else {
+                        raw_entry_data.entry_type().reset()
+                    },
+                    self.version.row.canonical
+                )?;
                 for (key, val) in raw_entry_data.fields() {
-                    writeln!(buf, "    {key} = {{{val}}},")?;
+                    writeln!(
+                        buf,
+                        "     {} = {{{val}}},",
+                        if self.styled { key.blue() } else { key.reset() }
+                    )?;
                 }
-                write!(buf, "  }}")?;
+                write!(buf, "   }}")?;
 
                 Ok(())
             }
-            ArbitraryData::Deleted(Some(remote_id)) => {
-                write!(buf, "{hex} Replaced by '{remote_id}'")
+            ArbitraryData::Deleted(replacement) => {
+                writeln!(buf, "{hex}\n{modified}")?;
+
+                if let Some(remote_id) = replacement {
+                    write!(buf, "\n   Replaced by '{remote_id}'")?;
+                }
+                Ok(())
             }
-            ArbitraryData::Deleted(None) => write!(buf, "{hex} Deleted"),
-            ArbitraryData::Void => write!(buf, "{hex} Voided"),
+            ArbitraryData::Void => write!(buf, "{hex}\n{modified}"),
         }
     }
 }

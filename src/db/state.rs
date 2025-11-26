@@ -43,7 +43,7 @@ mod version;
 
 use rusqlite::{CachedStatement, Error, Statement};
 
-pub use self::{missing::*, null::*, record::*};
+pub use self::{missing::*, null::*, record::*, version::*};
 use super::{RowId, Transaction, get_null_row_id, get_row_id};
 use crate::{
     Alias, AliasOrRemoteId, MappedKey, RecordId, RemoteId,
