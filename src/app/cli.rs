@@ -14,6 +14,7 @@ use crossterm::style::Stylize;
 
 use crate::{
     cite_search::SourceFileType,
+    db::state::Revision,
     error::ShortError,
     format::Template,
     record::{Alias, RecordId},
@@ -520,6 +521,15 @@ pub enum HistCommand {
         /// Redo beyond a deleted state.
         #[arg(short, long)]
         revive: bool,
+    },
+    /// Set the active version to a specific revision.
+    ///
+    /// Determine the correct revision number using `autobib log`.
+    Reset {
+        /// The citation key to reset.
+        citation_key: RecordId,
+        /// The target revision.
+        revision: Revision,
     },
     /// Insert new data for a deleted record, concealing any prior changes.
     ///

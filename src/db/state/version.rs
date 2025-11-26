@@ -18,7 +18,7 @@ pub struct RevisionId(i64);
 
 impl fmt::Display for RevisionId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "#{:0>4x}", self.0)
+        write!(f, "{:0>4x}", self.0)
     }
 }
 

@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use chrono::{DateTime, Local};
 use rusqlite::OptionalExtension;
 
@@ -244,10 +246,20 @@ impl NotEntry for VoidRecordKey {}
 impl_record_key!(VoidRecordKey, ());
 
 /// A row in the 'Records' table, disambiguated based on what type of row it is.
-pub enum EntryOrDeleted<'conn> {
+pub enum DisambiguatedRecordRow<'conn> {
     Entry(RecordRow<RawEntryData>, State<'conn, EntryRecordKey>),
     Deleted(RecordRow<Option<RemoteId>>, State<'conn, DeletedRecordKey>),
     Void(RecordRow<()>, State<'conn, VoidRecordKey>),
+}
+
+impl<'conn> DisambiguatedRecordRow<'conn> {
+    pub fn forget(self) -> State<'conn, ArbitraryKey> {
+        match self {
+            Self::Entry(_, state) => state.forget(),
+            Self::Deleted(_, state) => state.forget(),
+            Self::Void(_, state) => state.forget(),
+        }
+    }
 }
 
 /// Types which can be written as the 'data' and 'variant' column in the 'Records' table.
@@ -369,6 +381,17 @@ pub enum SetActiveError {
     DifferentCanonical(RemoteId),
 }
 
+#[derive(Debug, Clone)]
+pub struct Revision(i64);
+
+impl FromStr for Revision {
+    type Err = std::num::ParseIntError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        i64::from_str_radix(s, 16).map(Revision)
+    }
+}
+
 impl<'conn, I: InRecordsTable> State<'conn, I> {
     pub(super) fn row_id(&self) -> i64 {
         self.id.row_id()
@@ -420,7 +443,7 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
     /// as the canonical id of this row, this returns an error.
     pub fn set_active(
         self,
-        row_id: i64,
+        Revision(row_id): Revision,
     ) -> Result<RecordRowMoveResult<'conn, ArbitraryKey, I, SetActiveError>, rusqlite::Error> {
         let self_canonical = self.canonical()?;
 
@@ -808,7 +831,7 @@ impl<'conn, I: NotEntry> State<'conn, I> {
 }
 
 impl<'conn> State<'conn, ArbitraryKey> {
-    pub fn determine(self) -> Result<EntryOrDeleted<'conn>, rusqlite::Error> {
+    pub fn determine(self) -> Result<DisambiguatedRecordRow<'conn>, rusqlite::Error> {
         let RecordRow {
             data,
             modified,
@@ -818,7 +841,7 @@ impl<'conn> State<'conn, ArbitraryKey> {
         let row_id = self.row_id();
 
         Ok(match data {
-            ArbitraryData::Entry(data) => EntryOrDeleted::Entry(
+            ArbitraryData::Entry(data) => DisambiguatedRecordRow::Entry(
                 RecordRow {
                     data,
                     modified,
@@ -826,7 +849,7 @@ impl<'conn> State<'conn, ArbitraryKey> {
                 },
                 State::init(self.tx, EntryRecordKey(row_id)),
             ),
-            ArbitraryData::Deleted(data) => EntryOrDeleted::Deleted(
+            ArbitraryData::Deleted(data) => DisambiguatedRecordRow::Deleted(
                 RecordRow {
                     data,
                     modified,
@@ -834,7 +857,7 @@ impl<'conn> State<'conn, ArbitraryKey> {
                 },
                 State::init(self.tx, DeletedRecordKey(row_id)),
             ),
-            ArbitraryData::Void => EntryOrDeleted::Void(
+            ArbitraryData::Void => DisambiguatedRecordRow::Void(
                 RecordRow {
                     data: (),
                     modified,
