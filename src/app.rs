@@ -29,7 +29,10 @@ use crate::{
     config,
     db::{
         DeleteAliasResult, RecordDatabase, RenameAliasResult,
-        state::{EntryOrDeleted, ExistsOrUnknown, RecordIdState, RemoteIdState},
+        state::{
+            DisambiguatedRecordRow, ExistsOrUnknown, RecordIdState, RecordRowMoveResult,
+            RemoteIdState, SetActiveError,
+        },
         user_version,
     },
     entry::{Entry, EntryKey, MutableEntryData, RawEntryData},
@@ -514,7 +517,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     .state_from_record_id(citation_key, &cfg.alias_transform)?
                     .require_record()?
                 {
-                    Some((_, EntryOrDeleted::Entry(_, state))) => {
+                    Some((_, DisambiguatedRecordRow::Entry(_, state))) => {
                         if revive {
                             error!(
                                 "Attempted to redo from a deleted state, but the record currently exists"
@@ -523,7 +526,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                             hist::handle_redo_result(state.redo(index)?)?;
                         }
                     }
-                    Some((_, EntryOrDeleted::Deleted(_, state))) => {
+                    Some((_, DisambiguatedRecordRow::Deleted(_, state))) => {
                         if revive {
                             hist::handle_redo_result(state.redo_deletion(index)?)?;
                         } else if state.current()?.num_children() > 0 {
@@ -538,7 +541,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         }
                         suggest!("Insert new data with `autobib hist revive`");
                     }
-                    Some((_, EntryOrDeleted::Void(_, state))) => {
+                    Some((_, DisambiguatedRecordRow::Void(_, state))) => {
                         if revive {
                             hist::handle_redo_result(state.redo_deletion(index)?)?;
                         } else if state.current()?.num_children() > 0 {
@@ -556,6 +559,33 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     None => {}
                 }
             }
+            HistCommand::Reset {
+                citation_key,
+                revision,
+            } => {
+                let cfg = config::load(&config_path, missing_ok)?;
+                if let Some((_, disambiguated)) = record_db
+                    .state_from_record_id(citation_key, &cfg.alias_transform)?
+                    .require_record()?
+                {
+                    match disambiguated.forget().set_active(revision)? {
+                        RecordRowMoveResult::Updated(state) => state.commit()?,
+                        RecordRowMoveResult::Unchanged(state, err) => {
+                            state.commit()?;
+                            match err {
+                                SetActiveError::RowIdUndefined => {
+                                    error!("Revision does not exist in the 'Records' table");
+                                }
+                                SetActiveError::DifferentCanonical(remote_id) => {
+                                    error!(
+                                        "Revision exists, but it corresponds to a different record with canonical identifier '{remote_id}'"
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             HistCommand::Revive {
                 citation_key,
                 from_bibtex,
@@ -565,11 +595,11 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     .state_from_record_id(citation_key, &cfg.alias_transform)?
                     .require_record()?
                 {
-                    Some((_, EntryOrDeleted::Entry(_, state))) => {
+                    Some((_, DisambiguatedRecordRow::Entry(_, state))) => {
                         state.commit()?;
                         bail!("Record already exists!")
                     }
-                    Some((_, EntryOrDeleted::Deleted(data, state))) => {
+                    Some((_, DisambiguatedRecordRow::Deleted(data, state))) => {
                         insert(
                             state,
                             from_bibtex,
@@ -578,7 +608,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                             &cfg.on_insert,
                         )?;
                     }
-                    Some((_, EntryOrDeleted::Void(data, state))) => {
+                    Some((_, DisambiguatedRecordRow::Void(data, state))) => {
                         insert(
                             state,
                             from_bibtex,
@@ -599,21 +629,21 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     .state_from_record_id(citation_key, &cfg.alias_transform)?
                     .require_record()?
                 {
-                    Some((_, EntryOrDeleted::Entry(_, state))) => {
+                    Some((_, DisambiguatedRecordRow::Entry(_, state))) => {
                         if delete {
                             hist::handle_undo_result(state.undo_delete()?)?;
                         } else {
                             hist::handle_undo_result(state.undo()?)?;
                         };
                     }
-                    Some((_, EntryOrDeleted::Deleted(_, state))) => {
+                    Some((_, DisambiguatedRecordRow::Deleted(_, state))) => {
                         if delete {
                             hist::handle_undo_result(state.undo_delete()?)?;
                         } else {
                             hist::handle_undo_result(state.undo()?)?;
                         };
                     }
-                    Some((_, EntryOrDeleted::Void(_, _))) => {
+                    Some((_, DisambiguatedRecordRow::Void(_, _))) => {
                         error!("Nothing to undo!");
                     }
                     None => {}
@@ -625,13 +655,13 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     .state_from_record_id(citation_key, &cfg.alias_transform)?
                     .require_record()?
                 {
-                    Some((_, EntryOrDeleted::Entry(_, state))) => {
+                    Some((_, DisambiguatedRecordRow::Entry(_, state))) => {
                         state.void()?.commit()?;
                     }
-                    Some((_, EntryOrDeleted::Deleted(_, state))) => {
+                    Some((_, DisambiguatedRecordRow::Deleted(_, state))) => {
                         state.void()?.commit()?;
                     }
-                    Some((_, EntryOrDeleted::Void(_, state))) => {
+                    Some((_, DisambiguatedRecordRow::Void(_, state))) => {
                         state.commit()?;
                         error!("Record is already void");
                     }
@@ -798,23 +828,13 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             all,
         } => {
             let cfg = config::load(&config_path, missing_ok)?;
-            match record_db
+            if let Some((_, entry_or_deleted)) = record_db
                 .state_from_record_id(citation_key, &cfg.alias_transform)?
                 .require_record()?
             {
-                Some((_, EntryOrDeleted::Entry(_, state))) => {
-                    print_log(&state, tree, all, false)?;
-                    state.commit()?;
-                }
-                Some((_, EntryOrDeleted::Deleted(_, state))) => {
-                    print_log(&state, tree, all, false)?;
-                    state.commit()?;
-                }
-                Some((_, EntryOrDeleted::Void(_, state))) => {
-                    print_log(&state, tree, all, false)?;
-                    state.commit()?;
-                }
-                None => {}
+                let state = entry_or_deleted.forget();
+                print_log(&state, tree, all, false)?;
+                state.commit()?;
             }
         }
         Command::Path {
