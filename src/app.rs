@@ -792,22 +792,26 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 }
             };
         }
-        Command::Log { citation_key, all } => {
+        Command::Log {
+            citation_key,
+            tree,
+            all,
+        } => {
             let cfg = config::load(&config_path, missing_ok)?;
             match record_db
                 .state_from_record_id(citation_key, &cfg.alias_transform)?
                 .require_record()?
             {
                 Some((_, EntryOrDeleted::Entry(_, state))) => {
-                    print_log(&state, all)?;
+                    print_log(&state, tree, all, false)?;
                     state.commit()?;
                 }
                 Some((_, EntryOrDeleted::Deleted(_, state))) => {
-                    print_log(&state, all)?;
+                    print_log(&state, tree, all, false)?;
                     state.commit()?;
                 }
                 Some((_, EntryOrDeleted::Void(_, state))) => {
-                    print_log(&state, all)?;
+                    print_log(&state, tree, all, false)?;
                     state.commit()?;
                 }
                 None => {}

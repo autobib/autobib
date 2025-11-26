@@ -6,6 +6,13 @@ use ramify::TryRamify;
 use super::{ArbitraryData, InRecordsTable, State, version::Version};
 use crate::entry::EntryData;
 
+pub struct RamifierConfig {
+    pub all: bool,
+    pub styled: bool,
+    pub oneline: bool,
+}
+
+#[derive(Debug)]
 struct LogEntry<'a, 'tx, 'conn> {
     version: &'a Version<'tx, 'conn>,
     styled: bool,
@@ -27,7 +34,7 @@ impl<'a, 'tx, 'conn> fmt::Display for LogEntry<'a, 'tx, 'conn> {
                 for (key, val) in raw_entry_data.fields() {
                     writeln!(buf, "    {key} = {{{val}}},")?;
                 }
-                writeln!(buf, "  }}")?;
+                write!(buf, "  }}")?;
 
                 Ok(())
             }
@@ -63,7 +70,11 @@ impl<'tx, 'conn> Version<'tx, 'conn> {
 }
 
 /// A ramifier designed for version history.
-pub struct FullHistoryRamifier<'tx>(i64, PhantomData<&'tx ()>);
+pub struct FullHistoryRamifier<'tx> {
+    active_row_id: i64,
+    config: RamifierConfig,
+    _marker: PhantomData<&'tx ()>,
+}
 
 impl<'tx, 'conn> TryRamify<Version<'tx, 'conn>> for FullHistoryRamifier<'tx> {
     type Error = rusqlite::Error;
@@ -75,10 +86,15 @@ impl<'tx, 'conn> TryRamify<Version<'tx, 'conn>> for FullHistoryRamifier<'tx> {
         impl IntoIterator<Item = Version<'tx, 'conn>>,
         ramify::Replacement<Version<'tx, 'conn>, Self::Error>,
     > {
-        vtx.child_iter()
-            .rev()
-            .collect::<rusqlite::Result<Vec<Version<'tx, 'conn>>>>()
-            .map_err(|err| ramify::Replacement { value: vtx, err })
+        // we always iterate over children if we are on an entry; otherwise, only iterate if 'all'
+        if vtx.is_entry() || self.config.all {
+            vtx.child_iter()
+                .rev()
+                .collect::<rusqlite::Result<Vec<Version<'tx, 'conn>>>>()
+                .map_err(|err| ramify::Replacement { value: vtx, err })
+        } else {
+            Ok(Vec::new())
+        }
     }
 
     fn get_key(&self, vtx: &Version<'tx, 'conn>) -> impl Ord {
@@ -86,7 +102,7 @@ impl<'tx, 'conn> TryRamify<Version<'tx, 'conn>> for FullHistoryRamifier<'tx> {
     }
 
     fn marker(&self, vtx: &Version<'tx, 'conn>) -> char {
-        vtx.marker(self.0)
+        vtx.marker(self.active_row_id)
     }
 
     fn annotation<B: fmt::Write>(&self, vtx: &Version<'tx, 'conn>, mut buf: B) -> fmt::Result {
@@ -94,20 +110,26 @@ impl<'tx, 'conn> TryRamify<Version<'tx, 'conn>> for FullHistoryRamifier<'tx> {
             ContentStyle::default(),
             LogEntry {
                 version: vtx,
-                styled: true,
+                styled: self.config.styled,
             },
         );
 
-        if vtx.row_id == self.0 {
-            write!(buf, "{}", disp.bold())
+        let disp = if self.config.styled && vtx.row_id == self.active_row_id {
+            disp.bold()
         } else {
-            write!(buf, "{disp}")
-        }
+            disp
+        };
+
+        write!(buf, "{disp}")
     }
 }
 
 /// A ramifier which iterates over the immediate history.
-pub struct AncestorRamifier<'tx>(i64, PhantomData<&'tx ()>);
+pub struct AncestorRamifier<'tx> {
+    active_row_id: i64,
+    config: RamifierConfig,
+    _marker: PhantomData<&'tx ()>,
+}
 
 impl<'tx, 'conn> TryRamify<Version<'tx, 'conn>> for AncestorRamifier<'tx> {
     type Error = rusqlite::Error;
@@ -124,7 +146,15 @@ impl<'tx, 'conn> TryRamify<Version<'tx, 'conn>> for AncestorRamifier<'tx> {
             .map_err(|err| ramify::Replacement { value: vtx, err })?
         {
             None => Ok(None.into_iter()),
-            Some(parent) => Ok(Some(parent).into_iter()),
+            Some(parent) => {
+                // since this method iterates backwards, we perform the check on the next version
+                // and only yield it if it is an entry
+                if parent.is_entry() || self.config.all {
+                    Ok(Some(parent).into_iter())
+                } else {
+                    Ok(None.into_iter())
+                }
+            }
         }
     }
 
@@ -133,7 +163,7 @@ impl<'tx, 'conn> TryRamify<Version<'tx, 'conn>> for AncestorRamifier<'tx> {
     }
 
     fn marker(&self, vtx: &Version<'tx, 'conn>) -> char {
-        vtx.marker(self.0)
+        vtx.marker(self.active_row_id)
     }
 
     fn annotation<B: fmt::Write>(&self, vtx: &Version<'tx, 'conn>, mut buf: B) -> fmt::Result {
@@ -141,25 +171,35 @@ impl<'tx, 'conn> TryRamify<Version<'tx, 'conn>> for AncestorRamifier<'tx> {
             ContentStyle::default(),
             LogEntry {
                 version: vtx,
-                styled: true,
+                styled: self.config.styled,
             },
         );
 
-        if vtx.row_id == self.0 {
-            write!(buf, "{}", disp.bold())
+        let disp = if self.config.styled && vtx.row_id == self.active_row_id {
+            disp.bold()
         } else {
-            write!(buf, "{disp}")
-        }
+            disp
+        };
+
+        write!(buf, "{disp}")
     }
 }
 
 /// Changelog implementation
 impl<'conn, I: InRecordsTable> State<'conn, I> {
-    pub fn ancestor_ramifier(&self) -> AncestorRamifier<'_> {
-        AncestorRamifier(self.row_id(), PhantomData)
+    pub fn ancestor_ramifier(&self, config: RamifierConfig) -> AncestorRamifier<'_> {
+        AncestorRamifier {
+            active_row_id: self.row_id(),
+            config,
+            _marker: PhantomData,
+        }
     }
 
-    pub fn full_history_ramifier(&self) -> FullHistoryRamifier<'_> {
-        FullHistoryRamifier(self.row_id(), PhantomData)
+    pub fn full_history_ramifier(&self, config: RamifierConfig) -> FullHistoryRamifier<'_> {
+        FullHistoryRamifier {
+            active_row_id: self.row_id(),
+            config,
+            _marker: PhantomData,
+        }
     }
 }
