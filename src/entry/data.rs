@@ -11,7 +11,10 @@ mod tests;
 mod identifier;
 mod raw;
 
-use std::{borrow::Borrow, cmp::PartialEq, collections::BTreeMap, iter::Iterator, sync::LazyLock};
+use std::{
+    borrow::Borrow, cmp::PartialEq, collections::BTreeMap, iter::Iterator, str::FromStr,
+    sync::LazyLock,
+};
 
 use delegate::delegate;
 use regex::Regex;
@@ -123,6 +126,44 @@ enum EPrintState<S> {
     MissingKey,
 }
 
+#[derive(Debug, Clone)]
+pub struct SetFieldCommand {
+    pub field_key: FieldKey,
+    pub field_value: FieldValue,
+}
+
+impl FromStr for SetFieldCommand {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> anyhow::Result<Self> {
+        let mut reader = serde_bibtex::StrReader::new(s);
+        let key = reader.read_field_key()?;
+        reader.skip_field_sep()?;
+        let value = reader.read_text_token()?;
+        let field_key = FieldKey::try_new_normalize(key.into_inner())?;
+        let field_value = FieldValue::try_new(value)?.to_owned();
+        Ok(Self {
+            field_key,
+            field_value,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct EntryEditCommand {
+    pub update_entry_type: Option<EntryType>,
+    pub delete_field: Vec<FieldKey>,
+    pub set_field: Vec<SetFieldCommand>,
+}
+
+impl EntryEditCommand {
+    pub fn is_identity(&self) -> bool {
+        self.set_field.is_empty()
+            && self.delete_field.is_empty()
+            && self.update_entry_type.is_none()
+    }
+}
+
 /// The outcome of resolving the conflict when using [`MutableEntryData::merge_with_callback`].
 pub enum ConflictResolved {
     /// Keep the current data.
@@ -151,6 +192,52 @@ impl MutableEntryData {
                 .insert(FieldKey(key.to_owned()), FieldValue(value.to_owned()));
         }
         new
+    }
+
+    pub fn edit(&mut self, cmd: &EntryEditCommand) -> bool {
+        let mut changed = false;
+
+        if let Some(ref ty) = cmd.update_entry_type {
+            changed |= self.update_entry_type(ty);
+        }
+
+        for key in &cmd.delete_field {
+            changed |= self.remove(key).is_some();
+        }
+
+        for cmd in &cmd.set_field {
+            changed |= self.set_field(cmd);
+        }
+
+        changed
+    }
+
+    /// Update the entry type to have the new value, returning if the entry type changed.
+    pub fn update_entry_type(&mut self, ty: &EntryType) -> bool {
+        if &self.entry_type != ty {
+            self.entry_type = ty.clone();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Set a field using the provided command.
+    pub fn set_field(&mut self, cmd: &SetFieldCommand) -> bool {
+        let mut changed = false;
+        self.fields
+            .entry(cmd.field_key.clone())
+            .and_modify(|v| {
+                if v != &cmd.field_value {
+                    *v = cmd.field_value.clone();
+                    changed = true;
+                }
+            })
+            .or_insert_with(|| {
+                changed = true;
+                cmd.field_value.clone()
+            });
+        changed
     }
 
     /// Check for the following configuration inside the data:

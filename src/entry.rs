@@ -8,8 +8,8 @@ use serde::ser::{Serialize, SerializeSeq, SerializeStruct, Serializer};
 use serde_bibtex::{MacroDictionary, de::Deserializer, to_string_unchecked};
 
 pub use self::data::{
-    BorrowedEntryData, ConflictResolved, EntryData, EntryKey, EntryType, FieldKey, FieldValue,
-    MutableEntryData, RawEntryData, RawRecordFieldsIter,
+    BorrowedEntryData, ConflictResolved, EntryData, EntryEditCommand, EntryKey, EntryType,
+    FieldKey, FieldValue, MutableEntryData, RawEntryData, RawRecordFieldsIter, SetFieldCommand,
 };
 pub(crate) use self::data::{EntryTypeHeader, KeyHeader, ValueHeader};
 

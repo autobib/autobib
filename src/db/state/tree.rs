@@ -53,22 +53,27 @@ impl<'a, 'tx, 'conn> fmt::Display for VersionDisplayAdapter<'a, 'tx, 'conn> {
         match &self.version.row.data {
             ArbitraryData::Entry(raw_entry_data) => {
                 writeln!(buf, "{hex}\n{modified}\n")?;
-                writeln!(
-                    buf,
-                    "   @{}{{{},",
-                    if self.styled {
-                        raw_entry_data.entry_type().green()
-                    } else {
-                        raw_entry_data.entry_type().reset()
-                    },
-                    self.version.row.canonical
-                )?;
-                for (key, val) in raw_entry_data.fields() {
+                if self.styled {
                     writeln!(
                         buf,
-                        "     {} = {{{val}}},",
-                        if self.styled { key.blue() } else { key.reset() }
+                        "   @{}{{{},",
+                        raw_entry_data.entry_type().green(),
+                        self.version.row.canonical
                     )?;
+                } else {
+                    writeln!(
+                        buf,
+                        "   @{}{{{},",
+                        raw_entry_data.entry_type(),
+                        self.version.row.canonical
+                    )?;
+                }
+                for (key, val) in raw_entry_data.fields() {
+                    if self.styled {
+                        writeln!(buf, "     {} = {{{val}}},", key.blue())?;
+                    } else {
+                        writeln!(buf, "     {key} = {{{val}}},",)?;
+                    }
                 }
                 write!(buf, "   }}")?;
 

@@ -10,7 +10,10 @@ use crate::{
         CitationKey,
         state::{EntryRecordKey, RecordsInsert, State},
     },
-    entry::{ConflictResolved, Entry, EntryData, EntryKey, MutableEntryData, RawEntryData},
+    entry::{
+        ConflictResolved, Entry, EntryData, EntryEditCommand, EntryKey, MutableEntryData,
+        RawEntryData,
+    },
     error::MergeError,
     logger::{error, info, reraise, set_failed, suggest, warn},
     normalize::{Normalization, Normalize},
@@ -51,6 +54,7 @@ pub fn insert<'conn, I>(
     remote_id: &RemoteId,
     no_interactive: bool,
     normalization: &Normalization,
+    edit: &EntryEditCommand,
 ) -> anyhow::Result<()>
 where
     State<'conn, I>: RecordsInsert<'conn>,
@@ -58,6 +62,12 @@ where
     if let Some(path) = from_bibtex {
         let mut data = data_from_path(path)?;
         data.normalize(normalization);
+        missing
+            .insert(&RawEntryData::from_entry_data(&data), remote_id)?
+            .commit()?;
+    } else if !edit.is_identity() {
+        let mut data = MutableEntryData::default();
+        data.edit(edit);
         missing
             .insert(&RawEntryData::from_entry_data(&data), remote_id)?
             .commit()?;
