@@ -1,8 +1,10 @@
 use std::{fmt, str::FromStr};
 
+use rusqlite::types::{FromSql, FromSqlError, ValueRef};
+
 use super::{
     ArbitraryData, CompleteRecordRow, InRecordsTable, RecordRow, State, Transaction,
-    tree::VersionDisplayAdapter,
+    tree::RecordRowDisplay,
 };
 
 /// A specific version of a record row.
@@ -19,6 +21,16 @@ pub struct Version<'tx, 'conn> {
 
 #[derive(Debug, Clone, Copy)]
 pub struct RevisionId(pub(super) i64);
+
+impl FromSql for RevisionId {
+    fn column_result(value: ValueRef<'_>) -> Result<Self, FromSqlError> {
+        if let ValueRef::Integer(row_id) = value {
+            Ok(Self(row_id))
+        } else {
+            Err(FromSqlError::InvalidType)
+        }
+    }
+}
 
 impl fmt::Display for RevisionId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -114,10 +126,7 @@ impl<'tx, 'conn> Version<'tx, 'conn> {
             .map(|chunk| Version::init(self.tx, i64::from_le_bytes(*chunk)))
     }
 
-    pub fn display(&self, styled: bool) -> VersionDisplayAdapter<'_, 'tx, 'conn> {
-        VersionDisplayAdapter {
-            version: self,
-            styled,
-        }
+    pub fn display(&self, styled: bool) -> RecordRowDisplay<'_> {
+        RecordRowDisplay::from_version(self, styled)
     }
 }

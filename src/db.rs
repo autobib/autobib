@@ -9,7 +9,7 @@
 mod functions;
 mod migrate;
 mod schema;
-// mod sql;
+mod snapshot;
 pub mod state;
 mod validate;
 
@@ -17,10 +17,9 @@ use std::path::Path;
 
 use chrono::{Local, TimeDelta};
 use delegate::delegate;
-use either::Either;
 use functions::{AppFunction, register_application_function};
 use nucleo_picker::{Injector, Render};
-use rusqlite::{Connection, DropBehavior, OpenFlags, OptionalExtension, types::ValueRef};
+use rusqlite::{Connection, DropBehavior, OpenFlags, OptionalExtension};
 
 use self::{
     state::{RecordIdState, RecordRow, RemoteIdState},
@@ -33,6 +32,7 @@ use crate::{
     error::DatabaseError,
     logger::{debug, error, info, warn},
 };
+pub use snapshot::Snapshot;
 
 /// The current database version expected by the application.
 pub const fn user_version() -> i32 {
@@ -84,7 +84,7 @@ mod private {
 
     impl Sealed for crate::Alias {}
     impl Sealed for crate::RecordId {}
-    impl Sealed for crate::RemoteId {}
+    impl<S: AsRef<str>> Sealed for crate::RemoteId<S> {}
     impl<T> Sealed for crate::MappedKey<T> {}
 }
 
@@ -386,64 +386,47 @@ impl RecordDatabase {
         }
     }
 
-    /// Send the contents of the `Records` table to a [`Picker`](`nucleo_picker::Picker`)
-    /// via its [`Injector`].
-    ///
-    /// This is a convenience wrapper around [`Self::inject_records`] which simply sends all row data
-    /// to the picker without filtering or mapping.
-    pub fn inject_all_records<R: Render<RecordRow<RawEntryData>>>(
-        &mut self,
-        injector: Injector<RecordRow<RawEntryData>, R>,
-    ) -> Result<(), rusqlite::Error> {
-        self.inject_records(injector, Some)
+    pub fn snapshot(&mut self) -> rusqlite::Result<Snapshot<'_>> {
+        Ok(Snapshot {
+            tx: self.conn.transaction()?.into(),
+        })
     }
 
     /// Send the contents of the `Records` table to a [`Picker`](`nucleo_picker::Picker`)
+    /// via its [`Injector`].
+    ///
+    /// This is a convenience wrapper around [`Self::inject_active_records`] which simply sends all row data
+    /// to the picker without filtering or mapping.
+    pub fn inject_all_active_records<R: Render<RecordRow<RawEntryData>>>(
+        &mut self,
+        injector: Injector<RecordRow<RawEntryData>, R>,
+    ) -> Result<(), rusqlite::Error> {
+        self.inject_active_records(injector, Some)
+    }
+
+    /// Send the active rows in the `Records` table to a [`Picker`](`nucleo_picker::Picker`)
     /// via its [`Injector`].
     ///
     /// The provided `filter_map` closure plays a similar role to [`Iterator::filter_map`]
     /// by transforming a [`RecordRow`] into the picker item type, with the option to exclude
     /// the item from being sent to the matcher entirely by returning [`None`].
-    pub fn inject_records<T, F: FnMut(RecordRow<RawEntryData>) -> Option<T>, R: Render<T>>(
+    pub fn inject_active_records<T, F, R>(
         &mut self,
         injector: Injector<T, R>,
         mut filter_map: F,
-    ) -> Result<(), rusqlite::Error> {
+    ) -> Result<(), rusqlite::Error>
+    where
+        F: FnMut(RecordRow<RawEntryData>) -> Option<T>,
+        R: Render<T>,
+    {
         debug!("Sending all database records to an injector.");
         let mut retriever = self
             .conn
             .prepare("SELECT record_id, modified, data, variant FROM Records WHERE key IN (SELECT record_key FROM CitationKeys) AND variant = 0")?;
 
-        for res in retriever.query_map([], RecordRow::<RawEntryData>::from_row_unchecked)? {
+        for res in retriever.query_map([], |row| Ok(RecordRow::from_row_unchecked(row)))? {
             if let Some(data) = filter_map(res?) {
                 injector.push(data);
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Iterate over all names in the CitationKeys table and apply the infallible function
-    /// `f` to each key.
-    ///
-    /// If `canonical` is true, only iterate over canonical keys.
-    pub fn map_citation_keys<F: FnMut(&str) -> Result<(), std::io::Error>>(
-        &mut self,
-        canonical: bool,
-        mut f: F,
-    ) -> Result<(), Either<rusqlite::Error, std::io::Error>> {
-        let mut selector = if canonical {
-            self.conn
-                .prepare("SELECT record_id FROM Records WHERE key IN (SELECT record_key FROM CitationKeys) AND variant = 0")
-        } else {
-            self.conn.prepare("SELECT name FROM CitationKeys INNER JOIN Records ON CitationKeys.record_key = Records.key WHERE Records.variant = 0")
-        }.map_err(Either::Left)?;
-
-        let mut rows = selector.query([]).map_err(Either::Left)?;
-        while let Some(row) = rows.next().map_err(Either::Left)? {
-            if let ValueRef::Text(bytes) = row.get_ref_unwrap(0) {
-                // SAFETY: the underlying data is always valid utf-8
-                f(std::str::from_utf8(bytes).unwrap()).map_err(Either::Right)?;
             }
         }
 
