@@ -158,6 +158,15 @@ pub fn determine_remote_id_candidates<
     {
         push_remote_id_if_valid(provider, sub_id, &mut preprocess, &mut push);
     }
+
+    // special handling for arxiv
+    if data
+        .get_field("archiveprefix")
+        .is_some_and(|val| val == "arXiv")
+        && let Some(sub_id) = data.get_field("eprint")
+    {
+        push_remote_id_if_valid("arxiv", sub_id, &mut preprocess, &mut push);
+    }
 }
 
 /// Check that a given provider and sub_id are valid.

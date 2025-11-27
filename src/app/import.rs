@@ -198,12 +198,8 @@ where
                             "Local id '{remote_id}' already exists.",
                         )))
                     }
-                    RemoteIdState::Deleted(_, row) => {
-                        // FIXME
-                        row.commit()?;
-                        Ok(ImportAction::PromptNewKey(anyhow!(
-                            "Local id '{remote_id}' was previously soft-deleted.",
-                        )))
+                    RemoteIdState::Deleted(_, _) => {
+                        todo!()
                     }
                     RemoteIdState::Void(_, _) => {
                         todo!()
