@@ -569,9 +569,9 @@ pub enum HistCommand {
         /// Set using a revision number.
         #[arg(long, group = "reset_target")]
         rev: Option<RevisionId>,
-        /// Reset the state to how it looked at a given time.
+        /// Set to the lastest state with modification time preceding this date-time.
         ///
-        /// This is an ISO 8601 datetime, so make sure to indicate the timezone as well.
+        /// This is a RFC3339 date-time, so make sure to indicate the timezone as well.
         #[arg(long, group = "reset_target")]
         before: Option<DateTime<Local>>,
     },
@@ -601,6 +601,26 @@ pub enum HistCommand {
         /// Set specific field values using BibTeX field syntax
         #[arg(long, value_name = "FIELD_KEY={VALUE}")]
         with_field: Vec<SetFieldCommand>,
+    },
+    /// Rewind every entry in database so that the modification time preceds the provided
+    /// date-time.
+    ///
+    /// This is the same as calling `autobib reset --before` on every active entry in the database with
+    /// modification greater than the provided time.
+    ///
+    /// Use caution! The modification time may not correspond to the database state at the provided
+    /// date-time if you have used `autobib undo/redo/reset`, since these methods only change the
+    /// active state without introducing new changes. Your old data will still be retrievable, but
+    /// it could require a lot of work to unwind the changes.
+    RewindAll {
+        /// The datetime to rewind to.
+        before: DateTime<Local>,
+    },
+    /// Show all database changes in descending order by time.
+    Show {
+        /// Only show LIMIT most recent changes
+        #[arg(long, value_name = "LIMIT")]
+        limit: Option<u32>,
     },
     /// Undo the most recent change to a citation key.
     Undo {

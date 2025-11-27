@@ -1,10 +1,11 @@
 use std::{fmt, marker::PhantomData};
 
+use chrono::{DateTime, Local};
 use crossterm::style::{ContentStyle, StyledContent, Stylize};
 use ramify::TryRamify;
 
-use super::{ArbitraryData, InRecordsTable, State, version::Version};
-use crate::entry::EntryData;
+use super::{ArbitraryData, ArbitraryDataRef, InRecordsTable, RevisionId, State, version::Version};
+use crate::{entry::EntryData, record::RemoteId};
 
 pub struct RamifierConfig {
     pub all: bool,
@@ -12,13 +13,43 @@ pub struct RamifierConfig {
     pub oneline: bool,
 }
 
+/// A display adapter for a record row.
 #[derive(Debug)]
-pub struct VersionDisplayAdapter<'a, 'tx, 'conn> {
-    pub(super) version: &'a Version<'tx, 'conn>,
+pub struct RecordRowDisplay<'a> {
+    pub(super) data: ArbitraryDataRef<'a>,
+    pub(super) modified: DateTime<Local>,
+    rev_id: RevisionId,
+    canonical: RemoteId<&'a str>,
     pub(super) styled: bool,
 }
 
-impl<'a, 'tx, 'conn> fmt::Display for VersionDisplayAdapter<'a, 'tx, 'conn> {
+impl<'a> RecordRowDisplay<'a> {
+    pub fn from_version(version: &'a super::Version<'_, '_>, styled: bool) -> Self {
+        Self {
+            data: version.row.data.get_ref(),
+            modified: version.row.modified,
+            rev_id: version.rev_id(),
+            canonical: version.row.canonical.get_ref(),
+            styled,
+        }
+    }
+
+    pub fn from_borrowed_row(
+        record_row: super::RecordRow<ArbitraryDataRef<'a>, &'a str>,
+        rev_id: RevisionId,
+        styled: bool,
+    ) -> Self {
+        Self {
+            data: record_row.data,
+            canonical: record_row.canonical,
+            modified: record_row.modified,
+            rev_id,
+            styled,
+        }
+    }
+}
+
+impl<'a> fmt::Display for RecordRowDisplay<'a> {
     fn fmt(&self, buf: &mut fmt::Formatter<'_>) -> fmt::Result {
         let style = if self.styled {
             ContentStyle::default().yellow()
@@ -26,7 +57,7 @@ impl<'a, 'tx, 'conn> fmt::Display for VersionDisplayAdapter<'a, 'tx, 'conn> {
             ContentStyle::default()
         };
 
-        let hex = StyledContent::new(style, self.version.rev_id());
+        let hex = StyledContent::new(style, self.rev_id);
 
         let style = if self.styled {
             ContentStyle::default().italic().grey()
@@ -34,60 +65,56 @@ impl<'a, 'tx, 'conn> fmt::Display for VersionDisplayAdapter<'a, 'tx, 'conn> {
             ContentStyle::default()
         };
 
-        let edit_msg = match &self.version.row.data {
-            ArbitraryData::Entry(_) => self
-                .version
-                .row
-                .modified
-                .format("Modified on %b %d, %Y at %X%Z"),
-            ArbitraryData::Deleted(_) => self
-                .version
-                .row
-                .modified
-                .format("Deleted on %b %d, %Y at %X%Z"),
-            ArbitraryData::Void => self.version.row.modified.format("Void"),
-        };
+        let datestamp = StyledContent::new(style, self.modified.format("on %b %d %Y at %X%Z"));
 
-        let modified = StyledContent::new(style, edit_msg);
+        static PREFIX: &str = "  ";
 
-        match &self.version.row.data {
-            ArbitraryData::Entry(raw_entry_data) => {
-                writeln!(buf, "{hex}\n{modified}\n")?;
+        match &self.data {
+            ArbitraryDataRef::Entry(raw_entry_data) => {
+                writeln!(buf, "{hex} {datestamp}\n")?;
                 if self.styled {
                     writeln!(
                         buf,
-                        "   @{}{{{},",
+                        "{PREFIX}@{}{{{},",
                         raw_entry_data.entry_type().green(),
-                        self.version.row.canonical
+                        self.canonical
                     )?;
                 } else {
                     writeln!(
                         buf,
-                        "   @{}{{{},",
+                        "{PREFIX}@{}{{{},",
                         raw_entry_data.entry_type(),
-                        self.version.row.canonical
+                        self.canonical
                     )?;
                 }
                 for (key, val) in raw_entry_data.fields() {
                     if self.styled {
-                        writeln!(buf, "     {} = {{{val}}},", key.blue())?;
+                        writeln!(buf, "{PREFIX}  {} = {{{val}}},", key.blue())?;
                     } else {
-                        writeln!(buf, "     {key} = {{{val}}},",)?;
+                        writeln!(buf, "{PREFIX}  {key} = {{{val}}},",)?;
                     }
                 }
-                write!(buf, "   }}")?;
+                write!(buf, "{PREFIX}}}")?;
 
                 Ok(())
             }
-            ArbitraryData::Deleted(replacement) => {
-                writeln!(buf, "{hex}\n{modified}")?;
-
+            ArbitraryDataRef::Deleted(replacement) => {
+                writeln!(buf, "{hex} {datestamp}\n")?;
                 if let Some(remote_id) = replacement {
-                    write!(buf, "\n   Replaced by '{remote_id}'")?;
+                    write!(
+                        buf,
+                        "{PREFIX}Replaced '{}' with '{remote_id}'",
+                        self.canonical
+                    )?;
+                } else {
+                    write!(buf, "{PREFIX}Deleted '{}'", self.canonical)?;
                 }
                 Ok(())
             }
-            ArbitraryData::Void => write!(buf, "{hex}\n{modified}"),
+            ArbitraryDataRef::Void => {
+                writeln!(buf, "{hex}\n")?;
+                write!(buf, "{PREFIX}Void '{}'", self.canonical)
+            }
         }
     }
 }
@@ -153,10 +180,7 @@ impl<'tx, 'conn> TryRamify<Version<'tx, 'conn>> for FullHistoryRamifier<'tx> {
     fn annotation<B: fmt::Write>(&self, vtx: &Version<'tx, 'conn>, mut buf: B) -> fmt::Result {
         let disp = StyledContent::new(
             ContentStyle::default(),
-            VersionDisplayAdapter {
-                version: vtx,
-                styled: self.config.styled,
-            },
+            RecordRowDisplay::from_version(vtx, self.config.styled),
         );
 
         let disp = if self.config.styled && vtx.row_id == self.active_row_id {
@@ -214,10 +238,7 @@ impl<'tx, 'conn> TryRamify<Version<'tx, 'conn>> for AncestorRamifier<'tx> {
     fn annotation<B: fmt::Write>(&self, vtx: &Version<'tx, 'conn>, mut buf: B) -> fmt::Result {
         let disp = StyledContent::new(
             ContentStyle::default(),
-            VersionDisplayAdapter {
-                version: vtx,
-                styled: self.config.styled,
-            },
+            RecordRowDisplay::from_version(vtx, self.config.styled),
         );
 
         let disp = if self.config.styled && vtx.row_id == self.active_row_id {

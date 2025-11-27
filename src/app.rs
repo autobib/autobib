@@ -633,7 +633,14 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                             }
                         }
                     } else if let Some(dt) = before {
-                        state.rewind(dt)?.commit()?;
+                        let state = state.rewind(dt)?;
+                        if max_level() >= Level::Warn {
+                            let version = state.current()?;
+                            let mut stdout = stdout_lock_wrap();
+                            let styled = stdout.supports_styled_output();
+                            writeln!(&mut stdout, "{}", version.display(styled))?;
+                        }
+                        state.commit()?;
                     }
                 }
             }
@@ -679,6 +686,23 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     }
                     None => {}
                 }
+            }
+            HistCommand::RewindAll { before } => {
+                let snapshot = record_db.snapshot()?;
+                snapshot.rewind_all(before)?;
+                snapshot.commit()?;
+            }
+            HistCommand::Show { limit } => {
+                let snapshot = record_db.snapshot()?;
+                let mut stdout = stdout_lock_wrap();
+                let styled = stdout.supports_styled_output();
+                snapshot.map_history(limit, |record_row, rev_id| {
+                    let disp = crate::db::state::tree::RecordRowDisplay::from_borrowed_row(
+                        record_row, rev_id, styled,
+                    );
+                    writeln!(&mut stdout, "{disp}\n")
+                })?;
+                snapshot.commit()?;
             }
             HistCommand::Undo {
                 citation_key,
@@ -1116,7 +1140,9 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             },
             UtilCommand::List { canonical } => {
                 let mut lock = stdout_lock_wrap();
-                record_db.map_citation_keys(canonical, |key_str| writeln!(lock, "{key_str}"))?;
+                let snapshot = record_db.snapshot()?;
+                snapshot.map_citation_keys(canonical, |key_str| writeln!(lock, "{key_str}"))?;
+                snapshot.commit()?;
             }
         },
     };

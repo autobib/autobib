@@ -1,5 +1,5 @@
 use chrono::{DateTime, Local};
-use rusqlite::OptionalExtension;
+use rusqlite::{OptionalExtension, Row};
 
 use crate::{
     Alias, RawEntryData, RemoteId,
@@ -33,11 +33,11 @@ pub trait FromBytesAndVariant: Sized {
 /// The data for a row in the 'Records' table, not including information about the parents or
 /// children.
 #[derive(Debug)]
-pub struct RecordRow<D> {
+pub struct RecordRow<D, S = String> {
     /// The associated data.
     pub data: D,
     /// The canonical identifier.
-    pub canonical: RemoteId,
+    pub canonical: RemoteId<S>,
     /// When the record was modified.
     pub modified: DateTime<Local>,
 }
@@ -49,23 +49,23 @@ impl<D: FromBytesAndVariant> RecordRow<D> {
     /// - `modified`
     /// - `data`
     /// - `variant`
-    pub(in crate::db) fn from_row_unchecked(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
-        let data = D::from_bytes_and_variant(row.get("data")?, row.get("variant")?);
-        let canonical = RemoteId::from_string_unchecked(row.get("record_id")?);
-        let modified = row.get("modified")?;
+    pub(in crate::db) fn from_row_unchecked(row: &Row<'_>) -> Self {
+        let data = D::from_bytes_and_variant(row.get_unwrap("data"), row.get_unwrap("variant"));
+        let canonical = RemoteId::from_string_unchecked(row.get_unwrap("record_id"));
+        let modified = row.get_unwrap("modified");
 
-        Ok(Self {
+        Self {
             data,
             modified,
             canonical,
-        })
+        }
     }
 
     /// Load from a row id, which the caller promises is a valid row ID in the 'Records' table and
     /// moreover has type `D`.
     pub(super) fn load_unchecked(tx: &Transaction<'_>, row_id: i64) -> rusqlite::Result<Self> {
         tx.prepare_cached("SELECT record_id, modified, data, variant FROM Records WHERE key = ?1")?
-            .query_row((row_id,), Self::from_row_unchecked)
+            .query_row((row_id,), |row| Ok(Self::from_row_unchecked(row)))
     }
 }
 
@@ -78,19 +78,21 @@ pub struct CompleteRecordRow<D> {
 }
 
 impl<D: FromBytesAndVariant> CompleteRecordRow<D> {
+    pub(super) fn from_row_unchecked(row: &Row<'_>) -> Self {
+        let parent = row.get_unwrap("parent_key");
+        let children = row.get_unwrap("children");
+        let row = RecordRow::from_row_unchecked(row);
+
+        Self {
+            row,
+            parent,
+            children,
+        }
+    }
+
     pub(super) fn load_unchecked(tx: &Transaction<'_>, row_id: i64) -> rusqlite::Result<Self> {
         tx.prepare_cached("SELECT record_id, modified, data, variant, parent_key, children FROM Records WHERE key = ?1")?
-            .query_row((row_id,), |row| {
-                let parent = row.get("parent_key")?;
-                let children = row.get("children")?;
-                let row = RecordRow::from_row_unchecked(row)?;
-
-                Ok(Self {
-                    row,
-                    parent,
-                    children,
-                })
-            })
+          .query_row((row_id,), |row| Ok(Self::from_row_unchecked(row)))
     }
 }
 
@@ -452,9 +454,8 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
     pub fn rewind(self, before: DateTime<Local>) -> rusqlite::Result<State<'conn, ArbitraryKey>> {
         // FIXME: avoid this?
         let canonical = self.canonical()?;
-        let new_row_id: i64 = self.prepare("SELECT key FROM Records WHERE record_id = ?1 AND modified <= ?2 ORDER BY modified DESC LIMIT 1")?
-            .query_row((canonical.name(), &before), |row| row.get(0))?;
-        self.transmute(new_row_id)
+        let new_id = create_rewind_target(&self.tx, canonical.name(), before)?;
+        self.transmute(new_id)
     }
 
     /// Update the citation keys table by setting any rows which reference the current row to
@@ -654,22 +655,50 @@ impl<'conn, I: NotVoid> State<'conn, I> {
 
         let new_row_id = match root.row.data {
             ArbitraryData::Deleted(_) | ArbitraryData::Entry(_) => {
-                // create the void root
-                let new_row_id: i64 = root.tx.prepare("INSERT INTO Records (record_id, data, modified, variant, children) VALUES (?1, ?2, ?3, ?4, ?5) RETURNING key")?
-            .query_row((root.row.canonical.name(), ().data_blob(), DateTime::<Local>::MIN_UTC, ().variant(), root.row_id.to_le_bytes()), |row| row.get(0))?;
-
-                // update the non-void root to reference the parent
-                root.tx
-                    .prepare("UPDATE Records SET parent_key = ?1 WHERE key = ?2")?
-                    .execute((Some(new_row_id), root.row_id))?;
-
-                new_row_id
+                create_void_parent(root.tx, root.row_id, root.row.canonical.name())?
             }
             ArbitraryData::Void => root_row_id,
         };
         self.update_citation_keys(new_row_id)?;
         Ok(State::init(self.tx, VoidRecordKey(new_row_id)))
     }
+}
+
+pub(in crate::db) fn create_rewind_target(
+    tx: &Transaction<'_>,
+    canonical: &str,
+    before: DateTime<Local>,
+) -> rusqlite::Result<i64> {
+    // first, try to find a candidate vertex to swap to
+    let id_opt: Option<i64> = tx.prepare("SELECT key FROM Records WHERE record_id = ?1 AND modified <= ?2 ORDER BY modified DESC LIMIT 1")?
+            .query_row((canonical, before), |row| row.get(0)).optional()?;
+
+    Ok(if let Some(id) = id_opt {
+        id
+    } else {
+        // if no candidate exists, this means the modified time is > `before` on every entry in
+        // canonical, so we find the root and add the void vertex before it
+        let root_row_id: i64 = tx
+            .prepare("SELECT key FROM Records WHERE record_id = ?1 ORDER BY modified DESC LIMIT 1")?
+            .query_row([canonical], |row| row.get(0))?;
+        create_void_parent(tx, root_row_id, canonical)?
+    })
+}
+
+fn create_void_parent(
+    tx: &Transaction<'_>,
+    root_row_id: i64,
+    canonical: &str,
+) -> rusqlite::Result<i64> {
+    // create the void root
+    let new_row_id: i64 = tx.prepare("INSERT INTO Records (record_id, data, modified, variant, children) VALUES (?1, ?2, ?3, ?4, ?5) RETURNING key")?
+            .query_row((canonical, ().data_blob(), DateTime::<Local>::MIN_UTC, ().variant(), root_row_id.to_le_bytes()), |row| row.get(0))?;
+
+    // update the non-void root to reference the parent
+    tx.prepare("UPDATE Records SET parent_key = ?1 WHERE key = ?2")?
+        .execute((Some(new_row_id), root_row_id))?;
+
+    Ok(new_row_id)
 }
 
 impl<'conn, I: NotEntry> State<'conn, I> {

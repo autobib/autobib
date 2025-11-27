@@ -57,7 +57,7 @@ pub fn choose_attachment_path<F: FnMut(&Path) -> bool + Send + 'static>(
     // populate the picker from a separate thread
     let injector = picker.injector();
     thread::spawn(move || {
-        record_db.inject_records(injector.clone(), |row_data| {
+        record_db.inject_active_records(injector.clone(), |row_data| {
             if strict && !injector.renderer().has_keys_contained_in(&row_data) {
                 return None;
             }
@@ -124,7 +124,7 @@ pub fn choose_canonical_id(
         // cancellation token; paginate the select using `SELECT ... LIMIT ...` with some sane
         // page size (maybe 10k? this should take <1ms per page), and then check for cancellation
         // between pages.
-        record_db.inject_records(injector.clone(), |row_data| {
+        record_db.inject_active_records(injector.clone(), |row_data| {
             if strict && !injector.renderer().has_keys_contained_in(&row_data) {
                 None
             } else {

@@ -107,6 +107,10 @@ impl RawEntryData {
         // `MutableEntryData::insert` implementation.
         Self::from_byte_repr_unchecked(data)
     }
+
+    pub fn get_ref(&self) -> RawEntryData<&[u8]> {
+        RawEntryData { data: &self.data }
+    }
 }
 
 impl<T: AsRef<[u8]>> PartialEq for RawEntryData<T> {
