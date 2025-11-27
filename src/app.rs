@@ -39,7 +39,7 @@ use crate::{
     error::AliasErrorKind,
     format::Template,
     http::{BodyBytes, Client},
-    logger::{debug, error, info, suggest, warn},
+    logger::{Level, debug, error, info, max_level, suggest, warn},
     normalize::{Normalization, Normalize},
     output::{owriteln, stdout_lock_wrap},
     record::{Alias, Record, RecordId, RemoteId, get_record_row},
@@ -610,10 +610,12 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     if let Some(revision) = rev {
                         match state.set_active(revision)? {
                             RecordRowMoveResult::Updated(state) => {
-                                let version = state.current()?;
-                                let mut stdout = stdout_lock_wrap();
-                                let styled = stdout.supports_styled_output();
-                                writeln!(&mut stdout, "{}", version.display(styled))?;
+                                if max_level() >= Level::Warn {
+                                    let version = state.current()?;
+                                    let mut stdout = stdout_lock_wrap();
+                                    let styled = stdout.supports_styled_output();
+                                    writeln!(&mut stdout, "{}", version.display(styled))?;
+                                }
                                 state.commit()?;
                             }
                             RecordRowMoveResult::Unchanged(state, err) => {
@@ -817,6 +819,9 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     InfoReportType::Equivalent => {
                         bail!("No equivalent keys for null record '{remote_id}'");
                     }
+                    InfoReportType::Revision => {
+                        bail!("No revision for null record '{remote_id}'");
+                    }
                     InfoReportType::Modified => {
                         owriteln!("{}", null_row.get_null_attempted()?)?;
                     }
@@ -903,7 +908,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 .require_record()?
             {
                 let (_, state) = entry_or_deleted.forget();
-                print_log(&state, tree, all, false)?;
+                print_log(cli.no_interactive, &state, tree, all, false)?;
                 state.commit()?;
             }
         }

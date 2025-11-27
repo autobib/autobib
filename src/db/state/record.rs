@@ -400,6 +400,11 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
         get_canonical(&self.tx, self.row_id())
     }
 
+    /// Get the hexadecimal revision of the active row.
+    pub fn rev(&self) -> String {
+        format!("{:0>4x}", self.row_id())
+    }
+
     /// Get last modified time.
     #[inline]
     pub fn last_modified(&self) -> Result<DateTime<Local>, rusqlite::Error> {

@@ -22,6 +22,7 @@ pub fn database_report<'conn, D, I: InRecordsTable>(
             let mut lock = stdout_lock_wrap();
             header(data.data, &mut lock)?;
             writeln!(lock, "Canonical: {}", data.canonical)?;
+            writeln!(lock, "Revision: {}", state.rev())?;
             writeln!(
                 lock,
                 "Equivalent references: {}",
@@ -46,6 +47,9 @@ pub fn database_report<'conn, D, I: InRecordsTable>(
             if !is_entry_key(&record_id) {
                 error!("Invalid BibTeX: {record_id}");
             }
+        }
+        InfoReportType::Revision => {
+            owriteln!("{}", state.rev())?;
         }
         InfoReportType::Equivalent => {
             let mut lock = stdout_lock_wrap();
