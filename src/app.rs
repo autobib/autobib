@@ -35,7 +35,7 @@ use crate::{
         },
         user_version,
     },
-    entry::{Entry, EntryKey, MutableEntryData, RawEntryData},
+    entry::{Entry, EntryEditCommand, EntryKey, MutableEntryData, RawEntryData},
     error::AliasErrorKind,
     format::Template,
     http::{BodyBytes, Client},
@@ -327,6 +327,9 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             normalize_whitespace,
             set_eprint,
             strip_journal_series,
+            update_entry_type,
+            set_field,
+            delete_field,
         } => {
             let cfg = config::load(&config_path, missing_ok)?;
             let nl = Normalization {
@@ -335,12 +338,20 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 strip_journal_series,
             };
 
+            let edit_cmd = EntryEditCommand {
+                update_entry_type,
+                set_field,
+                delete_field,
+            };
+
+            let no_non_interactive_cmd = nl.is_identity() && edit_cmd.is_identity();
+
             for key in citation_keys {
                 let (Record { key, data, .. }, row) =
                     get_record_row(&mut record_db, key, client, &cfg)?
                         .exists_or_commit_null("Cannot edit")?;
 
-                match (cli.no_interactive, nl.is_identity()) {
+                match (cli.no_interactive, no_non_interactive_cmd) {
                     (true, true) => {
                         warn!("Terminal is non-interactive and no edit action specified!");
                         row.commit()?;
@@ -349,7 +360,12 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         // non-interactive so we only apply the normalizations and update the data
                         // if anything changed
                         let mut editable_data = MutableEntryData::from_entry_data(&data);
-                        if editable_data.normalize(&nl) {
+                        let mut changed = false;
+
+                        changed |= editable_data.normalize(&nl);
+                        changed |= editable_data.edit(&edit_cmd);
+
+                        if changed {
                             row.modify(&RawEntryData::from_entry_data(&editable_data))?
                                 .commit()?;
                         } else {
@@ -622,8 +638,15 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             HistCommand::Revive {
                 citation_key,
                 from_bibtex,
+                with_entry_type,
+                with_field,
             } => {
                 let cfg = config::load(&config_path, missing_ok)?;
+                let edit_cmd = EntryEditCommand {
+                    update_entry_type: with_entry_type,
+                    set_field: with_field,
+                    delete_field: Vec::new(),
+                };
                 match record_db
                     .state_from_record_id(citation_key, &cfg.alias_transform)?
                     .require_record()?
@@ -639,6 +662,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                             &data.canonical,
                             cli.no_interactive,
                             &cfg.on_insert,
+                            &edit_cmd,
                         )?;
                     }
                     Some((_, DisambiguatedRecordRow::Void(data, state))) => {
@@ -648,6 +672,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                             &data.canonical,
                             cli.no_interactive,
                             &cfg.on_insert,
+                            &edit_cmd,
                         )?;
                     }
                     None => {}
@@ -807,7 +832,12 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 RecordIdState::InvalidRemoteId(err) => bail!("{err}"),
             }
         }
-        Command::Local { id, from_bibtex } => {
+        Command::Local {
+            id,
+            from_bibtex,
+            with_entry_type,
+            with_field,
+        } => {
             // check if the provided identifier is a valid alias
             let alias = match Alias::from_str(&id) {
                 Ok(alias) => alias,
@@ -819,6 +849,11 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 },
             };
             let remote_id = RemoteId::local(&alias);
+            let edit_cmd = EntryEditCommand {
+                update_entry_type: with_entry_type,
+                set_field: with_field,
+                delete_field: Vec::new(),
+            };
 
             // insert the data
             match record_db.state_from_remote_id(&remote_id)?.delete_null()? {
@@ -841,6 +876,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         &remote_id,
                         cli.no_interactive,
                         &cfg.on_insert,
+                        &edit_cmd,
                     )?;
                 }
                 ExistsOrUnknown::Unknown(missing) => {
@@ -851,6 +887,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         &remote_id,
                         cli.no_interactive,
                         &cfg.on_insert,
+                        &edit_cmd,
                     )?;
                 }
             };

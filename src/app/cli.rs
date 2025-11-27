@@ -16,6 +16,7 @@ use crossterm::style::Stylize;
 use crate::{
     cite_search::SourceFileType,
     db::state::RevisionId,
+    entry::{EntryType, FieldKey, SetFieldCommand},
     error::ShortError,
     format::Template,
     record::{Alias, RecordId},
@@ -197,13 +198,15 @@ pub enum Command {
     /// contents of the record. Updating the fields or the entry type will change the underlying
     /// data, and updating the entry key will create a new alias for the record.
     ///
-    /// Some non-interactive edit methods are supported. These can be used along with the
-    /// `--no-interactive` option to modify records without opening your $EDITOR:
+    /// Some non-interactive edit methods are also supported. If any are specified, they will
+    /// modify the record without opening your $EDITOR:
     ///
     /// `--normalize-whitespace` converts whitespace blocks into a single ASCII space.
     ///
     /// `--set-eprint` accepts a list of field keys, and sets the "eprint" and
     ///   "eprinttype" BibTeX fields from the first field key which is present in the record.
+    ///
+    /// `--strip-journal-series` strips a trailing journal series from the `journal` field
     Edit {
         /// The citation key(s) to edit.
         citation_keys: Vec<RecordId>,
@@ -211,11 +214,20 @@ pub enum Command {
         #[arg(long)]
         normalize_whitespace: bool,
         /// Set "eprint" and "eprinttype" BibTeX fields from provided fields.
-        #[arg(long, value_delimiter = ',', value_name = "FIELD_NAME")]
+        #[arg(long, value_delimiter = ',', value_name = "FIELD_KEY")]
         set_eprint: Vec<String>,
         /// Strip trailing journal series
         #[arg(long)]
         strip_journal_series: bool,
+        /// Set the entry type.
+        #[arg(long, value_name = "ENTRY_TYPE")]
+        update_entry_type: Option<EntryType>,
+        /// Delete a field. This is performed before setting field values.
+        #[arg(long, value_name = "FIELD_KEY")]
+        delete_field: Vec<FieldKey>,
+        /// Set specific field values using BibTeX `key = {value}` syntax
+        #[arg(long, value_name = "FIELD_KEY={VALUE}")]
+        set_field: Vec<SetFieldCommand>,
     },
     /// Search for a citation key.
     ///
@@ -291,8 +303,15 @@ pub enum Command {
     },
     /// Create a local record with the given handle.
     ///
-    /// By default, you will be prompted to edit the local record before adding it to the
-    /// database. Disable this behaviour with `--no-interactive`.
+    /// If no arguments are specified, you will be prompted to edit the local record before adding it to the
+    /// database. If the terminal is non-interactive or `--no-interactive` is set, this will insert
+    /// a default value with no contents.
+    ///
+    /// You can provide BibTeX data from a file with the `--from-bibtex` option, or by providing
+    /// values using `--with-entry-type` and `--with-field`.
+    ///
+    /// The `--with-entry-type` or `--with-field` values will override any
+    /// values present in the data read from the BibTeX file.
     ///
     /// This fails if the local identifier already exists in the database.
     Local {
@@ -301,6 +320,12 @@ pub enum Command {
         /// Create the record using the provided BibTeX data.
         #[arg(short = 'b', long, value_name = "PATH", group = "input")]
         from_bibtex: Option<PathBuf>,
+        /// Set the entry type.
+        #[arg(long, value_name = "ENTRY_TYPE")]
+        with_entry_type: Option<EntryType>,
+        /// Set specific field values using BibTeX `key = {value}` syntax
+        #[arg(long, value_name = "FIELD_KEY={VALUE}")]
+        with_field: Vec<SetFieldCommand>,
     },
     /// Display the revision history associated with the given handle.
     Log {
@@ -551,12 +576,28 @@ pub enum HistCommand {
     ///
     /// Usually you want to use `autobib hist undo`, and then `edit` the resulting record.
     /// This method is useful if there is no prior state or if you want to intentionally conceal prior changes.
+    ///
+    /// If no arguments are specified, you will be prompted to edit the local record before adding it to the
+    /// database. If the terminal is non-interactive or `--no-interactive` is set, this will insert
+    /// a default value with no contents.
+    ///
+    /// You can provide BibTeX data from a file with the `--from-bibtex` option, or by providing
+    /// values using `--with-entry-type` and `--with-field`.
+    ///
+    /// The `--with-entry-type` or `--with-field` values will override any
+    /// values present in the data read from the BibTeX file.
     Revive {
         /// The citation key to revive.
         citation_key: RecordId,
         /// Create the record using the provided BibTeX data.
         #[arg(short = 'b', long, value_name = "PATH", group = "input")]
         from_bibtex: Option<PathBuf>,
+        /// Set the entry type.
+        #[arg(long, value_name = "ENTRY_TYPE")]
+        with_entry_type: Option<EntryType>,
+        /// Set specific field values using BibTeX `key = {value}` syntax
+        #[arg(long, value_name = "FIELD_KEY={VALUE}")]
+        with_field: Vec<SetFieldCommand>,
     },
     /// Undo the most recent change to a citation key.
     Undo {
