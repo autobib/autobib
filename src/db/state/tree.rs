@@ -13,12 +13,12 @@ pub struct RamifierConfig {
 }
 
 #[derive(Debug)]
-struct LogEntry<'a, 'tx, 'conn> {
-    version: &'a Version<'tx, 'conn>,
-    styled: bool,
+pub struct VersionDisplayAdapter<'a, 'tx, 'conn> {
+    pub(super) version: &'a Version<'tx, 'conn>,
+    pub(super) styled: bool,
 }
 
-impl<'a, 'tx, 'conn> fmt::Display for LogEntry<'a, 'tx, 'conn> {
+impl<'a, 'tx, 'conn> fmt::Display for VersionDisplayAdapter<'a, 'tx, 'conn> {
     fn fmt(&self, buf: &mut fmt::Formatter<'_>) -> fmt::Result {
         let style = if self.styled {
             ContentStyle::default().yellow()
@@ -148,7 +148,7 @@ impl<'tx, 'conn> TryRamify<Version<'tx, 'conn>> for FullHistoryRamifier<'tx> {
     fn annotation<B: fmt::Write>(&self, vtx: &Version<'tx, 'conn>, mut buf: B) -> fmt::Result {
         let disp = StyledContent::new(
             ContentStyle::default(),
-            LogEntry {
+            VersionDisplayAdapter {
                 version: vtx,
                 styled: self.config.styled,
             },
@@ -209,7 +209,7 @@ impl<'tx, 'conn> TryRamify<Version<'tx, 'conn>> for AncestorRamifier<'tx> {
     fn annotation<B: fmt::Write>(&self, vtx: &Version<'tx, 'conn>, mut buf: B) -> fmt::Result {
         let disp = StyledContent::new(
             ContentStyle::default(),
-            LogEntry {
+            VersionDisplayAdapter {
                 version: vtx,
                 styled: self.config.styled,
             },

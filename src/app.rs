@@ -593,7 +593,13 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
 
                     if let Some(revision) = rev {
                         match state.set_active(revision)? {
-                            RecordRowMoveResult::Updated(state) => state.commit()?,
+                            RecordRowMoveResult::Updated(state) => {
+                                let version = state.current()?;
+                                let mut stdout = stdout_lock_wrap();
+                                let styled = stdout.supports_styled_output();
+                                writeln!(&mut stdout, "{}", version.display(styled))?;
+                                state.commit()?;
+                            }
                             RecordRowMoveResult::Unchanged(state, err) => {
                                 state.commit()?;
                                 match err {
