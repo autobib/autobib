@@ -116,7 +116,7 @@ impl<'tx, 'conn> Version<'tx, 'conn> {
 
     pub fn display(&self, styled: bool) -> VersionDisplayAdapter<'_, 'tx, 'conn> {
         VersionDisplayAdapter {
-            version: &self,
+            version: self,
             styled,
         }
     }
