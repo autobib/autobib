@@ -184,9 +184,12 @@ pub enum Command {
         /// A replacement key.
         #[arg(short, long, group = "delete_mode")]
         replace: Option<RecordId>,
-        /// Hard deletion which also removes aliases and cannot be undone.
+        /// Hard deletion, which removes all history and aliases, and cannot be undone.
         #[arg(long, group = "delete_mode")]
         hard: bool,
+        /// Update aliases, either deleting or changing them to point to the new row if `--replace` is specified.
+        #[arg(long)]
+        update_aliases: bool,
     },
     /// Edit existing records.
     ///
@@ -432,6 +435,14 @@ pub enum AliasCommand {
         alias: Alias,
         /// The name of the new alias.
         new: Alias,
+    },
+    /// Reset an alias to refer to a new record.
+    Reset {
+        /// The name of the existing alias.
+        #[arg(value_parser = with_short_err::<Alias>)]
+        alias: Alias,
+        /// What the alias should point to.
+        target: RecordId,
     },
 }
 

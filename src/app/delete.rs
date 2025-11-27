@@ -16,12 +16,13 @@ pub fn soft_delete<F: FnOnce() -> Vec<(regex::Regex, String)>>(
     replace: &Option<RemoteId>,
     record_db: &mut RecordDatabase,
     config: &Config<F>,
+    update_aliases: bool,
 ) -> Result<(), rusqlite::Error> {
     delete_impl(
         citation_key,
         record_db,
         config,
-        |_, state| state.soft_delete(replace)?.commit(),
+        |_, state| state.soft_delete(replace, update_aliases)?.commit(),
         |original_name, state| {
             error!("Key corresponds to record which is already deleted: '{original_name}'");
             state.commit()

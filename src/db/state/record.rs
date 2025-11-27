@@ -786,8 +786,25 @@ impl<'conn> State<'conn, EntryRecordKey> {
     pub fn soft_delete(
         self,
         replacement: &Option<RemoteId>,
+        update_aliases: bool,
     ) -> Result<State<'conn, DeletedRecordKey>, rusqlite::Error> {
         let new_key = self.replace_impl(replacement)?;
+        if update_aliases {
+            match replacement {
+                Some(canonical) => {
+                    self.prepare(
+                        "UPDATE CitationKeys SET record_key = (SELECT record_key FROM CitationKeys WHERE name = ?1) WHERE instr(name, ':') = 0 AND record_key = ?2",
+                    )?
+                    .execute((canonical.name(), new_key))?;
+                }
+                None => {
+                    self.prepare(
+                        "DELETE FROM CitationKeys WHERE instr(name, ':') = 0 AND record_key = ?1",
+                    )?
+                    .execute([new_key])?;
+                }
+            }
+        }
         Ok(State {
             tx: self.tx,
             id: DeletedRecordKey(new_key),
@@ -800,6 +817,18 @@ impl<'conn> State<'conn, EntryRecordKey> {
     #[inline]
     pub fn add_alias(&self, alias: &Alias) -> Result<bool, rusqlite::Error> {
         self.add_refs_impl(std::iter::once(alias), CitationKeyInsertMode::FailIfExists)
+    }
+
+    /// Update an existing alias to point to this row.
+    ///
+    /// The return value is `false` if the alias already exists, and otherwise `true`.
+    #[inline]
+    pub fn update_alias(&self, alias: &Alias) -> Result<bool, rusqlite::Error> {
+        // self.add_refs_impl(std::iter::once(alias), CitationKeyInsertMode::Overwrite)
+        let rows_changed = self
+            .prepare("UPDATE CitationKeys SET record_key = ?1 WHERE name = ?2")?
+            .execute((self.row_id(), alias.name()))?;
+        Ok(rows_changed == 1)
     }
 
     /// Ensure that the given alias exists for this row.
