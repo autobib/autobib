@@ -1,6 +1,9 @@
 use std::{fmt, str::FromStr};
 
-use super::{ArbitraryData, CompleteRecordRow, InRecordsTable, RecordRow, State, Transaction};
+use super::{
+    ArbitraryData, CompleteRecordRow, InRecordsTable, RecordRow, State, Transaction,
+    tree::VersionDisplayAdapter,
+};
 
 /// A specific version of a record row.
 ///
@@ -109,5 +112,12 @@ impl<'tx, 'conn> Version<'tx, 'conn> {
             .0
             .iter()
             .map(|chunk| Version::init(self.tx, i64::from_le_bytes(*chunk)))
+    }
+
+    pub fn display(&self, styled: bool) -> VersionDisplayAdapter<'_, 'tx, 'conn> {
+        VersionDisplayAdapter {
+            version: &self,
+            styled,
+        }
     }
 }

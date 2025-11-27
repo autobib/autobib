@@ -45,13 +45,16 @@ pub fn create_alias_if_valid(
 ///
 /// If the row does not exist in the 'Records' table, this inserts a new row as the unique entry.
 /// If the row exists, this adds the new row as a child of the existing row.
-pub fn insert<'conn, S: RecordsInsert<'conn>>(
-    missing: S,
+pub fn insert<'conn, I>(
+    missing: State<'conn, I>,
     from_bibtex: Option<PathBuf>,
     remote_id: &RemoteId,
     no_interactive: bool,
     normalization: &Normalization,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+where
+    State<'conn, I>: RecordsInsert<'conn>,
+{
     if let Some(path) = from_bibtex {
         let mut data = data_from_path(path)?;
         data.normalize(normalization);
@@ -79,6 +82,7 @@ pub fn insert<'conn, S: RecordsInsert<'conn>>(
             }
             row.commit()?;
         } else {
+            missing.commit()?;
             set_failed();
         }
     };

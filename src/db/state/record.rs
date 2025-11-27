@@ -824,7 +824,6 @@ impl<'conn> State<'conn, EntryRecordKey> {
     /// The return value is `false` if the alias already exists, and otherwise `true`.
     #[inline]
     pub fn update_alias(&self, alias: &Alias) -> Result<bool, rusqlite::Error> {
-        // self.add_refs_impl(std::iter::once(alias), CitationKeyInsertMode::Overwrite)
         let rows_changed = self
             .prepare("UPDATE CitationKeys SET record_key = ?1 WHERE name = ?2")?
             .execute((self.row_id(), alias.name()))?;
