@@ -16,13 +16,14 @@ branch_writer! {
 }
 
 pub fn print_log<'conn, I: InRecordsTable>(
+    no_interactive: bool,
     state: &State<'conn, I>,
     tree: bool,
     all: bool,
     oneline: bool,
 ) -> anyhow::Result<()> {
     let mut stdout = stdout_lock_wrap();
-    let styled = stdout.supports_styled_output();
+    let styled = !no_interactive && stdout.supports_styled_output();
     let ramifier_config = RamifierConfig {
         all,
         oneline,

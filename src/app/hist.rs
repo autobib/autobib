@@ -2,7 +2,7 @@ use std::io::Write;
 
 use crate::{
     db::state::{ArbitraryKey, InRecordsTable, RecordRowMoveResult, RedoError, UndoError},
-    logger::{error, suggest},
+    logger::{Level, error, max_level, suggest},
     output::stdout_lock_wrap,
 };
 
@@ -11,10 +11,12 @@ pub fn handle_undo_result<'conn, I: InRecordsTable, J>(
 ) -> anyhow::Result<()> {
     match res {
         RecordRowMoveResult::Updated(state) => {
-            let version = state.current()?;
-            let mut stdout = stdout_lock_wrap();
-            let styled = stdout.supports_styled_output();
-            writeln!(&mut stdout, "{}", version.display(styled))?;
+            if max_level() >= Level::Warn {
+                let version = state.current()?;
+                let mut stdout = stdout_lock_wrap();
+                let styled = stdout.supports_styled_output();
+                writeln!(&mut stdout, "{}", version.display(styled))?;
+            }
             state.commit()?;
         }
         RecordRowMoveResult::Unchanged(state, err) => {
@@ -47,10 +49,12 @@ pub fn handle_redo_result<'conn, I>(
 ) -> anyhow::Result<()> {
     match res {
         RecordRowMoveResult::Updated(state) => {
-            let version = state.current()?;
-            let mut stdout = stdout_lock_wrap();
-            let styled = stdout.supports_styled_output();
-            writeln!(&mut stdout, "{}", version.display(styled))?;
+            if max_level() >= Level::Warn {
+                let version = state.current()?;
+                let mut stdout = stdout_lock_wrap();
+                let styled = stdout.supports_styled_output();
+                writeln!(&mut stdout, "{}", version.display(styled))?;
+            }
             state.commit()?;
         }
         RecordRowMoveResult::Unchanged(state, redo_err) => {

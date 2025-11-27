@@ -84,6 +84,9 @@ pub enum InfoReportType {
     /// Print the last modified time.
     #[value(alias("m"))]
     Modified,
+    /// Print the revision.
+    #[value(alias("m"))]
+    Revision,
 }
 
 #[derive(Debug, Copy, Clone, ValueEnum)]
@@ -225,7 +228,7 @@ pub enum Command {
         /// Delete a field. This is performed before setting field values.
         #[arg(long, value_name = "FIELD_KEY")]
         delete_field: Vec<FieldKey>,
-        /// Set specific field values using BibTeX `key = {value}` syntax
+        /// Set specific field values using BibTeX field syntax
         #[arg(long, value_name = "FIELD_KEY={VALUE}")]
         set_field: Vec<SetFieldCommand>,
     },
@@ -595,7 +598,7 @@ pub enum HistCommand {
         /// Set the entry type.
         #[arg(long, value_name = "ENTRY_TYPE")]
         with_entry_type: Option<EntryType>,
-        /// Set specific field values using BibTeX `key = {value}` syntax
+        /// Set specific field values using BibTeX field syntax
         #[arg(long, value_name = "FIELD_KEY={VALUE}")]
         with_field: Vec<SetFieldCommand>,
     },
