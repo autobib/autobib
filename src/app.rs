@@ -135,6 +135,17 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     }
                 }
             }
+            AliasCommand::Reset { alias, target } => {
+                info!("Updating alias '{alias}' to point to '{target}'");
+                let cfg = config::load(&config_path, missing_ok)?;
+                let (_, row) = get_record_row(&mut record_db, target, client, &cfg)?
+                    .exists_or_commit_null("Cannot create alias for")?;
+                if !row.update_alias(&alias)? {
+                    error!("Alias does not exist!");
+                    suggest!("Use `autobib alias add` to insert a new alias.");
+                }
+                row.commit()?;
+            }
         },
         Command::Attach {
             citation_key,
@@ -256,6 +267,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             citation_keys,
             replace,
             hard,
+            update_aliases,
         } => {
             let cfg = config::load(&config_path, missing_ok)?;
             if hard {
@@ -300,7 +312,13 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 };
 
                 for key in citation_keys {
-                    soft_delete(key, &replacement_canonical_id, &mut record_db, &cfg)?;
+                    soft_delete(
+                        key,
+                        &replacement_canonical_id,
+                        &mut record_db,
+                        &cfg,
+                        update_aliases,
+                    )?;
                 }
             }
         }
