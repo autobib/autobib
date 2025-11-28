@@ -160,10 +160,11 @@ impl<'tx, 'conn> TryRamify<Version<'tx, 'conn>> for FullHistoryRamifier<'tx> {
     > {
         // we always iterate over children if we are on an entry; otherwise, only iterate if 'all'
         if vtx.is_entry() || self.config.all {
-            vtx.child_iter()
-                .rev()
-                .collect::<rusqlite::Result<Vec<Version<'tx, 'conn>>>>()
-                .map_err(|err| ramify::Replacement { value: vtx, err })
+            let mut children = vtx
+                .children()
+                .map_err(|err| ramify::Replacement { value: vtx, err })?;
+            children.sort_unstable_by_key(|v| v.row.modified);
+            Ok(children)
         } else {
             Ok(Vec::new())
         }

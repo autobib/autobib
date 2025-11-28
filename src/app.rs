@@ -24,7 +24,10 @@ use anyhow::{Result, bail};
 use etcetera::{AppStrategy, AppStrategyArgs, choose_app_strategy};
 
 use crate::{
-    app::{cli::HistCommand, log::print_log},
+    app::{
+        cli::{HistCommand, PruneCommand},
+        log::print_log,
+    },
     cite_search::{SourceFileType, get_citekeys},
     config,
     db::{
@@ -541,6 +544,15 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             }
         }
         Command::Hist { hist_command } => match hist_command {
+            HistCommand::Prune { prune_command } => match prune_command {
+                PruneCommand::All => {
+                    let snapshot = record_db.snapshot()?;
+                    snapshot.prune_all()?;
+                    snapshot.commit()?;
+                }
+                PruneCommand::Deleted => todo!(),
+                PruneCommand::Outdated => todo!(),
+            },
             HistCommand::Redo {
                 citation_key,
                 index,
@@ -563,7 +575,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     Some((_, DisambiguatedRecordRow::Deleted(_, state))) => {
                         if revive {
                             hist::handle_redo_result(state.redo_deletion(index)?)?;
-                        } else if state.current()?.num_children() > 0 {
+                        } else if state.current()?.has_children()? {
                             error!("Cannot redo beyond a deletion marker");
                             suggest!(
                                 "Redo from a deleted state using `autobib hist redo --revive`"
@@ -579,7 +591,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     Some((_, DisambiguatedRecordRow::Void(_, state))) => {
                         if revive {
                             hist::handle_redo_result(state.redo_deletion(index)?)?;
-                        } else if state.current()?.num_children() > 0 {
+                        } else if state.current()?.has_children()? {
                             error!("Cannot redo from the voided state.");
                             suggest!(
                                 "Redo from a voided state using `autobib hist redo --revive`, or insert new data"

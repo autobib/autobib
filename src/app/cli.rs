@@ -544,6 +544,11 @@ impl Command {
 /// Commands to manipulate version history.
 #[derive(Debug, Subcommand)]
 pub enum HistCommand {
+    /// Clean up edit history without impacting the active record.
+    Prune {
+        #[command(subcommand)]
+        prune_command: PruneCommand,
+    },
     /// Redo previously undone changes.
     ///
     /// If no arguments are provided, the redo will succeed if there is a unique change originating
@@ -602,8 +607,7 @@ pub enum HistCommand {
         #[arg(long, value_name = "FIELD_KEY={VALUE}")]
         with_field: Vec<SetFieldCommand>,
     },
-    /// Rewind every entry in database so that the modification time preceds the provided
-    /// date-time.
+    /// Move the database back in time.
     ///
     /// This is the same as calling `autobib reset --before` on every active entry in the database with
     /// modification greater than the provided time.
@@ -638,6 +642,17 @@ pub enum HistCommand {
         /// The citation key to modify.
         citation_key: RecordId,
     },
+}
+
+/// Clean up edit history without impacting the active record.
+#[derive(Debug, Subcommand)]
+pub enum PruneCommand {
+    /// Prune all inactive entries.
+    All,
+    /// Prune inactive deletion markers.
+    Deleted,
+    /// Prune entries which are not a child of the active entry.
+    Outdated,
 }
 
 /// Utilities to manage database.

@@ -65,6 +65,46 @@ impl<'conn> Snapshot<'conn> {
         Ok(())
     }
 
+    /// Delete all inactive records.
+    pub fn prune_all(&self) -> rusqlite::Result<()> {
+        // the `parent_key` is automatically set to null when the parent is deleted, so we just
+        // delete everything
+        self.tx
+            .prepare("DELETE FROM Records WHERE key NOT IN (SELECT record_key FROM CitationKeys)")?
+            .execute([])?;
+        Ok(())
+    }
+
+    /// Delete inactive void records with exactly one child.
+    pub fn prune_void(&self) -> rusqlite::Result<()> {
+        self.tx
+            .prepare(
+                "
+DELETE FROM Records
+WHERE variant = 2
+  AND key NOT IN (SELECT record_key FROM CitationKeys)
+  AND (SELECT count(*) FROM Records WHERE parent_key = key LIMIT 2) = 1",
+            )?
+            .execute([])?;
+        Ok(())
+    }
+
+    /// Delete inactive deleted records which have no children.
+    pub fn prune_deleted(&self) -> rusqlite::Result<()> {
+        // the `parent_key` is automatically set to null when the parent is deleted
+        self.tx
+            .prepare(
+                "
+DELETE FROM Records
+WHERE variant = 1
+  AND key NOT IN (SELECT record_key FROM CitationKeys)
+  AND NOT EXISTS (SELECT 1 FROM Records WHERE parent_key = key) = 0",
+            )?
+            .execute([])?;
+
+        Ok(())
+    }
+
     /// Iterate over all active entries in the Records table, adding the revisions to the todolist
     /// which are later than the threshold date.
     pub fn rewind_all(&self, after: DateTime<Local>) -> rusqlite::Result<()> {

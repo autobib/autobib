@@ -16,7 +16,6 @@ pub struct Version<'tx, 'conn> {
     pub(super) row_id: i64,
     pub(super) tx: &'tx Transaction<'conn>,
     parent_row_id: Option<i64>,
-    child_row_ids: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -50,7 +49,7 @@ impl FromStr for RevisionId {
 impl<'conn, I: InRecordsTable> State<'conn, I> {
     /// Determine the number of elements in the changelog to obtain an iteration bound.
     pub fn changelog_size(&self) -> rusqlite::Result<usize> {
-        self.prepare("SELECT COUNT(*) FROM Records WHERE record_id = (SELECT record_id from Records WHERE key = ?1)")?
+        self.prepare("SELECT count(*) FROM Records WHERE record_id = (SELECT record_id from Records WHERE key = ?1)")?
             .query_row((self.row_id(),), |row| row.get(0))
     }
 
@@ -66,10 +65,22 @@ impl<'tx, 'conn> Version<'tx, 'conn> {
         Ok(Self {
             row: row.row,
             parent_row_id: row.parent,
-            child_row_ids: row.children,
             tx,
             row_id,
         })
+    }
+
+    fn new(
+        tx: &'tx Transaction<'conn>,
+        row_id: i64,
+        row: CompleteRecordRow<super::ArbitraryData>,
+    ) -> Self {
+        Self {
+            row: row.row,
+            parent_row_id: row.parent,
+            tx,
+            row_id,
+        }
     }
 
     pub fn is_deleted(&self) -> bool {
@@ -110,20 +121,56 @@ impl<'tx, 'conn> Version<'tx, 'conn> {
     }
 
     /// The number of children.
-    pub fn num_children(&self) -> usize {
-        self.child_iter().len()
+    pub fn num_children(&self) -> rusqlite::Result<usize> {
+        self.tx
+            .prepare_cached("SELECT count(*) FROM Records WHERE parent_key = ?1")?
+            .query_row([self.row_id], |row| row.get(0))
     }
 
-    /// Returns an iterator over the child rows, ordered from newest to oldest.
-    pub fn child_iter(
-        &self,
-    ) -> impl DoubleEndedIterator<Item = rusqlite::Result<Version<'tx, 'conn>>> + ExactSizeIterator
+    /// Returns whether or not the row has children.
+    pub fn has_children(&self) -> rusqlite::Result<bool> {
+        self.tx
+            .prepare_cached("SELECT EXISTS (SELECT 1 FROM Records WHERE parent_key = ?1);")?
+            .query_row([self.row_id], |row| row.get(0))
+    }
+
+    /// Apply a mutable closure to the data for every child, along with its row-id.
+    ///
+    /// The order in which the closure is applied is unspecified.
+    pub(super) fn map_children<F>(&self, mut f: F) -> rusqlite::Result<()>
+    where
+        F: FnMut(CompleteRecordRow<ArbitraryData>, i64) -> rusqlite::Result<()>,
     {
-        self.child_row_ids
-            .as_chunks()
-            .0
-            .iter()
-            .map(|chunk| Version::init(self.tx, i64::from_le_bytes(*chunk)))
+        // it is better to not use an ORDER BY clause here
+        // since the number of results is in the majority of cases extremely
+        // low anyway, and vec sorting methods are ultra-optimized for small
+        // vectors
+        let mut stmt = self
+            .tx
+            .prepare_cached("SELECT key, record_id, modified, data, variant, parent_key FROM Records WHERE parent_key = ?1")?;
+
+        for r in stmt.query_map([self.row_id], |row| {
+            Ok((
+                CompleteRecordRow::from_row_unchecked(row),
+                row.get_unwrap("key"),
+            ))
+        })? {
+            let (data, row_id) = r?;
+            f(data, row_id)?;
+        }
+
+        Ok(())
+    }
+
+    /// Returns the children in an unspecified order.
+    pub fn children(&self) -> rusqlite::Result<Vec<Self>> {
+        let mut children = Vec::new();
+        self.map_children(|ch, row_id| {
+            children.push(Version::new(self.tx, row_id, ch));
+            Ok(())
+        })?;
+
+        Ok(children)
     }
 
     pub fn display(&self, styled: bool) -> RecordRowDisplay<'_> {
