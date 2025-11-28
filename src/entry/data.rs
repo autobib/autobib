@@ -1,5 +1,5 @@
 //! # Abstraction over BibTeX data.
-//! This module implements the mutable [`RecordData`] and immutable [`RawRecordData`] types, which
+//! This module implements the mutable [`MutableEntryData`] and immutable [`RawEntryData`] types, which
 //! represent the data inherent in a BibTeX entry.
 //!
 //! The data consists of the entry type (e.g. `article`) as well as the field keys and values (e.g. `title =
@@ -11,14 +11,17 @@ mod tests;
 mod identifier;
 mod raw;
 
-use std::{borrow::Borrow, cmp::PartialEq, collections::BTreeMap, iter::Iterator, sync::LazyLock};
+use std::{
+    borrow::Borrow, cmp::PartialEq, collections::BTreeMap, iter::Iterator, str::FromStr,
+    sync::LazyLock,
+};
 
 use delegate::delegate;
 use regex::Regex;
 
 pub use identifier::{EntryKey, EntryType, FieldKey, FieldValue, validate_ascii_identifier};
 pub(crate) use raw::{EntryTypeHeader, KeyHeader, ValueHeader};
-pub use raw::{RawRecordData, RawRecordFieldsIter};
+pub use raw::{RawEntryData, RawRecordFieldsIter};
 
 use crate::normalize::{Normalize, normalize_whitespace_str};
 
@@ -100,12 +103,12 @@ pub unsafe trait EntryData: PartialEq {
 
 /// An in-memory [`EntryData`] implementation which supports addition and deletion of fields.
 #[derive(Debug, PartialEq, Eq)]
-pub struct RecordData<S = String> {
+pub struct MutableEntryData<S = String> {
     pub(super) entry_type: EntryType<S>,
     pub(super) fields: BTreeMap<FieldKey<S>, FieldValue<S>>,
 }
 
-impl<S: AsRef<str> + Ord + From<&'static str>> Default for RecordData<S> {
+impl<S: AsRef<str> + Ord + From<&'static str>> Default for MutableEntryData<S> {
     fn default() -> Self {
         Self::new(EntryType("misc".into()))
     }
@@ -123,7 +126,45 @@ enum EPrintState<S> {
     MissingKey,
 }
 
-/// The outcome of resolving the conflict when using [`RecordData::merge_with_callback`].
+#[derive(Debug, Clone)]
+pub struct SetFieldCommand {
+    pub field_key: FieldKey,
+    pub field_value: FieldValue,
+}
+
+impl FromStr for SetFieldCommand {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> anyhow::Result<Self> {
+        let mut reader = serde_bibtex::StrReader::new(s);
+        let key = reader.read_field_key()?;
+        reader.skip_field_sep()?;
+        let value = reader.read_text_token()?;
+        let field_key = FieldKey::try_new_normalize(key.into_inner())?;
+        let field_value = FieldValue::try_new(value)?.to_owned();
+        Ok(Self {
+            field_key,
+            field_value,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct EntryEditCommand {
+    pub update_entry_type: Option<EntryType>,
+    pub delete_field: Vec<FieldKey>,
+    pub set_field: Vec<SetFieldCommand>,
+}
+
+impl EntryEditCommand {
+    pub fn is_identity(&self) -> bool {
+        self.set_field.is_empty()
+            && self.delete_field.is_empty()
+            && self.update_entry_type.is_none()
+    }
+}
+
+/// The outcome of resolving the conflict when using [`MutableEntryData::merge_with_callback`].
 pub enum ConflictResolved {
     /// Keep the current data.
     Current,
@@ -133,7 +174,7 @@ pub enum ConflictResolved {
     New(FieldValue),
 }
 
-impl<'r> RecordData<&'r str> {
+impl<'r> MutableEntryData<&'r str> {
     pub fn borrow_entry_data<D: EntryData>(data: &'r D) -> Self {
         let mut new = Self::new(EntryType(data.entry_type()));
         for (key, value) in data.fields() {
@@ -143,7 +184,7 @@ impl<'r> RecordData<&'r str> {
     }
 }
 
-impl RecordData {
+impl MutableEntryData {
     pub fn from_entry_data<D: EntryData>(data: &D) -> Self {
         let mut new = Self::new(EntryType(data.entry_type().to_owned()));
         for (key, value) in data.fields() {
@@ -151,6 +192,52 @@ impl RecordData {
                 .insert(FieldKey(key.to_owned()), FieldValue(value.to_owned()));
         }
         new
+    }
+
+    pub fn edit(&mut self, cmd: &EntryEditCommand) -> bool {
+        let mut changed = false;
+
+        if let Some(ref ty) = cmd.update_entry_type {
+            changed |= self.update_entry_type(ty);
+        }
+
+        for key in &cmd.delete_field {
+            changed |= self.remove(key).is_some();
+        }
+
+        for cmd in &cmd.set_field {
+            changed |= self.set_field(cmd);
+        }
+
+        changed
+    }
+
+    /// Update the entry type to have the new value, returning if the entry type changed.
+    pub fn update_entry_type(&mut self, ty: &EntryType) -> bool {
+        if &self.entry_type != ty {
+            self.entry_type = ty.clone();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Set a field using the provided command.
+    pub fn set_field(&mut self, cmd: &SetFieldCommand) -> bool {
+        let mut changed = false;
+        self.fields
+            .entry(cmd.field_key.clone())
+            .and_modify(|v| {
+                if v != &cmd.field_value {
+                    *v = cmd.field_value.clone();
+                    changed = true;
+                }
+            })
+            .or_insert_with(|| {
+                changed = true;
+                cmd.field_value.clone()
+            });
+        changed
     }
 
     /// Check for the following configuration inside the data:
@@ -274,8 +361,8 @@ impl RecordData {
     }
 }
 
-impl<S: AsRef<str> + Ord> RecordData<S> {
-    /// Initialize a new [`RecordData`] instance.
+impl<S: AsRef<str> + Ord> MutableEntryData<S> {
+    /// Initialize a new [`MutableEntryData`] instance.
     pub fn new(entry_type: EntryType<S>) -> Self {
         Self {
             entry_type,
@@ -313,7 +400,7 @@ impl<S: AsRef<str> + Ord> RecordData<S> {
     }
 }
 
-unsafe impl<S: AsRef<str> + Ord> EntryData for RecordData<S> {
+unsafe impl<S: AsRef<str> + Ord> EntryData for MutableEntryData<S> {
     fn fields(&self) -> impl Iterator<Item = (&str, &str)> {
         self.fields
             .iter()
@@ -332,7 +419,7 @@ unsafe impl<S: AsRef<str> + Ord> EntryData for RecordData<S> {
 static TRAILING_JOURNAL_SERIES_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\s*\([1-9][0-9]*\)$").unwrap());
 
-impl Normalize for RecordData {
+impl Normalize for MutableEntryData {
     fn set_eprint<Q: AsRef<str>>(&mut self, keys: std::slice::Iter<'_, Q>) -> bool {
         for key in keys {
             match self.is_eprint_normalized(key) {

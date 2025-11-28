@@ -3,7 +3,7 @@ use std::str::FromStr;
 use anyhow::anyhow;
 
 use crate::{
-    CitationKey,
+    CitationKey, RawEntryData,
     app::{
         cli::{ImportMode, OnConflict},
         edit::merge_record_data,
@@ -11,9 +11,9 @@ use crate::{
     config::Config,
     db::{
         RecordDatabase,
-        state::{Missing, RecordRow, RemoteIdState, State},
+        state::{EntryRecordKey, Missing, RemoteIdState, State},
     },
-    entry::{Entry, EntryKey, RecordData, entries_from_bibtex},
+    entry::{Entry, EntryKey, MutableEntryData, entries_from_bibtex},
     error::{self, RecordError},
     http::Client,
     logger::{error, info, set_failed, warn},
@@ -97,7 +97,7 @@ enum ImportOutcome {
     /// The import was successful.
     Success,
     /// The import failed with an error and with the provided entry.
-    Failure(anyhow::Error, Entry<RecordData>),
+    Failure(anyhow::Error, Entry<MutableEntryData>),
     /// There was an error while importing the entry, which the user did not fix.
     UserCancelled,
 }
@@ -105,7 +105,7 @@ enum ImportOutcome {
 /// Import a single entry into the record database.
 #[inline]
 fn import_entry<F, C>(
-    entry: Entry<RecordData>,
+    entry: Entry<MutableEntryData>,
     import_config: &ImportConfig,
     record_db: &mut RecordDatabase,
     client: &C,
@@ -148,12 +148,14 @@ where
                     }
                     DeterminedKey::RemoteId(mapped_key, maybe_alias) => {
                         match record_db.state_from_remote_id(&mapped_key.mapped)? {
-                            RemoteIdState::Existent(row) => Ok(ImportAction::Update(
-                                row,
+                            RemoteIdState::Entry(_, state) => Ok(ImportAction::Update(
+                                state,
                                 import_config.on_conflict,
                                 mapped_key.to_string(),
                                 maybe_alias,
                             )),
+                            RemoteIdState::Void(_, _) => todo!(),
+                            RemoteIdState::Deleted(_, _) => todo!(),
                             RemoteIdState::Null(null_row) => Ok(ImportAction::Insert(
                                 null_row.delete()?,
                                 mapped_key.mapped,
@@ -190,11 +192,17 @@ where
             |alias, record_db| {
                 let remote_id = RemoteId::local(&alias);
                 match record_db.state_from_remote_id(&remote_id)? {
-                    RemoteIdState::Existent(row) => {
+                    RemoteIdState::Entry(_, row) => {
                         row.commit()?;
                         Ok(ImportAction::PromptNewKey(anyhow!(
                             "Local id '{remote_id}' already exists.",
                         )))
+                    }
+                    RemoteIdState::Deleted(_, _) => {
+                        todo!()
+                    }
+                    RemoteIdState::Void(_, _) => {
+                        todo!()
                     }
                     RemoteIdState::Null(null_row) => Ok(ImportAction::Insert(
                         null_row.delete()?,
@@ -226,7 +234,12 @@ where
 enum ImportAction<'conn> {
     /// The entry already has data corresponding to the provided row; update the row with the
     /// entry.
-    Update(State<'conn, RecordRow>, OnConflict, String, Option<Alias>),
+    Update(
+        State<'conn, EntryRecordKey>,
+        OnConflict,
+        String,
+        Option<Alias>,
+    ),
     /// There is no data for the entry; data into the database.
     Insert(State<'conn, Missing>, RemoteId, Option<Alias>),
     /// A key could not be determined from the entry; prompt for a new key (if interactive).
@@ -235,7 +248,7 @@ enum ImportAction<'conn> {
 
 /// A helper function to create a new alias, with logging.
 fn create_alias(
-    row: State<'_, RecordRow>,
+    row: State<'_, EntryRecordKey>,
     remote_id: &str,
     no_alias: bool,
     maybe_alias: Option<Alias>,
@@ -261,7 +274,7 @@ fn create_alias(
 #[inline]
 fn import_entry_impl<F>(
     record_db: &mut RecordDatabase,
-    mut entry: Entry<RecordData>,
+    mut entry: Entry<MutableEntryData>,
     no_interactive: bool,
     no_alias: bool,
     nl: &Normalization,
@@ -269,7 +282,7 @@ fn import_entry_impl<F>(
 ) -> Result<ImportOutcome, anyhow::Error>
 where
     F: for<'conn> FnMut(
-        &Entry<RecordData>,
+        &Entry<MutableEntryData>,
         &'conn mut RecordDatabase,
     ) -> Result<ImportAction<'conn>, error::Error>,
 {
@@ -278,16 +291,15 @@ where
             ImportAction::Update(row, update_mode, remote_id, maybe_alias) => {
                 entry.record_data.normalize(nl);
                 let raw_record_data = row.get_data()?.data;
-                let mut existing_record = RecordData::from_entry_data(&raw_record_data);
+                let mut existing_record = MutableEntryData::from_entry_data(&raw_record_data);
                 merge_record_data(
                     update_mode,
                     &mut existing_record,
                     std::iter::once(entry.data()),
                     &remote_id,
                 )?;
-                row.save_to_changelog()?;
-                row.update_entry_data(&existing_record)?;
-                create_alias(row, &remote_id, no_alias, maybe_alias)?;
+                let new_row = row.modify(&RawEntryData::from_entry_data(&existing_record))?;
+                create_alias(new_row, &remote_id, no_alias, maybe_alias)?;
                 return Ok(ImportOutcome::Success);
             }
             ImportAction::Insert(missing, remote_id, maybe_alias) => {
@@ -326,7 +338,7 @@ where
 #[inline]
 fn import_entry_retrieve_impl<A, F, C>(
     record_db: &mut RecordDatabase,
-    entry: Entry<RecordData>,
+    entry: Entry<MutableEntryData>,
     import_config: &ImportConfig,
     config: &Config<F>,
     client: &C,
@@ -358,6 +370,7 @@ where
                         record.key,
                         maybe_alias,
                     )),
+                    RemoteRecordRowResponse::Deleted(_, _) => todo!(),
                     RemoteRecordRowResponse::Null(remote_id, null_row) => Ok(ImportAction::Insert(
                         null_row.delete()?,
                         remote_id,
@@ -386,12 +399,20 @@ fn handle_local_alias(
 ) -> Result<ImportAction<'_>, error::Error> {
     let remote_id = RemoteId::local(&alias);
     match record_db.state_from_remote_id(&remote_id)? {
-        RemoteIdState::Existent(row) => {
+        RemoteIdState::Entry(_, row) => {
             row.commit()?;
             Ok(ImportAction::PromptNewKey(anyhow!(
                 "Local id '{remote_id}' already exists.",
             )))
         }
+        RemoteIdState::Deleted(_, row) => {
+            // FIXME
+            row.commit()?;
+            Ok(ImportAction::PromptNewKey(anyhow!(
+                "Local id '{remote_id}' previously existed but was soft-deleted.",
+            )))
+        }
+        RemoteIdState::Void(_, _) => todo!(),
         RemoteIdState::Null(null_row) => Ok(ImportAction::Insert(
             null_row.delete()?,
             remote_id,
@@ -419,7 +440,7 @@ enum DeterminedKey {
 /// Determine the key associated with the provided entry.
 #[inline]
 fn determine_key<F, C>(
-    entry: &Entry<RecordData>,
+    entry: &Entry<MutableEntryData>,
     require_canonical: bool,
     config: &Config<F>,
 ) -> DeterminedKey
@@ -458,7 +479,7 @@ where
 /// provider with the smallest possible index.
 #[inline]
 fn best_key_from_data<F, C>(
-    data: &RecordData,
+    data: &MutableEntryData,
     require_canonical: bool,
     config: &Config<F>,
 ) -> Option<MappedKey>

@@ -45,7 +45,7 @@ impl EntryKey {
 /// 1. has length at least `1` and at most [`u8::MAX`].
 /// 2. composed only of ASCII printable characters with `{}(),= \t\n\\#%\"` and
 ///    `A..=Z` removed.
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct EntryType<S = String>(pub(in crate::entry) S);
 
 impl<S: AsRef<str>> EntryType<S> {
@@ -139,7 +139,7 @@ impl<S> From<FieldKey<S>> for FieldValue<S> {
 ///
 /// 1. has length at most [`ValueHeader::MAX`].
 /// 2. satisfies the balanced `{}` rule (from [`serde_bibtex::token::is_balanced`]).
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct FieldValue<S = String>(pub(in crate::entry) S);
 
 impl<S: AsRef<str>> FieldValue<S> {

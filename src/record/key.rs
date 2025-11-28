@@ -263,15 +263,15 @@ impl TryFrom<RecordId> for Alias {
 
 /// A validated `provider:sub_id`.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
-pub struct RemoteId {
-    full_id: String,
+pub struct RemoteId<S = String> {
+    full_id: S,
     provider_len: usize,
 }
 
-impl RemoteId {
+impl<S: AsRef<str>> RemoteId<S> {
     /// Construct a new [`RemoteId`], assuming that the struct has been validated.
     #[inline]
-    fn new_unchecked(full_id: String, provider_len: usize) -> Self {
+    fn new_unchecked(full_id: S, provider_len: usize) -> Self {
         Self {
             full_id,
             provider_len,
@@ -287,7 +287,7 @@ impl RemoteId {
     /// 3. The `full_id` has a non-empty `sub_id` part, i.e. the first ':' is not at the end; and
     /// 4. [`validate_provider_sub_id`] is valid.
     #[inline]
-    pub(crate) fn from_string_unchecked(full_id: String) -> Self {
+    pub(crate) fn from_string_unchecked(full_id: S) -> Self {
         Self::from_alias_or_remote_id_unchecked(full_id).unwrap()
     }
 
@@ -299,8 +299,9 @@ impl RemoteId {
     /// 2. The `full_id` has a non-empty `sub_id` part, i.e. the first ':' is not at the end; and
     /// 3. [`validate_provider_sub_id`] is valid.
     #[inline]
-    pub(crate) fn from_alias_or_remote_id_unchecked(full_id: String) -> Option<Self> {
+    pub(crate) fn from_alias_or_remote_id_unchecked(full_id: S) -> Option<Self> {
         full_id
+            .as_ref()
             .find(':')
             .map(|provider_len| Self::new_unchecked(full_id, provider_len))
     }
@@ -308,7 +309,7 @@ impl RemoteId {
     /// Get the `provider` part of the remote id.
     #[inline]
     pub fn provider(&self) -> &str {
-        &self.full_id[..self.provider_len]
+        &self.full_id.as_ref()[..self.provider_len]
     }
 
     /// Check whether the `provider` part of the remote id is `local`.
@@ -320,9 +321,11 @@ impl RemoteId {
     /// Get the `sub_id` part of the remote id, after the separator.
     #[inline]
     pub fn sub_id(&self) -> &str {
-        &self.full_id[self.provider_len + 1..]
+        &self.full_id.as_ref()[self.provider_len + 1..]
     }
+}
 
+impl RemoteId {
     /// Construct a [`RemoteId`] from the provider and sub_id components.
     #[inline]
     pub fn from_parts(provider: &str, sub_id: &str) -> Result<Self, RecordError> {
@@ -340,15 +343,22 @@ impl RemoteId {
         full_id.push_str(alias.0.as_str());
         Self::new_unchecked(full_id, PROVIDER_LEN)
     }
-}
 
-impl CitationKey for RemoteId {
-    fn name(&self) -> &str {
-        &self.full_id
+    pub fn get_ref(&self) -> RemoteId<&str> {
+        RemoteId {
+            full_id: &self.full_id,
+            provider_len: self.provider_len,
+        }
     }
 }
 
-impl fmt::Display for RemoteId {
+impl<S: AsRef<str>> CitationKey for RemoteId<S> {
+    fn name(&self) -> &str {
+        self.full_id.as_ref()
+    }
+}
+
+impl<S: AsRef<str>> fmt::Display for RemoteId<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.name().fmt(f)
     }

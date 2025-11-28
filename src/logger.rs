@@ -1,5 +1,6 @@
 use crossterm::style::{StyledContent, Stylize};
-use log::{Level, Log, Metadata, Record};
+pub use log::{Level, max_level};
+use log::{Log, Metadata, Record};
 #[allow(unused_imports)]
 pub use log::{debug, info, trace, warn};
 use std::{

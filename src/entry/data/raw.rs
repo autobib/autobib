@@ -1,14 +1,65 @@
+//! # Data binary format
+//! We use a custom internal binary format to represent the data associated with each bibTex entry.
+//!
+//! The first byte is a marker byte.
+//! Depending on the marker byte, the format is as follows.
+//!
+//! ## Marker byte `0`
+//! The data is stored as a sequence of blocks.
+//! ```txt
+//! HEADER, TYPE, DATA1, DATA2, ...
+//! ```
+//! The `HEADER` consists of
+//! ```txt
+//! version: u8,
+//! ```
+//! and the `TYPE` consists of
+//! ```txt
+//! [entry_type_len: u8, entry_type: [u8..]]
+//! ```
+//! Here, `entry_type_len` is the length of `entry_type`, which has length at most [`u8::MAX`].
+//! Then, each block `DATA` is of the form
+//! ```txt
+//! [key_len: u8, value_len: u16, key: [u8..], value: [u8..]]
+//! ```
+//! where `key_len` is the length of the first `key` segment, and the `value_len` is
+//! the length of the `value` segment. Necessarily, `key` and `value` have lengths at
+//! most [`u8::MAX`] and [`u16::MAX`] respectively.
+//!
+//! `value_len` is encoded in little endian format.
+//!
+//! The `DATA...` are sorted by `key` and each `key` and `entry_type` must be ASCII lowercase. The
+//! `entry_type` can be any valid UTF-8.
+//!
+//! For example we would serialize
+//! ```bib
+//! @article{...,
+//!   Year = {192},
+//!   Title = {The Title},
+//! }
+//! ```
+//! as
+//! ```
+//! # let mut record_data = RecordData::try_new("article".into()).unwrap();
+//! # record_data.check_and_insert("year".into(), "2023".into()).unwrap();
+//! # record_data
+//! #     .check_and_insert("title".into(), "The Title".into())
+//! #     .unwrap();
+//! # let byte_repr = RawEntryData::from(&record_data).into_byte_repr();
+//! let expected = vec![
+//!     0, 7, b'a', b'r', b't', b'i', b'c', b'l', b'e', 5, 9, 0, b't', b'i', b't', b'l', b'e',
+//!     b'T', b'h', b'e', b' ', b'T', b'i', b't', b'l', b'e', 4, 4, 0, b'y', b'e', b'a', b'r',
+//!     b'2', b'0', b'2', b'3',
+//! ];
+//! # assert_eq!(expected_byte_repr, byte_repr);
+//! ```
+
 use std::str::from_utf8;
 
 use serde_bibtex::token::is_balanced;
 
 use super::{BorrowedEntryData, EntryData, validate_ascii_identifier};
 use crate::error::InvalidBytesError;
-
-/// The current version of the binary data format.
-pub const fn binary_format_version() -> u8 {
-    0
-}
 
 /// The size (in bytes) of the version header.
 const DATA_HEADER_SIZE: usize = 1;
@@ -25,19 +76,17 @@ pub(crate) type EntryTypeHeader = u8;
 /// A raw binary representation of the field key and fields of a BibTeX entry.
 ///
 /// This struct is immutable by design. For a mutable version which supports addition and deletion
-/// of fields, see [`RecordData`](super::RecordData).
-///
-/// For a description of the binary format, see the [`db`](crate::db) module documentation.
+/// of fields, see [`MutableEntryData`](super::MutableEntryData).
 #[derive(Debug, Clone)]
-pub struct RawRecordData<T = Vec<u8>> {
+pub struct RawEntryData<T = Vec<u8>> {
     data: T,
 }
 
-impl RawRecordData {
+impl RawEntryData {
     pub fn from_entry_data<D: EntryData>(entry_data: &D) -> Self {
         let mut data = Vec::with_capacity(entry_data.raw_len());
 
-        data.push(binary_format_version());
+        data.push(0);
 
         let entry_type = entry_data.entry_type();
         let entry_type_len = EntryTypeHeader::try_from(entry_type.len()).unwrap();
@@ -55,21 +104,25 @@ impl RawRecordData {
         }
 
         // SAFETY: the invariants are upheld based on the
-        // `RecordData::insert` implementation.
+        // `MutableEntryData::insert` implementation.
         Self::from_byte_repr_unchecked(data)
+    }
+
+    pub fn get_ref(&self) -> RawEntryData<&[u8]> {
+        RawEntryData { data: &self.data }
     }
 }
 
-impl<T: AsRef<[u8]>> PartialEq for RawRecordData<T> {
+impl<T: AsRef<[u8]>> PartialEq for RawEntryData<T> {
     fn eq(&self, other: &Self) -> bool {
         self.data.as_ref().eq(other.data.as_ref())
     }
 }
 
-impl<T: AsRef<[u8]>> Eq for RawRecordData<T> {}
+impl<T: AsRef<[u8]>> Eq for RawEntryData<T> {}
 
-impl<T: AsRef<[u8]>> RawRecordData<T> {
-    /// Construct a [`RawRecordData`] from raw bytes without performing any consistency checks.
+impl<T: AsRef<[u8]>> RawEntryData<T> {
+    /// Construct a [`RawEntryData`] from raw bytes without performing any consistency checks.
     ///
     /// # Panics
     /// The caller must ensure that underlying data upholds the requirements of the binary representation. Otherwise, calling this function will result in a panic or downstream corrupted data.
@@ -82,7 +135,7 @@ impl<T: AsRef<[u8]>> RawRecordData<T> {
         self.data.as_ref()
     }
 
-    /// Construct a [`RawRecordData`] from raw bytes, checking that the underlying bytes are valid.
+    /// Construct a [`RawEntryData`] from raw bytes, checking that the underlying bytes are valid.
     pub fn from_byte_repr(data: T) -> Result<Self, InvalidBytesError> {
         let bytes = data.as_ref();
         match bytes {
@@ -199,7 +252,7 @@ impl<T: AsRef<[u8]>> RawRecordData<T> {
     }
 }
 
-impl<'r> RawRecordData<&'r [u8]> {
+impl<'r> RawEntryData<&'r [u8]> {
     #[inline]
     fn split_blocks_borrowed(&self) -> (&'r [u8], &'r [u8]) {
         let contents = &self.data[DATA_HEADER_SIZE..];
@@ -207,8 +260,8 @@ impl<'r> RawRecordData<&'r [u8]> {
     }
 }
 
-/// The iterator type for the fields of a [`RawRecordData`]. This cannot be constructed directly;
-/// it is constructed implicitly by the [`EntryData::fields`] implementation of [`RawRecordData`].
+/// The iterator type for the fields of a [`RawEntryData`]. This cannot be constructed directly;
+/// it is constructed implicitly by the [`EntryData::fields`] implementation of [`RawEntryData`].
 #[derive(Debug)]
 pub struct RawRecordFieldsIter<'a> {
     remaining: &'a [u8],
@@ -239,7 +292,7 @@ impl<'a> Iterator for RawRecordFieldsIter<'a> {
     }
 }
 
-impl RawRecordData {
+impl RawEntryData {
     pub fn raw_fields(&self) -> RawRecordFieldsIter<'_> {
         let (_, data_blocks) = self.split_blocks();
         RawRecordFieldsIter {
@@ -248,7 +301,7 @@ impl RawRecordData {
     }
 }
 
-impl<'r> BorrowedEntryData<'r> for RawRecordData<&'r [u8]> {
+impl<'r> BorrowedEntryData<'r> for RawEntryData<&'r [u8]> {
     fn fields_borrowed(&self) -> impl Iterator<Item = (&'r str, &'r str)> {
         let (_, data_blocks) = self.split_blocks_borrowed();
         RawRecordFieldsIter {
@@ -257,7 +310,7 @@ impl<'r> BorrowedEntryData<'r> for RawRecordData<&'r [u8]> {
     }
 }
 
-unsafe impl<T: AsRef<[u8]>> EntryData for RawRecordData<T> {
+unsafe impl<T: AsRef<[u8]>> EntryData for RawEntryData<T> {
     fn fields(&self) -> impl Iterator<Item = (&str, &str)> {
         let (_, data_blocks) = self.split_blocks();
         RawRecordFieldsIter {

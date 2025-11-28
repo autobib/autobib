@@ -6,66 +6,10 @@
 //!
 //! In order to represent internal database state, see the [`state`] module, along with its
 //! documentation.
-//!
-//! ## Description of the internal binary format
-//! We use a custom internal binary format to represent the data associated with each bibTex entry.
-//!
-//! The first byte is the version.
-//! Depending on the version, the format is as follows.
-//!
-//! ### Version 0
-//! The data is stored as a sequence of blocks.
-//! ```txt
-//! HEADER, TYPE, DATA1, DATA2, ...
-//! ```
-//! The `HEADER` consists of
-//! ```txt
-//! version: u8,
-//! ```
-//! and the `TYPE` consists of
-//! ```txt
-//! [entry_type_len: u8, entry_type: [u8..]]
-//! ```
-//! Here, `entry_type_len` is the length of `entry_type`, which has length at most [`u8::MAX`].
-//! Then, each block `DATA` is of the form
-//! ```txt
-//! [key_len: u8, value_len: u16, key: [u8..], value: [u8..]]
-//! ```
-//! where `key_len` is the length of the first `key` segment, and the `value_len` is
-//! the length of the `value` segment. Necessarily, `key` and `value` have lengths at
-//! most [`u8::MAX`] and [`u16::MAX`] respectively.
-//!
-//! `value_len` is encoded in little endian format.
-//!
-//! The `DATA...` are sorted by `key` and each `key` and `entry_type` must be ASCII lowercase. The
-//! `entry_type` can be any valid UTF-8.
-//!
-//! For example we would serialize
-//! ```bib
-//! @article{...,
-//!   Year = {192},
-//!   Title = {The Title},
-//! }
-//! ```
-//! as
-//! ```
-//! # let mut record_data = RecordData::try_new("article".into()).unwrap();
-//! # record_data.check_and_insert("year".into(), "2023".into()).unwrap();
-//! # record_data
-//! #     .check_and_insert("title".into(), "The Title".into())
-//! #     .unwrap();
-//! # let byte_repr = RawRecordData::from(&record_data).into_byte_repr();
-//! let expected = vec![
-//!     0, 7, b'a', b'r', b't', b'i', b'c', b'l', b'e', 5, 9, 0, b't', b'i', b't', b'l', b'e',
-//!     b'T', b'h', b'e', b' ', b'T', b'i', b't', b'l', b'e', 4, 4, 0, b'y', b'e', b'a', b'r',
-//!     b'2', b'0', b'2', b'3',
-//! ];
-//! # assert_eq!(expected_byte_repr, byte_repr);
-//! ```
 mod functions;
 mod migrate;
 mod schema;
-mod sql;
+mod snapshot;
 pub mod state;
 mod validate;
 
@@ -73,23 +17,26 @@ use std::path::Path;
 
 use chrono::{Local, TimeDelta};
 use delegate::delegate;
-use either::Either;
 use functions::{AppFunction, register_application_function};
 use nucleo_picker::{Injector, Render};
-use rusqlite::{Connection, DropBehavior, OpenFlags, OptionalExtension, types::ValueRef};
+use rusqlite::{Connection, DropBehavior, OpenFlags, OptionalExtension};
 
-use self::state::{RecordIdState, RemoteIdState, RowData};
-use self::validate::{DatabaseFault, DatabaseValidator};
+use self::{
+    state::{RecordIdState, RecordRow, RemoteIdState},
+    validate::{DatabaseFault, DatabaseValidator},
+};
 use crate::{
     Alias, RecordId, RemoteId,
     config::AliasTransform,
+    entry::RawEntryData,
     error::DatabaseError,
     logger::{debug, error, info, warn},
 };
+pub use snapshot::Snapshot;
 
 /// The current database version expected by the application.
 pub const fn user_version() -> i32 {
-    1
+    2
 }
 
 /// The unique application id used to determine if the opened database matches one used by this
@@ -109,7 +56,7 @@ fn get_row_id<K: CitationKey>(
     tx: &Transaction,
     record_id: &K,
 ) -> Result<Option<RowId>, rusqlite::Error> {
-    tx.prepare_cached(sql::get_record_key())?
+    tx.prepare_cached("SELECT record_key FROM CitationKeys WHERE name = ?1")?
         .query_row([record_id.name()], |row| row.get("record_key"))
         .optional()
 }
@@ -119,7 +66,7 @@ pub fn get_null_row_id(
     tx: &Transaction,
     remote_id: &RemoteId,
 ) -> Result<Option<RowId>, rusqlite::Error> {
-    tx.prepare_cached(sql::get_null_record_key())?
+    tx.prepare_cached("SELECT rowid FROM NullRecords WHERE record_id = ?1")?
         .query_row([remote_id.name()], |row| row.get("rowid"))
         .optional()
 }
@@ -137,7 +84,7 @@ mod private {
 
     impl Sealed for crate::Alias {}
     impl Sealed for crate::RecordId {}
-    impl Sealed for crate::RemoteId {}
+    impl<S: AsRef<str>> Sealed for crate::RemoteId<S> {}
     impl<T> Sealed for crate::MappedKey<T> {}
 }
 
@@ -272,7 +219,10 @@ impl RecordDatabase {
                 tx.execute(schema::records(), ())?;
                 tx.execute(schema::citation_keys(), ())?;
                 tx.execute(schema::null_records(), ())?;
-                tx.execute(schema::changelog(), ())?;
+
+                debug!("Initializing indices");
+                tx.execute_batch(schema::create_indices())?;
+
                 tx.commit()?;
 
                 debug!("Enabling write-ahead log");
@@ -330,16 +280,6 @@ impl RecordDatabase {
 
     /// Get the [`RecordIdState`] associated with a [`RecordId`].
     #[inline]
-    pub fn extended_state_from_record_id<A: AliasTransform>(
-        &mut self,
-        record_id: RecordId,
-        alias_transform: &A,
-    ) -> Result<RecordIdState<'_>, rusqlite::Error> {
-        RecordIdState::determine(self.conn.transaction()?.into(), record_id, alias_transform)
-    }
-
-    /// Get the [`RecordIdState`] associated with a [`RecordId`].
-    #[inline]
     pub fn state_from_record_id<A: AliasTransform>(
         &mut self,
         record_id: RecordId,
@@ -366,7 +306,7 @@ impl RecordDatabase {
     /// for more detail.
     pub fn optimize(&mut self) -> Result<(), rusqlite::Error> {
         debug!("Optimizing database");
-        self.conn.execute(sql::optimize(), ())?;
+        self.conn.execute("PRAGMA optimize", ())?;
         Ok(())
     }
 
@@ -412,8 +352,10 @@ impl RecordDatabase {
                 warn!(
                     "Repairing dangling record by inserting or overwriting existing citation key with name {canonical}"
                 );
-                tx.prepare(sql::set_citation_key_overwrite())?
-                    .execute((canonical, key))?;
+                tx.prepare(
+                    "INSERT OR REPLACE INTO CitationKeys (name, record_key) values (?1, ?2",
+                )?
+                .execute((canonical, key))?;
                 Ok(true)
             }
             DatabaseFault::NullCitationKeys(_) => {
@@ -448,62 +390,47 @@ impl RecordDatabase {
         }
     }
 
-    /// Send the contents of the `Records` table to a [`Picker`](`nucleo_picker::Picker`)
-    /// via its [`Injector`].
-    ///
-    /// This is a convenience wrapper around [`Self::inject_records`] which simply sends all row data
-    /// to the picker without filtering or mapping.
-    pub fn inject_all_records<R: Render<RowData>>(
-        &mut self,
-        injector: Injector<RowData, R>,
-    ) -> Result<(), rusqlite::Error> {
-        self.inject_records(injector, Some)
+    pub fn snapshot(&mut self) -> rusqlite::Result<Snapshot<'_>> {
+        Ok(Snapshot {
+            tx: self.conn.transaction()?.into(),
+        })
     }
 
     /// Send the contents of the `Records` table to a [`Picker`](`nucleo_picker::Picker`)
+    /// via its [`Injector`].
+    ///
+    /// This is a convenience wrapper around [`Self::inject_active_records`] which simply sends all row data
+    /// to the picker without filtering or mapping.
+    pub fn inject_all_active_records<R: Render<RecordRow<RawEntryData>>>(
+        &mut self,
+        injector: Injector<RecordRow<RawEntryData>, R>,
+    ) -> Result<(), rusqlite::Error> {
+        self.inject_active_records(injector, Some)
+    }
+
+    /// Send the active rows in the `Records` table to a [`Picker`](`nucleo_picker::Picker`)
     /// via its [`Injector`].
     ///
     /// The provided `filter_map` closure plays a similar role to [`Iterator::filter_map`]
-    /// by transforming a [`RowData`] into the picker item type, with the option to exclude
+    /// by transforming a [`RecordRow`] into the picker item type, with the option to exclude
     /// the item from being sent to the matcher entirely by returning [`None`].
-    pub fn inject_records<T, F: FnMut(RowData) -> Option<T>, R: Render<T>>(
+    pub fn inject_active_records<T, F, R>(
         &mut self,
         injector: Injector<T, R>,
         mut filter_map: F,
-    ) -> Result<(), rusqlite::Error> {
+    ) -> Result<(), rusqlite::Error>
+    where
+        F: FnMut(RecordRow<RawEntryData>) -> Option<T>,
+        R: Render<T>,
+    {
         debug!("Sending all database records to an injector.");
-        let mut retriever = self.conn.prepare(sql::get_all_records())?;
+        let mut retriever = self
+            .conn
+            .prepare("SELECT record_id, modified, data, variant FROM Records WHERE key IN (SELECT record_key FROM CitationKeys) AND variant = 0")?;
 
-        for res in retriever.query_map([], |row| RowData::try_from(row))? {
+        for res in retriever.query_map([], |row| Ok(RecordRow::from_row_unchecked(row)))? {
             if let Some(data) = filter_map(res?) {
                 injector.push(data);
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Iterate over all names in the CitationKeys table and apply the infallible function
-    /// `f` to each key.
-    ///
-    /// If `canonical` is true, only iterate over canonical keys.
-    pub fn map_citation_keys<F: FnMut(&str) -> Result<(), std::io::Error>>(
-        &mut self,
-        canonical: bool,
-        mut f: F,
-    ) -> Result<(), Either<rusqlite::Error, std::io::Error>> {
-        let mut selector = if canonical {
-            self.conn.prepare(sql::get_all_canonical_citation_keys())
-        } else {
-            self.conn.prepare(sql::get_all_citation_keys())
-        }
-        .map_err(Either::Left)?;
-
-        let mut rows = selector.query([]).map_err(Either::Left)?;
-        while let Some(row) = rows.next().map_err(Either::Left)? {
-            if let ValueRef::Text(bytes) = row.get_ref_unwrap(0) {
-                // SAFETY: the underlying data is always valid utf-8
-                f(std::str::from_utf8(bytes).unwrap()).map_err(Either::Right)?;
             }
         }
 
@@ -516,7 +443,9 @@ impl RecordDatabase {
         old: &Alias,
         new: &Alias,
     ) -> Result<RenameAliasResult, rusqlite::Error> {
-        let mut updater = self.conn.prepare(sql::rename_citation_key())?;
+        let mut updater = self
+            .conn
+            .prepare("UPDATE CitationKeys SET name = ?1 WHERE name = ?2")?;
         match flatten_constraint_violation(updater.execute((new.name(), old.name())))? {
             Constraint::Satisfied(_) => Ok(RenameAliasResult::Renamed),
             Constraint::Violated => Ok(RenameAliasResult::TargetExists),
@@ -525,7 +454,9 @@ impl RecordDatabase {
 
     /// Delete an alias, returning the status of the deletion.
     pub fn delete_alias(&mut self, alias: &Alias) -> Result<DeleteAliasResult, rusqlite::Error> {
-        let mut deleter = self.conn.prepare(sql::delete_citation_key())?;
+        let mut deleter = self
+            .conn
+            .prepare("DELETE FROM CitationKeys WHERE name = ?1")?;
         if deleter.execute((alias.name(),))? == 0 {
             Ok(DeleteAliasResult::Missing)
         } else {
@@ -535,7 +466,7 @@ impl RecordDatabase {
 
     /// Delete all rows from `NullRecords`.
     pub fn evict_cache(&mut self) -> Result<(), rusqlite::Error> {
-        let num_deleted = self.conn.prepare(sql::clear_null_records())?.execute(())?;
+        let num_deleted = self.conn.prepare("DELETE FROM NullRecords")?.execute(())?;
         info!("Removed {num_deleted} cached null records.");
         Ok(())
     }
@@ -545,7 +476,7 @@ impl RecordDatabase {
         let threshold = Local::now() - TimeDelta::seconds(seconds.into());
         let num_deleted = self
             .conn
-            .prepare(sql::clear_null_records_before())?
+            .prepare("DELETE FROM NullRecords WHERE attempted <= ?1")?
             .execute((threshold,))?;
         info!("Removed {num_deleted} cached null records.");
         Ok(())
@@ -554,9 +485,7 @@ impl RecordDatabase {
 
 impl Drop for RecordDatabase {
     fn drop(&mut self) {
-        if let Err(err) = self.optimize() {
-            error!("Failed to optimize database on close: {err}");
-        }
+        let _ = self.optimize();
     }
 }
 

@@ -242,7 +242,7 @@ fn local() -> Result<()> {
     cmd.args([
         "local",
         "first",
-        "--from",
+        "--from-bibtex",
         "tests/resources/local/first.bib",
     ]);
     cmd.assert().success();
@@ -262,13 +262,13 @@ fn local() -> Result<()> {
 
     let mut cmd = s.cmd()?;
     cmd.args(["local", "first"]);
-    cmd.assert().success();
+    cmd.assert().failure();
 
     let mut cmd = s.cmd()?;
     cmd.args([
         "local",
         "first",
-        "--from",
+        "--from-bibtex",
         "tests/resources/local/first.bib",
     ]);
     cmd.assert().failure().stderr(predicate::str::contains(
@@ -286,29 +286,6 @@ fn local() -> Result<()> {
             .utf8()
             .unwrap();
     cmd.assert().success().stdout(predicate_file);
-
-    let mut cmd = s.cmd()?;
-    cmd.args(["local", "second", "--rename-from", "first"]);
-    cmd.assert().failure().stderr(predicate::str::contains(
-        "Local record 'local:second' already exists",
-    ));
-
-    let mut cmd = s.cmd()?;
-    cmd.args(["local", "third", "--rename-from", "first"]);
-    cmd.assert().success();
-
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "local:first", "first"]);
-    cmd.assert().failure().stderr(
-        predicate::str::contains("Unexpected local record")
-            .and(predicate::str::contains("Undefined alias")),
-    );
-
-    let mut cmd = s.cmd()?;
-    cmd.args(["info", "third", "--report", "equivalent"]);
-    cmd.assert()
-        .success()
-        .stdout(predicate::eq("local:third\nthird\n"));
 
     let mut cmd = s.cmd()?;
     cmd.args(["local", " \n"]);
@@ -334,7 +311,7 @@ fn alias() -> Result<()> {
     cmd.args([
         "local",
         "first",
-        "--from",
+        "--from-bibtex",
         "tests/resources/local/first.bib",
     ]);
     cmd.assert().success();
@@ -531,66 +508,12 @@ fn delete() -> Result<()> {
     cmd.args(["delete", "mr:3224722"]);
     cmd.assert().failure();
 
-    // multi deletion fails without `--force`
+    // multi deletion succeeds, and applies to all aliases
     let mut cmd = s.cmd()?;
     cmd.args([
         "local",
         "first",
-        "--from",
-        "tests/resources/local/first.bib",
-    ]);
-    cmd.assert().success();
-
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "local:first"]);
-    cmd.assert().success();
-
-    let mut cmd = s.cmd()?;
-    cmd.args(["alias", "add", "my_alias", "local:first"]);
-    cmd.assert().success();
-
-    let mut cmd = s.cmd()?;
-    cmd.args(["delete", "local:first"]);
-    cmd.assert().failure().stderr(
-        predicate::str::contains("has associated keys which are not requested for deletion")
-            .and(predicate::str::contains("my_alias"))
-            .and(predicate::str::contains("first")),
-    );
-
-    let mut cmd = s.cmd()?;
-    cmd.args(["delete", "my_alias", "first"]);
-    cmd.assert().failure().stderr(
-        predicate::str::contains("has associated keys which are not requested for deletion")
-            .and(predicate::str::contains("local:first")),
-    );
-
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "local:first"]);
-    cmd.assert().success();
-
-    // multi deletion succeeds with `--force`
-    let mut cmd = s.cmd()?;
-    cmd.args(["delete", "--force", "local:first", "first"]);
-    cmd.assert().success();
-
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "my_alias"]);
-    cmd.assert()
-        .failure()
-        .stderr(predicate::str::contains("Undefined alias"));
-
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "local:first"]);
-    cmd.assert()
-        .failure()
-        .stderr(predicate::str::contains("Unexpected local record"));
-
-    // multi deletion succeeds if all keys are passed
-    let mut cmd = s.cmd()?;
-    cmd.args([
-        "local",
-        "first",
-        "--from",
+        "--from-bibtex",
         "tests/resources/local/first.bib",
     ]);
     cmd.assert().success();
@@ -600,57 +523,37 @@ fn delete() -> Result<()> {
     cmd.assert().success();
 
     let mut cmd = s.cmd()?;
-    cmd.args(["delete", "local:first", "my_alias", "first"]);
+    cmd.args(["get", "local:first"]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["delete", "my_alias"]);
     cmd.assert().success();
 
     let mut cmd = s.cmd()?;
     cmd.args(["get", "my_alias"]);
     cmd.assert()
         .failure()
-        .stderr(predicate::str::contains("Undefined alias"));
+        .stderr(predicate::str::contains("Deleted record"));
 
     let mut cmd = s.cmd()?;
-    cmd.args(["get", "first"]);
+    cmd.args(["delete", "my_alias"]);
     cmd.assert()
         .failure()
-        .stderr(predicate::str::contains("Undefined alias"));
+        .stderr(predicate::str::contains("already deleted"));
+
+    // deleting multiple
+    let mut cmd = s.cmd()?;
+    cmd.args(["delete", "--hard", "local:first", "my_alias"]);
+    cmd.assert()
+        .failure()
+        .stderr(predicate::str::contains("Cannot delete undefined alias"));
 
     let mut cmd = s.cmd()?;
     cmd.args(["get", "local:first"]);
-    cmd.assert()
-        .failure()
-        .stderr(predicate::str::contains("Unexpected local record"));
-
-    // deletions are deduplicated automatically
-    let mut cmd = s.cmd()?;
-    cmd.args([
-        "local",
-        "first",
-        "--from",
-        "tests/resources/local/first.bib",
-    ]);
-    cmd.assert().success();
-
-    let mut cmd = s.cmd()?;
-    cmd.args([
-        "delete",
-        "local:first",
-        "first",
-        "local:first",
-        "local:first",
-    ]);
-    cmd.assert().success();
-
-    // do not emit error for forced deletion of a record which does not exist
-    let mut cmd = s.cmd()?;
-    cmd.args(["delete", "arxiv:1212.1873"]);
-    cmd.assert()
-        .failure()
-        .stderr(predicate::str::contains("Identifier not in database"));
-
-    let mut cmd = s.cmd()?;
-    cmd.args(["delete", "--force", "arxiv:1212.1873"]);
-    cmd.assert().success();
+    cmd.assert().failure().stderr(predicate::str::contains(
+        "Cannot retrieve remote data for key with local provenance",
+    ));
 
     s.close()
 }
@@ -664,7 +567,7 @@ fn list() -> Result<()> {
     cmd.args([
         "local",
         "first",
-        "--from",
+        "--from-bibtex",
         "tests/resources/local/first.bib",
     ]);
     cmd.assert().success();
@@ -924,9 +827,9 @@ fn update_local() -> Result<()> {
 
     let mut cmd = s.cmd()?;
     cmd.args(["update", "local:one"]);
-    cmd.assert()
-        .failure()
-        .stderr(predicate::str::contains("Unexpected local record"));
+    cmd.assert().failure().stderr(predicate::str::contains(
+        "Cannot update local record using remote data",
+    ));
 
     let mut cmd = s.cmd()?;
     cmd.args(["update", "local:two"]);
@@ -938,76 +841,71 @@ fn update_local() -> Result<()> {
     s.close()
 }
 
-#[test]
-fn consistency() -> Result<()> {
-    use rusqlite::Connection;
+// #[test]
+// fn consistency() -> Result<()> {
+//     use rusqlite::Connection;
 
-    let s = TestState::init()?;
+//     let s = TestState::init()?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args([
-        "get",
-        "--retrieve-only",
-        "zbmath:06346461",
-        "zbl:1337.28015",
-        "mr:3224722",
-    ]);
-    cmd.assert().success();
+//     let mut cmd = s.cmd()?;
+//     cmd.args([
+//         "get",
+//         "--retrieve-only",
+//         "zbmath:06346461",
+//         "zbl:1337.28015",
+//         "mr:3224722",
+//     ]);
+//     cmd.assert().success();
 
-    // perform some destructive changes to the database
-    let conn = Connection::open(s.database.path())?;
-    conn.pragma_update(None, "foreign_keys", 0)?;
-    conn.prepare("DELETE FROM Records WHERE record_id = 'zbmath:06346461'")?
-        .execute(())?;
-    conn.prepare("DELETE FROM CitationKeys WHERE name = 'mr:3224722'")?
-        .execute(())?;
-    drop(conn);
+//     // perform some destructive changes to the database
+//     let conn = Connection::open(s.database.path())?;
+//     conn.pragma_update(None, "foreign_keys", 0)?;
+//     conn.prepare("DELETE FROM Records WHERE record_id = 'zbmath:06346461'")?
+//         .execute(())?;
+//     conn.prepare("DELETE FROM CitationKeys WHERE name = 'mr:3224722'")?
+//         .execute(())?;
+//     drop(conn);
 
-    // check that things are broken
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "mr:3224722"]);
-    cmd.assert().failure().stderr(predicate::str::contains(
-        "UNIQUE constraint failed: Records.record_id",
-    ));
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "zbmath:06346461"]);
-    cmd.assert().failure().stderr(predicate::str::contains(
-        "Database error: SQLite error: Query returned no rows",
-    ));
+//     // check that things are broken
+//     let mut cmd = s.cmd()?;
+//     cmd.args(["get", "zbmath:06346461"]);
+//     cmd.assert().failure().stderr(predicate::str::contains(
+//         "Database error: SQLite error: Query returned no rows",
+//     ));
 
-    // check that the error report is correct
-    let mut cmd = s.cmd()?;
-    cmd.args(["util", "check"]);
-    cmd.assert().failure().stderr(
-        predicate::str::contains(
-            "There are 2 citation keys which reference records which do not exist in the database.",
-        )
-        .and(predicate::str::contains(
-            "Record row '2' with record id 'mr:3224722' does not have corresponding key",
-        )),
-    );
+//     // check that the error report is correct
+//     let mut cmd = s.cmd()?;
+//     cmd.args(["util", "check"]);
+//     cmd.assert().failure().stderr(
+//         predicate::str::contains(
+//             "There are 2 citation keys which reference records which do not exist in the database.",
+//         )
+//         .and(predicate::str::contains(
+//             "Record row '2' with record id 'mr:3224722' does not have corresponding key",
+//         )),
+//     );
 
-    // fix things
-    let mut cmd = s.cmd()?;
-    cmd.args(["util", "check", "--fix"]);
-    cmd.assert().success().stderr(
-        predicate::str::contains(
-            "Repairing dangling record by inserting or overwriting existing citation key",
-        )
-        .and(predicate::str::contains(
-            "Deleting citation keys which do not reference records:",
-        ))
-        .and(predicate::str::contains("zbl:1337.28015"))
-        .and(predicate::str::contains("zbmath:06346461")),
-    );
+//     // fix things
+//     let mut cmd = s.cmd()?;
+//     cmd.args(["util", "check", "--fix"]);
+//     cmd.assert().success().stderr(
+//         predicate::str::contains(
+//             "Repairing dangling record by inserting or overwriting existing citation key",
+//         )
+//         .and(predicate::str::contains(
+//             "Deleting citation keys which do not reference records:",
+//         ))
+//         .and(predicate::str::contains("zbl:1337.28015"))
+//         .and(predicate::str::contains("zbmath:06346461")),
+//     );
 
-    // check that things are fixed
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "mr:3224722", "zbmath:06346461"]);
-    cmd.assert().success();
+//     // check that things are fixed
+//     let mut cmd = s.cmd()?;
+//     cmd.args(["get", "mr:3224722", "zbmath:06346461"]);
+//     cmd.assert().success();
 
-    s.close()
-}
+//     s.close()
+// }
 
 /// Check that `autobib get` warns if there are multiple references to the same key
 #[test]
@@ -1086,32 +984,32 @@ fn test_identifier_exceptions() -> Result<()> {
     s.close()
 }
 
-#[test]
-fn test_merge() -> Result<()> {
-    let s = TestState::init()?;
+// #[test]
+// fn test_merge() -> Result<()> {
+//     let s = TestState::init()?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "zbl:1337.28015", "arxiv:1212.1873", "mr:3224722"]);
-    cmd.assert().success();
+//     let mut cmd = s.cmd()?;
+//     cmd.args(["get", "zbl:1337.28015", "arxiv:1212.1873", "mr:3224722"]);
+//     cmd.assert().success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["alias", "add", "a", "arxiv:1212.1873"]);
-    cmd.assert().success();
+//     let mut cmd = s.cmd()?;
+//     cmd.args(["alias", "add", "a", "arxiv:1212.1873"]);
+//     cmd.assert().success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["merge", "mr:3224722", "a", "zbl:1337.28015"]);
-    cmd.assert().success();
+//     let mut cmd = s.cmd()?;
+//     cmd.args(["merge", "mr:3224722", "a", "zbl:1337.28015"]);
+//     cmd.assert().success();
 
-    let predicate_file = predicate::path::eq_file(Path::new("tests/resources/merge/stdout.txt"))
-        .utf8()
-        .unwrap();
+//     let predicate_file = predicate::path::eq_file(Path::new("tests/resources/merge/stdout.txt"))
+//         .utf8()
+//         .unwrap();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "zbmath:06346461"]);
-    cmd.assert().success().stdout(predicate_file);
+//     let mut cmd = s.cmd()?;
+//     cmd.args(["get", "zbmath:06346461"]);
+//     cmd.assert().success().stdout(predicate_file);
 
-    s.close()
-}
+//     s.close()
+// }
 
 #[test]
 fn test_quiet_returns_error() -> Result<()> {

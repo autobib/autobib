@@ -1,0 +1,73 @@
+use std::io::Write;
+
+use ramify::{Config, Generator, branch_writer};
+
+use crate::{
+    db::state::{InRecordsTable, State, tree::RamifierConfig},
+    output::stdout_lock_wrap,
+};
+
+branch_writer! {
+    pub struct InvertedStyle {
+        charset: ["│", "─", "╯", "╰",  "╮", "╭", "┤", "├", "┴", "┼"],
+        gutter_width: 1,
+        inverted: true,
+    }
+}
+
+pub fn print_log<'conn, I: InRecordsTable>(
+    no_interactive: bool,
+    state: &State<'conn, I>,
+    tree: bool,
+    all: bool,
+    oneline: bool,
+) -> anyhow::Result<()> {
+    let mut stdout = stdout_lock_wrap();
+    let styled = !no_interactive && stdout.supports_styled_output();
+    let ramifier_config = RamifierConfig {
+        all,
+        oneline,
+        styled,
+    };
+
+    if tree {
+        let root = state.current()?.root(all)?;
+        let mut config = Config::<InvertedStyle>::new();
+        config.row_padding = 2;
+        config.annotation_margin = 2;
+        let mut generator =
+            Generator::init(root, state.full_history_ramifier(ramifier_config), config);
+        let mut branch_diagram = String::new();
+
+        let mut limit = state.changelog_size()?;
+
+        while generator.try_write_vertex_str(&mut branch_diagram)? {
+            if limit > 0 {
+                limit -= 1;
+            } else {
+                panic!("Database changelog history contains infinite loop");
+            }
+        }
+
+        for line in branch_diagram.lines().rev() {
+            writeln!(&mut stdout, "{line}")?;
+        }
+    } else {
+        let current = state.current()?;
+        let mut config = Config::<ramify::writer::RoundedCornersWide>::new();
+        config.row_padding = 2;
+        config.annotation_margin = 2;
+        let mut generator =
+            Generator::init(current, state.ancestor_ramifier(ramifier_config), config);
+        let mut limit = state.changelog_size()?;
+
+        while generator.try_write_vertex(&mut stdout)? {
+            if limit > 0 {
+                limit -= 1;
+            } else {
+                panic!("Database changelog history contains infinite loop");
+            }
+        }
+    }
+    Ok(())
+}

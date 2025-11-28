@@ -1,58 +1,62 @@
 mod cli;
+mod delete;
 mod edit;
+mod hist;
 mod import;
+mod info;
+mod log;
 mod path;
 mod picker;
 mod retrieve;
 mod source;
+mod update;
 mod write;
 
 use std::{
     collections::{BTreeSet, HashSet},
     fs::{File, OpenOptions, create_dir_all, exists},
     io::{IsTerminal, Read, Seek, Write, copy},
-    iter::once,
     path::{Path, PathBuf},
     str::FromStr,
 };
 
 use anyhow::{Result, bail};
 use etcetera::{AppStrategy, AppStrategyArgs, choose_app_strategy};
-use itertools::Itertools;
-use serde_bibtex::token::is_entry_key;
 
 use crate::{
-    CitationKey,
+    app::{
+        cli::{HistCommand, PruneCommand},
+        log::print_log,
+    },
     cite_search::{SourceFileType, get_citekeys},
     config,
     db::{
         DeleteAliasResult, RecordDatabase, RenameAliasResult,
-        state::{ExistsOrUnknown, RecordIdState, RowData},
+        state::{
+            DisambiguatedRecordRow, ExistsOrUnknown, RecordIdState, RecordRowMoveResult,
+            RemoteIdState, SetActiveError,
+        },
         user_version,
     },
-    entry::{Entry, EntryKey, RawRecordData, RecordData},
+    entry::{Entry, EntryEditCommand, EntryKey, MutableEntryData, RawEntryData},
     error::AliasErrorKind,
     format::Template,
     http::{BodyBytes, Client},
-    logger::{debug, error, info, suggest, warn},
+    logger::{Level, debug, error, info, max_level, suggest, warn},
     normalize::{Normalization, Normalize},
     output::{owriteln, stdout_lock_wrap},
     record::{Alias, Record, RecordId, RemoteId, get_record_row},
-    term::Confirm,
+    term::Editor,
 };
 
 use self::{
     cli::{AliasCommand, FindMode, InfoReportType, OnConflict, UtilCommand},
-    edit::{edit_record_and_update, merge_record_data},
-    path::{
-        data_from_path_or_default, data_from_path_or_remote, get_attachment_dir,
-        get_attachment_root,
-    },
+    delete::{hard_delete, soft_delete},
+    edit::{create_alias_if_valid, insert, merge_record_data},
+    path::{data_from_key, data_from_path, get_attachment_dir, get_attachment_root},
     picker::{choose_attachment, choose_attachment_path, choose_canonical_id},
-    retrieve::{
-        filter_and_deduplicate_by_canonical, retrieve_and_validate_entries,
-        retrieve_entries_read_only,
-    },
+    retrieve::{retrieve_and_validate_entries, retrieve_entries_read_only},
+    update::update,
     write::{init_outfile, output_entries, output_keys},
 };
 
@@ -130,9 +134,20 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 match record_db.rename_alias(&alias, &new)? {
                     RenameAliasResult::Renamed => {}
                     RenameAliasResult::TargetExists => {
-                        bail!("Citation key already exists: '{new}'");
+                        bail!("Alias already exists: '{new}'");
                     }
                 }
+            }
+            AliasCommand::Reset { alias, target } => {
+                info!("Updating alias '{alias}' to point to '{target}'");
+                let cfg = config::load(&config_path, missing_ok)?;
+                let (_, row) = get_record_row(&mut record_db, target, client, &cfg)?
+                    .exists_or_commit_null("Cannot create alias for")?;
+                if !row.update_alias(&alias)? {
+                    error!("Alias does not exist!");
+                    suggest!("Use `autobib alias add` to insert a new alias.");
+                }
+                row.commit()?;
             }
         },
         Command::Attach {
@@ -249,75 +264,64 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             );
         }
         Command::DefaultConfig => {
-            config::write_default(&mut stdout_lock_wrap())?;
+            config::write_default(stdout_lock_wrap())?;
         }
         Command::Delete {
             citation_keys,
-            force,
+            replace,
+            hard,
+            update_aliases,
         } => {
             let cfg = config::load(&config_path, missing_ok)?;
-            let deduplicated = filter_and_deduplicate_by_canonical(
-                citation_keys.into_iter(),
-                &mut record_db,
-                force,
-                |remote_id, null_row| {
-                    null_row.commit()?;
-                    error!("Null record found for '{remote_id}'");
-                    suggest!("Delete null records using `autobib util evict`.");
-                    Ok(())
-                },
-                &cfg,
-            )?;
-
-            for (canonical, to_delete) in deduplicated {
-                match record_db.state_from_remote_id(&canonical)?.exists() {
-                    Some(row) => {
-                        if !force {
-                            let mut unreferenced = row
-                                .get_referencing_keys()?
-                                .into_iter()
-                                .filter(|key| !to_delete.contains(key))
-                                .peekable();
-
-                            // there are associated keys which are not present in the deletion list
-                            if unreferenced.peek().is_some() {
-                                if cli.no_interactive {
-                                    // non-interactive: skip the key
-                                    row.commit()?;
-                                    error!(
-                                        "Record with canonical identifier '{canonical}' has associated keys which are not requested for deletion: {}",
-                                        unreferenced.join(", ")
-                                    );
-                                    suggest!("Re-run with `--force` to delete anyway.");
-                                    continue;
-                                } else {
-                                    // interactive: prompt for deletion
-                                    eprintln!(
-                                        "Deleting record with canonical identifier '{canonical}' will also delete associated keys:"
-                                    );
-                                    for key in unreferenced {
-                                        eprintln!("  {key}");
-                                    }
-                                    let prompt = Confirm::new("Delete anyway?", false);
-                                    if !prompt.confirm()? {
-                                        row.commit()?;
-                                        error!(
-                                            "Aborted deletion of '{canonical}' via keys: '{}'",
-                                            to_delete.iter().join(", ")
-                                        );
-                                        continue;
-                                    }
-                                }
+            if hard {
+                for key in citation_keys {
+                    hard_delete(key, &mut record_db, &cfg)?;
+                }
+            } else {
+                let replacement_canonical_id = match replace {
+                    None => None,
+                    Some(replacement) => Some(
+                        match record_db.state_from_record_id(replacement, &cfg.alias_transform)? {
+                            RecordIdState::Entry(_, data, state) => {
+                                state.commit()?;
+                                data.canonical
                             }
-                        }
-                        row.save_to_changelog()?;
-                        row.delete()?.commit()?;
-                    }
-                    _ => {
-                        error!(
-                            "Database changed during deletion operation! Record {canonical} is no longer present in the database."
-                        );
-                    }
+                            RecordIdState::Deleted(_, data, state) => {
+                                state.commit()?;
+                                data.canonical
+                            }
+                            RecordIdState::Void(_, data, state) => {
+                                state.commit()?;
+                                data.canonical
+                            }
+                            RecordIdState::NullRemoteId(mapped_key, state) => {
+                                state.commit()?;
+                                bail!(
+                                    "Invalid replacement key {mapped_key} corresponds to a null record."
+                                );
+                            }
+                            RecordIdState::Unknown(unknown) => {
+                                let maybe_normalized = unknown.combine_and_commit()?;
+                                bail!(
+                                    "Invalid replacement key {maybe_normalized}: does not exist in the database."
+                                );
+                            }
+                            RecordIdState::UndefinedAlias(alias) => {
+                                bail!("Invalid replacement key: alias '{alias}' is undefined")
+                            }
+                            RecordIdState::InvalidRemoteId(record_error) => bail!("{record_error}"),
+                        },
+                    ),
+                };
+
+                for key in citation_keys {
+                    soft_delete(
+                        key,
+                        &replacement_canonical_id,
+                        &mut record_db,
+                        &cfg,
+                        update_aliases,
+                    )?;
                 }
             }
         }
@@ -326,6 +330,9 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             normalize_whitespace,
             set_eprint,
             strip_journal_series,
+            update_entry_type,
+            set_field,
+            delete_field,
         } => {
             let cfg = config::load(&config_path, missing_ok)?;
             let nl = Normalization {
@@ -334,44 +341,64 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 strip_journal_series,
             };
 
-            for key in citation_keys {
-                let (
-                    Record {
-                        key,
-                        data,
-                        canonical,
-                    },
-                    row,
-                ) = get_record_row(&mut record_db, key, client, &cfg)?
-                    .exists_or_commit_null("Cannot edit")?;
+            let edit_cmd = EntryEditCommand {
+                update_entry_type,
+                set_field,
+                delete_field,
+            };
 
-                if cli.no_interactive {
-                    if nl.is_identity() {
+            let no_non_interactive_cmd = nl.is_identity() && edit_cmd.is_identity();
+
+            for key in citation_keys {
+                let (Record { key, data, .. }, row) =
+                    get_record_row(&mut record_db, key, client, &cfg)?
+                        .exists_or_commit_null("Cannot edit")?;
+
+                match (cli.no_interactive, no_non_interactive_cmd) {
+                    (true, true) => {
                         warn!("Terminal is non-interactive and no edit action specified!");
                         row.commit()?;
-                    } else {
+                    }
+                    (_, false) => {
                         // non-interactive so we only apply the normalizations and update the data
                         // if anything changed
-                        let mut editable_data = RecordData::from_entry_data(&data);
-                        if editable_data.normalize(&nl) {
-                            row.save_to_changelog()?;
-                            row.update_entry_data(&editable_data)?;
+                        let mut editable_data = MutableEntryData::from_entry_data(&data);
+                        let mut changed = false;
+
+                        changed |= editable_data.normalize(&nl);
+                        changed |= editable_data.edit(&edit_cmd);
+
+                        if changed {
+                            row.modify(&RawEntryData::from_entry_data(&editable_data))?
+                                .commit()?;
+                        } else {
+                            row.commit()?;
                         }
-                        row.commit()?;
                     }
-                } else {
-                    let mut editable_data = RecordData::from_entry_data(&data);
-                    let changed = editable_data.normalize(&nl);
-                    let entry_key =
-                        EntryKey::try_new(key).unwrap_or_else(|_| EntryKey::placeholder());
-                    edit_record_and_update(
-                        &row,
-                        Entry::new(entry_key, editable_data),
-                        changed,
-                        canonical,
-                    )?;
-                    row.commit()?;
-                }
+                    (false, true) => {
+                        // only perform normalization
+                        let record_data = MutableEntryData::from_entry_data(&data);
+                        let entry = Entry {
+                            key: EntryKey::try_new(key).unwrap_or_else(|_| EntryKey::placeholder()),
+                            record_data,
+                        };
+
+                        if let Some(Entry { key, record_data }) =
+                            Editor::new_bibtex().edit(&entry)?
+                        {
+                            let new_row =
+                                row.modify(&RawEntryData::from_entry_data(&record_data))?;
+                            if key.as_ref() != entry.key.as_ref() {
+                                create_alias_if_valid(key.as_ref(), &new_row)?;
+                            }
+                            new_row.commit()?;
+                        } else {
+                            // we return an error here, since this was an interactive edit
+                            row.commit()?;
+                            error!("Record data unchanged");
+                        }
+                    }
+                };
             }
         }
         Command::Find {
@@ -438,13 +465,10 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                                 // get a key from the preferred provider if possible
                                 let mut record_db =
                                     handle.join().expect("Thread should not have panicked")?;
-                                match record_db
-                                    .state_from_remote_id(&row_data.canonical)?
-                                    .exists()
-                                {
-                                    Some(row) => {
+                                match record_db.state_from_remote_id(&row_data.canonical)? {
+                                    RemoteIdState::Entry(_, row) => {
                                         // try to find a referencing key with the expected provider
-                                        let referencing_ids = row.get_referencing_remote_ids()?;
+                                        let referencing_ids = row.referencing_remote_ids()?;
                                         for provider in cfg.preferred_providers {
                                             if let Some(remote_id) = referencing_ids
                                                 .iter()
@@ -519,6 +543,228 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 output_entries(outfile, append, valid_entries)?;
             }
         }
+        Command::Hist { hist_command } => match hist_command {
+            HistCommand::Prune { prune_command } => match prune_command {
+                PruneCommand::All => {
+                    let snapshot = record_db.snapshot()?;
+                    snapshot.prune_all()?;
+                    snapshot.commit()?;
+                }
+                PruneCommand::Deleted => todo!(),
+                PruneCommand::Outdated => todo!(),
+            },
+            HistCommand::Redo {
+                citation_key,
+                index,
+                revive,
+            } => {
+                let cfg = config::load(&config_path, missing_ok)?;
+                match record_db
+                    .state_from_record_id(citation_key, &cfg.alias_transform)?
+                    .require_record()?
+                {
+                    Some((_, DisambiguatedRecordRow::Entry(_, state))) => {
+                        if revive {
+                            error!(
+                                "Attempted to redo from a deleted state, but the record currently exists"
+                            );
+                        } else {
+                            hist::handle_redo_result(state.redo(index)?)?;
+                        }
+                    }
+                    Some((_, DisambiguatedRecordRow::Deleted(_, state))) => {
+                        if revive {
+                            hist::handle_redo_result(state.redo_deletion(index)?)?;
+                        } else if state.current()?.has_children()? {
+                            error!("Cannot redo beyond a deletion marker");
+                            suggest!(
+                                "Redo from a deleted state using `autobib hist redo --revive`"
+                            );
+                            suggest!("Insert new data with `autobib hist revive`");
+                            state.commit()?;
+                        } else {
+                            error!("No changes to redo");
+                            suggest!("Insert new data with `autobib hist revive`");
+                            state.commit()?;
+                        }
+                    }
+                    Some((_, DisambiguatedRecordRow::Void(_, state))) => {
+                        if revive {
+                            hist::handle_redo_result(state.redo_deletion(index)?)?;
+                        } else if state.current()?.has_children()? {
+                            error!("Cannot redo from the voided state.");
+                            suggest!(
+                                "Redo from a voided state using `autobib hist redo --revive`, or insert new data"
+                            );
+                            suggest!("Insert new data with `autobib hist revive`");
+                            state.commit()?;
+                        } else {
+                            error!("No changes to redo");
+                            suggest!("Insert new data with `autobib hist revive`");
+                            state.commit()?;
+                        }
+                    }
+                    None => {}
+                }
+            }
+            HistCommand::Reset {
+                citation_key,
+                rev,
+                before,
+            } => {
+                let cfg = config::load(&config_path, missing_ok)?;
+                if let Some((_, disambiguated)) = record_db
+                    .state_from_record_id(citation_key, &cfg.alias_transform)?
+                    .require_record()?
+                {
+                    let (_, state) = disambiguated.forget();
+
+                    if let Some(revision) = rev {
+                        match state.set_active(revision)? {
+                            RecordRowMoveResult::Updated(state) => {
+                                if max_level() >= Level::Warn {
+                                    let version = state.current()?;
+                                    let mut stdout = stdout_lock_wrap();
+                                    let styled = stdout.supports_styled_output();
+                                    writeln!(&mut stdout, "{}", version.display(styled))?;
+                                }
+                                state.commit()?;
+                            }
+                            RecordRowMoveResult::Unchanged(state, err) => {
+                                state.commit()?;
+                                match err {
+                                    SetActiveError::RowIdUndefined => {
+                                        error!("Revision does not exist in the 'Records' table");
+                                    }
+                                    SetActiveError::DifferentCanonical(remote_id) => {
+                                        error!(
+                                            "Revision exists, but it corresponds to a different record with canonical identifier '{remote_id}'"
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    } else if let Some(dt) = before {
+                        let state = state.rewind(dt)?;
+                        if max_level() >= Level::Warn {
+                            let version = state.current()?;
+                            let mut stdout = stdout_lock_wrap();
+                            let styled = stdout.supports_styled_output();
+                            writeln!(&mut stdout, "{}", version.display(styled))?;
+                        }
+                        state.commit()?;
+                    }
+                }
+            }
+            HistCommand::Revive {
+                citation_key,
+                from_bibtex,
+                with_entry_type,
+                with_field,
+            } => {
+                let cfg = config::load(&config_path, missing_ok)?;
+                let edit_cmd = EntryEditCommand {
+                    update_entry_type: with_entry_type,
+                    set_field: with_field,
+                    delete_field: Vec::new(),
+                };
+                match record_db
+                    .state_from_record_id(citation_key, &cfg.alias_transform)?
+                    .require_record()?
+                {
+                    Some((_, DisambiguatedRecordRow::Entry(_, state))) => {
+                        state.commit()?;
+                        bail!("Record already exists!")
+                    }
+                    Some((_, DisambiguatedRecordRow::Deleted(data, state))) => {
+                        insert(
+                            state,
+                            from_bibtex,
+                            &data.canonical,
+                            cli.no_interactive,
+                            &cfg.on_insert,
+                            &edit_cmd,
+                        )?;
+                    }
+                    Some((_, DisambiguatedRecordRow::Void(data, state))) => {
+                        insert(
+                            state,
+                            from_bibtex,
+                            &data.canonical,
+                            cli.no_interactive,
+                            &cfg.on_insert,
+                            &edit_cmd,
+                        )?;
+                    }
+                    None => {}
+                }
+            }
+            HistCommand::RewindAll { before } => {
+                let snapshot = record_db.snapshot()?;
+                snapshot.rewind_all(before)?;
+                snapshot.commit()?;
+            }
+            HistCommand::Show { limit } => {
+                let snapshot = record_db.snapshot()?;
+                let mut stdout = stdout_lock_wrap();
+                let styled = stdout.supports_styled_output();
+                snapshot.map_history(limit, |record_row, rev_id| {
+                    let disp = crate::db::state::tree::RecordRowDisplay::from_borrowed_row(
+                        record_row, rev_id, styled,
+                    );
+                    writeln!(&mut stdout, "{disp}\n")
+                })?;
+                snapshot.commit()?;
+            }
+            HistCommand::Undo {
+                citation_key,
+                delete,
+            } => {
+                let cfg = config::load(&config_path, missing_ok)?;
+                match record_db
+                    .state_from_record_id(citation_key, &cfg.alias_transform)?
+                    .require_record()?
+                {
+                    Some((_, DisambiguatedRecordRow::Entry(_, state))) => {
+                        if delete {
+                            hist::handle_undo_result(state.undo_delete()?)?;
+                        } else {
+                            hist::handle_undo_result(state.undo()?)?;
+                        };
+                    }
+                    Some((_, DisambiguatedRecordRow::Deleted(_, state))) => {
+                        if delete {
+                            hist::handle_undo_result(state.undo_delete()?)?;
+                        } else {
+                            hist::handle_undo_result(state.undo()?)?;
+                        };
+                    }
+                    Some((_, DisambiguatedRecordRow::Void(_, _))) => {
+                        error!("Nothing to undo!");
+                    }
+                    None => {}
+                }
+            }
+            HistCommand::Void { citation_key } => {
+                let cfg = config::load(&config_path, missing_ok)?;
+                match record_db
+                    .state_from_record_id(citation_key, &cfg.alias_transform)?
+                    .require_record()?
+                {
+                    Some((_, DisambiguatedRecordRow::Entry(_, state))) => {
+                        state.void()?.commit()?;
+                    }
+                    Some((_, DisambiguatedRecordRow::Deleted(_, state))) => {
+                        state.void()?.commit()?;
+                    }
+                    Some((_, DisambiguatedRecordRow::Void(_, state))) => {
+                        state.commit()?;
+                        error!("Record is already void");
+                    }
+                    None => {}
+                }
+            }
+        },
         Command::Import {
             targets,
             mode,
@@ -575,45 +821,24 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
         } => {
             let cfg = config::load(&config_path, missing_ok)?;
             match record_db.state_from_record_id(citation_key, &cfg.alias_transform)? {
-                RecordIdState::Existent(record_id, row) => {
-                    match report {
-                        InfoReportType::All => {
-                            let row_data = row.get_data()?;
-                            owriteln!("Canonical: {}", row_data.canonical)?;
-                            owriteln!(
-                                "Equivalent references: {}",
-                                row.get_referencing_keys()?.iter().join(", ")
-                            )?;
-                            owriteln!(
-                                "Valid BibTeX? {}",
-                                if is_entry_key(&record_id) {
-                                    "yes"
-                                } else {
-                                    "no"
-                                }
-                            )?;
-                            owriteln!("Data last modified: {}", row_data.modified)?;
+                RecordIdState::Entry(key, data, state) => {
+                    info::database_report(key, data, state, report, |_, stdout| {
+                        writeln!(stdout, "Record with data")
+                    })?;
+                }
+                RecordIdState::Deleted(key, data, state) => {
+                    info::database_report(key, data, state, report, |data, stdout| {
+                        if let Some(repl) = data {
+                            writeln!(stdout, "Deleted and replaced by reference: {repl}")
+                        } else {
+                            writeln!(stdout, "Deleted record")
                         }
-                        InfoReportType::Canonical => {
-                            owriteln!("{}", row.get_canonical()?)?;
-                        }
-
-                        InfoReportType::Valid => {
-                            if !is_entry_key(&record_id) {
-                                error!("Invalid BibTeX: {record_id}");
-                            }
-                        }
-                        InfoReportType::Equivalent => {
-                            let mut lock = stdout_lock_wrap();
-                            for re in row.get_referencing_keys()? {
-                                writeln!(lock, "{re}")?;
-                            }
-                        }
-                        InfoReportType::Modified => {
-                            owriteln!("{}", row.last_modified()?)?;
-                        }
-                    };
-                    row.commit()?;
+                    })?;
+                }
+                RecordIdState::Void(key, data, state) => {
+                    info::database_report(key, data, state, report, |_, stdout| {
+                        writeln!(stdout, "Voided record")
+                    })?;
                 }
                 RecordIdState::NullRemoteId(remote_id, null_row) => match report {
                     InfoReportType::All => {
@@ -629,6 +854,9 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     }
                     InfoReportType::Equivalent => {
                         bail!("No equivalent keys for null record '{remote_id}'");
+                    }
+                    InfoReportType::Revision => {
+                        bail!("No revision for null record '{remote_id}'");
                     }
                     InfoReportType::Modified => {
                         owriteln!("{}", null_row.get_null_attempted()?)?;
@@ -647,10 +875,11 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
         }
         Command::Local {
             id,
-            from,
-            rename_from,
-            no_alias,
+            from_bibtex,
+            with_entry_type,
+            with_field,
         } => {
+            // check if the provided identifier is a valid alias
             let alias = match Alias::from_str(&id) {
                 Ok(alias) => alias,
                 Err(e) => match e.kind {
@@ -661,119 +890,63 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 },
             };
             let remote_id = RemoteId::local(&alias);
-
-            let (row, raw_data) = if let Some(old_id) = rename_from {
-                // Allowing for arbitrary `old_id` without validation and trimming
-                // so that local ids that were valid in an older version can be renamed.
-                // SAFETY: This is safe as a colon is present in the `full_id`.
-                let old_remote_id = RemoteId::from_string_unchecked("local:".to_owned() + &old_id);
-                match record_db
-                    .state_from_remote_id(&old_remote_id)?
-                    .delete_null()?
-                {
-                    ExistsOrUnknown::Existent(row) => {
-                        if !row.change_canonical_id(&remote_id)? {
-                            bail!("Local record '{remote_id}' already exists")
-                        }
-
-                        if let Ok(old_alias) = Alias::from_str(&old_id) {
-                            row.delete_alias_if_associated(&old_alias)?;
-                        }
-
-                        let raw_record_data = row.get_data()?.data;
-                        (row, raw_record_data)
-                    }
-                    ExistsOrUnknown::Unknown(missing) => {
-                        missing.commit()?;
-                        bail!("Local record '{old_remote_id}' does not exist");
-                    }
-                }
-            } else {
-                match record_db.state_from_remote_id(&remote_id)?.delete_null()? {
-                    ExistsOrUnknown::Existent(row) => {
-                        if from.is_some() {
-                            row.commit()?;
-                            bail!("Local record '{remote_id}' already exists")
-                        } else {
-                            let raw_record_data = row.get_data()?.data;
-                            (row, raw_record_data)
-                        }
-                    }
-                    ExistsOrUnknown::Unknown(missing) => {
-                        let data = data_from_path_or_default(from.as_ref())?;
-                        let raw_record_data = RawRecordData::from_entry_data(&data);
-                        let row = missing.insert(&raw_record_data, &remote_id)?;
-                        (row, raw_record_data)
-                    }
-                }
+            let edit_cmd = EntryEditCommand {
+                update_entry_type: with_entry_type,
+                set_field: with_field,
+                delete_field: Vec::new(),
             };
 
-            let edit_key_candidate = if no_alias {
-                remote_id.name()
-            } else {
-                info!("Creating alias '{alias}' for '{remote_id}'");
-                match row.ensure_alias(&alias)? {
-                    Some(other_remote_id) => {
-                        warn!(
-                            "Alias '{alias}' already exists and refers to '{other_remote_id}'. '{remote_id}' will be a different record."
-                        );
-                        remote_id.name()
-                    }
-                    _ => alias.name(),
+            // insert the data
+            match record_db.state_from_remote_id(&remote_id)?.delete_null()? {
+                ExistsOrUnknown::Entry(_, state) => {
+                    state.commit()?;
+                    bail!("Local record '{remote_id}' already exists")
+                }
+                ExistsOrUnknown::Deleted(_, state) => {
+                    state.commit()?;
+                    error!("Local record '{remote_id}' was soft-deleted");
+                    suggest!(
+                        "Use `autobib hist undo` to recover past data or `autobib hist revive` to insert new data"
+                    );
+                }
+                ExistsOrUnknown::Void(_, void) => {
+                    let cfg = config::load(&config_path, missing_ok)?;
+                    insert(
+                        void,
+                        from_bibtex,
+                        &remote_id,
+                        cli.no_interactive,
+                        &cfg.on_insert,
+                        &edit_cmd,
+                    )?;
+                }
+                ExistsOrUnknown::Unknown(missing) => {
+                    let cfg = config::load(&config_path, missing_ok)?;
+                    insert(
+                        missing,
+                        from_bibtex,
+                        &remote_id,
+                        cli.no_interactive,
+                        &cfg.on_insert,
+                        &edit_cmd,
+                    )?;
                 }
             };
-
-            if !cli.no_interactive {
-                edit_record_and_update(
-                    &row,
-                    Entry {
-                        key: EntryKey::try_new(edit_key_candidate.into())
-                            .unwrap_or_else(|_| EntryKey::placeholder()),
-                        record_data: RecordData::from_entry_data(&raw_data),
-                    },
-                    false,
-                    &remote_id,
-                )?;
-            }
-
-            row.commit()?;
         }
-        Command::Merge {
-            into,
-            from,
-            on_conflict,
+        Command::Log {
+            citation_key,
+            tree,
+            all,
         } => {
             let cfg = config::load(&config_path, missing_ok)?;
-            let (existing, row) = get_record_row(&mut record_db, into, client, &cfg)?
-                .exists_or_commit_null("Cannot merge into")?;
-
-            let new_data: Vec<RowData> = from
-                .iter()
-                // filter keys which cannot be resolved or are equivalent to the merge target
-                .filter_map(|record_id| {
-                    // this implementation is automatically de-duplicating since an earlier merge
-                    // will result in a CitationKey entry which points to the row, which is then
-                    // dropped automatically.
-                    row.absorb(record_id, || {
-                        error!("Skipping key '{record_id}' which does not exist in the database!");
-                    })
-                    .transpose()
-                })
-                .collect::<Result<_, rusqlite::Error>>()?;
-
-            // merge data
-            let mut existing_record = RecordData::from_entry_data(&existing.data);
-            merge_record_data(
-                on_conflict,
-                &mut existing_record,
-                new_data.iter().map(|row_data| &row_data.data),
-                &existing.key,
-            )?;
-
-            // update the row data with the modified data
-            row.save_to_changelog()?;
-            row.update(&RawRecordData::from_entry_data(&existing_record))?;
-            row.commit()?;
+            if let Some((_, entry_or_deleted)) = record_db
+                .state_from_record_id(citation_key, &cfg.alias_transform)?
+                .require_record()?
+            {
+                let (_, state) = entry_or_deleted.forget();
+                print_log(cli.no_interactive, &state, tree, all, false)?;
+                state.commit()?;
+            }
         }
         Command::Path {
             citation_key,
@@ -925,60 +1098,29 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
         }
         Command::Update {
             citation_key,
-            from,
+            from_bibtex,
+            from_key,
             on_conflict,
+            revive,
         } => {
             let cfg = config::load(&config_path, missing_ok)?;
-            match record_db.state_from_record_id(citation_key, &cfg.alias_transform)? {
-                RecordIdState::Existent(citation_key, row) => {
-                    let RowData {
-                        data: existing_raw_data,
-                        canonical,
-                        ..
-                    } = row.get_data()?;
-                    let new_raw_data = match data_from_path_or_remote(from, canonical, client) {
-                        Ok((data, _)) => data,
-                        Err(err) => {
-                            row.commit()?;
-                            bail!(err);
-                        }
-                    };
-                    let mut existing_record = RecordData::from_entry_data(&existing_raw_data);
-                    merge_record_data(
-                        on_conflict,
-                        &mut existing_record,
-                        once(&new_raw_data),
-                        &citation_key,
-                    )?;
-                    row.save_to_changelog()?;
-                    row.update(&RawRecordData::from_entry_data(&existing_record))?;
-                    row.commit()?;
-                }
-                RecordIdState::NullRemoteId(mapped_remote_id, null_row) => {
-                    match data_from_path_or_remote(from, mapped_remote_id.mapped, client) {
-                        Ok((data, canonical)) => {
-                            info!("Existing row was null; inserting new data.");
-                            let row = null_row.delete()?.insert_entry_data(&data, &canonical)?;
-                            row.commit()?;
-                        }
-                        Err(err) => {
-                            null_row.commit()?;
-                            bail!(err);
-                        }
-                    };
-                }
-                RecordIdState::Unknown(unknown) => {
-                    let maybe_normalized = unknown.combine_and_commit()?;
-                    error!("Record does not exist in database: {maybe_normalized}");
-                    if !maybe_normalized.mapped.is_local() {
-                        suggest!("Use `autobib get` to retrieve record");
-                    }
-                }
-                RecordIdState::UndefinedAlias(alias) => {
-                    bail!("Undefined alias: '{alias}'");
-                }
-                RecordIdState::InvalidRemoteId(err) => bail!("{err}"),
-            }
+
+            let provided_data = if let Some(record_id) = from_key {
+                Some(data_from_key(&mut record_db, record_id, &cfg)?)
+            } else if let Some(path) = from_bibtex {
+                Some(data_from_path(path)?)
+            } else {
+                None
+            };
+
+            update(
+                on_conflict,
+                record_db.state_from_record_id(citation_key, &cfg.alias_transform)?,
+                provided_data,
+                client,
+                &cfg.on_insert,
+                revive,
+            )?;
         }
         Command::Util { util_command } => match util_command {
             UtilCommand::Check { fix } => {
@@ -1010,7 +1152,9 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             },
             UtilCommand::List { canonical } => {
                 let mut lock = stdout_lock_wrap();
-                record_db.map_citation_keys(canonical, |key_str| writeln!(lock, "{key_str}"))?;
+                let snapshot = record_db.snapshot()?;
+                snapshot.map_citation_keys(canonical, |key_str| writeln!(lock, "{key_str}"))?;
+                snapshot.commit()?;
             }
         },
     };
