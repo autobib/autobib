@@ -1,3 +1,5 @@
+use std::cmp::Reverse;
+
 use chrono::{DateTime, Local};
 use rusqlite::{OptionalExtension, Row};
 
@@ -30,8 +32,7 @@ pub trait FromBytesAndVariant: Sized {
     fn from_bytes_and_variant(bytes: Vec<u8>, variant: i64) -> Self;
 }
 
-/// The data for a row in the 'Records' table, not including information about the parents or
-/// children.
+/// The data for a row in the 'Records' table, not including information about the parents.
 #[derive(Debug)]
 pub struct RecordRow<D, S = String> {
     /// The associated data.
@@ -69,30 +70,25 @@ impl<D: FromBytesAndVariant> RecordRow<D> {
     }
 }
 
-/// The data for a row in the 'Records' table, also including information about the parents and
-/// children.
+/// The data for a row in the 'Records' table, also including information about the parents.
 pub struct CompleteRecordRow<D> {
     pub row: RecordRow<D>,
     pub(super) parent: Option<i64>,
-    pub(super) children: Vec<u8>,
 }
 
 impl<D: FromBytesAndVariant> CompleteRecordRow<D> {
     pub(super) fn from_row_unchecked(row: &Row<'_>) -> Self {
         let parent = row.get_unwrap("parent_key");
-        let children = row.get_unwrap("children");
         let row = RecordRow::from_row_unchecked(row);
 
-        Self {
-            row,
-            parent,
-            children,
-        }
+        Self { row, parent }
     }
 
     pub(super) fn load_unchecked(tx: &Transaction<'_>, row_id: i64) -> rusqlite::Result<Self> {
-        tx.prepare_cached("SELECT record_id, modified, data, variant, parent_key, children FROM Records WHERE key = ?1")?
-          .query_row((row_id,), |row| Ok(Self::from_row_unchecked(row)))
+        tx.prepare_cached(
+            "SELECT record_id, modified, data, variant, parent_key FROM Records WHERE key = ?1",
+        )?
+        .query_row((row_id,), |row| Ok(Self::from_row_unchecked(row)))
     }
 }
 
@@ -414,8 +410,7 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
         get_last_modified(&self.tx, self.row_id())
     }
 
-    /// Obtain the complete data for this row, which also contains information about parents and
-    /// children.
+    /// Obtain the complete data for this row.
     pub fn get_complete_data(&self) -> rusqlite::Result<CompleteRecordRow<I::Data>> {
         debug!(
             "Retrieving 'Records' data associated with row '{}'",
@@ -549,10 +544,8 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
         Ok(true)
     }
 
-    /// Insert a new row with data, adding the previous row as the parent and appending this row as
-    /// the child of the new row.
+    /// Insert a new row with data, adding the previous row as the parent.
     fn replace_impl<R: AsRecordRowData>(&self, data: &R) -> Result<i64, rusqlite::Error> {
-        // read the current value of 'record_id' and 'children'
         let existing = self.get_complete_data()?;
 
         // insert a new row into Records containing:
@@ -567,12 +560,6 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
         let new_key: i64 = self.prepare("INSERT INTO Records (record_id, data, modified, variant, parent_key) VALUES (?1, ?2, ?3, ?4, ?5) RETURNING key")?
             .query_row((existing.row.canonical.name(), data.data_blob(), Local::now(), data.variant(), self.row_id()), |row| row.get(0))?;
 
-        // update the `children` field with the existing records
-        let mut new_children = existing.children;
-        new_children.extend(new_key.to_le_bytes());
-        self.prepare("UPDATE Records SET children = ?1 WHERE key = ?2")?
-            .execute((new_children, self.row_id()))?;
-
         self.update_citation_keys(new_key)?;
 
         Ok(new_key)
@@ -582,28 +569,43 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
         self,
         index: Option<isize>,
     ) -> Result<RecordRowMoveResult<'conn, ArbitraryKey, I, RedoError>, rusqlite::Error> {
-        let context = self.get_complete_data()?;
+        let version = self.current()?;
+        let mut children = Vec::new();
+        version.map_children(|data, row_id| {
+            children.push((data.row.modified, row_id));
+            Ok(())
+        })?;
+
         match index {
             Some(idx) => {
                 if idx >= 0 {
+                    children.sort_unstable_by_key(|c| c.0);
                     RecordRowMoveResult::from_rowid(
                         self,
-                        context
-                            .child_keys()
-                            .nth(idx.abs_diff(0))
-                            .ok_or_else(|| RedoError::OutOfBounds(context.child_count())),
+                        children
+                            .get(idx.abs_diff(0))
+                            .map(|c| c.1)
+                            .ok_or(RedoError::OutOfBounds(children.len())),
                     )
                 } else {
+                    children.sort_unstable_by_key(|c| Reverse(c.0));
                     RecordRowMoveResult::from_rowid(
                         self,
-                        context
-                            .child_keys()
-                            .nth_back(idx.abs_diff(-1))
-                            .ok_or_else(|| RedoError::OutOfBounds(context.child_count())),
+                        children
+                            .get(idx.abs_diff(-1))
+                            .map(|c| c.1)
+                            .ok_or(RedoError::OutOfBounds(children.len())),
                     )
                 }
             }
-            None => RecordRowMoveResult::from_rowid(self, context.unique_child()),
+            None => {
+                let child_row_id = if children.len() == 1 {
+                    Ok(children[1].1)
+                } else {
+                    Err(RedoError::ChildNotUnique(children.len()))
+                };
+                RecordRowMoveResult::from_rowid(self, child_row_id)
+            }
         }
     }
 }
@@ -691,8 +693,8 @@ fn create_void_parent(
     canonical: &str,
 ) -> rusqlite::Result<i64> {
     // create the void root
-    let new_row_id: i64 = tx.prepare("INSERT INTO Records (record_id, data, modified, variant, children) VALUES (?1, ?2, ?3, ?4, ?5) RETURNING key")?
-            .query_row((canonical, ().data_blob(), DateTime::<Local>::MIN_UTC, ().variant(), root_row_id.to_le_bytes()), |row| row.get(0))?;
+    let new_row_id: i64 = tx.prepare("INSERT INTO Records (record_id, data, modified, variant) VALUES (?1, ?2, ?3, ?4) RETURNING key")?
+            .query_row((canonical, ().data_blob(), DateTime::<Local>::MIN_UTC, ().variant()), |row| row.get(0))?;
 
     // update the non-void root to reference the parent
     tx.prepare("UPDATE Records SET parent_key = ?1 WHERE key = ?2")?
@@ -781,31 +783,6 @@ impl From<RecordRow<Option<RemoteId>>> for RecordRow<ArbitraryData> {
 impl From<RecordRow<()>> for RecordRow<ArbitraryData> {
     fn from(row: RecordRow<()>) -> Self {
         Self::convert(row)
-    }
-}
-
-impl<D> CompleteRecordRow<D> {
-    /// Returns an iterator over all child keys in order of creation.
-    pub(super) fn child_keys(&self) -> impl DoubleEndedIterator<Item = i64> + ExactSizeIterator {
-        self.children
-            .as_chunks()
-            .0
-            .iter()
-            .map(|chunk| i64::from_le_bytes(*chunk))
-    }
-
-    pub(super) fn child_count(&self) -> usize {
-        self.children.len() / 8
-    }
-
-    /// Return the unique child if there is exactly one child, and the number of children if not.
-    fn unique_child(&self) -> Result<i64, RedoError> {
-        let count = self.child_count();
-        if count == 1 {
-            Ok(self.child_keys().next().unwrap())
-        } else {
-            Err(RedoError::ChildNotUnique(count))
-        }
     }
 }
 

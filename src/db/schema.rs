@@ -19,3 +19,5 @@ schema!(citation_keys, "The citation keys table.");
 schema!(records, "The citation keys table.");
 
 schema!(null_records, "The citation keys table.");
+
+schema!(create_indices, "Create indices for the tables.");

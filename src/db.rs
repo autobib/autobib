@@ -219,6 +219,10 @@ impl RecordDatabase {
                 tx.execute(schema::records(), ())?;
                 tx.execute(schema::citation_keys(), ())?;
                 tx.execute(schema::null_records(), ())?;
+
+                debug!("Initializing indices");
+                tx.execute_batch(schema::create_indices())?;
+
                 tx.commit()?;
 
                 debug!("Enabling write-ahead log");

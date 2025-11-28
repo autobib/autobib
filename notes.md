@@ -11,10 +11,8 @@ There are four ways to refer to record data:
   The corresponding identifiers called *ref-id*s.
 - By [**alias**](#aliases): an alternative name for provenance
   The corresponding identifiers called *alias*es.
-- By [**revision**](#working-with-revision-history): a reference to a specific data version
-  The corresponding identifiers called *revision*s.
 
-## Provenance
+### Provenance
 
 A fundamental concept underlying how Autobib works is the notion of **provenance**: the *source that the record data originated from*.
 
@@ -27,7 +25,7 @@ Provenance is important since it can be used to retrieve data even when the data
 If you make a request like `autobib get arxiv:2002.04575`, Autobib first checks if the data is present in your database.
 If does not exist, the data will be retrieved first using the [arXiv API](https://info.arxiv.org/help/api/index.html), stored in your database, and then returned.
 
-## References to provenance
+### References to provenance
 
 Some identifiers of the form `provider:sub_id` can also be a **reference** to provenance.
 The main example is data provided by [zbMATH](https://zbmath.org).
@@ -49,7 +47,7 @@ The current table is as follows:
 - `zbl`: references `zbmath:`
 - `zbmath`: provenance
 
-## Aliases
+### Aliases
 
 The standard way to refer to data in Autobib is by provenance or by reference.
 This means using the key `doi:1234/abcd` directly in your in your files, etc.
@@ -60,18 +58,41 @@ An alias is just *an alternative name for the provenance*.
 If `xyz` is an alias for `doi:1234/abcd`, then writing `xyz` is equivalent to writing `doi:1234/abcd`.
 The only difference is the name used, including as the citation key in the BibTeX output.
 
-## Working with revision history
+## Revisions
 
-Internally, Autobib keeps a full revision history associated with each provenance.
-Whenever you make a change to a record, or update it, or soft delete it, the older data remains inside the database and instead a new revision is added and becomes the 'active' revision.
+### The edit-tree
 
-However, it is often important to refer to a specific revision.
-For example, `autobib reset` changes the current active version to a specific revision.
-It may also be desirable to obtain data associated with a specific revision, regardless of the most up-to-date version of a given character.
+Instead of each record being unique, the Autobib database stores a tree containing all of the modifications associated with a *prov-id*.
+When a record is modified, a new row is inserted containing the modified data along with a reference to the previous version.
 
-A **revision** is a `#` character, followed by a hexadecimal string, for example `#a1b23`.
-A revision may also be preceded with trailing zeros or use capital letters, so the above example is equivalent to `#00A1b23`.
+At any point in time, there is a unique *active* record associated with the *prov-id*.
+This is the record which is returned when, for example, you use `autobib get`.
 
-> [!CAUTION]
-> Revisions are *non-portable* and *unstable*.
-> Revisions which are already present in the database are guaranteed to not change, but deleting a specific revision may result in that revision being reused by new data inserted into the database.
+There are three states that a record can be in.
+
+1. `entry`: There is bibliographic data associated with the record.
+2. `deleted`: This is a deletion marker indicating that there is no data.
+   There may also be information about a replacement key.
+   This state is created with `autobib delete` or `autobib delete --replace`.
+3. `void`: This is a special state which is similar to there being no record present in the database.
+   For example, this will cause `autobib get` to automatically retrieve new data for the row.
+   It is uncommon for a record to be in this state, but this can be attained manually with `autobib hist void`, or is created automatically with `autobib hist rewind-all` or `autobib hist reset --before` when the threshold time precedes the existence of the record in the database.
+
+Note that `void` entries still contain some state: it preserve aliases, and still tracks the *prov-id* which can be used to more efficiently look-up new data.
+
+### Moving around the edit-tree
+
+The simplest operations regarding revisions are `autobib hist undo` and `autobib hist redo`.
+Undo sets the active state to the parent state, if the parent state exists.
+Redo sets the active state to the child if there is exactly one child; otherwise, it is required to pass an explicit index indicating which child to follow.
+
+For more complex operations involving the edit-tree, the output of `autobib log --tree` can be useful.
+This prints a branch diagram showing the relationship between all of the states ordered in reverse chronological order.
+The active state is also highlighted.
+
+The branch diagram also includes special hexadecimal *revisions*, which can be used to refer to specific versions.
+You can change to a specific revision using `autobib hist reset --rev`.
+
+### Lifetimes
+
+TODO: explain this
