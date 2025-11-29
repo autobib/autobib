@@ -11,8 +11,8 @@ use crate::{
     db::{
         RecordDatabase,
         state::{
-            DeletedRecordKey, EntryRecordKey, Missing, NullRecordRow, RecordIdState, RecordRow,
-            RemoteIdState, State, Unknown, VoidRecordKey,
+            IsDeleted, IsEntry, IsMissing, IsNull, IsVoid, RecordIdState, RecordRow, RemoteIdState,
+            State, Unknown,
         },
     },
     entry::{MutableEntryData, RawEntryData},
@@ -50,16 +50,16 @@ impl<D> Record<D> {
 /// If the record exists, the resulting [`State<RecordRow>`] is guaranteed to be valid for the row corresponding
 /// to the [`Record`].
 ///
-/// If the record does not exist, then the resulting [`State<NullRecordRow>`] is guaranteed to not exist in the
+/// If the record does not exist, then the resulting [`State<IsNull>`] is guaranteed to not exist in the
 /// `Records` table, and be cached in the `NullRecords` table.
 #[derive(Debug)]
 pub enum RemoteRecordRowResponse<'conn> {
     /// The record exists.
-    Exists(Record<RawEntryData>, State<'conn, EntryRecordKey>),
+    Exists(Record<RawEntryData>, State<'conn, IsEntry>),
     /// The record was deleted.
-    Deleted(Record<Option<RemoteId>>, State<'conn, DeletedRecordKey>),
+    Deleted(Record<Option<RemoteId>>, State<'conn, IsDeleted>),
     /// The record is null.
-    Null(RemoteId, State<'conn, NullRecordRow>),
+    Null(RemoteId, State<'conn, IsNull>),
 }
 
 /// The response type of [`get_record_row`].
@@ -67,7 +67,7 @@ pub enum RemoteRecordRowResponse<'conn> {
 /// If the record exists, the resulting [`State<RecordRow>`] is guaranteed to be valid for the row corresponding
 /// to the [`Record`].
 ///
-/// If the record does not exist, then the resulting [`State<NullRecordRow>`] is guaranteed to not exist in the
+/// If the record does not exist, then the resulting [`State<IsNull>`] is guaranteed to not exist in the
 /// `Records` table, and be cached in the `NullRecords` table.
 ///
 /// The database state is passed back to the caller inside the enum. Note that this
@@ -76,11 +76,11 @@ pub enum RemoteRecordRowResponse<'conn> {
 #[derive(Debug)]
 pub enum RecordRowResponse<'conn> {
     /// The record exists.
-    Exists(Record<RawEntryData>, State<'conn, EntryRecordKey>),
+    Exists(Record<RawEntryData>, State<'conn, IsEntry>),
     /// The record was deleted.
-    Deleted(Record<Option<RemoteId>>, State<'conn, DeletedRecordKey>),
+    Deleted(Record<Option<RemoteId>>, State<'conn, IsDeleted>),
     /// The record is null.
-    NullRemoteId(RemoteId, State<'conn, NullRecordRow>),
+    NullRemoteId(RemoteId, State<'conn, IsNull>),
     /// The identifier has an invalid form.
     InvalidRemoteId(RecordError),
     /// The alias does not exist.
@@ -112,7 +112,7 @@ impl<'conn> RecordRowResponse<'conn> {
     pub fn exists_or_commit_null(
         self,
         err_prefix: &str,
-    ) -> Result<(Record<RawEntryData>, State<'conn, EntryRecordKey>), anyhow::Error> {
+    ) -> Result<(Record<RawEntryData>, State<'conn, IsEntry>), anyhow::Error> {
         match self {
             RecordRowResponse::Exists(record, row) => Ok((record, row)),
             RecordRowResponse::Deleted(data, deleted_row) => {
@@ -280,16 +280,13 @@ fn into_last<T>(ne: NonEmpty<T>) -> T {
 /// inside the transaction implicit in the [`State<Missing>`], and write any new data to the
 /// database.
 fn get_record_row_recursive<'conn, O, C: Client>(
-    mut missing: State<'conn, Missing>,
+    mut missing: State<'conn, IsMissing>,
     remote_id: RemoteId,
     client: &C,
     normalization: &Normalization,
-    exists_callback: impl FnOnce(
-        &State<'conn, EntryRecordKey>,
-        O,
-    ) -> Result<Option<String>, rusqlite::Error>,
+    exists_callback: impl FnOnce(&State<'conn, IsEntry>, O) -> Result<Option<String>, rusqlite::Error>,
     deleted_callback: impl FnOnce(
-        &State<'conn, DeletedRecordKey>,
+        &State<'conn, IsDeleted>,
         O,
     ) -> Result<Option<String>, rusqlite::Error>,
     original: O,
@@ -417,11 +414,11 @@ pub enum RecursiveRemoteResponse {
 
 /// Revive a void record by retrieving the canonical data and re-inserting the record.
 pub fn revive_void<'conn, C: Client>(
-    void: State<'conn, VoidRecordKey>,
+    void: State<'conn, IsVoid>,
     canonical: &RemoteId,
     client: &C,
     normalization: &Normalization,
-) -> Result<(RawEntryData, State<'conn, EntryRecordKey>), Error> {
+) -> Result<(RawEntryData, State<'conn, IsEntry>), Error> {
     match get_remote_response(client, canonical)? {
         RemoteResponse::Data(mut mutable_entry_data) => {
             mutable_entry_data.normalize(normalization);

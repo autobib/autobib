@@ -33,8 +33,8 @@ use crate::{
     db::{
         DeleteAliasResult, RecordDatabase, RenameAliasResult,
         state::{
-            DisambiguatedRecordRow, ExistsOrUnknown, RecordIdState, RecordRowMoveResult,
-            RemoteIdState, SetActiveError,
+            DisambiguatedRecordRow, ExistsOrUnknown, RecordIdState, RecordRowDisplay,
+            RecordRowMoveResult, RemoteIdState, SetActiveError,
         },
         user_version,
     },
@@ -711,9 +711,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 let mut stdout = stdout_lock_wrap();
                 let styled = stdout.supports_styled_output();
                 snapshot.map_history(limit, |record_row, rev_id| {
-                    let disp = crate::db::state::tree::RecordRowDisplay::from_borrowed_row(
-                        record_row, rev_id, styled,
-                    );
+                    let disp = RecordRowDisplay::from_borrowed_row(record_row, rev_id, styled);
                     writeln!(&mut stdout, "{disp}\n")
                 })?;
                 snapshot.commit()?;

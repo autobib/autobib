@@ -11,7 +11,7 @@ use crate::{
     config::Config,
     db::{
         RecordDatabase,
-        state::{EntryRecordKey, Missing, RemoteIdState, State},
+        state::{IsEntry, IsMissing, RemoteIdState, State},
     },
     entry::{Entry, EntryKey, MutableEntryData, entries_from_bibtex},
     error::{self, RecordError},
@@ -234,21 +234,16 @@ where
 enum ImportAction<'conn> {
     /// The entry already has data corresponding to the provided row; update the row with the
     /// entry.
-    Update(
-        State<'conn, EntryRecordKey>,
-        OnConflict,
-        String,
-        Option<Alias>,
-    ),
+    Update(State<'conn, IsEntry>, OnConflict, String, Option<Alias>),
     /// There is no data for the entry; data into the database.
-    Insert(State<'conn, Missing>, RemoteId, Option<Alias>),
+    Insert(State<'conn, IsMissing>, RemoteId, Option<Alias>),
     /// A key could not be determined from the entry; prompt for a new key (if interactive).
     PromptNewKey(anyhow::Error),
 }
 
 /// A helper function to create a new alias, with logging.
 fn create_alias(
-    row: State<'_, EntryRecordKey>,
+    row: State<'_, IsEntry>,
     remote_id: &str,
     no_alias: bool,
     maybe_alias: Option<Alias>,

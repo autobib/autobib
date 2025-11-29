@@ -1,4 +1,5 @@
 //! # Core database implementation
+//!
 //! This module implements the abstraction over the underlying [SQLite](https://sqlite.org/)
 //! database in which all bibliographic data is stored.
 //!
@@ -9,11 +10,13 @@
 //!   row in the 'Records' table, a row in the `NullRecords' table, or if the identifier is not
 //!   present in the database at all
 //! - The [`Snapshot`] struct represents a global representation of database state.
+
 mod functions;
 mod migrate;
 mod schema;
 mod snapshot;
 pub mod state;
+pub mod tree;
 mod validate;
 
 use std::path::Path;

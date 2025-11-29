@@ -9,9 +9,9 @@ use crate::{
     logger::debug,
 };
 
-use super::{Missing, State, Transaction, version::RevisionId};
+use super::{IsMissing, State, Transaction, version::RevisionId};
 
-/// Any type which represents a `key` corresponding to a row in the 'Records' table.
+/// Any state which represents a row in the 'Records' table.
 pub trait InRecordsTable {
     /// The data associated with the row.
     type Data: AsRecordRowData + FromBytesAndVariant;
@@ -20,14 +20,14 @@ pub trait InRecordsTable {
     fn row_id(&self) -> i64;
 }
 
-/// Any type which represents a `key` corresponding to a row in the 'Records' table which is not a
-/// 'void' row.
+/// Any state which represents a row in the 'Records' table which is not void.
 pub trait NotVoid: InRecordsTable {}
 
-/// Any type which represents a `key` corresponding to a row in the 'Records' table which is not a
-/// 'entry' row.
+/// Any state which represents a row in the 'Records' table which is not an entry.
 pub trait NotEntry: InRecordsTable {}
 
+/// A wrapper trait for data which can be read from the 'data' and 'variant' columns of the
+/// 'Records' table.
 pub trait FromBytesAndVariant: Sized {
     fn from_bytes_and_variant(bytes: Vec<u8>, variant: i64) -> Self;
 }
@@ -123,7 +123,7 @@ macro_rules! impl_record_key {
 
 /// The `key` of a row in the 'Records' table which is either an `entry` or `deleted`.
 #[derive(Debug)]
-pub struct ArbitraryKey(pub(super) i64);
+pub struct IsArbitrary(pub(super) i64);
 
 /// The row data associated with a row in the `Records` table. The precise value depends on the
 /// `variant` column.
@@ -148,11 +148,11 @@ impl FromBytesAndVariant for ArbitraryData {
     }
 }
 
-impl_record_key!(ArbitraryKey, ArbitraryData);
+impl_record_key!(IsArbitrary, ArbitraryData);
 
 /// The `key` of a row in the 'Records' table which is either an `entry` or `deleted`.
 #[derive(Debug)]
-pub struct EntryOrDeletedKey(pub(super) i64);
+pub struct IsEntryOrDeleted(pub(super) i64);
 
 /// The row data associated with a row in the `Records` table. The precise value depends on the
 /// `variant` column.
@@ -174,13 +174,13 @@ impl FromBytesAndVariant for EntryOrDeletedData {
     }
 }
 
-impl NotVoid for EntryOrDeletedKey {}
+impl NotVoid for IsEntryOrDeleted {}
 
-impl_record_key!(EntryOrDeletedKey, EntryOrDeletedData);
+impl_record_key!(IsEntryOrDeleted, EntryOrDeletedData);
 
-/// The `key` of a regular entry in the 'Records' table.
+/// An entry in the 'Records' table.
 #[derive(Debug)]
-pub struct EntryRecordKey(pub(super) i64);
+pub struct IsEntry(pub(super) i64);
 
 impl FromBytesAndVariant for RawEntryData {
     fn from_bytes_and_variant(bytes: Vec<u8>, variant: i64) -> Self {
@@ -192,13 +192,13 @@ impl FromBytesAndVariant for RawEntryData {
     }
 }
 
-impl NotVoid for EntryRecordKey {}
+impl NotVoid for IsEntry {}
 
-impl_record_key!(EntryRecordKey, RawEntryData);
+impl_record_key!(IsEntry, RawEntryData);
 
-/// The `key` of a soft-deleted row in the 'Records' table.
+/// A deletion marker in the 'Records' table.
 #[derive(Debug)]
-pub struct DeletedRecordKey(i64);
+pub struct IsDeleted(i64);
 
 impl FromBytesAndVariant for Option<RemoteId> {
     fn from_bytes_and_variant(bytes: Vec<u8>, variant: i64) -> Self {
@@ -216,17 +216,17 @@ impl FromBytesAndVariant for Option<RemoteId> {
     }
 }
 
-impl NotVoid for DeletedRecordKey {}
-impl NotEntry for DeletedRecordKey {}
+impl NotVoid for IsDeleted {}
+impl NotEntry for IsDeleted {}
 
-impl_record_key!(DeletedRecordKey, Option<RemoteId>);
+impl_record_key!(IsDeleted, Option<RemoteId>);
 
-/// The `key` of the 'void' root node in the 'Records' table, which is typically not stored in the
-/// database at all (in
-/// order to save database space) but
+/// The 'void' root node in the 'Records' table.
+///
+/// In order to save database state, this type is typically not stored at all,
 /// is created when required to undo into the deleted state which precedes all record of the data.
 #[derive(Debug)]
-pub struct VoidRecordKey(pub(super) i64);
+pub struct IsVoid(pub(super) i64);
 
 impl FromBytesAndVariant for () {
     fn from_bytes_and_variant(_: Vec<u8>, variant: i64) -> Self {
@@ -237,19 +237,19 @@ impl FromBytesAndVariant for () {
     }
 }
 
-impl NotEntry for VoidRecordKey {}
+impl NotEntry for IsVoid {}
 
-impl_record_key!(VoidRecordKey, ());
+impl_record_key!(IsVoid, ());
 
 /// A row in the 'Records' table, disambiguated based on what type of row it is.
 pub enum DisambiguatedRecordRow<'conn> {
-    Entry(RecordRow<RawEntryData>, State<'conn, EntryRecordKey>),
-    Deleted(RecordRow<Option<RemoteId>>, State<'conn, DeletedRecordKey>),
-    Void(RecordRow<()>, State<'conn, VoidRecordKey>),
+    Entry(RecordRow<RawEntryData>, State<'conn, IsEntry>),
+    Deleted(RecordRow<Option<RemoteId>>, State<'conn, IsDeleted>),
+    Void(RecordRow<()>, State<'conn, IsVoid>),
 }
 
 impl<'conn> DisambiguatedRecordRow<'conn> {
-    pub fn forget(self) -> (RecordRow<ArbitraryData>, State<'conn, ArbitraryKey>) {
+    pub fn forget(self) -> (RecordRow<ArbitraryData>, State<'conn, IsArbitrary>) {
         match self {
             Self::Entry(data, state) => (data.into(), state.forget()),
             Self::Deleted(data, state) => (data.into(), state.forget()),
@@ -372,11 +372,11 @@ pub enum SetActiveError {
 }
 
 impl<'conn, I: InRecordsTable> State<'conn, I> {
-    pub(super) fn row_id(&self) -> i64 {
+    pub(in crate::db) fn row_id(&self) -> i64 {
         self.id.row_id()
     }
 
-    /// Perform unchecked conversion to a new row id, updating the rows in the Identifiers table.
+    /// Unchecked conversion with a new row id of any type, updating the rows in the Identifiers table.
     fn transmute<N: FromRowId>(self, new_row_id: i64) -> rusqlite::Result<State<'conn, N>> {
         self.update_identifier_lookup(new_row_id)?;
         Ok(State::init(self.tx, N::from_row_id(new_row_id)))
@@ -420,9 +420,9 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
     }
 
     /// Forget the specific type of row that this is.
-    pub fn forget(self) -> State<'conn, ArbitraryKey> {
+    pub fn forget(self) -> State<'conn, IsArbitrary> {
         let row_id = self.row_id();
-        State::init(self.tx, ArbitraryKey(row_id))
+        State::init(self.tx, IsArbitrary(row_id))
     }
 
     /// Update the active row to a specific revision.
@@ -432,7 +432,12 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
     pub fn set_active(
         self,
         RevisionId(row_id): RevisionId,
-    ) -> Result<RecordRowMoveResult<'conn, ArbitraryKey, I, SetActiveError>, rusqlite::Error> {
+    ) -> Result<RecordRowMoveResult<'conn, IsArbitrary, I, SetActiveError>, rusqlite::Error> {
+        debug!(
+            "Updating the active row for '{}' to '{}'.",
+            self.row_id(),
+            row_id
+        );
         let self_canonical = self.canonical()?;
 
         // check if the row id corresponds to a row in the records table, and moreover that the
@@ -446,8 +451,13 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
         RecordRowMoveResult::from_rowid(self, row_id_or_err)
     }
 
-    pub fn rewind(self, before: DateTime<Local>) -> rusqlite::Result<State<'conn, ArbitraryKey>> {
-        // FIXME: avoid this?
+    /// Repeatedly undo until arriving at a first state precedes the provided time.
+    pub fn rewind(self, before: DateTime<Local>) -> rusqlite::Result<State<'conn, IsArbitrary>> {
+        debug!(
+            "Rewinding row id '{}' to how it looked at {}",
+            self.row_id(),
+            before
+        );
         let canonical = self.canonical()?;
         let new_id = create_rewind_target(&self.tx, canonical.name(), before)?;
         self.transmute(new_id)
@@ -462,13 +472,17 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
 
     /// Hard delete the row. This deletes every entry in the 'Records' with the same canonical
     /// identifier as the current row.
-    pub fn hard_delete(self) -> Result<State<'conn, Missing>, rusqlite::Error> {
+    pub fn hard_delete(self) -> Result<State<'conn, IsMissing>, rusqlite::Error> {
+        debug!(
+            "Permanently deleting all rows in the edit-tree associated with the id '{}'",
+            self.row_id()
+        );
         self.prepare(
             "DELETE FROM Records WHERE record_id = (SELECT record_id FROM Records WHERE key = ?1);",
         )?
         .execute((self.row_id(),))?;
 
-        Ok(State::init(self.tx, Missing))
+        Ok(State::init(self.tx, IsMissing))
     }
 
     /// Get every key in the `Identifiers` table which references this row.
@@ -565,10 +579,11 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
         Ok(new_key)
     }
 
+    /// Perform a redo operation from an arbitrary state.
     fn redo_unchecked(
         self,
         idx: isize,
-    ) -> Result<RecordRowMoveResult<'conn, ArbitraryKey, I, RedoError>, rusqlite::Error> {
+    ) -> Result<RecordRowMoveResult<'conn, IsArbitrary, I, RedoError>, rusqlite::Error> {
         let version = self.current()?;
         let mut children = Vec::new();
         version.map_children(|data, row_id| {
@@ -598,18 +613,21 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
     }
 }
 
+/// A description of the state which prevented an undo operation from completing.
 pub enum UndoError {
-    ParentExists,
+    /// The parent is an entry.
+    ParentEntry,
+    /// The parent is a deletion marker.
     ParentDeleted,
+    /// The parent is void, and it exists.
     ParentVoidExists,
+    /// The parent void is missing.
     ParentVoidMissing,
 }
 
 impl<'conn, I: NotVoid> State<'conn, I> {
     /// Update the active row to be the parent of this row, if it exists and is an entry.
-    pub fn undo(
-        self,
-    ) -> rusqlite::Result<RecordRowMoveResult<'conn, EntryRecordKey, I, UndoError>> {
+    pub fn undo(self) -> rusqlite::Result<RecordRowMoveResult<'conn, IsEntry, I, UndoError>> {
         let row_id_or_err = match self.current()?.parent()? {
             Some(parent) => match parent.row.data {
                 ArbitraryData::Entry(_) => Ok(parent.row_id),
@@ -625,10 +643,10 @@ impl<'conn, I: NotVoid> State<'conn, I> {
     /// Update the active row to be the parent of this row, if it exists and is deleted.
     pub fn undo_delete(
         self,
-    ) -> rusqlite::Result<RecordRowMoveResult<'conn, DeletedRecordKey, I, UndoError>> {
+    ) -> rusqlite::Result<RecordRowMoveResult<'conn, IsDeleted, I, UndoError>> {
         let row_id_or_err = match self.current()?.parent()? {
             Some(parent) => match parent.row.data {
-                ArbitraryData::Entry(_) => Err(UndoError::ParentExists),
+                ArbitraryData::Entry(_) => Err(UndoError::ParentEntry),
                 ArbitraryData::Deleted(_) => Ok(parent.row_id),
                 ArbitraryData::Void => Err(UndoError::ParentVoidExists),
             },
@@ -639,7 +657,7 @@ impl<'conn, I: NotVoid> State<'conn, I> {
     }
 
     /// Void this record row.
-    pub fn void(self) -> rusqlite::Result<State<'conn, VoidRecordKey>> {
+    pub fn void(self) -> rusqlite::Result<State<'conn, IsVoid>> {
         let root = self.current()?.root(true)?;
         let root_row_id = root.row_id;
 
@@ -650,10 +668,14 @@ impl<'conn, I: NotVoid> State<'conn, I> {
             ArbitraryData::Void => root_row_id,
         };
         self.update_identifier_lookup(new_row_id)?;
-        Ok(State::init(self.tx, VoidRecordKey(new_row_id)))
+        Ok(State::init(self.tx, IsVoid(new_row_id)))
     }
 }
 
+/// Returns a row which can be the target to rewind to.
+///
+/// If a row exists which has modification time before `before`, this row is returned. Otherwise,
+/// a new void root is created, and the row id is returned.
 pub(in crate::db) fn create_rewind_target(
     tx: &Transaction<'_>,
     canonical: &str,
@@ -669,12 +691,13 @@ pub(in crate::db) fn create_rewind_target(
         // if no candidate exists, this means the modified time is > `before` on every entry in
         // canonical, so we find the root and add the void vertex before it
         let root_row_id: i64 = tx
-            .prepare("SELECT key FROM Records WHERE record_id = ?1 ORDER BY modified DESC LIMIT 1")?
+            .prepare("SELECT key FROM Records WHERE record_id = ?1 AND parent_key IS NULL")?
             .query_row([canonical], |row| row.get(0))?;
         create_void_parent(tx, root_row_id, canonical)?
     })
 }
 
+/// Create a parent to this row which is a void record.
 fn create_void_parent(
     tx: &Transaction<'_>,
     root_row_id: i64,
@@ -695,7 +718,7 @@ impl<'conn, I: NotEntry> State<'conn, I> {
     pub fn redo_deletion(
         self,
         index: isize,
-    ) -> Result<RecordRowMoveResult<'conn, ArbitraryKey, I, RedoError>, rusqlite::Error> {
+    ) -> Result<RecordRowMoveResult<'conn, IsArbitrary, I, RedoError>, rusqlite::Error> {
         self.redo_unchecked(index)
     }
 }
@@ -705,7 +728,7 @@ pub enum RedoError {
     ChildNotUnique(usize),
 }
 
-impl<'conn> State<'conn, EntryRecordKey> {
+impl<'conn> State<'conn, IsEntry> {
     /// Update the active row to be a child of this row.
     ///
     /// If `index` is none and there is a unique child, this method will succeed. Otherwise,
@@ -716,13 +739,13 @@ impl<'conn> State<'conn, EntryRecordKey> {
     pub fn redo(
         self,
         index: isize,
-    ) -> Result<RecordRowMoveResult<'conn, ArbitraryKey, EntryRecordKey, RedoError>, rusqlite::Error>
-    {
+    ) -> Result<RecordRowMoveResult<'conn, IsArbitrary, IsEntry, RedoError>, rusqlite::Error> {
         self.redo_unchecked(index)
     }
 }
 
 impl<D> RecordRow<D> {
+    /// Convert between record row types when the data types can be converted to each other.
     pub fn convert<A: Into<D>>(
         RecordRow {
             data,
@@ -756,29 +779,26 @@ impl From<()> for ArbitraryData {
     }
 }
 
-impl From<RecordRow<RawEntryData>> for RecordRow<ArbitraryData> {
-    fn from(row: RecordRow<RawEntryData>) -> Self {
-        Self::convert(row)
-    }
+// Use a macro since the `From` conversion conflicts with the blanket implementation.
+macro_rules! impl_row_from {
+    ($($name:ty),*) => {
+        $(
+            impl From<RecordRow<$name>> for RecordRow<ArbitraryData> {
+                fn from(row: RecordRow<$name>) -> Self {
+                    Self::convert(row)
+                }
+            }
+        )*
+    };
 }
 
-impl From<RecordRow<Option<RemoteId>>> for RecordRow<ArbitraryData> {
-    fn from(row: RecordRow<Option<RemoteId>>) -> Self {
-        Self::convert(row)
-    }
-}
+impl_row_from!(RawEntryData, Option<RemoteId>, ());
 
-impl From<RecordRow<()>> for RecordRow<ArbitraryData> {
-    fn from(row: RecordRow<()>) -> Self {
-        Self::convert(row)
-    }
-}
-
-impl<'conn> State<'conn, EntryRecordKey> {
+impl<'conn> State<'conn, IsEntry> {
     /// Insert new data, preserving the old row as the parent row.
     pub fn modify(self, data: &RawEntryData) -> Result<Self, rusqlite::Error> {
         let new_key = self.replace_impl(data)?;
-        Ok(Self::init(self.tx, EntryRecordKey(new_key)))
+        Ok(Self::init(self.tx, IsEntry(new_key)))
     }
 
     /// Replace this row with a deletion marker, preserving the old row as the parent row.
@@ -786,7 +806,7 @@ impl<'conn> State<'conn, EntryRecordKey> {
         self,
         replacement: &Option<RemoteId>,
         update_aliases: bool,
-    ) -> Result<State<'conn, DeletedRecordKey>, rusqlite::Error> {
+    ) -> Result<State<'conn, IsDeleted>, rusqlite::Error> {
         let new_key = self.replace_impl(replacement)?;
         if update_aliases {
             match replacement {
@@ -806,7 +826,7 @@ impl<'conn> State<'conn, EntryRecordKey> {
         }
         Ok(State {
             tx: self.tx,
-            id: DeletedRecordKey(new_key),
+            id: IsDeleted(new_key),
         })
     }
 
@@ -856,15 +876,16 @@ impl<'conn> State<'conn, EntryRecordKey> {
 }
 
 impl<'conn, I: NotEntry> State<'conn, I> {
-    /// Insert data for the void row
-    pub fn reinsert(self, data: &RawEntryData) -> rusqlite::Result<State<'conn, EntryRecordKey>> {
+    /// Insert data for the void row, creating a new child row.
+    pub fn reinsert(self, data: &RawEntryData) -> rusqlite::Result<State<'conn, IsEntry>> {
         let new_key = self.replace_impl(data)?;
-        Ok(State::init(self.tx, EntryRecordKey(new_key)))
+        Ok(State::init(self.tx, IsEntry(new_key)))
     }
 }
 
-impl<'conn> State<'conn, ArbitraryKey> {
-    pub fn determine(self) -> Result<DisambiguatedRecordRow<'conn>, rusqlite::Error> {
+impl<'conn> State<'conn, IsArbitrary> {
+    /// Disambiguate the arbitrary state, returning the data as well as the resulting type.
+    pub fn disambiguate(self) -> Result<DisambiguatedRecordRow<'conn>, rusqlite::Error> {
         let RecordRow {
             data,
             modified,
@@ -880,7 +901,7 @@ impl<'conn> State<'conn, ArbitraryKey> {
                     modified,
                     canonical,
                 },
-                State::init(self.tx, EntryRecordKey(row_id)),
+                State::init(self.tx, IsEntry(row_id)),
             ),
             ArbitraryData::Deleted(data) => DisambiguatedRecordRow::Deleted(
                 RecordRow {
@@ -888,7 +909,7 @@ impl<'conn> State<'conn, ArbitraryKey> {
                     modified,
                     canonical,
                 },
-                State::init(self.tx, DeletedRecordKey(row_id)),
+                State::init(self.tx, IsDeleted(row_id)),
             ),
             ArbitraryData::Void => DisambiguatedRecordRow::Void(
                 RecordRow {
@@ -896,7 +917,7 @@ impl<'conn> State<'conn, ArbitraryKey> {
                     modified,
                     canonical,
                 },
-                State::init(self.tx, VoidRecordKey(row_id)),
+                State::init(self.tx, IsVoid(row_id)),
             ),
         })
     }
