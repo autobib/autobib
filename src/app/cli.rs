@@ -231,6 +231,9 @@ pub enum Command {
         /// Set specific field values using BibTeX field syntax
         #[arg(long, value_name = "FIELD_KEY={VALUE}")]
         set_field: Vec<SetFieldCommand>,
+        /// Insert a new copy with updated modification time regardless of changes.
+        #[arg(long)]
+        touch: bool,
     },
     /// Search for a citation key.
     ///
