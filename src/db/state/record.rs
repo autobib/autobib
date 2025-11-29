@@ -5,7 +5,7 @@ use rusqlite::{OptionalExtension, Row};
 
 use crate::{
     Alias, RawEntryData, RemoteId,
-    db::{CitationKey, Constraint, flatten_constraint_violation, get_row_id},
+    db::{Constraint, Identifier, flatten_constraint_violation, get_row_id},
     logger::debug,
 };
 
@@ -376,9 +376,9 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
         self.id.row_id()
     }
 
-    /// Perform unchecked conversion to a new row id, updating the rows in the CitationKeys table.
+    /// Perform unchecked conversion to a new row id, updating the rows in the Identifiers table.
     fn transmute<N: FromRowId>(self, new_row_id: i64) -> rusqlite::Result<State<'conn, N>> {
-        self.update_citation_keys(new_row_id)?;
+        self.update_identifier_lookup(new_row_id)?;
         Ok(State::init(self.tx, N::from_row_id(new_row_id)))
     }
 
@@ -453,10 +453,10 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
         self.transmute(new_id)
     }
 
-    /// Update the citation keys table by setting any rows which reference the current row to
+    /// Update the 'Identifiers' table by setting any rows which reference the current row to
     /// reference a new row id instead.
-    fn update_citation_keys(&self, new_key: i64) -> Result<usize, rusqlite::Error> {
-        self.prepare("UPDATE CitationKeys SET record_key = ?1 WHERE record_key = ?2")?
+    fn update_identifier_lookup(&self, new_key: i64) -> Result<usize, rusqlite::Error> {
+        self.prepare("UPDATE Identifiers SET record_key = ?1 WHERE record_key = ?2")?
             .execute((new_key, self.row_id()))
     }
 
@@ -471,24 +471,24 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
         Ok(State::init(self.tx, Missing))
     }
 
-    /// Get every key in the `CitationKeys` table which references this row.
+    /// Get every key in the `Identifiers` table which references this row.
     pub fn referencing_keys(&self) -> Result<Vec<String>, rusqlite::Error> {
         self.referencing_keys_impl(Some)
     }
 
-    /// Get every remote id in the `CitationKeys` table which references this row.
+    /// Get every remote id in the `Identifiers` table which references this row.
     pub fn referencing_remote_ids(&self) -> Result<Vec<RemoteId>, rusqlite::Error> {
         self.referencing_keys_impl(RemoteId::from_alias_or_remote_id_unchecked)
     }
 
-    /// Get a transformed version of every key in the `CitationKeys` table which references
+    /// Get a transformed version of every key in the `Identifiers` table which references
     /// the current row for which the provided `filter_map` does not return `None`.
     fn referencing_keys_impl<T, F: FnMut(String) -> Option<T>>(
         &self,
         mut filter_map: F,
     ) -> Result<Vec<T>, rusqlite::Error> {
         debug!("Getting referencing keys for '{}'.", self.row_id());
-        let mut selector = self.prepare("SELECT name FROM CitationKeys WHERE record_key = ?1")?;
+        let mut selector = self.prepare("SELECT name FROM Identifiers WHERE record_key = ?1")?;
         let rows = selector.query_map((self.row_id(),), |row| row.get(0))?;
         let mut referencing = Vec::with_capacity(1);
         for name_res in rows {
@@ -501,36 +501,36 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
 
     /// Insert [`RemoteId`] references for this row.
     ///
-    /// The return value is `false` if the insertion failed and `CitationKeyInsertMode` is
+    /// The return value is `false` if the insertion failed and `IdentifierInsertMode` is
     /// `FailIfExists`, and otherwise `true`.
     #[inline]
     pub fn add_refs<'a, R: Iterator<Item = &'a RemoteId>>(
         &self,
         refs: R,
     ) -> Result<bool, rusqlite::Error> {
-        self.add_refs_impl(refs, CitationKeyInsertMode::Overwrite)
+        self.add_refs_impl(refs, IdentifierInsertMode::Overwrite)
     }
 
-    /// Insert [`CitationKey`] references for this row.
+    /// Insert [`Identifier`] references for this row.
     ///
-    /// The return value is `false` if the insertion failed and `CitationKeyInsertMode` is
+    /// The return value is `false` if the insertion failed and `IdentifierInsertMode` is
     /// `FailIfExists`, and otherwise `true`.
-    fn add_refs_impl<'a, K: CitationKey + 'a, R: Iterator<Item = &'a K>>(
+    fn add_refs_impl<'a, K: Identifier + 'a, R: Iterator<Item = &'a K>>(
         &self,
         refs: R,
-        mode: CitationKeyInsertMode,
+        mode: IdentifierInsertMode,
     ) -> Result<bool, rusqlite::Error> {
         debug!("Inserting references to row_id '{}'", self.row_id());
         for remote_id in refs {
             let stmt = match mode {
-                CitationKeyInsertMode::Overwrite => {
-                    "INSERT OR REPLACE INTO CitationKeys (name, record_key) values (?1, ?2)"
+                IdentifierInsertMode::Overwrite => {
+                    "INSERT OR REPLACE INTO Identifiers (name, record_key) values (?1, ?2)"
                 }
-                CitationKeyInsertMode::IgnoreIfExists => {
-                    "INSERT OR IGNORE INTO CitationKeys (name, record_key) values (?1, ?2)"
+                IdentifierInsertMode::IgnoreIfExists => {
+                    "INSERT OR IGNORE INTO Identifiers (name, record_key) values (?1, ?2)"
                 }
-                CitationKeyInsertMode::FailIfExists => {
-                    "INSERT INTO CitationKeys (name, record_key) values (?1, ?2)"
+                IdentifierInsertMode::FailIfExists => {
+                    "INSERT INTO Identifiers (name, record_key) values (?1, ?2)"
                 }
             };
             let mut key_writer = self.prepare(stmt)?;
@@ -560,7 +560,7 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
         let new_key: i64 = self.prepare("INSERT INTO Records (record_id, data, modified, variant, parent_key) VALUES (?1, ?2, ?3, ?4, ?5) RETURNING key")?
             .query_row((existing.row.canonical.name(), data.data_blob(), Local::now(), data.variant(), self.row_id()), |row| row.get(0))?;
 
-        self.update_citation_keys(new_key)?;
+        self.update_identifier_lookup(new_key)?;
 
         Ok(new_key)
     }
@@ -649,7 +649,7 @@ impl<'conn, I: NotVoid> State<'conn, I> {
             }
             ArbitraryData::Void => root_row_id,
         };
-        self.update_citation_keys(new_row_id)?;
+        self.update_identifier_lookup(new_row_id)?;
         Ok(State::init(self.tx, VoidRecordKey(new_row_id)))
     }
 }
@@ -792,13 +792,13 @@ impl<'conn> State<'conn, EntryRecordKey> {
             match replacement {
                 Some(canonical) => {
                     self.prepare(
-                        "UPDATE CitationKeys SET record_key = (SELECT record_key FROM CitationKeys WHERE name = ?1) WHERE instr(name, ':') = 0 AND record_key = ?2",
+                        "UPDATE Identifiers SET record_key = (SELECT record_key FROM Identifiers WHERE name = ?1) WHERE instr(name, ':') = 0 AND record_key = ?2",
                     )?
                     .execute((canonical.name(), new_key))?;
                 }
                 None => {
                     self.prepare(
-                        "DELETE FROM CitationKeys WHERE instr(name, ':') = 0 AND record_key = ?1",
+                        "DELETE FROM Identifiers WHERE instr(name, ':') = 0 AND record_key = ?1",
                     )?
                     .execute([new_key])?;
                 }
@@ -815,7 +815,7 @@ impl<'conn> State<'conn, EntryRecordKey> {
     /// The return value is `false` if the alias already exists, and otherwise `true`.
     #[inline]
     pub fn add_alias(&self, alias: &Alias) -> Result<bool, rusqlite::Error> {
-        self.add_refs_impl(std::iter::once(alias), CitationKeyInsertMode::FailIfExists)
+        self.add_refs_impl(std::iter::once(alias), IdentifierInsertMode::FailIfExists)
     }
 
     /// Update an existing alias to point to this row.
@@ -824,7 +824,7 @@ impl<'conn> State<'conn, EntryRecordKey> {
     #[inline]
     pub fn update_alias(&self, alias: &Alias) -> Result<bool, rusqlite::Error> {
         let rows_changed = self
-            .prepare("UPDATE CitationKeys SET record_key = ?1 WHERE name = ?2")?
+            .prepare("UPDATE Identifiers SET record_key = ?1 WHERE name = ?2")?
             .execute((self.row_id(), alias.name()))?;
         Ok(rows_changed == 1)
     }
@@ -847,7 +847,7 @@ impl<'conn> State<'conn, EntryRecordKey> {
                 }
             }
             None => {
-                self.prepare("INSERT INTO CitationKeys (name, record_key) values (?1, ?2)")?
+                self.prepare("INSERT INTO Identifiers (name, record_key) values (?1, ?2)")?
                     .execute((alias.name(), self.row_id()))?;
                 Ok(None)
             }
@@ -902,12 +902,12 @@ impl<'conn> State<'conn, ArbitraryKey> {
     }
 }
 
-/// The type of citation key insertion to perform.
-pub enum CitationKeyInsertMode {
-    /// Overwrite the existing citation key, if any.
+/// The type of identifier insertion to perform.
+pub enum IdentifierInsertMode {
+    /// Overwrite the existing identifier, if any.
     Overwrite,
-    /// Fail if there is an existing citation key.
+    /// Fail if there is an existing identifier.
     FailIfExists,
-    /// Ignore if there is an existing citation key.
+    /// Ignore if there is an existing identifier.
     IgnoreIfExists,
 }

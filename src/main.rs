@@ -23,7 +23,7 @@ use crate::output::stdout_lock_wrap;
 
 use self::{
     app::{Cli, Command, run_cli},
-    db::CitationKey,
+    db::Identifier,
     entry::RawEntryData,
     logger::{Logger, reraise},
 };

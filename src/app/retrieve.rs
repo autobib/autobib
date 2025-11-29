@@ -44,17 +44,17 @@ pub fn retrieve_and_validate_entries<
     F: FnOnce() -> Vec<(regex::Regex, String)>,
     C: Client,
 >(
-    citation_keys: T,
+    ids: T,
     record_db: &mut RecordDatabase,
     client: &C,
     retrieve_only: bool,
     ignore_null: bool,
     config: &Config<F>,
 ) -> BTreeMap<RemoteId, NonEmpty<Entry<RawEntryData>>> {
-    let valid_entries = citation_keys.filter_map(|citation_key| {
+    let valid_entries = ids.filter_map(|id| {
         retrieve_and_validate_single_entry(
             record_db,
-            citation_key,
+            id,
             client,
             retrieve_only,
             ignore_null,
@@ -72,13 +72,13 @@ pub fn retrieve_entries_read_only<
     T: Iterator<Item = RecordId>,
     F: FnOnce() -> Vec<(regex::Regex, String)>,
 >(
-    citation_keys: T,
+    ids: T,
     record_db: &mut RecordDatabase,
     retrieve_only: bool,
     ignore_null: bool,
     config: &Config<F>,
 ) -> BTreeMap<RemoteId, NonEmpty<Entry<RawEntryData>>> {
-    let valid_entries = citation_keys.filter_map(|record_id| {
+    let valid_entries = ids.filter_map(|record_id| {
         retrieve_single_entry_read_only(record_db, record_id, retrieve_only, ignore_null, config)
             .unwrap_or_else(|error| {
                 error!("{error}");
@@ -91,12 +91,12 @@ pub fn retrieve_entries_read_only<
 /// Retrieve a single BibTeX entry if it exists in the database, returning if it does not `Ok(None)` otherwise.
 fn retrieve_single_entry_read_only<F: FnOnce() -> Vec<(regex::Regex, String)>>(
     record_db: &mut RecordDatabase,
-    citation_key: RecordId,
+    id: RecordId,
     retrieve_only: bool,
     ignore_null: bool,
     config: &Config<F>,
 ) -> Result<Option<(Entry<RawEntryData>, RemoteId)>, Error> {
-    match record_db.state_from_record_id(citation_key, &config.alias_transform)? {
+    match record_db.state_from_record_id(id, &config.alias_transform)? {
         RecordIdState::Entry(
             key,
             RecordRow::<RawEntryData> {
@@ -157,7 +157,7 @@ fn retrieve_single_entry_read_only<F: FnOnce() -> Vec<(regex::Regex, String)>>(
 /// Retrieve and validate a single BibTeX entry.
 fn retrieve_and_validate_single_entry<F, C>(
     record_db: &mut RecordDatabase,
-    citation_key: RecordId,
+    id: RecordId,
     client: &C,
     retrieve_only: bool,
     ignore_null: bool,
@@ -167,7 +167,7 @@ where
     F: FnOnce() -> Vec<(regex::Regex, String)>,
     C: Client,
 {
-    match get_record_row(record_db, citation_key, client, config)? {
+    match get_record_row(record_db, id, client, config)? {
         RecordRowResponse::Exists(record_data, row) => {
             if retrieve_only {
                 row.commit()?;

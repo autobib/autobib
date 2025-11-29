@@ -166,7 +166,7 @@ mod test {
     use std::iter::zip;
 
     use super::*;
-    use crate::CitationKey;
+    use crate::Identifier;
 
     #[test]
     fn test_citation_macro() {

@@ -151,7 +151,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             }
         },
         Command::Attach {
-            citation_key,
+            identifier,
             file,
             rename,
             force,
@@ -187,7 +187,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
 
             // Extend with the filename.
             let cfg = config::load(&config_path, missing_ok)?;
-            let (record, row) = get_record_row(&mut record_db, citation_key, client, &cfg)?
+            let (record, row) = get_record_row(&mut record_db, identifier, client, &cfg)?
                 .exists_or_commit_null("Cannot attach file for")?;
             row.commit()?;
             let mut target = get_attachment_dir(&data_dir, cli.attachments_dir, &record.canonical)?;
@@ -267,14 +267,14 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             config::write_default(stdout_lock_wrap())?;
         }
         Command::Delete {
-            citation_keys,
+            identifiers,
             replace,
             hard,
             update_aliases,
         } => {
             let cfg = config::load(&config_path, missing_ok)?;
             if hard {
-                for key in citation_keys {
+                for key in identifiers {
                     hard_delete(key, &mut record_db, &cfg)?;
                 }
             } else {
@@ -314,7 +314,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     ),
                 };
 
-                for key in citation_keys {
+                for key in identifiers {
                     soft_delete(
                         key,
                         &replacement_canonical_id,
@@ -326,7 +326,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             }
         }
         Command::Edit {
-            citation_keys,
+            identifiers,
             normalize_whitespace,
             set_eprint,
             strip_journal_series,
@@ -350,7 +350,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
 
             let no_non_interactive_cmd = nl.is_identity() && edit_cmd.is_identity() && !touch;
 
-            for key in citation_keys {
+            for key in identifiers {
                 let (Record { key, data, .. }, row) =
                     get_record_row(&mut record_db, key, client, &cfg)?
                         .exists_or_commit_null("Cannot edit")?;
@@ -495,7 +495,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             }
         }
         Command::Get {
-            citation_keys,
+            identifiers,
             out,
             append,
             retrieve_only,
@@ -505,24 +505,22 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
 
             // Initialize the skipped keys to contain keys already present in the outfile (if
             // appending)
-            let mut skipped_keys: HashSet<RecordId> = HashSet::new();
+            let mut skipped_ids: HashSet<RecordId> = HashSet::new();
             if let Some(file) = outfile.as_mut()
                 && append
             {
                 let mut scratch = Vec::new();
                 file.read_to_end(&mut scratch)?;
-                get_citekeys(SourceFileType::Bib, &scratch, &mut skipped_keys);
+                get_citekeys(SourceFileType::Bib, &scratch, &mut skipped_ids);
             }
 
             // Collect all entries which are not null, excluding those which should be skipped
             let cfg = config::load(&config_path, missing_ok)?;
-            let not_skipped_keys = citation_keys
-                .into_iter()
-                .filter(|k| !skipped_keys.contains(k));
+            let not_skipped_ids = identifiers.into_iter().filter(|k| !skipped_ids.contains(k));
 
             let valid_entries = if cli.read_only {
                 retrieve_entries_read_only(
-                    not_skipped_keys,
+                    not_skipped_ids,
                     &mut record_db,
                     retrieve_only,
                     ignore_null,
@@ -530,7 +528,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 )
             } else {
                 retrieve_and_validate_entries(
-                    not_skipped_keys,
+                    not_skipped_ids,
                     &mut record_db,
                     client,
                     retrieve_only,
@@ -557,14 +555,14 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 snapshot.commit()?;
             }
             HistCommand::Redo {
-                citation_key,
+                identifier,
                 index,
                 revive,
             } => {
                 let index = index.unwrap_or(-1);
                 let cfg = config::load(&config_path, missing_ok)?;
                 match record_db
-                    .state_from_record_id(citation_key, &cfg.alias_transform)?
+                    .state_from_record_id(identifier, &cfg.alias_transform)?
                     .require_record()?
                 {
                     Some((_, DisambiguatedRecordRow::Entry(_, state))) => {
@@ -612,13 +610,13 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 }
             }
             HistCommand::Reset {
-                citation_key,
+                identifier,
                 rev,
                 before,
             } => {
                 let cfg = config::load(&config_path, missing_ok)?;
                 if let Some((_, disambiguated)) = record_db
-                    .state_from_record_id(citation_key, &cfg.alias_transform)?
+                    .state_from_record_id(identifier, &cfg.alias_transform)?
                     .require_record()?
                 {
                     let (_, state) = disambiguated.forget();
@@ -661,7 +659,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 }
             }
             HistCommand::Revive {
-                citation_key,
+                identifier,
                 from_bibtex,
                 with_entry_type,
                 with_field,
@@ -673,7 +671,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     delete_field: Vec::new(),
                 };
                 match record_db
-                    .state_from_record_id(citation_key, &cfg.alias_transform)?
+                    .state_from_record_id(identifier, &cfg.alias_transform)?
                     .require_record()?
                 {
                     Some((_, DisambiguatedRecordRow::Entry(_, state))) => {
@@ -720,13 +718,10 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 })?;
                 snapshot.commit()?;
             }
-            HistCommand::Undo {
-                citation_key,
-                delete,
-            } => {
+            HistCommand::Undo { identifier, delete } => {
                 let cfg = config::load(&config_path, missing_ok)?;
                 match record_db
-                    .state_from_record_id(citation_key, &cfg.alias_transform)?
+                    .state_from_record_id(identifier, &cfg.alias_transform)?
                     .require_record()?
                 {
                     Some((_, DisambiguatedRecordRow::Entry(_, state))) => {
@@ -749,10 +744,10 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     None => {}
                 }
             }
-            HistCommand::Void { citation_key } => {
+            HistCommand::Void { identifier } => {
                 let cfg = config::load(&config_path, missing_ok)?;
                 match record_db
-                    .state_from_record_id(citation_key, &cfg.alias_transform)?
+                    .state_from_record_id(identifier, &cfg.alias_transform)?
                     .require_record()?
                 {
                     Some((_, DisambiguatedRecordRow::Entry(_, state))) => {
@@ -819,12 +814,9 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 }
             }
         }
-        Command::Info {
-            citation_key,
-            report,
-        } => {
+        Command::Info { identifier, report } => {
             let cfg = config::load(&config_path, missing_ok)?;
-            match record_db.state_from_record_id(citation_key, &cfg.alias_transform)? {
+            match record_db.state_from_record_id(identifier, &cfg.alias_transform)? {
                 RecordIdState::Entry(key, data, state) => {
                     info::database_report(key, data, state, report, |_, stdout| {
                         writeln!(stdout, "Record with data")
@@ -938,14 +930,14 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             };
         }
         Command::Log {
-            citation_key,
+            identifier,
             tree,
             all,
             reverse,
         } => {
             let cfg = config::load(&config_path, missing_ok)?;
             if let Some((_, entry_or_deleted)) = record_db
-                .state_from_record_id(citation_key, &cfg.alias_transform)?
+                .state_from_record_id(identifier, &cfg.alias_transform)?
                 .require_record()?
             {
                 let (_, state) = entry_or_deleted.forget();
@@ -953,13 +945,10 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 state.commit()?;
             }
         }
-        Command::Path {
-            citation_key,
-            mkdir,
-        } => {
+        Command::Path { identifier, mkdir } => {
             let cfg = config::load(&config_path, missing_ok)?;
             // Extend with the filename.
-            let (record, row) = get_record_row(&mut record_db, citation_key, client, &cfg)?
+            let (record, row) = get_record_row(&mut record_db, identifier, client, &cfg)?
                 .exists_or_commit_null("Cannot show directory for")?;
             row.commit()?;
             let mut target = get_attachment_dir(&data_dir, cli.attachments_dir, &record.canonical)?;
@@ -1047,10 +1036,10 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
 
                 output_keys(all_citekeys.iter())?;
             } else {
-                // read citation keys from all of the paths, excluding those which are present in
+                // read identifiers from all of the paths, excluding those which are present in
                 // 'skipped_keys'
                 //
-                // The citation keys do not need to be sorted since sorting
+                // The ids do not need to be sorted since sorting
                 // happens in the `validate_and_retrieve` function.
                 let mut all_citekeys: HashSet<RecordId> = HashSet::new();
 
@@ -1102,9 +1091,9 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             }
         }
         Command::Update {
-            citation_key,
+            identifier,
             from_bibtex,
-            from_key,
+            from_record: from_key,
             on_conflict,
             revive,
         } => {
@@ -1120,7 +1109,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
 
             update(
                 on_conflict,
-                record_db.state_from_record_id(citation_key, &cfg.alias_transform)?,
+                record_db.state_from_record_id(identifier, &cfg.alias_transform)?,
                 provided_data,
                 client,
                 &cfg.on_insert,
@@ -1158,7 +1147,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             UtilCommand::List { canonical } => {
                 let mut lock = stdout_lock_wrap();
                 let snapshot = record_db.snapshot()?;
-                snapshot.map_citation_keys(canonical, |key_str| writeln!(lock, "{key_str}"))?;
+                snapshot.map_identifiers(canonical, |key_str| writeln!(lock, "{key_str}"))?;
                 snapshot.commit()?;
             }
         },

@@ -76,7 +76,7 @@ impl<'conn> Snapshot<'conn> {
 WITH RECURSIVE ancestors AS (
     SELECT key, parent_key
     FROM Records
-    WHERE key IN (SELECT record_key FROM CitationKeys)
+    WHERE key IN (SELECT record_key FROM Identifiers)
 
     UNION ALL
 
@@ -105,7 +105,7 @@ DELETE FROM Records WHERE key NOT IN (SELECT key FROM descendants);
         // delete everything which is not active. we don't need to set `parent_key = NULL` because
         // of the `ON DELETE SET NULL` foreign key constraint
         self.tx
-            .prepare("DELETE FROM Records WHERE key NOT IN (SELECT record_key FROM CitationKeys)")?
+            .prepare("DELETE FROM Records WHERE key NOT IN (SELECT record_key FROM Identifiers)")?
             .execute([])?;
         Ok(())
     }
@@ -117,7 +117,7 @@ DELETE FROM Records WHERE key NOT IN (SELECT key FROM descendants);
             .prepare(
                 "
 WITH RECURSIVE descendants AS (
-  SELECT DISTINCT record_key FROM CitationKeys
+  SELECT DISTINCT record_key FROM Identifiers
 
   UNION ALL
 
@@ -140,7 +140,7 @@ DELETE FROM Records WHERE key NOT IN (SELECT key FROM descendants);",
 WITH RECURSIVE ancestors AS (
     SELECT key, parent_key, 0 as level
     FROM Records
-    WHERE key IN (SELECT record_key FROM CitationKeys)
+    WHERE key IN (SELECT record_key FROM Identifiers)
 
     UNION ALL
 
@@ -168,7 +168,7 @@ DELETE FROM Records WHERE key NOT IN (SELECT key FROM descendants);
     /// Check whether a specific revision is active.
     pub fn is_active(&self, rev_id: RevisionId) -> rusqlite::Result<bool> {
         self.tx
-            .prepare("SELECT EXISTS (SELECT 1 FROM CitationKeys WHERE record_key = ?1)")?
+            .prepare("SELECT EXISTS (SELECT 1 FROM Identifiers WHERE record_key = ?1)")?
             .query_one([rev_id.0], |row| row.get(0))
     }
 
@@ -179,7 +179,7 @@ DELETE FROM Records WHERE key NOT IN (SELECT key FROM descendants);
                 "
 DELETE FROM Records
 WHERE variant = 2
-  AND key NOT IN (SELECT record_key FROM CitationKeys)
+  AND key NOT IN (SELECT record_key FROM Identifiers)
   AND (SELECT count(*) FROM Records AS r WHERE r.parent_key = Records.key LIMIT 2) = 1",
             )?
             .execute([])?;
@@ -194,7 +194,7 @@ WHERE variant = 2
                 "
 DELETE FROM Records
 WHERE variant = 1
-  AND key NOT IN (SELECT record_key FROM CitationKeys)
+  AND key NOT IN (SELECT record_key FROM Identifiers)
   AND NOT EXISTS (SELECT 1 FROM Records AS r WHERE r.parent_key = Records.key)",
             )?
             .execute([])?;
@@ -207,7 +207,7 @@ WHERE variant = 1
     pub fn rewind_all(&self, after: DateTime<Local>) -> rusqlite::Result<()> {
         let mut retriever = self
             .tx
-            .prepare("SELECT record_id, key FROM Records WHERE key IN (SELECT record_key FROM CitationKeys) AND modified > ?1")?;
+            .prepare("SELECT record_id, key FROM Records WHERE key IN (SELECT record_key FROM Identifiers) AND modified > ?1")?;
 
         let mut outdated: Vec<(String, i64)> = Vec::new();
 
@@ -221,7 +221,7 @@ WHERE variant = 1
             let new_row_id = create_rewind_target(&self.tx, &canonical, after)?;
             info!("Rewinding '{canonical}' from rev {row_id:0>4x} to rev {new_row_id:0>4x}");
             self.tx
-                .prepare_cached("UPDATE CitationKeys SET record_key = ?1 WHERE record_key = ?2")?
+                .prepare_cached("UPDATE Identifiers SET record_key = ?1 WHERE record_key = ?2")?
                 .execute((new_row_id, row_id))?;
         }
         Ok(())
@@ -236,7 +236,7 @@ WHERE variant = 1
     {
         let mut retriever = self
             .tx
-            .prepare("SELECT key, record_id, modified, data, variant FROM Records WHERE key IN (SELECT record_key FROM CitationKeys)")?;
+            .prepare("SELECT key, record_id, modified, data, variant FROM Records WHERE key IN (SELECT record_key FROM Identifiers)")?;
 
         let rows = retriever.query_map([], move |row| {
             let record_row = RecordRow::borrow_from_row_unchecked(row);
@@ -252,21 +252,21 @@ WHERE variant = 1
         Ok(())
     }
 
-    /// Iterate over all names in the CitationKeys table and apply the fallible closure
+    /// Iterate over all names in the Identifiers table and apply the fallible closure
     /// `f` to each key. If an error is returned by the closure, it is immediately propagated and
     /// the function exits early.
     ///
     /// If `canonical` is true, only iterate over canonical keys.
-    pub fn map_citation_keys<E, F: FnMut(&str) -> Result<(), E>>(
+    pub fn map_identifiers<E, F: FnMut(&str) -> Result<(), E>>(
         &self,
         canonical: bool,
         mut f: F,
     ) -> Result<(), SnapshotMapErr<E>> {
         let mut selector = if canonical {
             self.tx
-                .prepare("SELECT record_id FROM Records WHERE key IN (SELECT record_key FROM CitationKeys) AND variant = 0")?
+                .prepare("SELECT record_id FROM Records WHERE key IN (SELECT record_key FROM Identifiers) AND variant = 0")?
         } else {
-            self.tx.prepare("SELECT name FROM CitationKeys INNER JOIN Records ON CitationKeys.record_key = Records.key WHERE Records.variant = 0")?
+            self.tx.prepare("SELECT name FROM Identifiers INNER JOIN Records ON Identifiers.record_key = Records.key WHERE Records.variant = 0")?
         };
 
         let mut rows = selector.query([])?;

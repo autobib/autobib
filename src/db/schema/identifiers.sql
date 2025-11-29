@@ -1,4 +1,4 @@
-CREATE TABLE CitationKeys (
+CREATE TABLE Identifiers (
     name TEXT NOT NULL PRIMARY KEY,
     record_key INTEGER NOT NULL References Records(key)
         ON UPDATE RESTRICT

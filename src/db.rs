@@ -2,10 +2,13 @@
 //! This module implements the abstraction over the underlying [SQLite](https://sqlite.org/)
 //! database in which all bibliographic data is stored.
 //!
-//! The core struct is the [`RecordDatabase`].
+//! The core struct is the [`RecordDatabase`]. There are two primary abstractions around a
+//! SQL transaction:
 //!
-//! In order to represent internal database state, see the [`state`] module, along with its
-//! documentation.
+//! - The [`state`] module implements abstraction for a *single identifier*, such as a
+//!   row in the 'Records' table, a row in the `NullRecords' table, or if the identifier is not
+//!   present in the database at all
+//! - The [`Snapshot`] struct represents a global representation of database state.
 mod functions;
 mod migrate;
 mod schema;
@@ -51,17 +54,17 @@ pub const fn application_id() -> i32 {
 /// implicit `rowid` column in the table schema defined in [`schema::null_records`]
 type RowId = i64;
 
-/// Determine the [`RowId`] in the `Records` table corresponding to a [`CitationKey`].
-fn get_row_id<K: CitationKey>(
+/// Determine the [`RowId`] in the `Records` table corresponding to a [`Identifier`].
+fn get_row_id<K: Identifier>(
     tx: &Transaction,
     record_id: &K,
 ) -> Result<Option<RowId>, rusqlite::Error> {
-    tx.prepare_cached("SELECT record_key FROM CitationKeys WHERE name = ?1")?
+    tx.prepare_cached("SELECT record_key FROM Identifiers WHERE name = ?1")?
         .query_row([record_id.name()], |row| row.get("record_key"))
         .optional()
 }
 
-/// Determine the [`RowId`] in the `NullRecords` table corresponding to a [`CitationKey`].
+/// Determine the [`RowId`] in the `NullRecords` table corresponding to a [`Identifier`].
 pub fn get_null_row_id(
     tx: &Transaction,
     remote_id: &RemoteId,
@@ -73,13 +76,13 @@ pub fn get_null_row_id(
 
 /// This trait represents types which can be stored as a row in the SQL database underlying a
 /// [`RecordDatabase`].
-pub trait CitationKey: private::Sealed {
+pub trait Identifier: private::Sealed {
     /// The string to use as the key for a row.
     fn name(&self) -> &str;
 }
 
 mod private {
-    /// Prevent implemntation of [`CitationKey`](super::CitationKey) by foreign types.
+    /// Prevent implemntation of [`Identifier`](super::Identifier) by foreign types.
     pub trait Sealed {}
 
     impl Sealed for crate::Alias {}
@@ -95,11 +98,9 @@ mod private {
 /// 1. `Records`. This is the primary table used to store records. The integer primary key
 ///    `key` is used as the internal unambiguous reference for each record and is used for
 ///    de-duplication. The table schema is documented in [`schema::records`].
-/// 2. `CitationKeys`. This is the table used to store any citation key which is inserted into
-///    a table. Since multiple citation keys may refer to the same underlying record, this is
-///    simply a lookup table for the corresponding record, and the corresponding rows are
-///    automatically deleted when the record is deleted. The table schema is documented in
-///    [`schema::citation_keys`].
+/// 2. `Identifiers`. This is the table used to store lookup keys for records. The corresponding
+///    rows are automatically deleted when the record is deleted. The table schema is
+///    documented in [`schema::identifiers`].
 /// 3. `NullRecords`. This is a cache table used to keep track of records which are known to
 ///    not exist. The table schema is documented in [`schema::null_records`].
 ///
@@ -112,10 +113,10 @@ mod private {
 ///
 /// This distinction is not currently enforced by types, but it may be in the future.
 ///
-/// The two citation key types, [`Alias`] and [`RemoteId`], with the "Canonical" and "Reference"
+/// The two identifier types, [`Alias`] and [`RemoteId`], with the "Canonical" and "Reference"
 /// for [`RemoteId`], are stored according to the following table.
 ///
-/// |            | Stored in Records | Stored in NullRecords | Stored in CitationKeys |
+/// |            | Stored in Records | Stored in NullRecords | Stored in Identifiers |
 /// |------------|-------------------|-----------------------|------------------------|
 /// |CanonicalId |        YES        |          YES          |          YES           |
 /// |ReferenceId |        NO         |          YES          |          YES           |
@@ -217,7 +218,7 @@ impl RecordDatabase {
 
                 debug!("Initializing database tables");
                 tx.execute(schema::records(), ())?;
-                tx.execute(schema::citation_keys(), ())?;
+                tx.execute(schema::identifiers(), ())?;
                 tx.execute(schema::null_records(), ())?;
 
                 debug!("Initializing indices");
@@ -321,7 +322,7 @@ impl RecordDatabase {
 
         validator.table_schema(&mut faults)?;
         validator.record_indexing(&mut faults)?;
-        validator.invalid_citation_keys(&mut faults)?;
+        validator.invalid_identifiers(&mut faults)?;
         validator.integrity(&mut faults)?;
         validator.binary_data(&mut faults)?;
 
@@ -350,19 +351,17 @@ impl RecordDatabase {
             DatabaseFault::RowHasInvalidCanonicalId(_, _) => Ok(false),
             DatabaseFault::DanglingRecord(key, canonical) => {
                 warn!(
-                    "Repairing dangling record by inserting or overwriting existing citation key with name {canonical}"
+                    "Repairing dangling record by inserting or overwriting existing identifier with name {canonical}"
                 );
-                tx.prepare(
-                    "INSERT OR REPLACE INTO CitationKeys (name, record_key) values (?1, ?2",
-                )?
-                .execute((canonical, key))?;
+                tx.prepare("INSERT OR REPLACE INTO Identifiers (name, record_key) values (?1, ?2")?
+                    .execute((canonical, key))?;
                 Ok(true)
             }
-            DatabaseFault::NullCitationKeys(_) => {
+            DatabaseFault::NullIdentifiers(_) => {
                 let mut invalid_keys: Vec<String> = Vec::new();
                 {
                     let mut stmt = tx.prepare(
-                                        "SELECT name FROM CitationKeys WHERE record_key NOT IN (SELECT key FROM Records)",
+                                        "SELECT name FROM Identifiers WHERE record_key NOT IN (SELECT key FROM Records)",
                                     )?;
                     let mut rows = stmt.query(())?;
                     while let Some(row) = rows.next()? {
@@ -370,12 +369,12 @@ impl RecordDatabase {
                     }
                 }
 
-                warn!("Deleting citation keys which do not reference records:");
+                warn!("Deleting identifiers which do not reference records:");
                 for name in invalid_keys {
                     eprintln!("  {name}");
                 }
                 tx.prepare(
-                    "DELETE FROM CitationKeys WHERE record_key NOT IN (SELECT key FROM Records)",
+                    "DELETE FROM Identifiers WHERE record_key NOT IN (SELECT key FROM Records)",
                 )?
                 .execute(())?;
                 Ok(true)
@@ -383,8 +382,8 @@ impl RecordDatabase {
             DatabaseFault::IntegrityError(_) => Ok(false),
             DatabaseFault::InvalidRecordData(_, _, _) => Ok(false),
             DatabaseFault::RowHasNonNormalizedCanonicalId(_, _, _) => Ok(false),
-            DatabaseFault::InvalidCitationKey(_) => Ok(false),
-            DatabaseFault::NonNormalizedCitationKey(_, _) => Ok(false),
+            DatabaseFault::InvalidIdentifier(_) => Ok(false),
+            DatabaseFault::NonNormalizedIdentifier(_, _) => Ok(false),
             DatabaseFault::MissingTable(_) => Ok(false),
             DatabaseFault::InvalidTableSchema(_, _) => Ok(false),
         }
@@ -426,7 +425,7 @@ impl RecordDatabase {
         debug!("Sending all database records to an injector.");
         let mut retriever = self
             .conn
-            .prepare("SELECT record_id, modified, data, variant FROM Records WHERE key IN (SELECT record_key FROM CitationKeys) AND variant = 0")?;
+            .prepare("SELECT record_id, modified, data, variant FROM Records WHERE key IN (SELECT record_key FROM Identifiers) AND variant = 0")?;
 
         for res in retriever.query_map([], |row| Ok(RecordRow::from_row_unchecked(row)))? {
             if let Some(data) = filter_map(res?) {
@@ -445,7 +444,7 @@ impl RecordDatabase {
     ) -> Result<RenameAliasResult, rusqlite::Error> {
         let mut updater = self
             .conn
-            .prepare("UPDATE CitationKeys SET name = ?1 WHERE name = ?2")?;
+            .prepare("UPDATE Identifiers SET name = ?1 WHERE name = ?2")?;
         match flatten_constraint_violation(updater.execute((new.name(), old.name())))? {
             Constraint::Satisfied(_) => Ok(RenameAliasResult::Renamed),
             Constraint::Violated => Ok(RenameAliasResult::TargetExists),
@@ -456,7 +455,7 @@ impl RecordDatabase {
     pub fn delete_alias(&mut self, alias: &Alias) -> Result<DeleteAliasResult, rusqlite::Error> {
         let mut deleter = self
             .conn
-            .prepare("DELETE FROM CitationKeys WHERE name = ?1")?;
+            .prepare("DELETE FROM Identifiers WHERE name = ?1")?;
         if deleter.execute((alias.name(),))? == 0 {
             Ok(DeleteAliasResult::Missing)
         } else {

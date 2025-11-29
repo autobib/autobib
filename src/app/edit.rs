@@ -7,7 +7,7 @@ use super::OnConflict;
 use crate::{
     app::data_from_path,
     db::{
-        CitationKey,
+        Identifier,
         state::{EntryRecordKey, RecordsInsert, State},
     },
     entry::{
@@ -105,23 +105,23 @@ pub fn merge_record_data<'a, D: EntryData + 'a>(
     on_conflict: OnConflict,
     existing_record: &mut MutableEntryData,
     new_raw_data: impl Iterator<Item = &'a D>,
-    citation_key: impl std::fmt::Display,
+    id_display: impl std::fmt::Display,
 ) -> Result<(), MergeError> {
     match on_conflict {
         OnConflict::PreferCurrent => {
-            info!("Updating {citation_key} with new data, skipping existing fields");
+            info!("Updating {id_display} with new data, skipping existing fields");
             for data in new_raw_data {
                 existing_record.merge_or_skip(data);
             }
         }
         OnConflict::PreferIncoming => {
-            info!("Updating {citation_key} with new data, overwriting existing fields");
+            info!("Updating {id_display} with new data, overwriting existing fields");
             for data in new_raw_data {
                 existing_record.merge_or_overwrite(data);
             }
         }
         OnConflict::Prompt => {
-            info!("Updating {citation_key} with new data, prompting on conflict");
+            info!("Updating {id_display} with new data, prompting on conflict");
             for data in new_raw_data {
                 existing_record.merge_with_callback(data, |key, current, incoming| {
                     eprintln!("Conflict for the field '{key}':");

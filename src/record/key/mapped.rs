@@ -1,6 +1,6 @@
 use std::fmt;
 
-use super::{Alias, AliasOrRemoteId, CitationKey, RecordError, RecordId, RemoteId};
+use super::{Alias, AliasOrRemoteId, Identifier, RecordError, RecordId, RemoteId};
 
 /// A wrapper struct for a [`RemoteId`] which has been transformed from an original key, for
 /// instance through a sub_id normalization or an alias transform.
@@ -81,7 +81,7 @@ impl<T: fmt::Display> fmt::Display for MappedKey<T> {
     }
 }
 
-impl<T> CitationKey for MappedKey<T> {
+impl<T> Identifier for MappedKey<T> {
     fn name(&self) -> &str {
         self.mapped.name()
     }

@@ -40,11 +40,11 @@ This table has schema
  ```
  This table stores the record data, and the associated canonical id, as well as the last modified time.
 
-### `CitationKeys` table
+### `Identifiers` table
 
 This table has schema
 ```sql
-CREATE TABLE CitationKeys (
+CREATE TABLE Identifiers (
     name TEXT NOT NULL PRIMARY KEY,
     record_key INTEGER,
     CONSTRAINT foreign_record_key
@@ -128,7 +128,7 @@ perform the following lookup:
             │                                                     ┌ ─ ─ ─RETURN VALUES─ ─ ─ ─
             ▽                                                                                │
 ╔══════════════════════╗   ┏━━━┓                                  │  ┌───────────┐
-║in CitationKeys table?║──▶┃YES┃────────────┌───────────────────────▷│ Ok(Entry) │           │
+║in Identifiers table?║──▶┃YES┃────────────┌───────────────────────▷│ Ok(Entry) │           │
 ╚══════════════════════╝   ┗━━━┛            │                     │  └───────────┘
             │                               │                                                │
             ▼                               │                     │
@@ -143,7 +143,7 @@ perform the following lookup:
      ╚═════════════╝                 ┌────────────┐  ┌─────────┐                             │
             │                        │add Context │  │  cache  │  │  ┌─────────────────┐
             ▼                        │     to     │  │ Context │────▷│ Err(NullRemote) │     │
-       ┏━━━━━━━━━┓                   │CitationKeys│  │ as Null │  │  └─────────────────┘
+       ┏━━━━━━━━━┓                   │Identifiers│  │ as Null │  │  └─────────────────┘
        ┃RemoteId ┃                   └────────────┘  └─────────┘                             │
        ┗━━━━━━━━━┛                          △             △       │
  ─ ─ ─ ─ ─ ─│─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─│─ ─ ─ ─ ─ ─ ─│─ ─ ─                             │
@@ -152,7 +152,7 @@ perform the following lookup:
 │           ▽           ┗━━━┛   │   ┗━━━┛   │    │              │ │  └ ─── ─── ─── ─── ───
      ╔═════════════╗            │           │    │                                           │
 │    ║cached Null? ║    ╔═══════════════╗   │    │              │ │  ┌── ─── ─── ─── ─── ─┐
-     ╚═════════════╝    ║in CitationKeys║   │    │  ┌────────┐       │ Err(NetworkError)  │  │
+     ╚═════════════╝    ║in Identifiers║   │    │  ┌────────┐       │ Err(NetworkError)  │  │
 │           │           ║    table?     ║   │    │  │ insert │  │ │  └ ─── ─── ─── ─── ───
             ├──────┐    ╚═══════════════╝   └───────│Entry to│                               │
 │           ▼      ▼            △                │  │Records │  │ └ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─

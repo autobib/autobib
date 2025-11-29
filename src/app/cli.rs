@@ -154,7 +154,7 @@ pub enum Command {
     /// with the `--rename` option.
     Attach {
         /// The record to associate the file with.
-        citation_key: RecordId,
+        identifier: RecordId,
         /// The path or URL for the file to add.
         file: String,
         /// Rename the file.
@@ -183,8 +183,8 @@ pub enum Command {
     /// With the `--hard` option, the data as well as all keys are deleted permanently. This is
     /// incompatible with the `--replace` option.
     Delete {
-        /// The citation keys to delete.
-        citation_keys: Vec<RecordId>,
+        /// The records to delete.
+        identifiers: Vec<RecordId>,
         /// A replacement key.
         #[arg(short, long, group = "delete_mode")]
         replace: Option<RecordId>,
@@ -211,8 +211,8 @@ pub enum Command {
     ///
     /// `--strip-journal-series` strips a trailing journal series from the `journal` field
     Edit {
-        /// The citation key(s) to edit.
-        citation_keys: Vec<RecordId>,
+        /// The record(s) to edit.
+        identifiers: Vec<RecordId>,
         /// Normalize whitespace.
         #[arg(long)]
         normalize_whitespace: bool,
@@ -235,9 +235,9 @@ pub enum Command {
         #[arg(long)]
         touch: bool,
     },
-    /// Search for a citation key.
+    /// Search for an identifier.
     ///
-    /// Open an interactive picker to search for a given citation key. The lines in the
+    /// Open an interactive picker to search for a given identifier. The lines in the
     /// picker are rendered using the template provided by the `--format` option, falling
     /// back to the config value or a default template.
     Find {
@@ -251,17 +251,18 @@ pub enum Command {
         #[arg(short, long, value_enum, default_value_t)]
         mode: FindMode,
     },
-    /// Retrieve records given citation keys.
+    /// Retrieve records given identifiers.
     Get {
-        /// The citation keys to retrieve.
-        citation_keys: Vec<RecordId>,
+        /// The identifiers to retrieve.
+        identifiers: Vec<RecordId>,
         /// Write output to file.
         #[arg(short, long, group = "output", value_name = "PATH")]
         out: Option<PathBuf>,
         /// Append new entries to the output, skipping existing entries.
         #[arg(short, long, requires = "out")]
         append: bool,
-        /// Retrieve records but do not output BibTeX or check the validity of citation keys.
+        /// Retrieve records but do not output BibTeX or check the validity of identifiers as
+        /// valid BibTeX keys.
         #[arg(long, group = "output")]
         retrieve_only: bool,
         /// Ignore null records and aliases.
@@ -299,10 +300,10 @@ pub enum Command {
         #[arg(long)]
         log_failures: bool,
     },
-    /// Show metadata for citation key.
+    /// Show metadata associated with an identifier.
     Info {
-        /// The citation key to show info.
-        citation_key: RecordId,
+        /// The identifier.
+        identifier: RecordId,
         /// The type of information to display.
         #[arg(short, long, value_enum, default_value_t)]
         report: InfoReportType,
@@ -333,10 +334,10 @@ pub enum Command {
         #[arg(long, value_name = "FIELD_KEY={VALUE}")]
         with_field: Vec<SetFieldCommand>,
     },
-    /// Display the revision history associated with the given handle.
+    /// Display the revision history associated with an identifier.
     Log {
-        /// The citation key to show the revision history.
-        citation_key: RecordId,
+        /// The identifier.
+        identifier: RecordId,
         /// Show parallel changes, instead of only the history of the active version.
         #[arg(short, long)]
         tree: bool,
@@ -349,16 +350,17 @@ pub enum Command {
     },
     /// Show attachment directory associated with record.
     Path {
-        /// Show path for this key.
-        citation_key: RecordId,
+        /// Show directory path associated with this identifier.
+        identifier: RecordId,
         /// Also create the directory.
         #[arg(short, long)]
         mkdir: bool,
     },
-    /// Generate records by searching for citation keys inside files.
+    /// Generate records by searching for identifiers inside files.
     ///
     /// This is essentially a call to `autobib get`, except with a custom search which attempts
-    /// to find citation keys inside the provided file(s). The search method depends on the file
+    /// to find identifiers inside the provided file(s), typically as citation keys.
+    /// The search method depends on the file
     /// type, which is determined purely based on the extension.
     Source {
         /// The files in which to search.
@@ -375,16 +377,16 @@ pub enum Command {
         /// Append new entries to the output.
         #[arg(short, long, requires = "out")]
         append: bool,
-        /// Retrieve records but do not output BibTeX or check the validity of citation keys.
+        /// Retrieve records but do not output BibTeX or check the validity of identifiers.
         #[arg(long, group = "output")]
         retrieve_only: bool,
-        /// Only print the citation keys which were found (sorted and deduplicated).
+        /// Only print the identifiers keys which were found (sorted and deduplicated).
         #[arg(long, group = "output")]
         print_keys: bool,
-        /// Skip a citation key (if present).
-        #[arg(short, long, value_name = "CITATION_KEYS")]
+        /// Skip an identifier (if present).
+        #[arg(short, long, value_name = "IDENTIFIERS")]
         skip: Vec<RecordId>,
-        /// Skip citation keys which are present in the provided file(s).
+        /// Skip identifiers which are present in the provided file(s).
         #[arg(long, value_name = "PATH")]
         skip_from: Vec<PathBuf>,
         /// Override file type detection for skip files.
@@ -394,7 +396,7 @@ pub enum Command {
         #[arg(long)]
         ignore_null: bool,
     },
-    /// Update data associated with an existing citation key.
+    /// Update data associated with an identifier.
     ///
     /// By default, you will be prompted if there is a conflict between the current and incoming
     /// records.
@@ -403,14 +405,14 @@ pub enum Command {
     /// If the terminal is not interactive or the `--no-interactive` global option is set, this
     /// will result in an error if the `-n prefer-current` or `-n prefer-incoming` is not explicitly set.
     Update {
-        /// The citation key to update.
-        citation_key: RecordId,
+        /// The identifier for the update operation.
+        identifier: RecordId,
         /// Read update data from a BibTeX entry in a file.
         #[arg(short = 'b', long, value_name = "PATH", group = "update_from")]
         from_bibtex: Option<PathBuf>,
         /// Read update data from other record data.
-        #[arg(short = 'k', long, value_name = "CITATION_KEY", group = "update_from")]
-        from_key: Option<RecordId>,
+        #[arg(short = 'k', long, value_name = "IDENTIFIER", group = "update_from")]
+        from_record: Option<RecordId>,
         /// How to resolve conflicting field values.
         #[arg(
             short = 'n',
@@ -566,8 +568,8 @@ pub enum HistCommand {
     ///
     /// View divergent changes using `autobib log --tree`.
     Redo {
-        /// The citation key to modify.
-        citation_key: RecordId,
+        /// The identifier for the redo operation.
+        identifier: RecordId,
         /// The index of the redo, ordered from oldest to newest.
         index: Option<isize>,
         /// Redo beyond a deleted state.
@@ -576,8 +578,8 @@ pub enum HistCommand {
     },
     /// Set the active version to a specific revision.
     Reset {
-        /// The citation key to reset.
-        citation_key: RecordId,
+        /// The identifier for the reset operation.
+        identifier: RecordId,
         /// Set using a revision number.
         #[arg(long, group = "reset_target")]
         rev: Option<RevisionId>,
@@ -602,8 +604,8 @@ pub enum HistCommand {
     /// The `--with-entry-type` or `--with-field` values will override any
     /// values present in the data read from the BibTeX file.
     Revive {
-        /// The citation key to revive.
-        citation_key: RecordId,
+        /// The identifier for the revive operation.
+        identifier: RecordId,
         /// Create the record using the provided BibTeX data.
         #[arg(short = 'b', long, value_name = "PATH", group = "input")]
         from_bibtex: Option<PathBuf>,
@@ -633,10 +635,10 @@ pub enum HistCommand {
         #[arg(long, value_name = "LIMIT")]
         limit: Option<u32>,
     },
-    /// Undo the most recent change to a citation key.
+    /// Undo the most recent change associated with an identifier.
     Undo {
-        /// The citation key to modify.
-        citation_key: RecordId,
+        /// The identifier for the undo operation.
+        identifier: RecordId,
         /// Undo into a deleted state.
         #[arg(short, long)]
         delete: bool,
@@ -646,8 +648,8 @@ pub enum HistCommand {
     /// A voided record is equivalent to a record which is not in the database, but the previous
     /// history is still recoverable.
     Void {
-        /// The citation key to modify.
-        citation_key: RecordId,
+        /// The identifier to void.
+        identifier: RecordId,
     },
 }
 

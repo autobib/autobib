@@ -8,7 +8,7 @@ use serde::Deserialize;
 use toml::from_str;
 
 use crate::{
-    Alias, CitationKey,
+    Alias, Identifier,
     format::DEFAULT_FIND_TEMPLATE,
     logger::{debug, info, warn},
     normalize::Normalization,
@@ -162,7 +162,7 @@ pub trait AliasTransform {
         None
     }
 
-    /// Whether or not to save the alias in the the `CitationKeys` table after mapping.
+    /// Whether or not to save the alias in the the `Identifiers` table after mapping.
     fn create(&self) -> bool {
         false
     }

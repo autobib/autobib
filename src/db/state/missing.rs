@@ -1,7 +1,7 @@
 use chrono::Local;
 
 use super::{EntryRecordKey, NotEntry, NullRecordRow, State};
-use crate::{RawEntryData, RemoteId, db::CitationKey, entry::EntryData, logger::debug};
+use crate::{RawEntryData, RemoteId, db::Identifier, entry::EntryData, logger::debug};
 
 /// Types which know how to insert new data.
 ///
@@ -92,7 +92,7 @@ impl<'conn> State<'conn, Missing> {
         self.insert_new(&raw_record_data, canonical)
     }
 
-    /// Create the row and also insert a link in the `CitationKeys` table.
+    /// Create the row and also insert a link in the `Identifiers` table.
     pub fn insert_new(
         self,
         data: &RawEntryData,

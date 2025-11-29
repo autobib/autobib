@@ -7,19 +7,19 @@ use crate::{
     logger::{error, reraise, suggest},
 };
 
-/// Soft-delete the data associated with the provided citation key.
+/// Soft-delete the data associated with the provided identifier.
 ///
 /// If record data exists for the provided key, the data is replaced with a 'deletion' marker, but not
 /// removed from the database.
 pub fn soft_delete<F: FnOnce() -> Vec<(regex::Regex, String)>>(
-    citation_key: RecordId,
+    id: RecordId,
     replace: &Option<RemoteId>,
     record_db: &mut RecordDatabase,
     config: &Config<F>,
     update_aliases: bool,
 ) -> Result<(), rusqlite::Error> {
     delete_impl(
-        citation_key,
+        id,
         record_db,
         config,
         |_, state| state.soft_delete(replace, update_aliases)?.commit(),
@@ -34,16 +34,16 @@ pub fn soft_delete<F: FnOnce() -> Vec<(regex::Regex, String)>>(
     )
 }
 
-/// Hard-delete the data associated with the provided citation key.
+/// Hard-delete the data associated with the provided identifier.
 ///
-/// This deletes all data (including past data) as well as all keys in the `CitationKeys` table.
+/// This deletes all data (including past data) as well as all keys in the `Identifiers` table.
 pub fn hard_delete<F: FnOnce() -> Vec<(regex::Regex, String)>>(
-    citation_key: RecordId,
+    id: RecordId,
     record_db: &mut RecordDatabase,
     config: &Config<F>,
 ) -> Result<(), rusqlite::Error> {
     delete_impl(
-        citation_key,
+        id,
         record_db,
         config,
         |_, state| state.hard_delete()?.commit(),
@@ -54,7 +54,7 @@ pub fn hard_delete<F: FnOnce() -> Vec<(regex::Regex, String)>>(
 
 /// Handle the cases where the key is not in the database and defer deletion to the callback.
 fn delete_impl<F, R, D, V>(
-    citation_key: RecordId,
+    id: RecordId,
     record_db: &mut RecordDatabase,
     config: &Config<F>,
     entry_callback: R,
@@ -67,7 +67,7 @@ where
     D: FnOnce(String, state::State<'_, state::DeletedRecordKey>) -> Result<(), rusqlite::Error>,
     V: FnOnce(String, state::State<'_, state::VoidRecordKey>) -> Result<(), rusqlite::Error>,
 {
-    match record_db.state_from_record_id(citation_key, &config.alias_transform)? {
+    match record_db.state_from_record_id(id, &config.alias_transform)? {
         RecordIdState::Entry(original_name, _, state) => entry_callback(original_name, state)?,
         RecordIdState::Deleted(original_name, _, state) => deleted_callback(original_name, state)?,
         RecordIdState::Void(original_name, _, state) => voided_callback(original_name, state)?,
