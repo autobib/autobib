@@ -8,7 +8,7 @@ use crate::{
     app::data_from_path,
     db::{
         Identifier,
-        state::{EntryRecordKey, RecordsInsert, State},
+        state::{IsEntry, RecordsInsert, State},
     },
     entry::{
         ConflictResolved, Entry, EntryData, EntryEditCommand, EntryKey, MutableEntryData,
@@ -24,10 +24,7 @@ use crate::{
 /// Given a candidate alias string, check if it is a valid alias, and if it is, try to add it as an
 /// alias for the given row. If the alias does not exist, or it exists and points to the row, this
 /// does not result in an error.
-pub fn create_alias_if_valid(
-    key: &str,
-    row: &State<EntryRecordKey>,
-) -> Result<(), rusqlite::Error> {
+pub fn create_alias_if_valid(key: &str, row: &State<IsEntry>) -> Result<(), rusqlite::Error> {
     match Alias::from_str(key) {
         Ok(alias) => {
             if let Some(other_remote_id) = row.ensure_alias(&alias)? {

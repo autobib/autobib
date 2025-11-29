@@ -1,9 +1,15 @@
+//! # Borrow record data
+//!
+//! This module implements some abstractions over data which borrows from some row. This is mainly
+//! useful when you want to do some sort of computation on a row, but you don't actually need to
+//! own all of the data, so you can save on some allocations by using the types here.
 use chrono::{DateTime, Local};
 use rusqlite::{Row, types::ValueRef};
 
 use super::{ArbitraryData, RecordRow};
 use crate::{RawEntryData, RemoteId};
 
+/// Equivalent to an [`ArbitraryData`], but borrows all of its data.
 #[derive(Debug)]
 pub enum ArbitraryDataRef<'r> {
     /// Entry data.
@@ -15,6 +21,7 @@ pub enum ArbitraryDataRef<'r> {
 }
 
 impl ArbitraryData {
+    /// Get a reference to the data in this struct.
     pub fn get_ref(&self) -> ArbitraryDataRef<'_> {
         match self {
             Self::Entry(raw_entry_data) => ArbitraryDataRef::Entry(raw_entry_data.get_ref()),
@@ -27,7 +34,8 @@ impl ArbitraryData {
 }
 
 impl<'r> ArbitraryDataRef<'r> {
-    pub fn from_borrowed_bytes_and_variant(bytes: &'r [u8], variant: i64) -> Self {
+    /// Borrow from bytes with the provided variant, interpreted according to the variant.
+    pub(in crate::db) fn from_borrowed_bytes_and_variant(bytes: &'r [u8], variant: i64) -> Self {
         match variant {
             0 => Self::Entry(RawEntryData::from_byte_repr_unchecked(bytes)),
             1 => Self::Deleted(if bytes.is_empty() {

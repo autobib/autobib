@@ -1,7 +1,7 @@
 use std::io::Write;
 
 use crate::{
-    db::state::{ArbitraryKey, InRecordsTable, RecordRowMoveResult, RedoError, UndoError},
+    db::state::{InRecordsTable, IsArbitrary, RecordRowMoveResult, RedoError, UndoError},
     logger::{Level, error, max_level, suggest},
     output::stdout_lock_wrap,
 };
@@ -22,7 +22,7 @@ pub fn handle_undo_result<'conn, I: InRecordsTable, J>(
         RecordRowMoveResult::Unchanged(state, err) => {
             state.commit()?;
             match err {
-                UndoError::ParentExists => {
+                UndoError::ParentEntry => {
                     error!("Parent is not deleted");
                 }
                 UndoError::ParentDeleted => {
@@ -45,7 +45,7 @@ pub fn handle_undo_result<'conn, I: InRecordsTable, J>(
 }
 
 pub fn handle_redo_result<'conn, I>(
-    res: RecordRowMoveResult<'conn, ArbitraryKey, I, RedoError>,
+    res: RecordRowMoveResult<'conn, IsArbitrary, I, RedoError>,
 ) -> anyhow::Result<()> {
     match res {
         RecordRowMoveResult::Updated(state) => {

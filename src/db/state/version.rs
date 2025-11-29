@@ -3,8 +3,8 @@ use std::{fmt, str::FromStr};
 use rusqlite::types::{FromSql, FromSqlError, ValueRef};
 
 use super::{
-    ArbitraryData, CompleteRecordRow, InRecordsTable, RecordRow, State, Transaction,
-    tree::RecordRowDisplay,
+    ArbitraryData, CompleteRecordRow, InRecordsTable, RecordRow, RecordRowDisplay, State,
+    Transaction,
 };
 
 /// A specific version of a record row.
@@ -13,7 +13,7 @@ use super::{
 #[derive(Debug)]
 pub struct Version<'tx, 'conn> {
     pub row: RecordRow<ArbitraryData>,
-    pub(super) row_id: i64,
+    pub(in crate::db) row_id: i64,
     pub(super) tx: &'tx Transaction<'conn>,
     parent_row_id: Option<i64>,
 }

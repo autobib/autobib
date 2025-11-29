@@ -1,11 +1,11 @@
 use std::{fmt, marker::PhantomData};
 
-use chrono::{DateTime, Local};
 use crossterm::style::{ContentStyle, StyledContent, Stylize};
 use ramify::TryRamify;
 
-use super::{ArbitraryData, ArbitraryDataRef, InRecordsTable, RevisionId, State, version::Version};
-use crate::{entry::EntryData, record::RemoteId};
+use crate::db::state::ArbitraryData;
+
+use super::state::{InRecordsTable, RecordRowDisplay, State, Version};
 
 pub struct RamifierConfig {
     pub all: bool,
@@ -13,110 +13,11 @@ pub struct RamifierConfig {
     pub oneline: bool,
 }
 
-/// A display adapter for a record row.
-#[derive(Debug)]
-pub struct RecordRowDisplay<'a> {
-    pub(super) data: ArbitraryDataRef<'a>,
-    pub(super) modified: DateTime<Local>,
-    rev_id: RevisionId,
-    canonical: RemoteId<&'a str>,
-    pub(super) styled: bool,
-}
-
-impl<'a> RecordRowDisplay<'a> {
-    pub fn from_version(version: &'a super::Version<'_, '_>, styled: bool) -> Self {
-        Self {
-            data: version.row.data.get_ref(),
-            modified: version.row.modified,
-            rev_id: version.rev_id(),
-            canonical: version.row.canonical.get_ref(),
-            styled,
-        }
-    }
-
-    pub fn from_borrowed_row(
-        record_row: super::RecordRow<ArbitraryDataRef<'a>, &'a str>,
-        rev_id: RevisionId,
-        styled: bool,
-    ) -> Self {
-        Self {
-            data: record_row.data,
-            canonical: record_row.canonical,
-            modified: record_row.modified,
-            rev_id,
-            styled,
-        }
-    }
-}
-
-impl<'a> fmt::Display for RecordRowDisplay<'a> {
-    fn fmt(&self, buf: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let style = if self.styled {
-            ContentStyle::default().yellow()
-        } else {
-            ContentStyle::default()
-        };
-
-        let hex = StyledContent::new(style, self.rev_id);
-
-        let style = if self.styled {
-            ContentStyle::default().italic().grey()
-        } else {
-            ContentStyle::default()
-        };
-
-        let datestamp = StyledContent::new(style, self.modified.format("on %b %d %Y at %X%Z"));
-
-        static PREFIX: &str = "  ";
-
-        match &self.data {
-            ArbitraryDataRef::Entry(raw_entry_data) => {
-                writeln!(buf, "{hex} {datestamp}\n")?;
-                if self.styled {
-                    writeln!(
-                        buf,
-                        "{PREFIX}@{}{{{},",
-                        raw_entry_data.entry_type().green(),
-                        self.canonical
-                    )?;
-                } else {
-                    writeln!(
-                        buf,
-                        "{PREFIX}@{}{{{},",
-                        raw_entry_data.entry_type(),
-                        self.canonical
-                    )?;
-                }
-                for (key, val) in raw_entry_data.fields() {
-                    if self.styled {
-                        writeln!(buf, "{PREFIX}  {} = {{{val}}},", key.blue())?;
-                    } else {
-                        writeln!(buf, "{PREFIX}  {key} = {{{val}}},",)?;
-                    }
-                }
-                write!(buf, "{PREFIX}}}")?;
-
-                Ok(())
-            }
-            ArbitraryDataRef::Deleted(replacement) => {
-                writeln!(buf, "{hex} {datestamp}\n")?;
-                if let Some(remote_id) = replacement {
-                    write!(
-                        buf,
-                        "{PREFIX}Replaced '{}' with '{remote_id}'",
-                        self.canonical
-                    )?;
-                } else {
-                    write!(buf, "{PREFIX}Deleted '{}'", self.canonical)?;
-                }
-                Ok(())
-            }
-            ArbitraryDataRef::Void => {
-                writeln!(buf, "{hex}\n")?;
-                write!(buf, "{PREFIX}Void '{}'", self.canonical)
-            }
-        }
-    }
+/// A ramifier designed for version history.
+pub struct FullHistoryRamifier<'tx> {
+    active_row_id: i64,
+    config: RamifierConfig,
+    _marker: PhantomData<&'tx ()>,
 }
 
 impl<'tx, 'conn> Version<'tx, 'conn> {
@@ -139,13 +40,6 @@ impl<'tx, 'conn> Version<'tx, 'conn> {
             ArbitraryData::Void => '∅',
         }
     }
-}
-
-/// A ramifier designed for version history.
-pub struct FullHistoryRamifier<'tx> {
-    active_row_id: i64,
-    config: RamifierConfig,
-    _marker: PhantomData<&'tx ()>,
 }
 
 impl<'tx, 'conn> TryRamify<Version<'tx, 'conn>> for FullHistoryRamifier<'tx> {

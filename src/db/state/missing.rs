@@ -1,6 +1,6 @@
 use chrono::Local;
 
-use super::{EntryRecordKey, NotEntry, NullRecordRow, State};
+use super::{IsEntry, IsNull, NotEntry, State};
 use crate::{RawEntryData, RemoteId, db::Identifier, entry::EntryData, logger::debug};
 
 /// Types which know how to insert new data.
@@ -13,15 +13,15 @@ pub trait RecordsInsert<'conn> {
         self,
         data: &RawEntryData,
         canonical: &RemoteId,
-    ) -> Result<State<'conn, EntryRecordKey>, rusqlite::Error>;
+    ) -> Result<State<'conn, IsEntry>, rusqlite::Error>;
 }
 
-impl<'conn> RecordsInsert<'conn> for State<'conn, Missing> {
+impl<'conn> RecordsInsert<'conn> for State<'conn, IsMissing> {
     fn insert(
         self,
         data: &RawEntryData,
         canonical: &RemoteId,
-    ) -> Result<State<'conn, EntryRecordKey>, rusqlite::Error> {
+    ) -> Result<State<'conn, IsEntry>, rusqlite::Error> {
         self.insert_new(data, canonical)
     }
 }
@@ -31,12 +31,12 @@ impl<'conn, I: NotEntry> RecordsInsert<'conn> for State<'conn, I> {
         self,
         data: &RawEntryData,
         _: &RemoteId,
-    ) -> Result<State<'conn, EntryRecordKey>, rusqlite::Error> {
+    ) -> Result<State<'conn, IsEntry>, rusqlite::Error> {
         self.reinsert(data)
     }
 }
 
-impl<'conn> RecordsInsert<'conn> for State<'conn, EntryRecordKey> {
+impl<'conn> RecordsInsert<'conn> for State<'conn, IsEntry> {
     fn insert(self, data: &RawEntryData, _: &RemoteId) -> Result<Self, rusqlite::Error> {
         self.modify(data)
     }
@@ -44,21 +44,18 @@ impl<'conn> RecordsInsert<'conn> for State<'conn, EntryRecordKey> {
 
 /// A database id which is missing.
 #[derive(Debug)]
-pub struct Missing;
+pub struct IsMissing;
 
-impl<'conn> State<'conn, Missing> {
-    /// Set a null row, converting into a [`NullRecordRow`].
-    pub fn set_null(
-        self,
-        remote_id: &RemoteId,
-    ) -> Result<State<'conn, NullRecordRow>, rusqlite::Error> {
+impl<'conn> State<'conn, IsMissing> {
+    /// Set a null row, converting into the [`IsNull`] state.
+    pub fn set_null(self, remote_id: &RemoteId) -> Result<State<'conn, IsNull>, rusqlite::Error> {
         let row_id: i64 = {
             let mut setter = self.prepare_cached("INSERT OR REPLACE INTO NullRecords (record_id, attempted) values (?1, ?2) RETURNING rowid")?;
             let cache_time = Local::now();
             setter.query_row((remote_id.name(), cache_time), |row| row.get(0))?
         };
 
-        Ok(State::init(self.tx, NullRecordRow(row_id)))
+        Ok(State::init(self.tx, IsNull(row_id)))
     }
 
     /// Create the row.
@@ -70,13 +67,13 @@ impl<'conn> State<'conn, Missing> {
         data: &RawEntryData,
         canonical: &RemoteId,
         refs: R,
-    ) -> Result<State<'conn, EntryRecordKey>, rusqlite::Error> {
+    ) -> Result<State<'conn, IsEntry>, rusqlite::Error> {
         debug!("Inserting data for canonical id '{canonical}'");
         let row_id: i64 = self.prepare_cached("INSERT OR ABORT INTO Records (record_id, data, modified) values (?1, ?2, ?3) RETURNING key")?.query_row(
             (canonical.name(), data.to_byte_repr(), &Local::now()),
             |row| row.get(0),
         )?;
-        let row = State::init(self.tx, EntryRecordKey(row_id));
+        let row = State::init(self.tx, IsEntry(row_id));
         row.add_refs(refs)?;
         Ok(row)
     }
@@ -87,7 +84,7 @@ impl<'conn> State<'conn, Missing> {
         self,
         data: &D,
         canonical: &RemoteId,
-    ) -> Result<State<'conn, EntryRecordKey>, rusqlite::Error> {
+    ) -> Result<State<'conn, IsEntry>, rusqlite::Error> {
         let raw_record_data = RawEntryData::from_entry_data(data);
         self.insert_new(&raw_record_data, canonical)
     }
@@ -97,7 +94,7 @@ impl<'conn> State<'conn, Missing> {
         self,
         data: &RawEntryData,
         canonical: &RemoteId,
-    ) -> Result<State<'conn, EntryRecordKey>, rusqlite::Error> {
+    ) -> Result<State<'conn, IsEntry>, rusqlite::Error> {
         // SAFETY: 'canonical' is passed as a ref.
         let row = self.insert_with_refs(data, canonical, std::iter::once(canonical))?;
         Ok(row)

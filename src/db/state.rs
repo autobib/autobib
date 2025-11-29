@@ -1,6 +1,6 @@
 //! # Database state representation
-//! This module implements the [typestate pattern](https://cliffle.com/blog/rust-typestate/) to
-//! represent the internal database state as corresponds to a given [`RecordId`].
+//! This module uses the typestate pattern to represent the internal database state
+//! as corresponds to a given [`RecordId`].
 //!
 //! The [`State`] struct is a representation of the database state corresponding to a [`RecordId`].
 //! Internally, the [`State`] struct is a wrapper around a [`Transaction`], which ensures
@@ -9,12 +9,20 @@
 //! A [`RecordId`] is represented by the database in exactly one of the following ways, which is
 //! represented by the corresponding implementation of [`State`].
 //!
-//! 1. The [`RecordId`] corresponds to a row in the `Records` table, and is not present in the
-//!    `NullRecords` table. This is [`State<RecordRow`>].
+//! 1. The [`RecordId`] corresponds to a row in the `Records` table. If this is not disambiguated,
+//!    this is [`State<IsArbitrary>`]. But there are more fine-grained cases:
+//!    - It is an entry: this is [`State<IsEntry>`].
+//!    - It is a deletion marker: this is [`State<IsDeleted>`].
+//!    - It is the void marker: this is [`State<IsVoid>`].
 //! 2. The [`RecordId`] corresponds to a row in the `NullRecords` table, and is not present in the
-//!    `Records` table. This is [`State<NullRecordRow>`].
+//!    `Records` table. This is [`State<IsNull>`].
 //! 3. The [`RecordId`] is not present in either the `Records` table or the `NullRecords` table.
-//!    This is [`State<Missing>`].
+//!    This is [`State<IsMissing>`].
+//!
+//! There are also some aggregate traits:
+//! - [`InRecordsTable`] is implemented by [`IsEntry`], [`IsDeleted`], and [`IsVoid`]>
+//! - [`NotEntry`] is implemented by [`IsDeleted`] and [`IsVoid`]
+//! - [`NotVoid`] is implemented by [`IsEntry`] and [`IsDeleted`]
 //!
 //! Any implementation of [`State`] has access to the following operations:
 //!
@@ -24,27 +32,18 @@
 //!   changes prior to the [`reset`](State::reset) takes place. As a result,
 //!   [`reset`](State::reset) should be used with care to avoid lost data!
 //!
-//! The different states can be converted to each other.
-//!
-//! | From                      | To                       | Method              |
-//! |---------------------------|--------------------------|---------------------|
-//! | [`State<RecordRow>`] | [`State<Missing>`]       | [`State::delete`]   |
-//! | [`State<NullRecordRow>`]  | [`State<Missing>`]       | [`State::delete`]   |
-//! | [`State<Missing>`]        | [`State<RecordRow>`]     | [`State::insert`]   |
-//! | [`State<Missing>`]        | [`State<NullRecordRow>`] | [`State::set_null`] |
-//!
-//! Each of the particular implementation of [`State`] also supports a number of additional methods
-//! which are relevant database operations in the provided state.
+//! The different states can be converted to each other, and support a variety of other operations.
+//! See the implementation docs for the individual states for more detail.
 mod borrow;
+mod disp;
 mod missing;
 mod null;
 mod record;
-pub mod tree;
 mod version;
 
 use rusqlite::{CachedStatement, Error, Statement};
 
-pub use self::{borrow::ArbitraryDataRef, missing::*, null::*, record::*, version::*};
+pub use self::{borrow::ArbitraryDataRef, disp::*, missing::*, null::*, record::*, version::*};
 use super::{RowId, Transaction, get_null_row_id, get_row_id};
 use crate::{
     Alias, AliasOrRemoteId, MappedKey, RecordId, RemoteId,
@@ -92,17 +91,17 @@ impl<'conn, I> State<'conn, I> {
     }
 }
 
-/// A record does not exist in the `Records` or `NullRecords` table.
+/// A record does not exist in the 'Records' or 'NullRecords' table.
 #[derive(Debug)]
 pub enum Unknown<'conn> {
     /// The record was originally an alias, and it was mapped to the given remote identifier.
-    MappedAlias(Alias, RemoteId, State<'conn, Missing>),
+    MappedAlias(Alias, RemoteId, State<'conn, IsMissing>),
     /// The record was a remote identifier, possibly with a transformation applied.
-    RemoteId(MappedKey, State<'conn, Missing>),
+    RemoteId(MappedKey, State<'conn, IsMissing>),
 }
 
 impl Unknown<'_> {
-    /// Commit the [`Missing`] transaction, and convert the underlying data into a [`MappedKey`].
+    /// Commit the [`IsMissing`] state, and convert the underlying data into a [`MappedKey`].
     pub fn combine_and_commit(self) -> Result<MappedKey, rusqlite::Error> {
         match self {
             Unknown::MappedAlias(alias, remote_id, state) => {
@@ -121,20 +120,13 @@ impl Unknown<'_> {
 #[derive(Debug)]
 pub enum RecordIdState<'conn> {
     /// The `Records` row exists.
-    Entry(
-        String,
-        RecordRow<RawEntryData>,
-        State<'conn, EntryRecordKey>,
-    ),
+    Entry(String, RecordRow<RawEntryData>, State<'conn, IsEntry>),
     /// The `Records` row was deleted.
-    Deleted(
-        String,
-        RecordRow<Option<RemoteId>>,
-        State<'conn, DeletedRecordKey>,
-    ),
-    Void(String, RecordRow<()>, State<'conn, VoidRecordKey>),
+    Deleted(String, RecordRow<Option<RemoteId>>, State<'conn, IsDeleted>),
+    /// The void `Records` row.
+    Void(String, RecordRow<()>, State<'conn, IsVoid>),
     /// The `Records` row does not exist and the `NullRecords` row exists.
-    NullRemoteId(MappedKey, State<'conn, NullRecordRow>),
+    NullRemoteId(MappedKey, State<'conn, IsNull>),
     /// The `Records` and `NullRecords` rows do not exist.
     Unknown(Unknown<'conn>),
     /// The alias is undefined.
@@ -167,22 +159,13 @@ impl<'conn> RecordIdState<'conn> {
     fn existent_with_callback<K>(
         tx: Transaction<'conn>,
         row_id: RowId,
-        produce_key_entry: impl FnOnce(
-            &State<'conn, EntryRecordKey>,
-            K,
-        ) -> Result<String, rusqlite::Error>,
-        produce_key_deleted: impl FnOnce(
-            &State<'conn, DeletedRecordKey>,
-            K,
-        ) -> Result<String, rusqlite::Error>,
-        produce_key_void: impl FnOnce(
-            &State<'conn, VoidRecordKey>,
-            K,
-        ) -> Result<String, rusqlite::Error>,
+        produce_key_entry: impl FnOnce(&State<'conn, IsEntry>, K) -> Result<String, rusqlite::Error>,
+        produce_key_deleted: impl FnOnce(&State<'conn, IsDeleted>, K) -> Result<String, rusqlite::Error>,
+        produce_key_void: impl FnOnce(&State<'conn, IsVoid>, K) -> Result<String, rusqlite::Error>,
         key: K,
     ) -> Result<Self, rusqlite::Error> {
         debug!("Beginning new transaction for row '{row_id}' in the `Records` table.");
-        match State::init(tx, ArbitraryKey(row_id)).determine()? {
+        match State::init(tx, IsArbitrary(row_id)).disambiguate()? {
             DisambiguatedRecordRow::Entry(data, state) => {
                 let key = produce_key_entry(&state, key)?;
                 Ok(Self::Entry(key, data, state))
@@ -207,19 +190,19 @@ impl<'conn> RecordIdState<'conn> {
         context: C,
         id_from_context: impl for<'a> FnOnce(&'a C) -> &'a RemoteId,
         produce_null: impl FnOnce(C) -> MappedKey,
-        produce_missing: impl FnOnce(C, State<'conn, Missing>) -> Self,
+        produce_missing: impl FnOnce(C, State<'conn, IsMissing>) -> Self,
     ) -> Result<Self, rusqlite::Error> {
         match get_null_row_id(&tx, id_from_context(&context))? {
             Some(row_id) => {
                 debug!("Beginning new transaction for row '{row_id}' in the `NullRecords` table.");
                 Ok(Self::NullRemoteId(
                     produce_null(context),
-                    State::init(tx, NullRecordRow(row_id)),
+                    State::init(tx, IsNull(row_id)),
                 ))
             }
             None => {
                 debug!("Beginning new transaction for unknown remote id.");
-                Ok(produce_missing(context, State::init(tx, Missing)))
+                Ok(produce_missing(context, State::init(tx, IsMissing)))
             }
         }
     }
@@ -294,6 +277,7 @@ impl<'conn> RecordIdState<'conn> {
         }
     }
 
+    /// Require that the state corresponds to a row in the 'Records' table, raising an error and returning [`None`] if it is not.
     pub fn require_record(
         self,
     ) -> rusqlite::Result<Option<(String, DisambiguatedRecordRow<'conn>)>> {
@@ -323,67 +307,34 @@ impl<'conn> RecordIdState<'conn> {
             }
         })
     }
-
-    //     /// Combine the entry and deleted data into a unified `RecordRow` state, and commit any other
-    //     /// states, reporting an error to standard error.
-    //     pub fn flatten(
-    //         self,
-    //     ) -> Result<
-    //         Option<(String, RecordRow<ArbitraryData>, State<'conn, ArbitraryKey>)>,
-    //         rusqlite::Error,
-    //     > {
-    //         Ok(match self {
-    //             Self::Entry(s, data, state) => Some((s, data.into(), state.forget())),
-    //             Self::Deleted(s, data, state) => Some((s, data.into(), state.forget())),
-    //             Self::Void(s, state) => Some((s, ().into(), state.forget())),
-    //             Self::NullRemoteId(mapped_key, state) => {
-    //                 state.commit()?;
-    //                 error!("Null remote id: {mapped_key}");
-    //                 None
-    //             }
-    //             Self::Unknown(unknown) => {
-    //                 let maybe_normalized = unknown.combine_and_commit()?;
-    //                 error!("Record not in database: {maybe_normalized}");
-    //                 None
-    //             }
-    //             Self::UndefinedAlias(alias) => {
-    //                 error!("Undefined alias: '{alias}'");
-    //                 None
-    //             }
-    //             Self::InvalidRemoteId(record_error) => {
-    //                 reraise(&record_error);
-    //                 None
-    //             }
-    //         })
-    //     }
 }
 
 /// A representation of the database state beginning with an arbitrary [`RemoteId`].
 #[derive(Debug)]
 pub enum RemoteIdState<'conn> {
     /// The `Records` row exists.
-    Entry(RecordRow<RawEntryData>, State<'conn, EntryRecordKey>),
+    Entry(RecordRow<RawEntryData>, State<'conn, IsEntry>),
     /// The `Records` row was deleted.
-    Deleted(RecordRow<Option<RemoteId>>, State<'conn, DeletedRecordKey>),
+    Deleted(RecordRow<Option<RemoteId>>, State<'conn, IsDeleted>),
     /// The `Records` row is void.
-    Void(RecordRow<()>, State<'conn, VoidRecordKey>),
+    Void(RecordRow<()>, State<'conn, IsVoid>),
     /// The `Records` row does not exist and the `NullRecords` row exists.
-    Null(State<'conn, NullRecordRow>),
+    Null(State<'conn, IsNull>),
     /// The `Records` and `NullRecords` rows do not exist.
-    Unknown(State<'conn, Missing>),
+    Unknown(State<'conn, IsMissing>),
 }
 
 /// A representation of the database state beginning with an arbitrary [`RemoteId`].
 #[derive(Debug)]
 pub enum ExistsOrUnknown<'conn> {
     /// The `Records` row exists.
-    Entry(RecordRow<RawEntryData>, State<'conn, EntryRecordKey>),
+    Entry(RecordRow<RawEntryData>, State<'conn, IsEntry>),
     /// The `Records` row was deleted.
-    Deleted(RecordRow<Option<RemoteId>>, State<'conn, DeletedRecordKey>),
+    Deleted(RecordRow<Option<RemoteId>>, State<'conn, IsDeleted>),
     /// The `Records` row is void.
-    Void(RecordRow<()>, State<'conn, VoidRecordKey>),
+    Void(RecordRow<()>, State<'conn, IsVoid>),
     /// The `Records` and `NullRecords` rows do not exist.
-    Unknown(State<'conn, Missing>),
+    Unknown(State<'conn, IsMissing>),
 }
 
 impl<'conn> RemoteIdState<'conn> {
@@ -408,7 +359,7 @@ impl<'conn> RemoteIdState<'conn> {
         Ok(match get_row_id(&tx, remote_id)? {
             Some(row_id) => {
                 debug!("Beginning new transaction for row '{row_id}' in the `Records` table.");
-                match State::init(tx, ArbitraryKey(row_id)).determine()? {
+                match State::init(tx, IsArbitrary(row_id)).disambiguate()? {
                     DisambiguatedRecordRow::Entry(entry_row_data, state) => {
                         RemoteIdState::Entry(entry_row_data, state)
                     }
@@ -423,11 +374,11 @@ impl<'conn> RemoteIdState<'conn> {
                     debug!(
                         "Beginning new transaction for row '{row_id}' in the `NullRecords` table."
                     );
-                    Self::Null(State::init(tx, NullRecordRow(row_id)))
+                    Self::Null(State::init(tx, IsNull(row_id)))
                 }
                 None => {
                     debug!("Beginning new transaction for unknown remote id.");
-                    Self::Unknown(State::init(tx, Missing))
+                    Self::Unknown(State::init(tx, IsMissing))
                 }
             },
         })

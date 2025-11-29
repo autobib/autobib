@@ -1,5 +1,8 @@
 # Architecture
 
+This documentation is for **database version 2**.
+Please see older copies of this file for different database versions.
+
 ## SQLite database format
 
 The Autobib command-line tool stores data locally in a [SQLite](https://sqlite.org/) database, located (in order of priority)
@@ -8,7 +11,7 @@ The Autobib command-line tool stores data locally in a [SQLite](https://sqlite.o
 - as set by the `$AUTOBIB_DATABASE_PATH` environment variable
 - by default at `$XDG_CONFIG_HOME/autobib/records.db`
 
-The goal is this section is to give a full, detailed description of the database format.
+The goal is this section is to give a full, detailed description of the database format in order to read data from the database without using the Autobib program.
 
 ### Application identifier and database version
 
@@ -31,14 +34,29 @@ PRAGMA user_version;
 
 This table has schema
  ```sql
- CREATE TABLE Records (
-     key INTEGER PRIMARY KEY,
-     record_id TEXT NOT NULL UNIQUE,
-     data BLOB NOT NULL,
-     modified TEXT NOT NULL
- ) STRICT;
+CREATE TABLE Records (
+    key INTEGER PRIMARY KEY,
+    record_id TEXT NOT NULL,
+    data BLOB NOT NULL,
+    modified TEXT NOT NULL,
+    variant INTEGER NOT NULL DEFAULT 0,
+    parent_key INTEGER REFERENCES Records(key)
+        ON UPDATE RESTRICT
+        ON DELETE SET NULL
+) STRICT;
  ```
- This table stores the record data, and the associated canonical id, as well as the last modified time.
+This table stores the record data, and the associated canonical id, as well as the last modified time.
+
+The `data` column contains the raw data associated with the record, with interpretation based
+on the `variant`.
+
+- `variant = 0`: This is a regular entry which contains some data.
+  The data is encoded according to the rules [documented below](#internal-binary-data-format).
+- `variant = 1`: This is a deleted entry.
+  Either `data` is a non-empty UTF-8 string (indicating a replacement record), or it is empty.
+  The replacement record may not exist in the database, though it is checked to exist at the time of creation.
+- `variant = 2`: The special void marker.
+  The value in `data` is ignored and should be empty.
 
 ### `Identifiers` table
 
@@ -46,27 +64,12 @@ This table has schema
 ```sql
 CREATE TABLE Identifiers (
     name TEXT NOT NULL PRIMARY KEY,
-    record_key INTEGER,
-    CONSTRAINT foreign_record_key
-        FOREIGN KEY (record_key)
-        REFERENCES Records(key)
-        ON UPDATE CASCADE ON DELETE CASCADE
+    record_key INTEGER NOT NULL References Records(key)
+        ON UPDATE RESTRICT
+        ON DELETE CASCADE
 ) STRICT, WITHOUT ROWID;
 ```
-This table stores the keys which are used to lookup records.
-Canonical ids, reference ids, and aliases are all stored in this table.
-
-### `Changelog` table
-
-This table has schema
- ```sql
- CREATE TABLE Changelog (
-     record_id TEXT NOT NULL,
-     data BLOB NOT NULL,
-     modified TEXT NOT NULL
- ) STRICT;
- ```
-Whenever a row in the `Records` table is modified or deleted, the row is copied into the `Changelog` table as a backup.
+This is a lookup table mapping identifiers to record keys.
 
 ### `NullRecords` table
 
@@ -77,7 +80,19 @@ This table has schema
      attempted TEXT NOT NULL
  ) STRICT;
  ```
-This table records the failed lookups if a provided record is invalid.
+This is a cache table for failed lookup if a provided record is invalid.
+
+### Database invariants
+
+The following invariants must be upheld at all times.
+
+1. The `parent_key` row indicates a directed edge leading from a given row to its *parent* row.
+2. The set of rows for a given value of `record_id` must form exactly one tree.
+3. The `modified` column must be sorted in descending order down the tree: that is, each parent must have `modified` time which is greater than the `modified` time of the child node.
+4. If a void node exists, its `parent_key` must be null.
+5. The modification time of the void node must be exactly `-262143-01-01 00:00:00+00:00`.
+6. A row in the 'Records' table with a key that is present in the `Identifiers` table is called *active*.
+7. Exactly one row per `record_id`-tree must be active.
 
 ## Internal binary data format
 
@@ -105,72 +120,9 @@ Then, each block `DATA` is of the form
 ```txt
 [key_len: u8, value_len: u16, key: [u8..], value: [u8..]]
 ```
-where `key_len` is the length of the first `key` segment, and the `value_len` is
-the length of the `value` segment. Necessarily, `key` and `value` have lengths at
-most `u8::MAX` and `u16::MAX` respectively.
+where `key_len` is the length of the first `key` segment, and the `value_len` is the length of the `value` segment. Necessarily, `key` and `value` have lengths at most `u8::MAX` and `u16::MAX` respectively.
 
 `value_len` is encoded in little endian format.
 
-The `DATA[i]` are sorted by `key` and each `key` and `entry_type` must be ASCII lowercase. The
-`entry_type` can be any valid UTF-8.
-
-## Lookup flow
-
-Given a CLI call of the form
-```sh
-autobib <source>:<sub_id>
-```
-perform the following lookup:
-```txt
-    ┏━━━━━━━━━━━━━━━┓
-    ┃INPUT: RecordId┃
-    ┗━━━━━━━━━━━━━━━┛
-            │                                                     ┌ ─ ─ ─RETURN VALUES─ ─ ─ ─
-            ▽                                                                                │
-╔══════════════════════╗   ┏━━━┓                                  │  ┌───────────┐
-║in Identifiers table?║──▶┃YES┃────────────┌───────────────────────▷│ Ok(Entry) │           │
-╚══════════════════════╝   ┗━━━┛            │                     │  └───────────┘
-            │                               │                                                │
-            ▼                               │                     │
-          ┏━━━┓                             │                                                │
-          ┃NO ┃            ┏━━━━━┓          │                     │  ┌────────────────┐
-          ┗━━━┛        ┌──▶┃Alias┃──────────│───────────────────────▷│ Err(NullAlias) │      │
-            │          │   ┗━━━━━┛          │                     │  └────────────────┘
-            ▽          │   ┏━━━━━━━━┓       │                                                │
-     ╔═════════════╗   │   ┃invalid ┃       │                     │  ┌──────────────────┐
-     ║valid remote ║   ├──▶┃RecordId┃───────│───────────────────────▷│ Err(BadRecordId) │    │
-     ║id or alias? ║───┘   ┗━━━━━━━━┛       │                     │  └──────────────────┘
-     ╚═════════════╝                 ┌────────────┐  ┌─────────┐                             │
-            │                        │add Context │  │  cache  │  │  ┌─────────────────┐
-            ▼                        │     to     │  │ Context │────▷│ Err(NullRemote) │     │
-       ┏━━━━━━━━━┓                   │Identifiers│  │ as Null │  │  └─────────────────┘
-       ┃RemoteId ┃                   └────────────┘  └─────────┘                             │
-       ┗━━━━━━━━━┛                          △             △       │
- ─ ─ ─ ─ ─ ─│─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─│─ ─ ─ ─ ─ ─ ─│─ ─ ─                             │
-│           │           ┏━━━┓       ┏━━━┓   │             │     │ │  ┌── ─── ─── ─── ─── ─┐
-            ┌───────────┃NO ┃◀──┬──▶┃YES┃───┘    ┌────────┘          │ Err(DatabaseError) │  │
-│           ▽           ┗━━━┛   │   ┗━━━┛   │    │              │ │  └ ─── ─── ─── ─── ───
-     ╔═════════════╗            │           │    │                                           │
-│    ║cached Null? ║    ╔═══════════════╗   │    │              │ │  ┌── ─── ─── ─── ─── ─┐
-     ╚═════════════╝    ║in Identifiers║   │    │  ┌────────┐       │ Err(NetworkError)  │  │
-│           │           ║    table?     ║   │    │  │ insert │  │ │  └ ─── ─── ─── ─── ───
-            ├──────┐    ╚═══════════════╝   └───────│Entry to│                               │
-│           ▼      ▼            △                │  │Records │  │ └ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─
-          ┏━━━┓  ┏━━━┓          │                │  └────────┘
-│         ┃NO ┃  ┃YES┃──────────│────────────────┘       △      │
-          ┗━━━┛  ┗━━━┛          │                │       │          MAGENTA = Database
-│           │              ┏━━━━━━━━━┓        ┏━━━━┓  ┏━━━━━┓   │   Operation
-            ▽              ┃RemoteId ┃        ┃Null┃  ┃Entry┃
-│  ┌─────────────────┐     ┗━━━━━━━━━┛        ┗━━━━┛  ┗━━━━━┛   │   BLUE = Network Operation
-   │push RemoteId to │          ▲             ▲    ▲     ▲
-│  │     Context     │          └────────────┬┘    └────┬┘      │   Special errors can occur
-   └─────────────────┘                       │          │           within relevant nodes.
-│           │            ┏━━━━━━━━━━━┓   ╔═══════╗  ╔═══════╗   │
-            ▽         ┌─▶┃ReferenceId┃──▷║convert║  ║lookup ║
-│    ╔═════════════╗  │  ┗━━━━━━━━━━━┛   ╚═══════╝  ╚═══════╝   │
-     ║canonical or ║  │  ┏━━━━━━━━━━━┓                  △
-│    ║ reference?  ║──┴─▶┃CanonicalId┃──────────────────┘       │
-     ╚═════════════╝     ┗━━━━━━━━━━━┛
-│                                                               │
- ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ REMOTE RESOLVE LOOP ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ 
-```
+The `DATA[i]` are sorted by `key` and each `key` and `entry_type` must be ASCII lowercase.
+The `entry_type` can be any valid UTF-8.

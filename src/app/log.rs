@@ -3,7 +3,10 @@ use std::io::Write;
 use ramify::{Config, Generator, branch_writer, writer::RoundedCornersWide};
 
 use crate::{
-    db::state::{InRecordsTable, State, tree::RamifierConfig},
+    db::{
+        state::{InRecordsTable, State},
+        tree::RamifierConfig,
+    },
     output::stdout_lock_wrap,
 };
 
