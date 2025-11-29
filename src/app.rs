@@ -544,20 +544,24 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             }
         }
         Command::Hist { hist_command } => match hist_command {
-            HistCommand::Prune { prune_command } => match prune_command {
-                PruneCommand::All => {
-                    let snapshot = record_db.snapshot()?;
-                    snapshot.prune_all()?;
-                    snapshot.commit()?;
+            HistCommand::Prune { prune_command } => {
+                let snapshot = record_db.snapshot()?;
+                match prune_command {
+                    PruneCommand::All => snapshot.prune_all()?,
+                    PruneCommand::Deleted => snapshot.prune_deleted()?,
+                    PruneCommand::Outdated { retain } => match retain {
+                        0 => snapshot.prune_outdated()?,
+                        idx => snapshot.prune_outdated_keep(idx)?,
+                    },
                 }
-                PruneCommand::Deleted => todo!(),
-                PruneCommand::Outdated => todo!(),
-            },
+                snapshot.commit()?;
+            }
             HistCommand::Redo {
                 citation_key,
                 index,
                 revive,
             } => {
+                let index = index.unwrap_or(-1);
                 let cfg = config::load(&config_path, missing_ok)?;
                 match record_db
                     .state_from_record_id(citation_key, &cfg.alias_transform)?
@@ -937,6 +941,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             citation_key,
             tree,
             all,
+            reverse,
         } => {
             let cfg = config::load(&config_path, missing_ok)?;
             if let Some((_, entry_or_deleted)) = record_db
@@ -944,7 +949,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 .require_record()?
             {
                 let (_, state) = entry_or_deleted.forget();
-                print_log(cli.no_interactive, &state, tree, all, false)?;
+                print_log(cli.no_interactive, &state, tree, all, reverse, false)?;
                 state.commit()?;
             }
         }

@@ -567,7 +567,7 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
 
     fn redo_unchecked(
         self,
-        index: Option<isize>,
+        idx: isize,
     ) -> Result<RecordRowMoveResult<'conn, ArbitraryKey, I, RedoError>, rusqlite::Error> {
         let version = self.current()?;
         let mut children = Vec::new();
@@ -576,36 +576,24 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
             Ok(())
         })?;
 
-        match index {
-            Some(idx) => {
-                if idx >= 0 {
-                    children.sort_unstable_by_key(|c| c.0);
-                    RecordRowMoveResult::from_rowid(
-                        self,
-                        children
-                            .get(idx.abs_diff(0))
-                            .map(|c| c.1)
-                            .ok_or(RedoError::OutOfBounds(children.len())),
-                    )
-                } else {
-                    children.sort_unstable_by_key(|c| Reverse(c.0));
-                    RecordRowMoveResult::from_rowid(
-                        self,
-                        children
-                            .get(idx.abs_diff(-1))
-                            .map(|c| c.1)
-                            .ok_or(RedoError::OutOfBounds(children.len())),
-                    )
-                }
-            }
-            None => {
-                let child_row_id = if children.len() == 1 {
-                    Ok(children[1].1)
-                } else {
-                    Err(RedoError::ChildNotUnique(children.len()))
-                };
-                RecordRowMoveResult::from_rowid(self, child_row_id)
-            }
+        if idx >= 0 {
+            children.sort_unstable_by_key(|c| c.0);
+            RecordRowMoveResult::from_rowid(
+                self,
+                children
+                    .get(idx.abs_diff(0))
+                    .map(|c| c.1)
+                    .ok_or(RedoError::OutOfBounds(children.len())),
+            )
+        } else {
+            children.sort_unstable_by_key(|c| Reverse(c.0));
+            RecordRowMoveResult::from_rowid(
+                self,
+                children
+                    .get(idx.abs_diff(-1))
+                    .map(|c| c.1)
+                    .ok_or(RedoError::OutOfBounds(children.len())),
+            )
         }
     }
 }
@@ -706,7 +694,7 @@ fn create_void_parent(
 impl<'conn, I: NotEntry> State<'conn, I> {
     pub fn redo_deletion(
         self,
-        index: Option<isize>,
+        index: isize,
     ) -> Result<RecordRowMoveResult<'conn, ArbitraryKey, I, RedoError>, rusqlite::Error> {
         self.redo_unchecked(index)
     }
@@ -727,7 +715,7 @@ impl<'conn> State<'conn, EntryRecordKey> {
     /// The returned index on error is the number of children.
     pub fn redo(
         self,
-        index: Option<isize>,
+        index: isize,
     ) -> Result<RecordRowMoveResult<'conn, ArbitraryKey, EntryRecordKey, RedoError>, rusqlite::Error>
     {
         self.redo_unchecked(index)

@@ -340,6 +340,9 @@ pub enum Command {
         /// Also traverse pass deletion markers.
         #[arg(short, long)]
         all: bool,
+        /// Display newest changes first.
+        #[arg(short, long)]
+        reverse: bool,
     },
     /// Show attachment directory associated with record.
     Path {
@@ -551,13 +554,14 @@ pub enum HistCommand {
     },
     /// Redo previously undone changes.
     ///
-    /// If no arguments are provided, the redo will succeed if there is a unique change originating
-    /// from the current state.
+    /// If no arguments are provided, this will redo the most recent change.
     ///
     /// The optional INDEX refers to the 0-indexed change, ordered from oldest to newest.
     /// Negative values of INDEX are permitted and count backwards from newest to oldest.
     ///
     /// For example, INDEX 0 is the oldest change and INDEX -1 is the newest change.
+    ///
+    /// View divergent changes using `autobib log --tree`.
     Redo {
         /// The citation key to modify.
         citation_key: RecordId,
@@ -644,15 +648,22 @@ pub enum HistCommand {
     },
 }
 
-/// Clean up edit history without impacting the active record.
+/// Permanently remove edit history without impacting the active record.
+///
+/// These operations are performed in bulk on the entire database, so if your database is very
+/// large they can take a while to run, particularly the `autobib prune outdated` operation.
 #[derive(Debug, Subcommand)]
 pub enum PruneCommand {
     /// Prune all inactive entries.
     All,
-    /// Prune inactive deletion markers.
+    /// Prune inactive deletion and void markers.
     Deleted,
-    /// Prune entries which are not a child of the active entry.
-    Outdated,
+    /// Prune entries which are not a descendent of an active entry.
+    Outdated {
+        /// Also keep entries that are a descendent of a level `n` ancestor of the active entry.
+        #[arg(long, default_value_t = 0)]
+        retain: u32,
+    },
 }
 
 /// Utilities to manage database.

@@ -1,6 +1,6 @@
 use std::io::Write;
 
-use ramify::{Config, Generator, branch_writer};
+use ramify::{Config, Generator, branch_writer, writer::RoundedCornersWide};
 
 use crate::{
     db::state::{InRecordsTable, State, tree::RamifierConfig},
@@ -15,11 +15,19 @@ branch_writer! {
     }
 }
 
+fn init_config<S>() -> Config<S> {
+    let mut config = Config::new();
+    config.row_padding = 2;
+    config.annotation_margin = 2;
+    config
+}
+
 pub fn print_log<'conn, I: InRecordsTable>(
     no_interactive: bool,
     state: &State<'conn, I>,
     tree: bool,
     all: bool,
+    reverse: bool,
     oneline: bool,
 ) -> anyhow::Result<()> {
     let mut stdout = stdout_lock_wrap();
@@ -30,43 +38,46 @@ pub fn print_log<'conn, I: InRecordsTable>(
         styled,
     };
 
+    // FIXME: copy and paste less here.
+    // probably needs a macro because of dependent type weirdness, especially once
+    // `oneline` also is implemented which will require a different style, again
     if tree {
         let root = state.current()?.root(all)?;
-        let mut config = Config::<InvertedStyle>::new();
-        config.row_padding = 2;
-        config.annotation_margin = 2;
-        let mut generator =
-            Generator::init(root, state.full_history_ramifier(ramifier_config), config);
-        let mut branch_diagram = String::new();
+        let ramifier = state.full_history_ramifier(ramifier_config);
 
-        let mut limit = state.changelog_size()?;
+        if reverse {
+            let config = init_config::<RoundedCornersWide>();
+            let mut generator = Generator::init(root, ramifier, config);
 
-        while generator.try_write_vertex_str(&mut branch_diagram)? {
-            if limit > 0 {
-                limit -= 1;
-            } else {
-                panic!("Database changelog history contains infinite loop");
+            while generator.try_write_vertex(&mut stdout)? {}
+        } else {
+            let config = init_config::<InvertedStyle>();
+            let mut generator = Generator::init(root, ramifier, config);
+
+            let mut branch_diagram = String::new();
+            while generator.try_write_vertex_str(&mut branch_diagram)? {}
+            for line in branch_diagram.lines().rev() {
+                writeln!(&mut stdout, "{line}")?;
             }
-        }
-
-        for line in branch_diagram.lines().rev() {
-            writeln!(&mut stdout, "{line}")?;
         }
     } else {
         let current = state.current()?;
-        let mut config = Config::<ramify::writer::RoundedCornersWide>::new();
-        config.row_padding = 2;
-        config.annotation_margin = 2;
-        let mut generator =
-            Generator::init(current, state.ancestor_ramifier(ramifier_config), config);
-        let mut limit = state.changelog_size()?;
+        let ramifier = state.ancestor_ramifier(ramifier_config);
 
-        while generator.try_write_vertex(&mut stdout)? {
-            if limit > 0 {
-                limit -= 1;
-            } else {
-                panic!("Database changelog history contains infinite loop");
+        if reverse {
+            let config = init_config::<InvertedStyle>();
+            let mut generator = Generator::init(current, ramifier, config);
+            let mut branch_diagram = String::new();
+
+            while generator.try_write_vertex_str(&mut branch_diagram)? {}
+
+            for line in branch_diagram.lines().rev() {
+                writeln!(&mut stdout, "{line}")?;
             }
+        } else {
+            let config = init_config::<RoundedCornersWide>();
+            let mut generator = Generator::init(current, ramifier, config);
+            while generator.try_write_vertex(&mut stdout)? {}
         }
     }
     Ok(())

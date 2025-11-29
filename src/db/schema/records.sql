@@ -5,6 +5,6 @@ CREATE TABLE Records (
     modified TEXT NOT NULL,
     variant INTEGER NOT NULL DEFAULT 0,
     parent_key INTEGER REFERENCES Records(key)
-        ON UPDATE CASCADE
+        ON UPDATE RESTRICT
         ON DELETE SET NULL
 ) STRICT
