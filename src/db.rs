@@ -328,6 +328,10 @@ impl RecordDatabase {
         validator.invalid_identifiers(&mut faults)?;
         validator.integrity(&mut faults)?;
         validator.binary_data(&mut faults)?;
+        validator.unique_tree_per_record_id(&mut faults)?;
+        validator.monotonic_timestamps(&mut faults)?;
+        validator.void_correct_formatting(&mut faults)?;
+        validator.check_active_row_counts(&mut faults)?;
 
         let tx = validator.into_tx();
 
@@ -352,14 +356,6 @@ impl RecordDatabase {
     fn fix_fault_tx(tx: &Transaction, fault: &DatabaseFault) -> Result<bool, rusqlite::Error> {
         match fault {
             DatabaseFault::RowHasInvalidCanonicalId(_, _) => Ok(false),
-            DatabaseFault::DanglingRecord(key, canonical) => {
-                warn!(
-                    "Repairing dangling record by inserting or overwriting existing identifier with name {canonical}"
-                );
-                tx.prepare("INSERT OR REPLACE INTO Identifiers (name, record_key) values (?1, ?2")?
-                    .execute((canonical, key))?;
-                Ok(true)
-            }
             DatabaseFault::NullIdentifiers(_) => {
                 let mut invalid_keys: Vec<String> = Vec::new();
                 {
@@ -382,13 +378,7 @@ impl RecordDatabase {
                 .execute(())?;
                 Ok(true)
             }
-            DatabaseFault::IntegrityError(_) => Ok(false),
-            DatabaseFault::InvalidRecordData(_, _, _) => Ok(false),
-            DatabaseFault::RowHasNonNormalizedCanonicalId(_, _, _) => Ok(false),
-            DatabaseFault::InvalidIdentifier(_) => Ok(false),
-            DatabaseFault::NonNormalizedIdentifier(_, _) => Ok(false),
-            DatabaseFault::MissingTable(_) => Ok(false),
-            DatabaseFault::InvalidTableSchema(_, _) => Ok(false),
+            _ => Ok(false),
         }
     }
 

@@ -102,6 +102,7 @@ DELETE FROM Records WHERE key NOT IN (SELECT key FROM descendants);
 
     /// Delete all inactive records.
     pub fn prune_all(&self) -> rusqlite::Result<()> {
+        info!("Pruning all inactive revisions.");
         // delete everything which is not active. we don't need to set `parent_key = NULL` because
         // of the `ON DELETE SET NULL` foreign key constraint
         self.tx
@@ -113,6 +114,7 @@ DELETE FROM Records WHERE key NOT IN (SELECT key FROM descendants);
     /// Prune all 'oudated' entries: that is, those which are not a descendent of a currently
     /// active entry.
     pub fn prune_outdated(&self) -> rusqlite::Result<()> {
+        info!("Pruning all outdated revisions.");
         self.tx
             .prepare(
                 "
@@ -134,6 +136,7 @@ DELETE FROM Records WHERE key NOT IN (SELECT key FROM descendants);",
     /// Prune all revisions which are not a descendent of a level `n` ancestor of an active
     /// revision.
     pub fn prune_outdated_keep(&self, retain: u32) -> rusqlite::Result<()> {
+        info!("Pruning outdated revisions, retaining {retain} most recent revisisions.");
         self.tx
             .prepare(
                 "
@@ -174,6 +177,7 @@ DELETE FROM Records WHERE key NOT IN (SELECT key FROM descendants);
 
     /// Delete inactive void records with exactly one child.
     pub fn prune_void(&self) -> rusqlite::Result<()> {
+        info!("Pruning inactive void records.");
         self.tx
             .prepare(
                 "
@@ -188,6 +192,7 @@ WHERE variant = 2
 
     /// Delete inactive deleted records which have no children.
     pub fn prune_deleted(&self) -> rusqlite::Result<()> {
+        info!("Pruning deletion records with no children.");
         // the `parent_key` is automatically set to null when the parent is deleted
         self.tx
             .prepare(
@@ -198,8 +203,7 @@ WHERE variant = 1
   AND NOT EXISTS (SELECT 1 FROM Records AS r WHERE r.parent_key = Records.key)",
             )?
             .execute([])?;
-
-        Ok(())
+        self.prune_void()
     }
 
     /// Iterate over all active entries in the Records table, adding the revisions to the list

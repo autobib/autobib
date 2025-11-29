@@ -72,5 +72,3 @@ ${autobib} hist revive local:first \
 ${autobib} hist void local:first
 
 ${autobib} hist redo local:first 0 --revive
-
-${autobib} log local:first --tree --all --reverse

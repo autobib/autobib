@@ -123,6 +123,9 @@ If the record does not yet exist in your local record database, it will be retri
 You can also re-retrieve a record from the remote provider using the `autobib update` command, or remove one from the database using the `autobib delete` command.
 Run `autobib help update` and `autobib help delete` for more details.
 
+The modifications performed by edits, updates, and deletions (except with special flags) are always recoverable.
+See the [edit history](#working-with-edit-history) section for more detail.
+
 ### Assigning aliases
 
 It is also possible to assign *aliases* to records, using the `autobib alias` sub-command.
@@ -162,6 +165,8 @@ Aliases can be used in most locations that the usual identifiers are used.
 For instance, you can run `autobib edit hochman-entropy`, to edit the corresponding record data.
 Note that these edits will apply to the original underlying record.
 
+See the [data model documentation](docs/data_model.md) for more precise information on how Autobib uses identifiers.
+
 Many providers have default key formats; for instance, zbMath internally uses keys of the form `zbMATH06346461`.
 Autobib can be configured to automatically convert aliases matching certain rules to `provider:sub_id` pairs.
 For example, to convert `zbMATH06346461` to `zbmath:06346461` and automatically generate permanent aliases in your database, use the `[alias_transform]` in your [configuration](#user-data-and-configuration-file):
@@ -187,12 +192,9 @@ To modify the record later, run the above command again or use the [`autobib edi
 
 It is also possible to create the local record from a BibTeX file:
 ```sh
-autobib -I local my-entry --from source.bib
+autobib -I local my-entry --from-bibtex source.bib
 ```
 Note that the BibTeX file should contain exactly one entry, or this command will fail.
-
-When you create the local record `local:my-entry`, a new alias `my-entry` (if available) is also created and assigned to the new record.
-As a consequence, the `sub_id` part of a `local:` identifier must be a valid alias, i.e. it cannot contain the colon `:`.
 
 ### Searching for records
 
@@ -206,6 +208,20 @@ autobib find -t '{author}: {title}'
 will list all of your local records with the `author` and `title` fields available to search against.
 
 Read more in the [template syntax documentation](docs/template.md).
+
+### Working with edit history
+
+Autobib maintains a comprehensive edit history: every change to a record in the database creates a new copy with the changes, and the old copy is saved in the database.
+
+You can recover the previous version(s) using `autobib undo` and `autobib redo`.
+
+Internally, undo-states are stored as a *tree*: you can visualize the entire edit history associated with an identifier using `autobib log --tree`.
+You can move to arbitrary states in the edit tree using `autobib reset`.
+
+Your data is never deleted automatically.
+See `autobib hist prune` for a variety of commands which can be used to delete unwanted revisions.
+
+See the [data model documentation](docs/data_model.md) for more information.
 
 ### Importing records
 
