@@ -333,6 +333,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             update_entry_type,
             set_field,
             delete_field,
+            touch,
         } => {
             let cfg = config::load(&config_path, missing_ok)?;
             let nl = Normalization {
@@ -347,7 +348,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 delete_field,
             };
 
-            let no_non_interactive_cmd = nl.is_identity() && edit_cmd.is_identity();
+            let no_non_interactive_cmd = nl.is_identity() && edit_cmd.is_identity() && !touch;
 
             for key in citation_keys {
                 let (Record { key, data, .. }, row) =
@@ -360,10 +361,9 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         row.commit()?;
                     }
                     (_, false) => {
-                        // non-interactive so we only apply the normalizations and update the data
-                        // if anything changed
+                        // non-interactive command is requested, so we perform it without prompting
                         let mut editable_data = MutableEntryData::from_entry_data(&data);
-                        let mut changed = false;
+                        let mut changed = touch;
 
                         changed |= editable_data.normalize(&nl);
                         changed |= editable_data.edit(&edit_cmd);
