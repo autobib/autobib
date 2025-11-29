@@ -95,4 +95,19 @@ You can change to a specific revision using `autobib hist reset --rev`.
 
 ### Lifetimes
 
-TODO: explain this
+In most situations, the edit-tree consists of a number of distinct versions (obtained, say, with `autobib edit` or `autobib update`), and then potentially some deletion markers at node leaves.
+Certain operations are not permitted by default.
+For example, you cannot edit a deletion marker.
+
+In common usage, you would not create new states beyond a deletion marker.
+For example, attempting to edit or update a deletion marker will result in an error.
+In particular, the default state of the edit-tree is that it forms a *lifetime*: a special tree where any non-leaf node contains entry data, and the leaf nodes may additionally be deleted.
+
+However, it is possible to edit beyond a deleted state if desired: this is called *reviving* a deletion marker.
+This is achieved either using `autobib revive` (which you must provide with new data) or with `autobib update --revive`, which inserts new data read from the data provider.
+
+Operations involving multiple lifetimes often require special flags.
+
+- Visualizing all lifetimes with `autobib log` requires the `--all` flag.
+- `autobib undo` will not undo into a deleted state, unless you use `autobib undo --delete`
+- `autobib redo` will not redo beyond a deleted state, unless you use `autobib redo --revive`.
