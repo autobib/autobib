@@ -1,6 +1,6 @@
 CREATE TABLE CitationKeys (
     name TEXT NOT NULL PRIMARY KEY,
     record_key INTEGER NOT NULL References Records(key)
-        ON UPDATE CASCADE
+        ON UPDATE RESTRICT
         ON DELETE CASCADE
 ) STRICT, WITHOUT ROWID

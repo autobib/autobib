@@ -65,14 +65,111 @@ impl<'conn> Snapshot<'conn> {
         Ok(())
     }
 
+    /// Delete all 'orphaned' records.
+    ///
+    /// Usually these should not exist in the database, but sometimes it is useful to temporarily
+    /// put the database in this state and then cleanup afterwards.
+    pub fn prune_orphaned(&self) -> rusqlite::Result<()> {
+        self.tx
+            .prepare(
+                "
+WITH RECURSIVE ancestors AS (
+    SELECT key, parent_key
+    FROM Records
+    WHERE key IN (SELECT record_key FROM CitationKeys)
+
+    UNION ALL
+
+    SELECT r.key, r.parent_key
+    FROM ancestors a
+    INNER JOIN Records r ON a.parent_key = r.key
+),
+descendants AS (
+    SELECT key FROM ancestors
+
+    UNION
+
+    SELECT r.key
+    FROM Records r
+    INNER JOIN descendants d ON r.parent_key = d.key
+)
+DELETE FROM Records WHERE key NOT IN (SELECT key FROM descendants);
+",
+            )?
+            .execute([])?;
+        Ok(())
+    }
+
     /// Delete all inactive records.
     pub fn prune_all(&self) -> rusqlite::Result<()> {
-        // the `parent_key` is automatically set to null when the parent is deleted, so we just
-        // delete everything
+        // delete everything which is not active. we don't need to set `parent_key = NULL` because
+        // of the `ON DELETE SET NULL` foreign key constraint
         self.tx
             .prepare("DELETE FROM Records WHERE key NOT IN (SELECT record_key FROM CitationKeys)")?
             .execute([])?;
         Ok(())
+    }
+
+    /// Prune all 'oudated' entries: that is, those which are not a descendent of a currently
+    /// active entry.
+    pub fn prune_outdated(&self) -> rusqlite::Result<()> {
+        self.tx
+            .prepare(
+                "
+WITH RECURSIVE descendants AS (
+  SELECT DISTINCT record_key FROM CitationKeys
+
+  UNION ALL
+
+  SELECT key
+  FROM Records
+  INNER JOIN descendants ON Records.parent_key = descendants.key
+)
+DELETE FROM Records WHERE key NOT IN (SELECT key FROM descendants);",
+            )?
+            .execute([])?;
+        Ok(())
+    }
+
+    /// Prune all revisions which are not a descendent of a level `n` ancestor of an active
+    /// revision.
+    pub fn prune_outdated_keep(&self, retain: u32) -> rusqlite::Result<()> {
+        self.tx
+            .prepare(
+                "
+WITH RECURSIVE ancestors AS (
+    SELECT key, parent_key, 0 as level
+    FROM Records
+    WHERE key IN (SELECT record_key FROM CitationKeys)
+
+    UNION ALL
+
+    SELECT r.key, r.parent_key, a.level + 1
+    FROM ancestors a
+    INNER JOIN Records r ON a.parent_key = r.key
+    WHERE a.level < ?1
+),
+descendants AS (
+    SELECT key FROM ancestors
+
+    UNION
+
+    SELECT r.key
+    FROM Records r
+    INNER JOIN descendants d ON r.parent_key = d.key
+)
+DELETE FROM Records WHERE key NOT IN (SELECT key FROM descendants);
+",
+            )?
+            .execute([retain])?;
+        Ok(())
+    }
+
+    /// Check whether a specific revision is active.
+    pub fn is_active(&self, rev_id: RevisionId) -> rusqlite::Result<bool> {
+        self.tx
+            .prepare("SELECT EXISTS (SELECT 1 FROM CitationKeys WHERE record_key = ?1)")?
+            .query_one([rev_id.0], |row| row.get(0))
     }
 
     /// Delete inactive void records with exactly one child.
@@ -83,7 +180,7 @@ impl<'conn> Snapshot<'conn> {
 DELETE FROM Records
 WHERE variant = 2
   AND key NOT IN (SELECT record_key FROM CitationKeys)
-  AND (SELECT count(*) FROM Records WHERE parent_key = key LIMIT 2) = 1",
+  AND (SELECT count(*) FROM Records AS r WHERE r.parent_key = Records.key LIMIT 2) = 1",
             )?
             .execute([])?;
         Ok(())
@@ -98,14 +195,14 @@ WHERE variant = 2
 DELETE FROM Records
 WHERE variant = 1
   AND key NOT IN (SELECT record_key FROM CitationKeys)
-  AND NOT EXISTS (SELECT 1 FROM Records WHERE parent_key = key) = 0",
+  AND NOT EXISTS (SELECT 1 FROM Records AS r WHERE r.parent_key = Records.key)",
             )?
             .execute([])?;
 
         Ok(())
     }
 
-    /// Iterate over all active entries in the Records table, adding the revisions to the todolist
+    /// Iterate over all active entries in the Records table, adding the revisions to the list
     /// which are later than the threshold date.
     pub fn rewind_all(&self, after: DateTime<Local>) -> rusqlite::Result<()> {
         let mut retriever = self
@@ -130,9 +227,9 @@ WHERE variant = 1
         Ok(())
     }
 
-    /// Iterate over all active entries in the Records table, adding the revisions to the todolist
+    /// Iterate over all active entries in the Records table, adding the revisions to the list
     /// for which the provided closure returns true.
-    pub fn filter_active_keys<F, T>(&self, mut f: F, todolist: &mut T) -> rusqlite::Result<()>
+    pub fn filter_active_keys<F, T>(&self, mut f: F, buffer: &mut T) -> rusqlite::Result<()>
     where
         F: FnMut(RecordRow<ArbitraryDataRef<'_>, &'_ str>) -> bool,
         T: Extend<RevisionId>,
@@ -146,7 +243,7 @@ WHERE variant = 1
             let rev_id: RevisionId = row.get_unwrap("key");
             Ok(if f(record_row) { Some(rev_id) } else { None })
         })?;
-        todolist.extend(rows.filter_map(|row| match row {
+        buffer.extend(rows.filter_map(|row| match row {
             Ok(Some(t)) => Some(t),
             // err is unreachable here because of the implementation in
             // query_map above, which panics immediately if there is an issue

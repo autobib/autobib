@@ -19,7 +19,7 @@ pub struct Version<'tx, 'conn> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct RevisionId(pub(super) i64);
+pub struct RevisionId(pub(in crate::db) i64);
 
 impl FromSql for RevisionId {
     fn column_result(value: ValueRef<'_>) -> Result<Self, FromSqlError> {
@@ -47,12 +47,6 @@ impl FromStr for RevisionId {
 
 /// Changelog implementation
 impl<'conn, I: InRecordsTable> State<'conn, I> {
-    /// Determine the number of elements in the changelog to obtain an iteration bound.
-    pub fn changelog_size(&self) -> rusqlite::Result<usize> {
-        self.prepare("SELECT count(*) FROM Records WHERE record_id = (SELECT record_id from Records WHERE key = ?1)")?
-            .query_row((self.row_id(),), |row| row.get(0))
-    }
-
     /// Get the version associated with the row.
     pub fn current<'tx>(&'tx self) -> rusqlite::Result<Version<'tx, 'conn>> {
         Version::init(&self.tx, self.row_id())
