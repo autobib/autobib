@@ -231,7 +231,7 @@ impl<'conn> RecordIdState<'conn> {
         record_id: RecordId,
         alias_transform: &A,
     ) -> Result<Self, rusqlite::Error> {
-        // fast path when the identifier is already a citation key in the table
+        // fast path when the identifier is in the lookup table
         if let Some(row_id) = get_row_id(&tx, &record_id)? {
             return Self::existent(tx, row_id, record_id);
         };

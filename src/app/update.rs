@@ -30,7 +30,7 @@ pub fn update<C: Client>(
 ) -> Result<(), anyhow::Error> {
     match record_id_state {
         RecordIdState::Entry(
-            citation_key,
+            id,
             RecordRow {
                 data, canonical, ..
             },
@@ -54,19 +54,14 @@ pub fn update<C: Client>(
                 new_raw_data.normalize(normalization);
 
                 let mut existing_record = MutableEntryData::from_entry_data(&data);
-                merge_record_data(
-                    on_conflict,
-                    &mut existing_record,
-                    once(&new_raw_data),
-                    &citation_key,
-                )?;
+                merge_record_data(on_conflict, &mut existing_record, once(&new_raw_data), &id)?;
 
                 state
                     .modify(&RawEntryData::from_entry_data(&existing_record))?
                     .commit()?;
             }
         }
-        RecordIdState::Deleted(citation_key, data, state) => {
+        RecordIdState::Deleted(id, data, state) => {
             if revive {
                 let mut raw_data = if data.canonical.is_local() {
                     state.commit()?;
@@ -83,7 +78,7 @@ pub fn update<C: Client>(
                     .commit()?;
             } else {
                 state.commit()?;
-                error!("Cannot update soft-deleted row '{citation_key}'.");
+                error!("Cannot update soft-deleted row '{id}'.");
                 suggest!("Undo first, or use `autobib update --revive` to insert new data.");
             }
         }

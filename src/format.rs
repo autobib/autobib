@@ -8,7 +8,7 @@ use nucleo_picker::Render;
 use self::parse::{Kind, Lexer, Token};
 
 use crate::{
-    db::{CitationKey, state::RecordRow},
+    db::{Identifier, state::RecordRow},
     entry::{EntryData, FieldKey, MutableEntryData, RawEntryData, RawRecordFieldsIter},
     error::{ClapTemplateError, KeyParseError, KeyParseErrorKind},
 };

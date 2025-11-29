@@ -3,7 +3,7 @@ use std::str::FromStr;
 use anyhow::anyhow;
 
 use crate::{
-    CitationKey, RawEntryData,
+    Identifier, RawEntryData,
     app::{
         cli::{ImportMode, OnConflict},
         edit::merge_record_data,

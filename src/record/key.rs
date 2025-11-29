@@ -5,7 +5,7 @@ use std::{fmt, str::FromStr};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    CitationKey,
+    Identifier,
     config::AliasTransform,
     error::{
         AliasConversionError, AliasErrorKind, RecordError, RecordErrorKind,
@@ -118,7 +118,7 @@ impl RecordId {
     }
 }
 
-impl CitationKey for RecordId {
+impl Identifier for RecordId {
     fn name(&self) -> &str {
         &self.full_id
     }
@@ -201,7 +201,7 @@ impl From<Alias> for String {
     }
 }
 
-impl CitationKey for Alias {
+impl Identifier for Alias {
     fn name(&self) -> &str {
         &self.0
     }
@@ -352,7 +352,7 @@ impl RemoteId {
     }
 }
 
-impl<S: AsRef<str>> CitationKey for RemoteId<S> {
+impl<S: AsRef<str>> Identifier for RemoteId<S> {
     fn name(&self) -> &str {
         self.full_id.as_ref()
     }

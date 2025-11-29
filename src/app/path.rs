@@ -41,7 +41,7 @@ pub fn get_attachment_root(
     })
 }
 
-/// Get the attachment directory corresponding to the provided citation key.
+/// Get the attachment directory corresponding to the provided identifier.
 pub fn get_attachment_dir(
     data_dir: &Path,
     default_attachments_dir: Option<PathBuf>,
