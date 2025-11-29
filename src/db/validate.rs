@@ -1,8 +1,16 @@
-use std::{fmt, num::NonZero, str::FromStr};
+mod find_cycles;
 
+use std::{
+    collections::{HashMap, HashSet},
+    fmt,
+    num::NonZero,
+    str::FromStr,
+};
+
+use chrono::{DateTime, Local};
 use rusqlite::types::ValueRef;
 
-use super::{Transaction, get_row_id, schema};
+use super::{Transaction, schema};
 use crate::{
     Identifier, RawEntryData, RecordId, RemoteId, error::InvalidBytesError, logger::debug,
 };
@@ -10,6 +18,20 @@ use crate::{
 /// A possible fault that could occurr inside the database.
 #[derive(Debug)]
 pub enum DatabaseFault {
+    /// The `parent_key` relationship in the 'Records' table contains a cycle.
+    ContainsCycle(HashSet<i64>),
+    /// A void record is not a root vertex.
+    VoidIsNotRoot(i64),
+    /// A void record does not have the minimal timestamp.
+    VoidHasIncorrectTimestamp(i64, DateTime<Local>),
+    /// A row has a parent key with modification later than the row modification time.
+    ParentHasEarlierTimestamp(i64),
+    /// A record-id in the 'Records' table has multiple corresponding trees.
+    OrphanedNodes(String, u64),
+    /// A record-id in the 'Records' table has multiple citation keys pointing
+    IncorrectActiveRowCount(String, u64),
+    /// The `parent_key` is a row which does not exist.
+    ParentKeyMissing(i64),
     /// A row has an invalid canonical id.
     RowHasInvalidCanonicalId(i64, String),
     /// A row has a canonical id which has not been normalized.
@@ -18,8 +40,6 @@ pub enum DatabaseFault {
     InvalidIdentifier(String),
     /// A row has a canonical id which has not been normalized.
     NonNormalizedIdentifier(String, String),
-    /// A row does not correspond to a row in the `Identifiers` table.
-    DanglingRecord(i64, String),
     /// There are `NonZero<usize>` rows in the `Identifiers` table which point to a `Records` row which does not exist.
     NullIdentifiers(NonZero<usize>),
     /// There was an underlying SQLite integrity error.
@@ -35,6 +55,49 @@ pub enum DatabaseFault {
 impl fmt::Display for DatabaseFault {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::ContainsCycle(cycle) => {
+                write!(
+                    f,
+                    "Records table contains a cycle! This cycle uses the following row-ids:"
+                )?;
+                for key in cycle {
+                    write!(f, " -> ({key})")?;
+                }
+                Ok(())
+            }
+            Self::ParentHasEarlierTimestamp(row_id) => {
+                write!(
+                    f,
+                    "Row {row_id} has a parent key with modification later than the row modification time."
+                )
+            }
+            Self::OrphanedNodes(record_id, n) => {
+                write!(
+                    f,
+                    "Record id '{record_id}' contains inaccessible revisions: {n} disjoint revision-trees found."
+                )
+            }
+            Self::IncorrectActiveRowCount(record_id, n) => {
+                write!(
+                    f,
+                    "Record id '{record_id}' contains {n} active rows; expected 1."
+                )
+            }
+            Self::ParentKeyMissing(parent_row_id) => {
+                write!(
+                    f,
+                    "Parent key '{parent_row_id}' is not a row in the Records table"
+                )
+            }
+            Self::VoidIsNotRoot(id) => {
+                write!(f, "Void record '{id}' is not a root vertex")
+            }
+            Self::VoidHasIncorrectTimestamp(id, when) => {
+                write!(
+                    f,
+                    "Void record '{id}' contains incorrect timestamp '{when}'"
+                )
+            }
             Self::RowHasInvalidCanonicalId(row_id, name) => {
                 write!(
                     f,
@@ -57,12 +120,6 @@ impl fmt::Display for DatabaseFault {
                 write!(
                     f,
                     "Identifiers table contains record id '{name}' which is not normalized: expected '{expected}'"
-                )
-            }
-            Self::DanglingRecord(row_id, name) => {
-                write!(
-                    f,
-                    "Record row '{row_id}' with record id '{name}' does not have corresponding key in the `Identifiers` table."
                 )
             }
             Self::NullIdentifiers(count) => {
@@ -169,12 +226,117 @@ impl<'conn> DatabaseValidator<'conn> {
                 ));
                 continue;
             }
-
-            // then check that the corresponding record is in the `Identifiers` table
-            if get_row_id(&self.tx, &canonical_id)?.is_none() {
-                faults.push(DatabaseFault::DanglingRecord(row_id, name));
-            }
         }
+        Ok(())
+    }
+
+    pub fn unique_tree_per_record_id(
+        &self,
+        faults: &mut Vec<DatabaseFault>,
+    ) -> rusqlite::Result<()> {
+        debug!("Checking for cycles");
+        let mut key_parent_pairs: HashMap<i64, Option<i64>> = HashMap::new();
+        let mut stmt = self.tx.prepare("SELECT key, parent_key FROM Records")?;
+
+        for row in stmt.query_map([], |row| Ok((row.get("key")?, row.get("parent_key")?)))? {
+            let (key, parent) = row?;
+            key_parent_pairs.insert(key, parent);
+        }
+
+        find_cycles::detect_cycles(&key_parent_pairs, faults);
+
+        debug!("Checking that each record_id contains a unique tree");
+        let mut stmt = self.tx.prepare("SELECT record_id, count(*) as root_count FROM Records WHERE parent_key IS NULL GROUP BY record_id HAVING count(*) != 1")?;
+
+        for row in stmt.query_map([], |row| {
+            Ok((row.get("record_id")?, row.get("root_count")?))
+        })? {
+            let (record_id, n) = row?;
+            faults.push(DatabaseFault::OrphanedNodes(record_id, n));
+        }
+
+        Ok(())
+    }
+
+    pub fn check_active_row_counts(&self, faults: &mut Vec<DatabaseFault>) -> rusqlite::Result<()> {
+        debug!("Checking that each canonical id occurs at most once in the Identifiers table");
+        let mut stmt = self.tx.prepare(
+            "
+SELECT
+    record_id,
+    count(DISTINCT key) as active_row_count
+FROM Records
+WHERE key IN (SELECT record_key FROM Identifiers)
+GROUP BY record_id
+HAVING count(DISTINCT key) != 1
+",
+        )?;
+
+        for row in stmt.query_map([], |row| {
+            Ok((row.get("record_id")?, row.get("active_row_count")?))
+        })? {
+            let (record_id, n) = row?;
+            faults.push(DatabaseFault::IncorrectActiveRowCount(record_id, n));
+        }
+
+        debug!("Checking that each canonical id occurs in the Identifiers table");
+        let mut stmt = self.tx.prepare(
+            "
+SELECT DISTINCT
+    record_id
+FROM Records
+WHERE record_id NOT IN (
+    SELECT r.record_id
+    FROM Records r
+    WHERE r.key IN (SELECT record_key FROM Identifiers)
+)
+",
+        )?;
+
+        for row in stmt.query_map([], |row| row.get("record_id"))? {
+            faults.push(DatabaseFault::IncorrectActiveRowCount(row?, 0));
+        }
+
+        Ok(())
+    }
+
+    pub fn void_correct_formatting(&self, faults: &mut Vec<DatabaseFault>) -> rusqlite::Result<()> {
+        debug!("Checking that void records do not have parents");
+        let mut stmt = self
+            .tx
+            .prepare("SELECT key FROM Records WHERE variant = 2 AND parent_key IS NOT NULL")?;
+
+        for row in stmt.query_map([], |row| row.get("key"))? {
+            faults.push(DatabaseFault::VoidIsNotRoot(row?));
+        }
+
+        debug!("Checking that void records have correct timestamp");
+        let mut stmt = self
+            .tx
+            .prepare("SELECT key, modified FROM Records WHERE variant = 2 AND modified != ?1")?;
+
+        for row in stmt.query_map([DateTime::<Local>::MIN_UTC], |row| {
+            Ok((row.get("key")?, row.get("modified")?))
+        })? {
+            let (id, stamp) = row?;
+            faults.push(DatabaseFault::VoidHasIncorrectTimestamp(id, stamp));
+        }
+
+        Ok(())
+    }
+
+    pub fn monotonic_timestamps(&self, fauls: &mut Vec<DatabaseFault>) -> rusqlite::Result<()> {
+        let mut stmt = self.tx.prepare(
+            "
+SELECT DISTINCT c.key as child_key
+FROM Records c JOIN Records p ON c.parent_key = p.key
+WHERE c.modified < p.modified",
+        )?;
+
+        for row in stmt.query_map([], |row| row.get("child_key"))? {
+            fauls.push(DatabaseFault::ParentHasEarlierTimestamp(row?));
+        }
+
         Ok(())
     }
 
@@ -252,6 +414,7 @@ impl<'conn> DatabaseValidator<'conn> {
                 ));
             }
         }
+
         Ok(())
     }
 }

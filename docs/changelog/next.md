@@ -1,1 +1,36 @@
 # Unreleased
+
+Supported database versions: `<= 1`
+
+Changes since `v0.5.1`.
+
+## Breaking changes
+
+- `autobib delete` now performs 'soft-deletion' by default, which does not remove the record from your database, but instead inserts a 'deletion marker'.
+  The old behaviour can be obtained with `autobib delete --hard`.
+  It is no longer necessary to pass all keys when performing a deletion.
+  Passing redundant keys will now result in an error.
+- `autobib merge` has been removed.
+  It is no longer possible to merge records together.
+  This functionality has been replaced by `autobib delete --replace <replacement>`, which performs a soft delete and stores the replacement state.
+  Subsequent requests for the deleted identifier will return an error message suggesting the replacement key.
+  Also see `autobib update --from-record` and `autobib delete --update-aliases`.
+- `autobib edit` no longer options an interactive editor if headless edit methods are specified.
+- `autobib update --from` has been renamed to `autobib update --from-bibtex`.
+- `autobib local` no longer creates an alias automatically.
+
+## New features
+
+- Autobib now has robust support for edit history.
+  This includes operations such as undo, redo, soft-deletion, and time-travel, as well as new commands for manipulating the edit history.
+  See the [data model documentation](/docs/data_model.md) and `autobib help hist` for more detail.
+- A command `autobib log` has been added to show the edit history associated with an identifier.
+- `autobib edit` now supports headless edit methods.
+  Run `autobib help edit` for more detail.
+- `autobib update` now supports updating from data present in other records in your database with `autobib update --from-record`.
+- `autobib local` now supports headless methods to creating the local record from data specified at the command line.
+
+## Fixes
+
+- `autobib update` now normalizes incoming data using the `on_insert` rules in the configuration.
+- Substantial performance improvements in some cases when working with very large databases with proper use of SQL indices.

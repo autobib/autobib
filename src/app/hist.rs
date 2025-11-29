@@ -1,9 +1,6 @@
-use std::io::Write;
-
 use crate::{
     db::state::{InRecordsTable, IsArbitrary, RecordRowMoveResult, RedoError, UndoError},
-    logger::{Level, error, max_level, suggest},
-    output::stdout_lock_wrap,
+    logger::{LogDisplay, error, suggest},
 };
 
 pub fn handle_undo_result<'conn, I: InRecordsTable, J>(
@@ -11,12 +8,7 @@ pub fn handle_undo_result<'conn, I: InRecordsTable, J>(
 ) -> anyhow::Result<()> {
     match res {
         RecordRowMoveResult::Updated(state) => {
-            if max_level() >= Level::Warn {
-                let version = state.current()?;
-                let mut stdout = stdout_lock_wrap();
-                let styled = stdout.supports_styled_output();
-                writeln!(&mut stdout, "{}", version.display(styled))?;
-            }
+            state.log_opt()?;
             state.commit()?;
         }
         RecordRowMoveResult::Unchanged(state, err) => {
@@ -49,12 +41,7 @@ pub fn handle_redo_result<'conn, I>(
 ) -> anyhow::Result<()> {
     match res {
         RecordRowMoveResult::Updated(state) => {
-            if max_level() >= Level::Warn {
-                let version = state.current()?;
-                let mut stdout = stdout_lock_wrap();
-                let styled = stdout.supports_styled_output();
-                writeln!(&mut stdout, "{}", version.display(styled))?;
-            }
+            state.log_opt()?;
             state.commit()?;
         }
         RecordRowMoveResult::Unchanged(state, redo_err) => {

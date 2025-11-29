@@ -42,7 +42,7 @@ use crate::{
     error::AliasErrorKind,
     format::Template,
     http::{BodyBytes, Client},
-    logger::{Level, debug, error, info, max_level, suggest, warn},
+    logger::{LogDisplay, debug, error, info, suggest, warn},
     normalize::{Normalization, Normalize},
     output::{owriteln, stdout_lock_wrap},
     record::{Alias, Record, RecordId, RemoteId, get_record_row},
@@ -624,12 +624,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     if let Some(revision) = rev {
                         match state.set_active(revision)? {
                             RecordRowMoveResult::Updated(state) => {
-                                if max_level() >= Level::Warn {
-                                    let version = state.current()?;
-                                    let mut stdout = stdout_lock_wrap();
-                                    let styled = stdout.supports_styled_output();
-                                    writeln!(&mut stdout, "{}", version.display(styled))?;
-                                }
+                                state.log_opt()?;
                                 state.commit()?;
                             }
                             RecordRowMoveResult::Unchanged(state, err) => {
@@ -648,12 +643,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         }
                     } else if let Some(dt) = before {
                         let state = state.rewind(dt)?;
-                        if max_level() >= Level::Warn {
-                            let version = state.current()?;
-                            let mut stdout = stdout_lock_wrap();
-                            let styled = stdout.supports_styled_output();
-                            writeln!(&mut stdout, "{}", version.display(styled))?;
-                        }
+                        state.log_opt()?;
                         state.commit()?;
                     }
                 }

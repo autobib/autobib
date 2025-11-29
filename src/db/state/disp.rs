@@ -7,8 +7,15 @@ use std::fmt;
 use chrono::{DateTime, Local};
 use crossterm::style::{ContentStyle, StyledContent, Stylize};
 
-use super::{ArbitraryDataRef, RecordRow, RevisionId, Version};
-use crate::{entry::EntryData, record::RemoteId};
+use super::{ArbitraryDataRef, InRecordsTable, RecordRow, RevisionId, State, Version};
+use crate::{entry::EntryData, logger::LogDisplay, record::RemoteId};
+
+impl<'conn, I: InRecordsTable> LogDisplay for State<'conn, I> {
+    fn log_display(&self, styled: bool, mut buf: impl std::io::Write) -> anyhow::Result<()> {
+        writeln!(buf, "{}", self.current()?.display(styled))?;
+        Ok(())
+    }
+}
 
 /// A display adapter for a row in the 'Records' table.
 #[derive(Debug)]
