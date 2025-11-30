@@ -53,6 +53,7 @@ use self::{
     cli::{AliasCommand, FindMode, InfoReportType, OnConflict, UtilCommand},
     delete::{hard_delete, soft_delete},
     edit::{create_alias_if_valid, insert, merge_record_data},
+    import::ImportConfig,
     path::{data_from_key, data_from_path, get_attachment_dir, get_attachment_root},
     picker::{choose_attachment, choose_attachment_path, choose_canonical_id},
     retrieve::{retrieve_and_validate_entries, retrieve_entries_read_only},
@@ -754,33 +755,26 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
         },
         Command::Import {
             targets,
-            mode,
-            no_alias,
-            replace_colons,
-            log_failures,
+            resolve,
+            local_fallback,
             on_conflict,
+            no_alias,
+            include_files,
         } => {
-            let replace_colons = match replace_colons {
-                Some(subst) => match EntryKey::try_new(subst) {
-                    Ok(new) => Some(new),
-                    Err(err) => bail!("Argument to `--replace-colons` is invalid: {err}"),
-                },
-                None => None,
-            };
-
-            let import_config = self::import::ImportConfig {
+            let import_config = ImportConfig {
                 on_conflict,
-                import_mode: mode,
+                resolve,
+                local_fallback,
                 no_alias,
-                no_interactive: cli.no_interactive,
-                replace_colons,
-                log_failures,
+                include_files,
             };
 
             debug!("Using import configuration: {import_config:?}");
             let cfg = config::load(&config_path, missing_ok)?;
 
             let mut scratch = Vec::new();
+
+            let attachment_root = get_attachment_root(&data_dir, cli.attachments_dir)?;
 
             for bibfile in targets {
                 scratch.clear();
@@ -792,6 +786,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                             &mut record_db,
                             client,
                             &cfg,
+                            &attachment_root,
                             bibfile.display(),
                         )?;
                     }

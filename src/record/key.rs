@@ -154,7 +154,7 @@ impl From<&str> for RecordId {
 pub enum AliasOrRemoteId {
     /// An [`Alias`], and a possible value that it was mapped to.
     Alias(Alias, Option<RemoteId>),
-    /// A [`RemoteId`], which may have been mapped from the original `provider:sub_id`.
+    /// A [`RemoteId`], which may be a normalized form of the original `provider:sub_id`.
     RemoteId(MappedKey),
 }
 

@@ -69,6 +69,4 @@ ${autobib} hist revive local:first \
     --with-field "author = {C}" \
     --with-entry-type article
 
-${autobib} hist void local:first
-
-${autobib} hist redo local:first 0 --revive
+${autobib} log local:first --tree --all

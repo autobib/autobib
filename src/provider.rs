@@ -103,52 +103,85 @@ pub enum ValidationOutcomeExtended {
     InvalidSubId,
 }
 
-/// Convert a bibtex field name whose value may contain an identifier for the returned provider.
-#[inline]
-fn field_name_to_provider(field_name: &str) -> Option<&'static str> {
-    match field_name {
-        "arxiv" => Some("arxiv"),
-        "doi" => Some("doi"),
-        "mrnumber" => Some("mr"),
-        "zbl" => Some("zbl"),
-        "zbmath" => Some("zbmath"),
-        _ => None,
-    }
+pub enum RemoteIdCandidate {
+    /// The optimal identifier found was canonical.
+    OptimalCanonical(MappedKey),
+    /// The optimal identifier found was a reference identifier. This also includes the optimal
+    /// canonical identifier.
+    OptimalReference(MappedKey, Option<MappedKey>),
+    /// No identifier could be determined.
+    None,
 }
 
-/// Given a provider and sub-id, push to the provided buffer if the `provider` is accepted by
-/// `preprocess` and the `provider:sub_id` is valid.
-#[inline]
-fn push_remote_id_if_valid<T, F: FnOnce(&str) -> Option<T>, G: FnOnce(MappedKey, T)>(
-    provider: &str,
-    sub_id: &str,
-    preprocess: F,
-    push: G,
-) {
-    if let Some(filtered) = preprocess(provider)
-        && let Ok(remote_id) = MappedKey::mapped_from_parts(provider, sub_id)
-    {
-        push(remote_id, filtered);
-    }
-}
-
-/// Determine candidates for valid remote identifiers from the provided bibtex data. Each
-/// provider is passed to `preprocess`, and is only processed if `preprocess` returns `Some(T)`. The value
-/// `T`, if `Some`, and the resulting [`MappedKey`], is subsequently passed to `push`.
-pub fn determine_remote_id_candidates<
-    T,
-    D: EntryData,
-    F: FnMut(&str) -> Option<T>,
-    G: FnMut(MappedKey, T),
->(
+/// Determine candidates for valid remote identifiers from the provided bibtex data.
+///
+/// The closure `f` is a scoring function for the candidates.
+///
+/// - If a canonical identifier could be found and it received the highest score, it is returned alone.
+/// - If a reference identifier had the highest score, the canonical identifier with the highest score (if any) is returned as well.
+pub fn determine_remote_id_candidates<K: Ord, D: EntryData, F: FnMut(&RemoteId) -> K>(
     data: &D,
-    mut preprocess: F,
-    mut push: G,
-) {
+    mut score: F,
+    candidate_canonical: Option<MappedKey>,
+    candidate_reference: Option<MappedKey>,
+) -> RemoteIdCandidate {
+    /// Convert a bibtex field name whose value may contain an identifier for the returned provider.
+    #[inline]
+    fn field_name_to_provider(field_name: &str) -> Option<&'static str> {
+        match field_name {
+            "arxiv" => Some("arxiv"),
+            "doi" => Some("doi"),
+            "mrnumber" => Some("mr"),
+            "zbl" => Some("zbl"),
+            "zbmath" => Some("zbmath"),
+            _ => None,
+        }
+    }
+
+    /// A closure to compare the new result with the existing optimal, updating if it is better.
+    #[inline]
+    fn update_in_place<K: Ord, F: FnOnce(&RemoteId) -> K>(
+        provider: &str,
+        sub_id: &str,
+        score: F,
+        best_canonical: &mut Option<(MappedKey, K)>,
+        best_reference: &mut Option<(MappedKey, K)>,
+    ) {
+        if let Ok(mapped) = MappedKey::mapped_from_parts(provider, sub_id) {
+            let to_update = if is_canonical(provider) {
+                best_canonical
+            } else {
+                best_reference
+            };
+
+            let new_k = score(&mapped.mapped);
+
+            match to_update {
+                Some((m, k)) => {
+                    if new_k > *k {
+                        *k = new_k;
+                        *m = mapped;
+                    }
+                }
+                None => {
+                    *to_update = Some((mapped, new_k));
+                }
+            };
+        }
+    }
+
+    let mut br = candidate_canonical.map(|c| {
+        let s = score(&c.mapped);
+        (c, s)
+    });
+    let mut bc = candidate_reference.map(|c| {
+        let s = score(&c.mapped);
+        (c, s)
+    });
     // first determine candidates using provider-specific fields
     for (name, value) in data.fields() {
         if let Some(provider) = field_name_to_provider(name) {
-            push_remote_id_if_valid(provider, value, &mut preprocess, &mut push);
+            update_in_place(provider, value, &mut score, &mut bc, &mut br);
         }
     }
 
@@ -156,7 +189,7 @@ pub fn determine_remote_id_candidates<
     if let Some(provider) = data.get_field("eprinttype")
         && let Some(sub_id) = data.get_field("eprint")
     {
-        push_remote_id_if_valid(provider, sub_id, &mut preprocess, &mut push);
+        update_in_place(provider, sub_id, &mut score, &mut bc, &mut br);
     }
 
     // special handling for arxiv
@@ -165,7 +198,20 @@ pub fn determine_remote_id_candidates<
         .is_some_and(|val| val == "arXiv")
         && let Some(sub_id) = data.get_field("eprint")
     {
-        push_remote_id_if_valid("arxiv", sub_id, &mut preprocess, &mut push);
+        update_in_place("arxiv", sub_id, &mut score, &mut bc, &mut br);
+    }
+
+    match (bc, br) {
+        (Some((c, score_c)), Some((r, score_r))) => {
+            if score_c >= score_r {
+                RemoteIdCandidate::OptimalCanonical(c)
+            } else {
+                RemoteIdCandidate::OptimalReference(r, Some(c))
+            }
+        }
+        (Some((c, _)), None) => RemoteIdCandidate::OptimalCanonical(c),
+        (None, Some((r, _))) => RemoteIdCandidate::OptimalReference(r, None),
+        (None, None) => RemoteIdCandidate::None,
     }
 }
 
@@ -202,15 +248,31 @@ pub fn is_valid_provider(provider: &str) -> bool {
 }
 
 #[inline]
-pub fn is_canonical<C: Client>(provider: &str) -> bool {
-    lookup_validator(provider).is_some()
-        && matches!(lookup_provider::<C>(provider), Provider::Resolver(_))
+pub fn is_canonical(provider: &str) -> bool {
+    // FIXME: this is implemented twice
+    // lookup_validator(provider).is_some()
+    //     && matches!(lookup_provider::<C>(provider), Provider::Resolver(_))
+    match provider {
+        "arxiv" | "doi" | "local" | "mr" | "ol" | "zbmath" => true,
+        "isbn" | "jfm" | "zbl" => false,
+        _ => unreachable!(
+            "Invalid provider '{provider}: an invalid provider should have been caught by a call to `lookup_validator`'!"
+        ),
+    }
 }
 
 #[inline]
-pub fn is_reference<C: Client>(provider: &str) -> bool {
-    lookup_validator(provider).is_some()
-        && matches!(lookup_provider::<C>(provider), Provider::Referrer(_))
+pub fn is_reference(provider: &str) -> bool {
+    // FIXME: this is implemented twice
+    // lookup_validator(provider).is_some()
+    //     && matches!(lookup_provider::<C>(provider), Provider::Referrer(_))
+    match provider {
+        "arxiv" | "doi" | "local" | "mr" | "ol" | "zbmath" => false,
+        "isbn" | "jfm" | "zbl" => true,
+        _ => unreachable!(
+            "Invalid provider '{provider}: an invalid provider should have been caught by a call to `lookup_validator`'!"
+        ),
+    }
 }
 
 /// The outcome of resolving a provider and making the remote call

@@ -275,30 +275,44 @@ pub enum Command {
         hist_command: HistCommand,
     },
     /// Import records from a BibTeX file.
+    ///
+    /// The implementation automatically determines a remote identifier from the data, using
+    /// your `preferred_providers` config setting and with unspecified fallback if there is no
+    /// match.
+    /// Use `--local-fallback` to import as `local:` identifiers if this process fails.
+    ///
+    /// With default flag values, importing is idempotent: if you run an import twice, the result
+    /// will be no different than running this method once, and duplicate entries will not be
+    /// created.
+    ///
+    /// Failed imports are printed to STDOUT with the error messages inside comments. A potential workflow is to redirect output a file, edit
+    /// the file to resolve issues, and then import again.
+    ///
+    /// If you use the `--retrieve` option, the determined identifier can be a reference identifier,
+    /// which will be converted into a canonical identifier using a remote API call.
     Import {
         /// The BibTeX file(s) from which to import.
         targets: Vec<PathBuf>,
-        #[arg(short = 'm', long, value_enum, default_value_t)]
-        /// The type of import to perform.
-        mode: ImportMode,
-        /// How to resolve conflicting field values.
+        #[arg(short, long)]
+        /// Map the citation keys to local identifiers if provenance could not be determined.
+        local_fallback: bool,
+        /// How to resolve conflicts with data currently present in your database.
         #[arg(
             short = 'n',
             long,
             value_enum,
-            default_value_if("no_interactive", ArgPredicate::IsPresent, "prefer-current"),
-            default_value_t
+            default_value_t = OnConflict::PreferCurrent,
         )]
         on_conflict: OnConflict,
         /// Never create aliases.
         #[arg(short = 'A', long)]
         no_alias: bool,
-        /// Replace colons in entry keys with a new string.
-        #[arg(long, value_name = "STR")]
-        replace_colons: Option<String>,
-        /// Print entries which could not be imported
+        /// Make a remote request to resolve reference providers if a canonical cannot be found.
         #[arg(long)]
-        log_failures: bool,
+        resolve: bool,
+        /// Attach files specified in the `file` field.
+        #[arg(long)]
+        include_files: bool,
     },
     /// Show metadata associated with an identifier.
     Info {

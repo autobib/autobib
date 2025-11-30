@@ -18,6 +18,12 @@ Changes since `v0.5.1`.
 - `autobib edit` no longer options an interactive editor if headless edit methods are specified.
 - `autobib update --from` has been renamed to `autobib update --from-bibtex`.
 - `autobib local` no longer creates an alias automatically.
+- `autobib import` has been re-implemented.
+  Run `autobib help import` for more detail.
+  Most notably:
+  - Import modes no longer exist.
+    The default behaviour is to attempt to determine a canonical identifier, and will result in an error if no identifier can be found.
+  - Retrieving data when importing is no longer possible, but reference identifiers can be mapped to canonical identifiers using `--resolve`.
 
 ## New features
 
@@ -29,6 +35,7 @@ Changes since `v0.5.1`.
   Run `autobib help edit` for more detail.
 - `autobib update` now supports updating from data present in other records in your database with `autobib update --from-record`.
 - `autobib local` now supports headless methods to creating the local record from data specified at the command line.
+- `autobib import --include-files` imports files specified in the `file` field
 
 ## Fixes
 

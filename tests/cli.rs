@@ -1,6 +1,7 @@
 use assert_cmd::prelude::*;
 use assert_fs::fixture::{ChildPath, NamedTempFile, PathChild, TempDir};
 use assert_fs::prelude::*;
+use predicates::prelude::predicate::str::contains;
 use predicates::prelude::*;
 
 use std::{fs, path::Path, process::Command};
@@ -45,6 +46,120 @@ impl TestState {
         Ok(())
     }
 
+    fn create_test_db(&self) -> Result<()> {
+        let mut cmd = self.cmd()?;
+        cmd.args([
+            "local",
+            "first",
+            "--with-entry-type",
+            "book",
+            "--with-field",
+            "author = {1}",
+            "--with-field",
+            "title = {2}",
+        ]);
+        cmd.assert().success();
+
+        let mut cmd = self.cmd()?;
+        cmd.args([
+            "local",
+            "second",
+            "--with-entry-type",
+            "article",
+            "--with-field",
+            "author = {A}",
+        ]);
+        cmd.assert().success();
+
+        let mut cmd = self.cmd()?;
+        cmd.args(["edit", "local:first", "--delete-field", "author"]);
+        cmd.assert().success();
+
+        let mut cmd = self.cmd()?;
+        cmd.args(["hist", "undo", "local:first"]);
+        cmd.assert().success();
+
+        let mut cmd = self.cmd()?;
+        cmd.args(["edit", "local:first", "--set-field", "title = {3}"]);
+        cmd.assert().success();
+
+        let mut cmd = self.cmd()?;
+        cmd.args(["hist", "undo", "local:first"]);
+        cmd.assert().success();
+
+        let mut cmd = self.cmd()?;
+        cmd.args(["hist", "redo", "local:first", "0"]);
+        cmd.assert().success();
+
+        let mut cmd = self.cmd()?;
+        cmd.args(["edit", "local:first", "--set-field", "title = {4}"]);
+        cmd.assert().success();
+
+        let mut cmd = self.cmd()?;
+        cmd.args(["edit", "local:first", "--set-field", "title = {5}"]);
+        cmd.assert().success();
+
+        let mut cmd = self.cmd()?;
+        cmd.args(["delete", "local:first", "--replace", "local:second"]);
+        cmd.assert().success();
+
+        let mut cmd = self.cmd()?;
+        cmd.args([
+            "hist",
+            "revive",
+            "local:first",
+            "--with-field",
+            "title = {6}",
+        ]);
+        cmd.assert().success();
+
+        let mut cmd = self.cmd()?;
+        cmd.args(["edit", "local:second", "--update-entry-type", "manuscript"]);
+        cmd.assert().success();
+
+        let mut cmd = self.cmd()?;
+        cmd.args(["hist", "undo", "local:first", "--delete"]);
+        cmd.assert().success();
+
+        let mut cmd = self.cmd()?;
+        cmd.args(["hist", "undo", "local:first"]);
+        cmd.assert().success();
+
+        let mut cmd = self.cmd()?;
+        cmd.args(["delete", "local:first"]);
+        cmd.assert().success();
+
+        let mut cmd = self.cmd()?;
+        cmd.args([
+            "hist",
+            "revive",
+            "local:first",
+            "--with-field",
+            "author = {B}",
+            "--with-entry-type",
+            "book",
+        ]);
+        cmd.assert().success();
+
+        let mut cmd = self.cmd()?;
+        cmd.args(["hist", "void", "local:first"]);
+        cmd.assert().success();
+
+        let mut cmd = self.cmd()?;
+        cmd.args([
+            "hist",
+            "revive",
+            "local:first",
+            "--with-field",
+            "author = {C}",
+            "--with-entry-type",
+            "article",
+        ]);
+        cmd.assert().success();
+
+        Ok(())
+    }
+
     fn close(self) -> Result<()> {
         Ok(())
     }
@@ -70,7 +185,7 @@ fn suggest_alternatives() -> Result<()> {
     cmd.args(["get", "zbl:math/0001001"]);
     cmd.assert()
         .failure()
-        .stderr(predicate::str::contains("arxiv:math/0001001"));
+        .stderr(contains("arxiv:math/0001001"));
     Ok(())
 }
 
@@ -222,9 +337,7 @@ fn get_null() -> Result<()> {
 
     let mut cmd = s.cmd()?;
     cmd.args(["get", "zbl:9999.28015"]);
-    cmd.assert()
-        .failure()
-        .stderr(predicate::str::contains("Null record"));
+    cmd.assert().failure().stderr(contains("Null record"));
 
     let mut cmd = s.cmd()?;
     cmd.args(["get", "--ignore-null", "zbl:9999.28015"]);
@@ -251,7 +364,7 @@ fn local() -> Result<()> {
     cmd.args(["--read-only", "local", "second"]);
     cmd.assert()
         .failure()
-        .stderr(predicate::str::contains("cannot be used in read-only mode"));
+        .stderr(contains("cannot be used in read-only mode"));
 
     let mut cmd = s.cmd()?;
     cmd.args(["get", "local:first"]);
@@ -271,9 +384,9 @@ fn local() -> Result<()> {
         "--from-bibtex",
         "tests/resources/local/first.bib",
     ]);
-    cmd.assert().failure().stderr(predicate::str::contains(
-        "Local record 'local:first' already exists",
-    ));
+    cmd.assert()
+        .failure()
+        .stderr(contains("Local record 'local:first' already exists"));
 
     let mut cmd = s.cmd()?;
     cmd.args(["local", "second"]);
@@ -289,15 +402,15 @@ fn local() -> Result<()> {
 
     let mut cmd = s.cmd()?;
     cmd.args(["local", " \n"]);
-    cmd.assert().failure().stderr(predicate::str::contains(
+    cmd.assert().failure().stderr(contains(
         "local sub-id must contain non-whitespace characters",
     ));
 
     let mut cmd = s.cmd()?;
     cmd.args(["local", ":"]);
-    cmd.assert().failure().stderr(predicate::str::contains(
-        "local sub-id must not contain a colon",
-    ));
+    cmd.assert()
+        .failure()
+        .stderr(contains("local sub-id must not contain a colon"));
 
     s.close()
 }
@@ -332,7 +445,7 @@ fn alias() -> Result<()> {
     cmd.args(["alias", "add", "my_alias", "local:second"]);
     cmd.assert()
         .failure()
-        .stderr(predicate::str::contains("Alias already exists"));
+        .stderr(contains("Alias already exists"));
 
     let mut cmd = s.cmd()?;
     cmd.arg("get").arg("my_alias");
@@ -347,9 +460,7 @@ fn alias() -> Result<()> {
 
     let mut cmd = s.cmd()?;
     cmd.args(["get", "new_alias"]);
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("@book{new_alias"));
+    cmd.assert().success().stdout(contains("@book{new_alias"));
 
     let mut cmd = s.cmd()?;
     cmd.args(["alias", "delete", "new_alias"]);
@@ -357,15 +468,11 @@ fn alias() -> Result<()> {
 
     let mut cmd = s.cmd()?;
     cmd.args(["get", "my_alias"]);
-    cmd.assert()
-        .failure()
-        .stderr(predicate::str::contains("Undefined alias"));
+    cmd.assert().failure().stderr(contains("Undefined alias"));
 
     let mut cmd = s.cmd()?;
     cmd.args(["get", "new_alias"]);
-    cmd.assert()
-        .failure()
-        .stderr(predicate::str::contains("Undefined alias"));
+    cmd.assert().failure().stderr(contains("Undefined alias"));
 
     let mut cmd = s.cmd()?;
     cmd.args(["get", "--ignore-null", "new_alias"]);
@@ -373,31 +480,29 @@ fn alias() -> Result<()> {
 
     let mut cmd = s.cmd()?;
     cmd.args(["alias", "delete", "my_alias"]);
-    cmd.assert().failure().stderr(predicate::str::contains(
-        "Could not delete alias which does not exist",
-    ));
+    cmd.assert()
+        .failure()
+        .stderr(contains("Could not delete alias which does not exist"));
 
     let mut cmd = s.cmd()?;
     cmd.args(["alias", "add", "  ", "not_an_alias"]);
     cmd.assert().failure().stderr(
-        predicate::str::contains("invalid value '  ' for '<ALIAS>'").and(predicate::str::contains(
-            "alias must contain non-whitespace characters",
-        )),
+        contains("invalid value '  ' for '<ALIAS>'")
+            .and(contains("alias must contain non-whitespace characters")),
     );
 
     let mut cmd = s.cmd()?;
     cmd.args(["alias", "add", "\n\t", "not_an_alias"]);
     cmd.assert().failure().stderr(
-        predicate::str::contains("invalid value '\n\t' for '<ALIAS>'").and(
-            predicate::str::contains("alias must contain non-whitespace characters"),
-        ),
+        contains("invalid value '\n\t' for '<ALIAS>'")
+            .and(contains("alias must contain non-whitespace characters")),
     );
 
     let mut cmd = s.cmd()?;
     cmd.args(["alias", "add", "has ws", "not_an_alias"]);
-    cmd.assert().failure().stderr(predicate::str::contains(
-        "Cannot create alias for undefined alias",
-    ));
+    cmd.assert()
+        .failure()
+        .stderr(contains("Cannot create alias for undefined alias"));
 
     s.close()
 }
@@ -421,21 +526,19 @@ fn alias_remote() -> Result<()> {
 
     let mut cmd = s.cmd()?;
     cmd.args(["alias", "add", "a2", "zbmath:96346461"]);
-    cmd.assert().failure().stderr(predicate::str::contains(
-        "Cannot create alias for null record",
-    ));
+    cmd.assert()
+        .failure()
+        .stderr(contains("Cannot create alias for null record"));
 
     let mut cmd = s.cmd()?;
     cmd.args(["alias", "add", "a2", "alias-does-not-exist"]);
-    cmd.assert().failure().stderr(predicate::str::contains(
-        "Cannot create alias for undefined alias",
-    ));
+    cmd.assert()
+        .failure()
+        .stderr(contains("Cannot create alias for undefined alias"));
 
     let mut cmd = s.cmd()?;
     cmd.args(["get", "a2"]);
-    cmd.assert()
-        .failure()
-        .stderr(predicate::str::contains("Undefined alias"));
+    cmd.assert().failure().stderr(contains("Undefined alias"));
 
     s.close()
 }
@@ -456,10 +559,9 @@ fn bibtex_key_validation() -> Result<()> {
 
     let mut cmd = s.cmd()?;
     cmd.args(["get", "doi:10.1016/0021-8693(89)90256-1"]);
-    cmd.assert().failure().stderr(
-        predicate::str::contains("Identifier contains invalid character")
-            .and(predicate::str::contains("cst1989")),
-    );
+    cmd.assert()
+        .failure()
+        .stderr(contains("Identifier contains invalid character").and(contains("cst1989")));
 
     let mut cmd = s.cmd()?;
     cmd.args(["get", "cst1989"]);
@@ -483,9 +585,9 @@ fn bibtex_key_validation() -> Result<()> {
 
     let mut cmd = s.cmd()?;
     cmd.args(["get", "has ws"]);
-    cmd.assert().failure().stderr(predicate::str::contains(
-        "Identifier contains invalid character",
-    ));
+    cmd.assert()
+        .failure()
+        .stderr(contains("Identifier contains invalid character"));
 
     s.close()
 }
@@ -532,26 +634,22 @@ fn delete() -> Result<()> {
 
     let mut cmd = s.cmd()?;
     cmd.args(["get", "my_alias"]);
-    cmd.assert()
-        .failure()
-        .stderr(predicate::str::contains("Deleted record"));
+    cmd.assert().failure().stderr(contains("Deleted record"));
 
     let mut cmd = s.cmd()?;
     cmd.args(["delete", "my_alias"]);
-    cmd.assert()
-        .failure()
-        .stderr(predicate::str::contains("already deleted"));
+    cmd.assert().failure().stderr(contains("already deleted"));
 
     // deleting multiple
     let mut cmd = s.cmd()?;
     cmd.args(["delete", "--hard", "local:first", "my_alias"]);
     cmd.assert()
         .failure()
-        .stderr(predicate::str::contains("Cannot delete undefined alias"));
+        .stderr(contains("Cannot delete undefined alias"));
 
     let mut cmd = s.cmd()?;
     cmd.args(["get", "local:first"]);
-    cmd.assert().failure().stderr(predicate::str::contains(
+    cmd.assert().failure().stderr(contains(
         "Cannot retrieve remote data for key with local provenance",
     ));
 
@@ -582,23 +680,21 @@ fn list() -> Result<()> {
 
     let mut cmd = s.cmd()?;
     cmd.args(["util", "list"]);
-    cmd.assert().success().stdout(
-        predicate::str::contains("zbmath:06346461").and(predicate::str::contains("my_alias")),
-    );
+    cmd.assert()
+        .success()
+        .stdout(contains("zbmath:06346461").and(contains("my_alias")));
 
     let mut cmd = s.cmd()?;
     cmd.args(["--read-only", "util", "list"]);
-    cmd.assert().success().stdout(
-        predicate::str::contains("zbmath:06346461").and(predicate::str::contains("my_alias")),
-    );
+    cmd.assert()
+        .success()
+        .stdout(contains("zbmath:06346461").and(contains("my_alias")));
 
     let mut cmd = s.cmd()?;
     cmd.args(["util", "list", "--canonical"]);
-    cmd.assert().success().stdout(
-        predicate::str::contains("my_alias")
-            .not()
-            .and(predicate::str::contains("local:first")),
-    );
+    cmd.assert()
+        .success()
+        .stdout(contains("my_alias").not().and(contains("local:first")));
 
     s.close()
 }
@@ -609,9 +705,9 @@ fn info() -> Result<()> {
 
     let mut cmd = s.cmd()?;
     cmd.args(["info", "zbl:1337.28015", "-r", "canonical"]);
-    cmd.assert().failure().stderr(predicate::str::contains(
-        "Cannot obtain report for record not in database",
-    ));
+    cmd.assert()
+        .failure()
+        .stderr(contains("Cannot obtain report for record not in database"));
 
     let mut cmd = s.cmd()?;
     cmd.args(["get", "zbl:1337.28015"]);
@@ -638,24 +734,22 @@ fn info() -> Result<()> {
     let mut cmd = s.cmd()?;
     cmd.args(["info", "zbl:1337.28015", "-r", "equivalent"]);
     cmd.assert().success().stdout(
-        predicate::str::contains("%")
-            .and(predicate::str::contains("zbmath:06346461"))
-            .and(predicate::str::contains("zbl:1337.28015")),
+        contains("%")
+            .and(contains("zbmath:06346461"))
+            .and(contains("zbl:1337.28015")),
     );
 
     let mut cmd = s.cmd()?;
     cmd.args(["info", "%", "-r", "valid"]);
-    cmd.assert()
-        .failure()
-        .stderr(predicate::str::contains("Invalid BibTeX"));
+    cmd.assert().failure().stderr(contains("Invalid BibTeX"));
 
     let mut cmd = s.cmd()?;
     cmd.args(["info", "%"]);
     cmd.assert().success().stdout(
-        predicate::str::contains("Data last modified:")
-            .and(predicate::str::contains("Equivalent references:"))
-            .and(predicate::str::contains("Canonical: zbmath:06346461\n"))
-            .and(predicate::str::contains("Valid BibTeX? no")),
+        contains("Data last modified:")
+            .and(contains("Equivalent references:"))
+            .and(contains("Canonical: zbmath:06346461\n"))
+            .and(contains("Valid BibTeX? no")),
     );
 
     s.close()
@@ -765,13 +859,13 @@ fn edit() -> Result<()> {
     cmd.args(["edit", "zbl:9999.28015"]);
     cmd.assert()
         .failure()
-        .stderr(predicate::str::contains("Cannot edit null record"));
+        .stderr(contains("Cannot edit null record"));
 
     let mut cmd = s.cmd()?;
     cmd.args(["edit", "my_alias"]);
     cmd.assert()
         .failure()
-        .stderr(predicate::str::contains("Cannot edit undefined alias"));
+        .stderr(contains("Cannot edit undefined alias"));
 
     let predicate_file =
         predicate::path::eq_file(Path::new("tests/resources/edit/stdout_unedited.txt"))
@@ -805,10 +899,9 @@ fn update() -> Result<()> {
 
     let mut cmd = s.cmd()?;
     cmd.args(["update", "zbmath:06346461"]);
-    cmd.assert().failure().stderr(
-        predicate::str::contains("does not exist in database")
-            .and(predicate::str::contains("Use `autobib get`")),
-    );
+    cmd.assert()
+        .failure()
+        .stderr(contains("does not exist in database").and(contains("Use `autobib get`")));
 
     s.close()
 }
@@ -827,85 +920,62 @@ fn update_local() -> Result<()> {
 
     let mut cmd = s.cmd()?;
     cmd.args(["update", "local:one"]);
-    cmd.assert().failure().stderr(predicate::str::contains(
-        "Cannot update local record using remote data",
-    ));
+    cmd.assert()
+        .failure()
+        .stderr(contains("Cannot update local record using remote data"));
 
     let mut cmd = s.cmd()?;
     cmd.args(["update", "local:two"]);
-    cmd.assert().failure().stderr(
-        predicate::str::contains("does not exist in database")
-            .and(predicate::str::contains("Use `autobib get`").not()),
-    );
+    cmd.assert()
+        .failure()
+        .stderr(contains("does not exist in database").and(contains("Use `autobib get`").not()));
 
     s.close()
 }
 
-// #[test]
-// fn consistency() -> Result<()> {
-//     use rusqlite::Connection;
+#[test]
+fn consistency() -> Result<()> {
+    use rusqlite::Connection;
 
-//     let s = TestState::init()?;
+    let s = TestState::init()?;
 
-//     let mut cmd = s.cmd()?;
-//     cmd.args([
-//         "get",
-//         "--retrieve-only",
-//         "zbmath:06346461",
-//         "zbl:1337.28015",
-//         "mr:3224722",
-//     ]);
-//     cmd.assert().success();
+    let mut cmd = s.cmd()?;
+    cmd.args([
+        "get",
+        "--retrieve-only",
+        "zbmath:06346461",
+        "zbl:1337.28015",
+        "mr:3224722",
+    ]);
+    cmd.assert().success();
 
-//     // perform some destructive changes to the database
-//     let conn = Connection::open(s.database.path())?;
-//     conn.pragma_update(None, "foreign_keys", 0)?;
-//     conn.prepare("DELETE FROM Records WHERE record_id = 'zbmath:06346461'")?
-//         .execute(())?;
-//     conn.prepare("DELETE FROM CitationKeys WHERE name = 'mr:3224722'")?
-//         .execute(())?;
-//     drop(conn);
+    // perform some destructive changes to the database
+    let conn = Connection::open(s.database.path())?;
+    conn.pragma_update(None, "foreign_keys", 0)?;
+    conn.prepare("DELETE FROM Records WHERE record_id = 'zbmath:06346461'")?
+        .execute(())?;
+    conn.prepare("DELETE FROM Identifiers WHERE name = 'mr:3224722'")?
+        .execute(())?;
+    drop(conn);
 
-//     // check that things are broken
-//     let mut cmd = s.cmd()?;
-//     cmd.args(["get", "zbmath:06346461"]);
-//     cmd.assert().failure().stderr(predicate::str::contains(
-//         "Database error: SQLite error: Query returned no rows",
-//     ));
+    // check that things are broken
+    let mut cmd = s.cmd()?;
+    cmd.args(["get", "zbmath:06346461"]);
+    cmd.assert().failure().stderr(predicate::str::contains(
+        "Database error: SQLite error: Query returned no rows",
+    ));
 
-//     // check that the error report is correct
-//     let mut cmd = s.cmd()?;
-//     cmd.args(["util", "check"]);
-//     cmd.assert().failure().stderr(
-//         predicate::str::contains(
-//             "There are 2 citation keys which reference records which do not exist in the database.",
-//         )
-//         .and(predicate::str::contains(
-//             "Record row '2' with record id 'mr:3224722' does not have corresponding key",
-//         )),
-//     );
+    // check that the error report is correct
+    let mut cmd = s.cmd()?;
+    cmd.args(["util", "check"]);
+    cmd.assert().failure().stderr(
+        predicate::str::contains("Record id 'mr:3224722' contains 0 active rows").and(
+            predicate::str::contains("2 identifiers which reference records which do not exist"),
+        ),
+    );
 
-//     // fix things
-//     let mut cmd = s.cmd()?;
-//     cmd.args(["util", "check", "--fix"]);
-//     cmd.assert().success().stderr(
-//         predicate::str::contains(
-//             "Repairing dangling record by inserting or overwriting existing citation key",
-//         )
-//         .and(predicate::str::contains(
-//             "Deleting citation keys which do not reference records:",
-//         ))
-//         .and(predicate::str::contains("zbl:1337.28015"))
-//         .and(predicate::str::contains("zbmath:06346461")),
-//     );
-
-//     // check that things are fixed
-//     let mut cmd = s.cmd()?;
-//     cmd.args(["get", "mr:3224722", "zbmath:06346461"]);
-//     cmd.assert().success();
-
-//     s.close()
-// }
+    s.close()
+}
 
 /// Check that `autobib get` warns if there are multiple references to the same key
 #[test]
@@ -916,7 +986,7 @@ fn repeat() -> Result<()> {
     cmd.args(["get", "zbmath:06346461", "zbl:1337.28015"]);
     cmd.assert()
         .success()
-        .stderr(predicate::str::contains("Multiple keys for "));
+        .stderr(contains("Multiple keys for "));
 
     let mut cmd = s.cmd()?;
     cmd.args(["alias", "add", "a", "zbl:1337.28015"]);
@@ -926,13 +996,13 @@ fn repeat() -> Result<()> {
     cmd.args(["get", "zbmath:06346461", "a"]);
     cmd.assert()
         .success()
-        .stderr(predicate::str::contains("Multiple keys for "));
+        .stderr(contains("Multiple keys for "));
 
     let mut cmd = s.cmd()?;
     cmd.args(["get", "a", "a"]);
     cmd.assert()
         .success()
-        .stderr(predicate::str::contains("Multiple keys for "));
+        .stderr(contains("Multiple keys for "));
 
     s.close()
 }
@@ -1034,13 +1104,13 @@ fn test_cache_evict() -> Result<()> {
     cmd.args(["-v", "util", "evict", "--max-age", "10000"]);
     cmd.assert()
         .success()
-        .stderr(predicate::str::contains("Removed 0 cached null"));
+        .stderr(contains("Removed 0 cached null"));
 
     let mut cmd = s.cmd()?;
     cmd.args(["-v", "util", "evict"]);
     cmd.assert()
         .success()
-        .stderr(predicate::str::contains("Removed 1 cached null"));
+        .stderr(contains("Removed 1 cached null"));
 
     s.close()
 }
@@ -1061,7 +1131,7 @@ fn test_normalize() -> Result<()> {
     cmd.args(["info", "zbmath:1111111"]);
     cmd.assert()
         .failure()
-        .stderr(predicate::str::contains("converted from 'zbmath:1111111'"));
+        .stderr(contains("converted from 'zbmath:1111111'"));
 
     s.close()
 }
@@ -1101,9 +1171,7 @@ fn test_auto_alias() -> Result<()> {
 
     let mut cmd = s.cmd()?;
     cmd.args(["get", "zbMATH6346461"]);
-    cmd.assert()
-        .failure()
-        .stderr(predicate::str::contains("Undefined alias"));
+    cmd.assert().failure().stderr(contains("Undefined alias"));
 
     let mut cmd = s.cmd()?;
     cmd.args(["get", "zbl:1337.28015"]);
@@ -1111,9 +1179,7 @@ fn test_auto_alias() -> Result<()> {
 
     let mut cmd = s.cmd()?;
     cmd.args(["info", "zbl:1337.28015", "--report", "equivalent"]);
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("zbMATH06346461"));
+    cmd.assert().success().stdout(contains("zbMATH06346461"));
 
     let mut cmd = s.cmd()?;
     cmd.args(["get", "mr:3224722"]);
@@ -1129,16 +1195,16 @@ fn test_auto_alias() -> Result<()> {
 
     let mut cmd = s.cmd()?;
     cmd.args(["info", "MR3224722", "--report", "equivalent"]);
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("mr:3224722"));
+    cmd.assert().success().stdout(contains("mr:3224722"));
 
     s.close()
 }
 
 #[test]
-fn import_local() -> Result<()> {
+fn import_basic() -> Result<()> {
     let s = TestState::init()?;
+
+    s.set_config("tests/resources/import/config.toml")?;
 
     let mut cmd = s.cmd()?;
     cmd.args(["import", "tests/resources/import/file.bib"]);
@@ -1153,84 +1219,110 @@ fn import_local() -> Result<()> {
     );
 
     let mut cmd = s.cmd()?;
-    cmd.args(["get", "zbmath:7937992"]);
+    cmd.args(["get", "zbmath:06346461"]);
     cmd.assert()
         .success()
-        .stdout(predicate::str::contains("zbmath = {07937992}"));
+        .stdout(contains("doi = {10.4007/annals.2014.180.2.7}"));
 
     s.close()
 }
 
 #[test]
-fn import_determine_key_no_match() -> Result<()> {
+fn import_no_alias() -> Result<()> {
     let s = TestState::init()?;
 
     let mut cmd = s.cmd()?;
-    cmd.args([
-        "import",
-        "tests/resources/import/file.bib",
-        "-m",
-        "determine-key",
-    ]);
+    cmd.args(["import", "tests/resources/import/file.bib", "--no-alias"]);
     cmd.assert().success();
 
     let mut cmd = s.cmd()?;
     cmd.args(["get", "attainable-assouad-spectra"]);
-    cmd.assert().success().stdout(
-        predicate::path::eq_file(Path::new("tests/resources/import/stdout_local.txt"))
-            .utf8()
-            .unwrap(),
-    );
-
-    // the remote record is different, since `zbmath` was not set as a preferred provider and there
-    // was no matching alias transform
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "zbmath:7937992", "local:zbMATH06346461"]);
-    cmd.assert().success().stdout(
-        predicate::path::eq_file(Path::new("tests/resources/import/stdout_remote.txt"))
-            .utf8()
-            .unwrap(),
-    );
+    cmd.assert().failure().stderr(contains("Undefined alias"));
 
     s.close()
 }
 
 #[test]
-fn import_determine_key_match() -> Result<()> {
+fn no_key() -> Result<()> {
     let s = TestState::init()?;
 
-    // set configuration to allow keys to be determined successfully
-    s.set_config("tests/resources/import/config.toml")?;
+    let mut cmd = s.cmd()?;
+
+    // no key for the import
+    cmd.args(["import", "tests/resources/import/no_ids.bib"]);
+    cmd.assert()
+        .failure()
+        .stdout(contains("Could not determine candidate key"));
+
+    // but succeeds with local fallback
+    let mut cmd = s.cmd()?;
+    cmd.args([
+        "import",
+        "tests/resources/import/no_ids.bib",
+        "--local-fallback",
+    ]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["get", "local:my-article"]);
+    cmd.assert().success().stdout(contains("John, Doe"));
 
     let mut cmd = s.cmd()?;
     cmd.args([
         "import",
         "tests/resources/import/file.bib",
-        "-m",
-        "determine-key",
+        "--local-fallback",
     ]);
     cmd.assert().success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "attainable-assouad-spectra"]);
-    cmd.assert().success().stdout(
-        predicate::path::eq_file(Path::new("tests/resources/import/stdout_local.txt"))
-            .utf8()
-            .unwrap(),
-    );
-
-    // this time, the records were successfully found locally so no remote retrieval is required
+    // local fallback is not used if the key could be determined
     let mut cmd = s.cmd()?;
     cmd.args(["get", "local:zbMATH06346461"]);
     cmd.assert().failure();
 
+    // local fallback is not used if reference key is found
     let mut cmd = s.cmd()?;
-    cmd.args(["get", "zbmath:07937992", "zbmath:06346461"]);
-    cmd.assert().success().stdout(
-        predicate::path::eq_file(Path::new("tests/resources/import/stdout_local_2.txt"))
-            .utf8()
-            .unwrap(),
-    );
+    cmd.args([
+        "import",
+        "tests/resources/import/retrieve.bib",
+        "--local-fallback",
+    ]);
+    cmd.assert()
+        .failure()
+        .stdout(contains("Failed to determine canonical id"));
+
+    s.close()
+}
+
+#[test]
+fn import_local_fallback_fails() -> Result<()> {
+    let s = TestState::init()?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["local", "my-article"]);
+    cmd.assert().success();
+
+    // local key already exists
+    let mut cmd = s.cmd()?;
+    cmd.args([
+        "import",
+        "tests/resources/import/no_ids.bib",
+        "--local-fallback",
+    ]);
+    cmd.assert()
+        .failure()
+        .stdout(contains("Local id 'local:my-article' already exists"));
+
+    // contains colon
+    let mut cmd = s.cmd()?;
+    cmd.args([
+        "import",
+        "tests/resources/import/id_contains_colon.bib",
+        "--local-fallback",
+    ]);
+    cmd.assert()
+        .failure()
+        .stdout(contains("provider is invalid"));
 
     s.close()
 }
@@ -1239,26 +1331,42 @@ fn import_determine_key_match() -> Result<()> {
 fn import_retrieve() -> Result<()> {
     let s = TestState::init()?;
 
-    // set configuration to allow keys to be determined successfully
     s.set_config("tests/resources/import/config.toml")?;
 
     let mut cmd = s.cmd()?;
-    cmd.args([
-        "import",
-        "tests/resources/import/file.bib",
-        "-mr",
-        "-n",
-        "prefer-incoming",
-    ]);
+    cmd.args(["import", "tests/resources/import/retrieve.bib"]);
+    cmd.assert()
+        .failure()
+        .stdout(contains("Failed to determine canonical id"));
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["import", "tests/resources/import/retrieve.bib", "--resolve"]);
     cmd.assert().success();
 
     let mut cmd = s.cmd()?;
-    cmd.args(["get", "attainable-assouad-spectra", "zbl:1337.28015"]);
-    cmd.assert().success().stdout(
-        predicate::path::eq_file(Path::new("tests/resources/import/stdout_retrieve.txt"))
-            .utf8()
-            .unwrap(),
-    );
+    cmd.args(["info", "abc", "--report", "canonical"]);
+    cmd.assert().success().stdout("zbmath:06346461\n");
+
+    s.close()
+}
+
+#[test]
+fn import_update() -> Result<()> {
+    let s = TestState::init()?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["get", "zbmath:6346461"]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["import", "tests/resources/import/retrieve.bib", "--resolve"]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["get", "zbmath:6346461"]);
+    cmd.assert()
+        .success()
+        .stdout(contains("note = {extra}").and(contains("inverse theorems for entropy")));
 
     s.close()
 }
@@ -1279,7 +1387,7 @@ fn read_only() -> Result<()> {
     cmd.args(["--read-only", "get", "arxiv:1212.1873"]);
     cmd.assert()
         .failure()
-        .stderr(predicate::str::contains("Database does not contain key"));
+        .stderr(contains("Database does not contain key"));
 
     for arg in ["check", "list"] {
         let mut cmd = s.cmd()?;
@@ -1293,29 +1401,59 @@ fn read_only() -> Result<()> {
 
     let mut cmd = s.cmd()?;
     cmd.args(["--read-only", "info", "arxiv:1212.1873"]);
-    cmd.assert().failure().stderr(predicate::str::contains(
-        "Cannot obtain report for record not in database",
-    ));
+    cmd.assert()
+        .failure()
+        .stderr(contains("Cannot obtain report for record not in database"));
 
     Ok(())
 }
 
 #[test]
-fn import_retrieve_only() -> Result<()> {
+fn test_changelog() -> Result<()> {
     let s = TestState::init()?;
+    s.create_test_db()?;
 
     let mut cmd = s.cmd()?;
-    cmd.args([
-        "import",
-        "tests/resources/import/file.bib",
-        "-m",
-        "retrieve-only",
-        "--log-failures",
-    ]);
-    cmd.assert().failure().stdout(
-        predicate::str::contains("zbMATH06346461")
-            .and(predicate::str::contains("attainable-assouad-spectra")),
+    cmd.args(["log", "local:first", "--all"]);
+    cmd.assert().success().stdout(contains("Void"));
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["hist", "reset", "local:first", "--rev", "0006"]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["get", "local:first"]);
+    cmd.assert().success().stdout(contains("title = {5}"));
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["log", "local:first"]);
+    cmd.assert().success().stdout(
+        contains("│      title = {4}")
+            .and(contains("◉  rev 0006"))
+            .and(contains("Void").not()),
     );
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["log", "local:first", "--tree", "--all"]);
+    cmd.assert().success().stdout(
+        contains("│ │ │    }")
+            .and(contains("├─╯ │"))
+            .and(contains("○ │ │  rev 0008 on"))
+            .and(contains(
+                "│ │ │    Replaced 'local:first' with 'local:second'",
+            ))
+            .and(contains("│      author = {C},")),
+    );
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["hist", "reset", "local:first", "--rev", "000b"]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["hist", "undo", "local:first"]);
+    cmd.assert().failure().stderr(contains(
+        "suggestion: Undo into a deleted state with `autobib hist undo --delete`",
+    ));
 
     s.close()
 }
