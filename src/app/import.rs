@@ -1,41 +1,37 @@
-use std::str::FromStr;
+use std::path::{Path, PathBuf};
 
 use anyhow::anyhow;
 
 use crate::{
     Identifier, RawEntryData,
-    app::{
-        cli::{ImportMode, OnConflict},
-        edit::merge_record_data,
-    },
+    app::{cli::OnConflict, edit::merge_record_data},
     config::Config,
     db::{
         RecordDatabase,
-        state::{IsEntry, IsMissing, RemoteIdState, State},
+        state::{IsEntry, IsMissing, IsVoid, RemoteIdState, State},
     },
-    entry::{Entry, EntryKey, MutableEntryData, entries_from_bibtex},
+    entry::{Entry, MutableEntryData, entries_from_bibtex},
     error::{self, RecordError},
     http::Client,
     logger::{error, info, set_failed, warn},
     normalize::{Normalization, Normalize},
     output::owriteln,
-    provider::{determine_remote_id_candidates, is_canonical},
+    path_hash::PathHash,
+    provider::{RemoteIdCandidate, determine_remote_id_candidates, is_canonical},
     record::{
-        Alias, MappedAliasOrRemoteId, MappedKey, RecordId, RemoteId, RemoteRecordRowResponse,
-        get_record_row_remote,
+        Alias, MappedAliasOrRemoteId, MappedKey, RecordId, RecursiveRemoteResponse, RemoteId,
+        get_remote_response_recursive,
     },
-    term::{Confirm, Editor, EditorConfig},
 };
 
 /// The configuration used to specify the behaviour when importing data.
 #[derive(Debug)]
 pub struct ImportConfig {
     pub on_conflict: OnConflict,
-    pub import_mode: ImportMode,
+    pub resolve: bool,
+    pub local_fallback: bool,
     pub no_alias: bool,
-    pub no_interactive: bool,
-    pub replace_colons: Option<EntryKey<String>>,
-    pub log_failures: bool,
+    pub include_files: bool,
 }
 
 /// Import records from the provided buffer.
@@ -46,42 +42,39 @@ pub fn from_buffer<F, C>(
     record_db: &mut RecordDatabase,
     client: &C,
     config: &Config<F>,
+    attachment_root: &Path,
     bibfile: impl std::fmt::Display,
 ) -> Result<(), anyhow::Error>
 where
     F: FnOnce() -> Vec<(regex::Regex, String)>,
     C: Client,
 {
+    let mut attachment_root_buf = if import_config.include_files {
+        Some(PathBuf::new())
+    } else {
+        None
+    };
     for res in entries_from_bibtex(scratch) {
+        if let Some(p) = attachment_root_buf.as_mut() {
+            p.clear();
+            p.push(attachment_root);
+        };
         match res {
-            Ok(mut entry) => {
-                // replace colons with the replacement value, if a replacement
-                // value is passed and a substitution occurs
-                if let Some(ref s) = import_config.replace_colons
-                    && let Some(replacement) = entry.key.substitute(':', s)
-                {
-                    entry.key = replacement;
+            Ok(entry) => match import_entry(
+                entry,
+                import_config,
+                record_db,
+                client,
+                config,
+                attachment_root_buf.as_mut(),
+            )? {
+                ImportOutcome::Success => {}
+                ImportOutcome::Failure(error, entry) => {
+                    owriteln!("% {error}")?;
+                    owriteln!("{entry}")?;
+                    set_failed();
                 }
-
-                match import_entry(entry, import_config, record_db, client, config)? {
-                    ImportOutcome::Success => {}
-                    ImportOutcome::Failure(error, entry) => {
-                        if import_config.log_failures {
-                            owriteln!("% Import failed: {error}")?;
-                            owriteln!("{entry}")?;
-                            set_failed();
-                        } else {
-                            error!(
-                                "Failed to import entry from file '{bibfile}' with key '{}'",
-                                entry.key().as_ref()
-                            );
-                        }
-                    }
-                    ImportOutcome::UserCancelled => {
-                        error!("Cancelled editing; entry was not imported!");
-                    }
-                }
-            }
+            },
             Err(err) => {
                 error!("Parse error for file '{bibfile}': {err}");
             }
@@ -98,8 +91,6 @@ enum ImportOutcome {
     Success,
     /// The import failed with an error and with the provided entry.
     Failure(anyhow::Error, Entry<MutableEntryData>),
-    /// There was an error while importing the entry, which the user did not fix.
-    UserCancelled,
 }
 
 /// Import a single entry into the record database.
@@ -110,135 +101,151 @@ fn import_entry<F, C>(
     record_db: &mut RecordDatabase,
     client: &C,
     config: &Config<F>,
+    attachment_root: Option<&mut PathBuf>,
 ) -> Result<ImportOutcome, anyhow::Error>
 where
     F: FnOnce() -> Vec<(regex::Regex, String)>,
     C: Client,
 {
-    match import_config.import_mode {
-        ImportMode::Local => import_entry_impl(
-            record_db,
-            entry,
-            import_config.no_interactive,
-            import_config.no_alias,
-            &config.on_insert,
-            |entry, record_db| {
-                let alias = match Alias::from_str(entry.key.as_ref()) {
-                    Ok(alias) => alias,
-                    Err(alias_conversion_error) => {
-                        return Ok(ImportAction::PromptNewKey(anyhow!(alias_conversion_error,)));
-                    }
-                };
-                handle_local_alias(alias, record_db)
-            },
-        ),
-        ImportMode::DetermineKey => import_entry_impl(
-            record_db,
-            entry,
-            import_config.no_interactive,
-            import_config.no_alias,
-            &config.on_insert,
-            |entry, record_db| {
-                // we require a canonical identifier since we do not perform any remote resolution
-                match determine_key::<F, C>(entry, true, config) {
-                    DeterminedKey::Alias(alias) => {
-                        // we could not determine a remote identifier, so we just fall back to the
-                        // 'local' behaviour
-                        handle_local_alias(alias, record_db)
-                    }
-                    DeterminedKey::RemoteId(mapped_key, maybe_alias) => {
-                        match record_db.state_from_remote_id(&mapped_key.mapped)? {
-                            RemoteIdState::Entry(_, state) => Ok(ImportAction::Update(
-                                state,
-                                import_config.on_conflict,
-                                mapped_key.to_string(),
-                                maybe_alias,
-                            )),
-                            RemoteIdState::Void(_, _) => todo!(),
-                            RemoteIdState::Deleted(_, _) => todo!(),
+    import_entry_impl(
+        record_db,
+        entry,
+        import_config.no_alias,
+        &config.on_insert,
+        attachment_root,
+        |entry, record_db| {
+            let determined = determine_key::<F>(entry, config);
+
+            // it is more convenient to do this first since we want to perform
+            // the database lookup using the canonical id if possible
+            let determined = if import_config.resolve {
+                match determined.resolve_reference(client) {
+                    Ok(d) => d,
+                    Err(err) => return Ok(ImportAction::Fail(err)),
+                }
+            } else {
+                determined
+            };
+
+            match determined {
+                DeterminedKey::OnlyAlias(alias) => {
+                    // we could not determine a canonical identifier
+                    if import_config.local_fallback {
+                        let remote_id = RemoteId::local(&alias);
+                        match record_db.state_from_remote_id(&remote_id)? {
+                            RemoteIdState::Entry(_, row) => {
+                                row.commit()?;
+                                Ok(ImportAction::Fail(anyhow!(
+                                    "Local id '{remote_id}' already exists.",
+                                )))
+                            }
+                            RemoteIdState::Deleted(_, row) => {
+                                row.commit()?;
+                                Ok(ImportAction::Fail(anyhow!(
+                                    "Local id '{remote_id}' previously existed but was soft-deleted.",
+                                )))
+                            }
+                            RemoteIdState::Void(_, void) => {
+                                Ok(ImportAction::Revive(void, remote_id, Some(alias)))
+                            }
                             RemoteIdState::Null(null_row) => Ok(ImportAction::Insert(
                                 null_row.delete()?,
-                                mapped_key.mapped,
-                                maybe_alias,
+                                remote_id,
+                                Some(alias),
                             )),
-                            RemoteIdState::Unknown(missing) => Ok(ImportAction::Insert(
-                                missing,
-                                mapped_key.mapped,
-                                maybe_alias,
-                            )),
+                            RemoteIdState::Unknown(missing) => {
+                                Ok(ImportAction::Insert(missing, remote_id, Some(alias)))
+                            }
+                        }
+                    } else {
+                        Ok(ImportAction::Fail(anyhow!(
+                            "Could not determine candidate key"
+                        )))
+                    }
+                }
+                DeterminedKey::Canonical(mkc, maybe_alias) => {
+                    match record_db.state_from_remote_id(&mkc.mapped)? {
+                        RemoteIdState::Entry(_, state) => Ok(ImportAction::Update(
+                            state,
+                            import_config.on_conflict,
+                            mkc.mapped,
+                            maybe_alias,
+                        )),
+                        RemoteIdState::Deleted(_, deleted) => {
+                            deleted.commit()?;
+                            Ok(ImportAction::Fail(anyhow!(
+                                "Identifier '{mkc}' is a deletion marker."
+                            )))
+                        }
+                        RemoteIdState::Void(_, void) => {
+                            Ok(ImportAction::Revive(void, mkc.mapped, maybe_alias))
+                        }
+                        RemoteIdState::Null(null_row) => Ok(ImportAction::Insert(
+                            null_row.delete()?,
+                            mkc.mapped,
+                            maybe_alias,
+                        )),
+                        RemoteIdState::Unknown(missing) => {
+                            Ok(ImportAction::Insert(missing, mkc.mapped, maybe_alias))
                         }
                     }
-                    DeterminedKey::NotCanonical(mapped_key) => {
-                        Ok(ImportAction::PromptNewKey(anyhow!(
-                            concat!(
-                                "Could not determined canonical identifier: ",
-                                "found reference identifier '{}'"
-                            ),
-                            mapped_key
-                        )))
-                    }
-                    DeterminedKey::Invalid(err) => Ok(ImportAction::PromptNewKey(anyhow!(
-                        "Could not determine key from entry: {err}",
-                    ))),
                 }
-            },
-        ),
-        ImportMode::Retrieve => import_entry_retrieve_impl(
-            record_db,
-            entry,
-            import_config,
-            config,
-            client,
-            |alias, record_db| {
-                let remote_id = RemoteId::local(&alias);
-                match record_db.state_from_remote_id(&remote_id)? {
-                    RemoteIdState::Entry(_, row) => {
-                        row.commit()?;
-                        Ok(ImportAction::PromptNewKey(anyhow!(
-                            "Local id '{remote_id}' already exists.",
-                        )))
-                    }
-                    RemoteIdState::Deleted(_, _) => {
-                        todo!()
-                    }
-                    RemoteIdState::Void(_, _) => {
-                        todo!()
-                    }
-                    RemoteIdState::Null(null_row) => Ok(ImportAction::Insert(
-                        null_row.delete()?,
-                        remote_id,
-                        Some(alias),
-                    )),
-                    RemoteIdState::Unknown(missing) => {
-                        Ok(ImportAction::Insert(missing, remote_id, Some(alias)))
+                DeterminedKey::Reference(mkr, mkc, maybe_alias) => {
+                    match record_db.state_from_remote_id(&mkr.mapped)? {
+                        RemoteIdState::Entry(data, state) => Ok(ImportAction::Update(
+                            state,
+                            import_config.on_conflict,
+                            data.canonical,
+                            maybe_alias,
+                        )),
+                        RemoteIdState::Deleted(_, state) => {
+                            state.commit()?;
+                            Ok(ImportAction::Fail(anyhow!(
+                                "Identifier '{mkr}' is a deletion marker."
+                            )))
+                        }
+                        RemoteIdState::Void(data, state) => {
+                            Ok(ImportAction::Revive(state, data.canonical, maybe_alias))
+                        }
+                        RemoteIdState::Null(state) => match mkc {
+                            Some(canonical) => Ok(ImportAction::Insert(
+                                state.delete()?,
+                                canonical.mapped,
+                                maybe_alias,
+                            )),
+                            None => Ok(ImportAction::Fail(anyhow!(
+                                "Failed to determine canonical id; only found reference id {mkr}"
+                            ))),
+                        },
+                        RemoteIdState::Unknown(state) => match mkc {
+                            Some(canonical) => {
+                                Ok(ImportAction::Insert(state, canonical.mapped, maybe_alias))
+                            }
+                            None => Ok(ImportAction::Fail(anyhow!(
+                                "Failed to determine canonical id; only found reference id {mkr}"
+                            ))),
+                        },
                     }
                 }
-            },
-        ),
-        ImportMode::RetrieveOnly => import_entry_retrieve_impl(
-            record_db,
-            entry,
-            import_config,
-            config,
-            client,
-            |alias, _| {
-                Ok(ImportAction::PromptNewKey(anyhow!(
-                    "Could not determine remote identifier from entry with key {alias}",
-                )))
-            },
-        ),
-    }
+                DeterminedKey::Invalid(err) => Ok(ImportAction::Fail(anyhow!(
+                    "Could not determine key from entry: {err}",
+                ))),
+            }
+        },
+    )
 }
 
 /// The action to take for the given entry.
 enum ImportAction<'conn> {
     /// The entry already has data corresponding to the provided row; update the row with the
     /// entry.
-    Update(State<'conn, IsEntry>, OnConflict, String, Option<Alias>),
-    /// There is no data for the entry; data into the database.
+    Update(State<'conn, IsEntry>, OnConflict, RemoteId, Option<Alias>),
+    /// There is no data for the entry; insert data into the database.
     Insert(State<'conn, IsMissing>, RemoteId, Option<Alias>),
-    /// A key could not be determined from the entry; prompt for a new key (if interactive).
-    PromptNewKey(anyhow::Error),
+    /// There is a void marker; revive it with new data.
+    Revive(State<'conn, IsVoid>, RemoteId, Option<Alias>),
+    /// A key could not be determined from the entry.
+    Fail(anyhow::Error),
 }
 
 /// A helper function to create a new alias, with logging.
@@ -264,15 +271,51 @@ fn create_alias(
     Ok(())
 }
 
+fn import_file(
+    source_path: &Path,
+    target_path: &mut PathBuf,
+    canonical: &RemoteId,
+) -> Result<(), anyhow::Error> {
+    canonical.extend_attachments_path(target_path);
+    match source_path.file_name() {
+        None => anyhow::bail!("Cannot import filename containing relative path"),
+        Some(file_name) => {
+            std::fs::create_dir_all(&target_path)?;
+            target_path.push(file_name);
+            // FIXME: this is a TOCTOU error
+            if !target_path.exists() {
+                std::fs::copy(source_path, target_path)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn normalize_data(
+    entry: &mut Entry<MutableEntryData>,
+    nl: &Normalization,
+    include_files: Option<&mut PathBuf>,
+    canonical: &RemoteId,
+) -> Result<(), anyhow::Error> {
+    entry.record_data.normalize(nl);
+    if let Some(target_path) = include_files
+        && let Some(path) = entry.record_data.remove("file")
+        && let Err(err) = import_file(path.as_ref().as_ref(), target_path, canonical)
+    {
+        anyhow::bail!("Failed to import file '{path}': {err}");
+    }
+    Ok(())
+}
+
 /// The actual import implementation, which is generic over the `determine_action` closure which
 /// encodes the process of converting an entry into a relevant [`ImportAction`].
 #[inline]
 fn import_entry_impl<F>(
     record_db: &mut RecordDatabase,
     mut entry: Entry<MutableEntryData>,
-    no_interactive: bool,
     no_alias: bool,
     nl: &Normalization,
+    attachment_root: Option<&mut PathBuf>,
     mut determine_action: F,
 ) -> Result<ImportOutcome, anyhow::Error>
 where
@@ -281,228 +324,144 @@ where
         &'conn mut RecordDatabase,
     ) -> Result<ImportAction<'conn>, error::Error>,
 {
-    loop {
-        match determine_action(&entry, record_db)? {
-            ImportAction::Update(row, update_mode, remote_id, maybe_alias) => {
-                entry.record_data.normalize(nl);
-                let raw_record_data = row.get_data()?.data;
-                let mut existing_record = MutableEntryData::from_entry_data(&raw_record_data);
-                merge_record_data(
-                    update_mode,
-                    &mut existing_record,
-                    std::iter::once(entry.data()),
-                    &remote_id,
-                )?;
-                let new_row = row.modify(&RawEntryData::from_entry_data(&existing_record))?;
-                create_alias(new_row, &remote_id, no_alias, maybe_alias)?;
-                return Ok(ImportOutcome::Success);
+    match determine_action(&entry, record_db)? {
+        ImportAction::Update(row, update_mode, remote_id, maybe_alias) => {
+            if let Err(err) = normalize_data(&mut entry, nl, attachment_root, &remote_id) {
+                return Ok(ImportOutcome::Failure(err, entry));
             }
-            ImportAction::Insert(missing, remote_id, maybe_alias) => {
-                info!("Inserting new record with identifier '{remote_id}'");
-                entry.record_data.normalize(nl);
-                let row = missing.insert_entry_data(&entry.record_data, &remote_id)?;
-                create_alias(row, remote_id.name(), no_alias, maybe_alias)?;
-                return Ok(ImportOutcome::Success);
-            }
-            ImportAction::PromptNewKey(prompt) => {
-                if no_interactive {
-                    return Ok(ImportOutcome::Failure(prompt, entry));
-                } else {
-                    warn!("Failed to determine key: {prompt}");
-                    if Confirm::new("Edit entry and try again?", true).confirm()? {
-                        match Editor::new(EditorConfig { suffix: ".bib" }).edit(&entry)? {
-                            Some(new_entry) => entry = new_entry,
-                            None => return Ok(ImportOutcome::UserCancelled),
-                        }
-                    } else {
-                        return Ok(ImportOutcome::UserCancelled);
-                    }
-                }
-            }
+
+            let raw_record_data = row.get_data()?.data;
+            let mut existing_record = MutableEntryData::from_entry_data(&raw_record_data);
+            merge_record_data(
+                update_mode,
+                &mut existing_record,
+                std::iter::once(entry.data()),
+                &remote_id,
+            )?;
+
+            info!("Updating existing record with identifier '{remote_id}'");
+            let new_row = row.modify(&RawEntryData::from_entry_data(&existing_record))?;
+            create_alias(new_row, remote_id.name(), no_alias, maybe_alias)?;
+            Ok(ImportOutcome::Success)
         }
+        ImportAction::Insert(missing, canonical, maybe_alias) => {
+            if let Err(err) = normalize_data(&mut entry, nl, attachment_root, &canonical) {
+                return Ok(ImportOutcome::Failure(err, entry));
+            }
+
+            info!("Inserting new record with identifier '{canonical}'");
+            let row = missing.insert_entry_data(&entry.record_data, &canonical)?;
+            create_alias(row, canonical.name(), no_alias, maybe_alias)?;
+            Ok(ImportOutcome::Success)
+        }
+        ImportAction::Revive(void, remote_id, maybe_alias) => {
+            if let Err(err) = normalize_data(&mut entry, nl, attachment_root, &remote_id) {
+                return Ok(ImportOutcome::Failure(err, entry));
+            }
+
+            info!("Re-inserting record with canonical id '{remote_id}'");
+            let row = void.reinsert(&RawEntryData::from_entry_data(&entry.record_data))?;
+            create_alias(row, remote_id.name(), no_alias, maybe_alias)?;
+            Ok(ImportOutcome::Success)
+        }
+        ImportAction::Fail(prompt) => Ok(ImportOutcome::Failure(prompt, entry)),
     }
 }
 
-/// This method handles the implementation for the `--retrieve` and `--retrieve-only` flags. In
-/// both cases, if there is a remote identifier, we automatically attempt to retrieve the data for
-/// that identifier first.
-///
-/// The only difference in behaviour in the two cases is what should be done when the identifier
-/// is an alias, and no remote identifier could be determined from the entry: in this case, the
-/// behaviour is handled by the `handle_alias` closure.
-#[inline]
-fn import_entry_retrieve_impl<A, F, C>(
-    record_db: &mut RecordDatabase,
-    entry: Entry<MutableEntryData>,
-    import_config: &ImportConfig,
-    config: &Config<F>,
-    client: &C,
-    mut handle_alias: A,
-) -> Result<ImportOutcome, anyhow::Error>
-where
-    A: for<'conn> FnMut(
-        Alias,
-        &'conn mut RecordDatabase,
-    ) -> Result<ImportAction<'conn>, error::Error>,
-    F: FnOnce() -> Vec<(regex::Regex, String)>,
-    C: Client,
-{
-    import_entry_impl(
-        record_db,
-        entry,
-        import_config.no_interactive,
-        import_config.no_alias,
-        &config.on_insert,
-        // we do not require a canonical identifier since we perform remote resolution
-        |entry, record_db| match determine_key::<F, C>(entry, false, config) {
-            DeterminedKey::Alias(alias) => handle_alias(alias, record_db),
-            DeterminedKey::RemoteId(mapped_key, maybe_alias) => {
-                let remote_id = mapped_key.mapped;
-                match get_record_row_remote(record_db, remote_id, client, config)? {
-                    RemoteRecordRowResponse::Exists(record, row) => Ok(ImportAction::Update(
-                        row,
-                        import_config.on_conflict,
-                        record.key,
-                        maybe_alias,
-                    )),
-                    RemoteRecordRowResponse::Deleted(_, _) => todo!(),
-                    RemoteRecordRowResponse::Null(remote_id, null_row) => Ok(ImportAction::Insert(
-                        null_row.delete()?,
-                        remote_id,
-                        maybe_alias,
-                    )),
-                }
-            }
-            DeterminedKey::NotCanonical(mapped_key) => Ok(ImportAction::PromptNewKey(anyhow!(
-                concat!(
-                    "Could not determined canonical identifier: ",
-                    "found reference identifier '{}'"
-                ),
-                mapped_key
-            ))),
-            DeterminedKey::Invalid(err) => Ok(ImportAction::PromptNewKey(anyhow!(
-                "Could not determine key from entry: {err}",
-            ))),
-        },
-    )
-}
-
-/// Process an alias in an import scheme which creates a local record.
-fn handle_local_alias(
-    alias: Alias,
-    record_db: &mut RecordDatabase,
-) -> Result<ImportAction<'_>, error::Error> {
-    let remote_id = RemoteId::local(&alias);
-    match record_db.state_from_remote_id(&remote_id)? {
-        RemoteIdState::Entry(_, row) => {
-            row.commit()?;
-            Ok(ImportAction::PromptNewKey(anyhow!(
-                "Local id '{remote_id}' already exists.",
-            )))
-        }
-        RemoteIdState::Deleted(_, row) => {
-            // FIXME
-            row.commit()?;
-            Ok(ImportAction::PromptNewKey(anyhow!(
-                "Local id '{remote_id}' previously existed but was soft-deleted.",
-            )))
-        }
-        RemoteIdState::Void(_, _) => todo!(),
-        RemoteIdState::Null(null_row) => Ok(ImportAction::Insert(
-            null_row.delete()?,
-            remote_id,
-            Some(alias),
-        )),
-        RemoteIdState::Unknown(missing) => {
-            Ok(ImportAction::Insert(missing, remote_id, Some(alias)))
-        }
-    }
-}
-
-/// The outcome of attempting to determine a canonical identifier associated with an entry.
-enum DeterminedKey {
-    /// The entry key was an alias and no remote identifier could be determined.
-    Alias(Alias),
-    /// A remote identifier was determined, and the entry key was possibly a valid alias.
-    RemoteId(MappedKey, Option<Alias>),
-    /// A remote identifier was found, but it was not canonical and a canonical identifier was
-    /// requested.
-    NotCanonical(MappedKey),
-    /// No identifier could be found; the entry has an invalid key.
+pub enum DeterminedKey {
+    /// The optimal identifier found was canonical.
+    Canonical(MappedKey, Option<Alias>),
+    /// The optimal identifier found was a reference identifier, with a sub-optimal canonical
+    /// fallback.
+    Reference(MappedKey, Option<MappedKey>, Option<Alias>),
+    /// No remote identifier could be determined, but the citation key was an alias.
+    OnlyAlias(Alias),
+    /// No identifier could be determined.
     Invalid(RecordError),
 }
 
+impl DeterminedKey {
+    /// Convert a 'reference' variant into a 'canonical' variant, returning an error if this fails.
+    pub fn resolve_reference<C: Client>(self, client: &C) -> Result<Self, anyhow::Error> {
+        if let Self::Reference(mkr, _, maybe_alias) = self {
+            let MappedKey { mapped, original } = mkr;
+            match get_remote_response_recursive(mapped, client)? {
+                RecursiveRemoteResponse::Exists(_, remote_id) => Ok(Self::Canonical(
+                    MappedKey {
+                        mapped: remote_id,
+                        original,
+                    },
+                    maybe_alias,
+                )),
+                RecursiveRemoteResponse::Null(remote_id) => {
+                    Err(anyhow!("Determined reference key '{remote_id}' is null"))
+                }
+            }
+        } else {
+            Ok(self)
+        }
+    }
+}
+
 /// Determine the key associated with the provided entry.
-#[inline]
-fn determine_key<F, C>(
-    entry: &Entry<MutableEntryData>,
-    require_canonical: bool,
-    config: &Config<F>,
-) -> DeterminedKey
+pub fn determine_key<F>(entry: &Entry<MutableEntryData>, config: &Config<F>) -> DeterminedKey
 where
     F: FnOnce() -> Vec<(regex::Regex, String)>,
-    C: Client,
 {
+    let score_fn = |id: &RemoteId| {
+        std::cmp::Reverse(
+            config
+                .preferred_providers
+                .iter()
+                .position(|pref| pref == id.provider())
+                .unwrap_or(config.preferred_providers.len()),
+        )
+    };
+
+    // let from_data = determine_remote_id_candidates(entry.data(), score_fn);
+
     let resolved = RecordId::from(entry.key.as_ref())
         .resolve(&config.alias_transform)
         .map(Into::into);
     match resolved {
+        // if it is an alias, just get the best key from the data
         Ok(MappedAliasOrRemoteId::Alias(alias)) => {
-            match best_key_from_data::<F, C>(entry.data(), require_canonical, config) {
-                Some(remote_id) => DeterminedKey::RemoteId(remote_id, Some(alias)),
-                None => DeterminedKey::Alias(alias),
-            }
-        }
-        Ok(MappedAliasOrRemoteId::RemoteId(mapped_key)) => {
-            if !require_canonical || is_canonical::<C>(mapped_key.mapped.provider()) {
-                DeterminedKey::RemoteId(mapped_key, None)
-            } else {
-                match best_key_from_data::<F, C>(entry.data(), require_canonical, config) {
-                    Some(mapped_key) => DeterminedKey::RemoteId(mapped_key, None),
-                    None => DeterminedKey::NotCanonical(mapped_key),
+            match determine_remote_id_candidates(entry.data(), score_fn, None, None) {
+                RemoteIdCandidate::OptimalCanonical(mkc) => {
+                    DeterminedKey::Canonical(mkc, Some(alias))
                 }
+                RemoteIdCandidate::OptimalReference(mkc, mkr) => {
+                    DeterminedKey::Reference(mkc, mkr, Some(alias))
+                }
+                RemoteIdCandidate::None => DeterminedKey::OnlyAlias(alias),
             }
         }
-        Err(err) => match best_key_from_data::<F, C>(entry.data(), require_canonical, config) {
-            Some(mapped_key) => DeterminedKey::RemoteId(mapped_key, None),
-            None => DeterminedKey::Invalid(err),
+        // if it is an error, check if the data returned something, or return an error
+        Err(err) => match determine_remote_id_candidates(entry.data(), score_fn, None, None) {
+            RemoteIdCandidate::OptimalCanonical(mapped_key) => {
+                DeterminedKey::Canonical(mapped_key, None)
+            }
+            RemoteIdCandidate::OptimalReference(mkr, mkc) => {
+                DeterminedKey::Reference(mkr, mkc, None)
+            }
+            RemoteIdCandidate::None => DeterminedKey::Invalid(err),
         },
-    }
-}
+        // otherwise, see if we can find a better key in the data
+        Ok(MappedAliasOrRemoteId::RemoteId(id_from_key)) => {
+            let best_keypair = if is_canonical(id_from_key.mapped.provider()) {
+                determine_remote_id_candidates(entry.data(), score_fn, Some(id_from_key), None)
+            } else {
+                determine_remote_id_candidates(entry.data(), score_fn, None, Some(id_from_key))
+            };
 
-/// Determine the 'best' key from the data: that is, the key which matches a preferred
-/// provider with the smallest possible index.
-#[inline]
-fn best_key_from_data<F, C>(
-    data: &MutableEntryData,
-    require_canonical: bool,
-    config: &Config<F>,
-) -> Option<MappedKey>
-where
-    F: FnOnce() -> Vec<(regex::Regex, String)>,
-    C: Client,
-{
-    let mut highest_scoring_candidate: Option<(MappedKey, usize)> = None;
-    determine_remote_id_candidates(
-        data,
-        |provider| {
-            if require_canonical && !is_canonical::<C>(provider) {
-                None
-            } else {
-                config
-                    .preferred_providers
-                    .iter()
-                    .position(|pref| pref == provider)
-            }
-        },
-        |remote_id, score| match highest_scoring_candidate.as_mut() {
-            Some(inner) => {
-                if score < inner.1 {
-                    *inner = (remote_id, score);
+            match best_keypair {
+                RemoteIdCandidate::OptimalCanonical(mkc) => DeterminedKey::Canonical(mkc, None),
+                RemoteIdCandidate::OptimalReference(mkc, mkr) => {
+                    DeterminedKey::Reference(mkc, mkr, None)
                 }
+                // unreachable since we started with a candidate
+                RemoteIdCandidate::None => unreachable!(),
             }
-            None => highest_scoring_candidate = Some((remote_id, score)),
-        },
-    );
-    highest_scoring_candidate.map(|(r, _)| r)
+        }
+    }
 }

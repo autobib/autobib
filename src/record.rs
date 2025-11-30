@@ -45,23 +45,6 @@ impl<D> Record<D> {
     }
 }
 
-/// The response type of [`get_record_row_remote`].
-///
-/// If the record exists, the resulting [`State<RecordRow>`] is guaranteed to be valid for the row corresponding
-/// to the [`Record`].
-///
-/// If the record does not exist, then the resulting [`State<IsNull>`] is guaranteed to not exist in the
-/// `Records` table, and be cached in the `NullRecords` table.
-#[derive(Debug)]
-pub enum RemoteRecordRowResponse<'conn> {
-    /// The record exists.
-    Exists(Record<RawEntryData>, State<'conn, IsEntry>),
-    /// The record was deleted.
-    Deleted(Record<Option<RemoteId>>, State<'conn, IsDeleted>),
-    /// The record is null.
-    Null(RemoteId, State<'conn, IsNull>),
-}
-
 /// The response type of [`get_record_row`].
 ///
 /// If the record exists, the resulting [`State<RecordRow>`] is guaranteed to be valid for the row corresponding
@@ -85,22 +68,6 @@ pub enum RecordRowResponse<'conn> {
     InvalidRemoteId(RecordError),
     /// The alias does not exist.
     NullAlias(Alias),
-}
-
-impl<'conn> From<RemoteRecordRowResponse<'conn>> for RecordRowResponse<'conn> {
-    fn from(resp: RemoteRecordRowResponse<'conn>) -> Self {
-        match resp {
-            RemoteRecordRowResponse::Exists(record, state) => {
-                RecordRowResponse::Exists(record, state)
-            }
-            RemoteRecordRowResponse::Deleted(record, state) => {
-                RecordRowResponse::Deleted(record, state)
-            }
-            RemoteRecordRowResponse::Null(remote_id, state) => {
-                RecordRowResponse::NullRemoteId(remote_id, state)
-            }
-        }
-    }
 }
 
 impl<'conn> RecordRowResponse<'conn> {
@@ -195,7 +162,6 @@ where
                 |_, alias| Ok(Some(alias.into())),
                 alias,
             )
-            .map(Into::into)
         }
         RecordIdState::Unknown(Unknown::RemoteId(maybe_normalized, missing)) => {
             get_record_row_recursive(
@@ -207,63 +173,13 @@ where
                 |_, t| Ok(t),
                 maybe_normalized.original,
             )
-            .map(Into::into)
-        }
-    }
-}
-
-/// Get the [`Record`] associated with a [`RemoteId`].
-pub fn get_record_row_remote<'conn, F, C>(
-    db: &'conn mut RecordDatabase,
-    remote_id: RemoteId,
-    client: &C,
-    config: &Config<F>,
-) -> Result<RemoteRecordRowResponse<'conn>, Error>
-where
-    F: FnOnce() -> Vec<(regex::Regex, String)>,
-    C: Client,
-{
-    match db.state_from_remote_id(&remote_id)? {
-        RemoteIdState::Entry(data, row) => {
-            info!("Found existing data for key {remote_id}");
-            Ok(RemoteRecordRowResponse::Exists(
-                Record::new(remote_id, data),
-                row,
-            ))
-        }
-        RemoteIdState::Deleted(data, row) => Ok(RemoteRecordRowResponse::Deleted(
-            Record::<Option<RemoteId>>::new(remote_id, data),
-            row,
-        )),
-        RemoteIdState::Null(null_row) => Ok(RemoteRecordRowResponse::Null(remote_id, null_row)),
-        RemoteIdState::Unknown(missing) => get_record_row_recursive(
-            missing,
-            remote_id,
-            client,
-            &config.on_insert,
-            |_, ()| Ok(None),
-            |_, ()| Ok(None),
-            (),
-        ),
-        RemoteIdState::Void(data, void) => {
-            let (raw_entry_data, entry) =
-                revive_void(void, &data.canonical, client, &config.on_insert)?;
-            Ok(RemoteRecordRowResponse::Exists(
-                Record {
-                    key: remote_id.into(),
-                    canonical: data.canonical,
-                    data: raw_entry_data,
-                },
-                entry,
-            ))
         }
     }
 }
 
 /// Destructure a [`NonEmpty`] and return the last element.
 #[inline]
-fn into_last<T>(ne: NonEmpty<T>) -> T {
-    let NonEmpty { head, mut tail } = ne;
+fn into_last<T>(NonEmpty { head, mut tail }: NonEmpty<T>) -> T {
     tail.pop().unwrap_or(head)
 }
 
@@ -290,7 +206,7 @@ fn get_record_row_recursive<'conn, O, C: Client>(
         O,
     ) -> Result<Option<String>, rusqlite::Error>,
     original: O,
-) -> Result<RemoteRecordRowResponse<'conn>, Error> {
+) -> Result<RecordRowResponse<'conn>, Error> {
     info!("Resolving remote record for {remote_id}");
     let mut history = NonEmpty::singleton(remote_id);
     loop {
@@ -312,7 +228,7 @@ fn get_record_row_recursive<'conn, O, C: Client>(
                     (None, None) => (head.to_string(), head),
                 };
 
-                break Ok(RemoteRecordRowResponse::Exists(
+                break Ok(RecordRowResponse::Exists(
                     Record {
                         key,
                         data: RawEntryData::from_entry_data(&data),
@@ -332,7 +248,7 @@ fn get_record_row_recursive<'conn, O, C: Client>(
                     // is present in the database
                     state.add_refs(history.iter())?;
                     let maybe_key = exists_callback(&state, original)?;
-                    break Ok(RemoteRecordRowResponse::Exists(
+                    break Ok(RecordRowResponse::Exists(
                         Record {
                             key: maybe_key.unwrap_or(history.head.into()),
                             data,
@@ -350,7 +266,7 @@ fn get_record_row_recursive<'conn, O, C: Client>(
                     // we still add the refs to the deleted row
                     state.add_refs(history.iter())?;
                     let maybe_key = deleted_callback(&state, original)?;
-                    break Ok(RemoteRecordRowResponse::Deleted(
+                    break Ok(RecordRowResponse::Deleted(
                         Record {
                             key: maybe_key.unwrap_or(history.head.into()),
                             data,
@@ -378,7 +294,7 @@ fn get_record_row_recursive<'conn, O, C: Client>(
                     entry.add_refs(history.iter())?;
                     let key = exists_callback(&entry, original)?.unwrap_or(history.head.into());
 
-                    break Ok(RemoteRecordRowResponse::Exists(
+                    break Ok(RecordRowResponse::Exists(
                         Record {
                             data,
                             key,
@@ -392,7 +308,7 @@ fn get_record_row_recursive<'conn, O, C: Client>(
                 if history.tail.is_empty() {
                     let remote_id = into_last(history);
                     let null_row = missing.set_null(&remote_id)?;
-                    break Ok(RemoteRecordRowResponse::Null(remote_id, null_row));
+                    break Ok(RecordRowResponse::NullRemoteId(remote_id, null_row));
                 } else {
                     break Err(ProviderError::UnexpectedNullRemoteFromProvider(
                         into_last(history).into(),

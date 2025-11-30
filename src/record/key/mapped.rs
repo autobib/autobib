@@ -90,9 +90,10 @@ impl<T> Identifier for MappedKey<T> {
 /// Either an [`Alias`] or a [`RemoteId`].
 #[derive(Debug)]
 pub enum MappedAliasOrRemoteId {
-    /// An [`Alias`], and a possible value that it was mapped to.
+    /// An [`Alias`].
     Alias(Alias),
-    /// A [`RemoteId`], which may have been mapped from the original `provider:sub_id`.
+    /// A [`RemoteId`], which may be a normalized form of the original `provider:sub_id` or may
+    /// have been mapped from an alias using an alias transformation.
     RemoteId(MappedKey),
 }
 
