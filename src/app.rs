@@ -431,8 +431,8 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     (_, false) => {
                         // non-interactive command is requested, so we perform it without prompting
                         let mut editable_data = MutableEntryData::from_entry_data(&data);
-                        let mut changed = touch;
 
+                        let mut changed = touch;
                         changed |= editable_data.normalize(&nl);
                         changed |= editable_data.edit(&edit_cmd);
 
@@ -774,6 +774,12 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 })?;
                 snapshot.commit()?;
             }
+            HistCommand::TouchAll => {
+                let snapshot = record_db.snapshot()?;
+                let modified = snapshot.touch_all()?;
+                snapshot.commit()?;
+                owriteln!("{modified}")?;
+            }
             HistCommand::Undo { identifier, delete } => {
                 let cfg = config::load(&config_path, missing_ok)?;
                 match record_db
@@ -824,12 +830,12 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             targets,
             resolve,
             local_fallback,
-            on_conflict,
+            update,
             no_alias,
             include_files,
         } => {
             let import_config = ImportConfig {
-                on_conflict,
+                update,
                 resolve,
                 local_fallback,
                 no_alias,
@@ -1194,10 +1200,11 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     record_db.evict_cache()?;
                 }
             },
-            UtilCommand::List { canonical } => {
+            UtilCommand::List { canonical, deleted } => {
                 let mut lock = stdout_lock_wrap();
                 let snapshot = record_db.snapshot()?;
-                snapshot.map_identifiers(canonical, |key_str| writeln!(lock, "{key_str}"))?;
+                snapshot
+                    .map_identifiers(canonical, deleted, |key_str| writeln!(lock, "{key_str}"))?;
                 snapshot.commit()?;
             }
         },

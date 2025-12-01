@@ -83,6 +83,7 @@ pub struct RawEntryData<T = Vec<u8>> {
 }
 
 impl RawEntryData {
+    /// Initialize from any [`EntryData`] implementation.
     pub fn from_entry_data<D: EntryData>(entry_data: &D) -> Self {
         let mut data = Vec::with_capacity(entry_data.raw_len());
 
@@ -108,6 +109,7 @@ impl RawEntryData {
         Self::from_byte_repr_unchecked(data)
     }
 
+    /// Get a borrowed version of the data.
     pub fn get_ref(&self) -> RawEntryData<&[u8]> {
         RawEntryData { data: &self.data }
     }

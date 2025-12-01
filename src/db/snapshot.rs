@@ -82,7 +82,7 @@ WITH RECURSIVE ancestors AS (
 
     SELECT r.key, r.parent_key
     FROM ancestors a
-    INNER JOIN Records r ON a.parent_key = r.key
+    INNER JOIN Records AS r ON a.parent_key = r.key
 ),
 descendants AS (
     SELECT key FROM ancestors
@@ -90,14 +90,46 @@ descendants AS (
     UNION
 
     SELECT r.key
-    FROM Records r
-    INNER JOIN descendants d ON r.parent_key = d.key
+    FROM Records AS r
+    INNER JOIN descendants AS d ON r.parent_key = d.key
 )
 DELETE FROM Records WHERE key NOT IN (SELECT key FROM descendants);
 ",
             )?
             .execute([])?;
         Ok(())
+    }
+
+    pub fn touch_all(&self) -> rusqlite::Result<DateTime<Local>> {
+        let now = Local::now();
+
+        // create a new version for every non-leaf node, returning the required update pairs
+        // for the Identifiers table
+        let mut to_update: Vec<(i64, i64)> = Vec::new();
+
+        let mut stmt = self.tx.prepare(
+            "
+INSERT INTO Records (record_id, data, modified, variant, parent_key)
+SELECT r.record_id, r.data, ?1, r.variant, r.key
+FROM Records AS r
+WHERE r.key IN (SELECT record_key FROM Identifiers)
+RETURNING key, parent_key",
+        )?;
+
+        for row in stmt.query_map([now], |row| {
+            Ok((row.get_unwrap("key"), row.get_unwrap("parent_key")))
+        })? {
+            let (key, parent_key) = row?;
+            to_update.push((key, parent_key));
+        }
+
+        for (key, parent_key) in to_update {
+            self.tx
+                .prepare_cached("UPDATE Identifiers SET record_key = ?1 WHERE record_key = ?2")?
+                .execute((key, parent_key))?;
+        }
+
+        Ok(now)
     }
 
     /// Delete all inactive records.
@@ -119,15 +151,15 @@ DELETE FROM Records WHERE key NOT IN (SELECT key FROM descendants);
             .prepare(
                 "
 WITH RECURSIVE descendants AS (
-  SELECT DISTINCT record_key FROM Identifiers
+  SELECT DISTINCT record_key AS key FROM Identifiers
 
   UNION ALL
 
-  SELECT key
+  SELECT Records.key
   FROM Records
   INNER JOIN descendants ON Records.parent_key = descendants.key
 )
-DELETE FROM Records WHERE key NOT IN (SELECT key FROM descendants);",
+DELETE FROM Records WHERE key NOT IN (SELECT key FROM descendants)",
             )?
             .execute([])?;
         Ok(())
@@ -149,7 +181,7 @@ WITH RECURSIVE ancestors AS (
 
     SELECT r.key, r.parent_key, a.level + 1
     FROM ancestors a
-    INNER JOIN Records r ON a.parent_key = r.key
+    INNER JOIN Records AS r ON a.parent_key = r.key
     WHERE a.level < ?1
 ),
 descendants AS (
@@ -158,8 +190,8 @@ descendants AS (
     UNION
 
     SELECT r.key
-    FROM Records r
-    INNER JOIN descendants d ON r.parent_key = d.key
+    FROM Records AS r
+    INNER JOIN descendants AS d ON r.parent_key = d.key
 )
 DELETE FROM Records WHERE key NOT IN (SELECT key FROM descendants);
 ",
@@ -264,16 +296,18 @@ WHERE variant = 1
     pub fn map_identifiers<E, F: FnMut(&str) -> Result<(), E>>(
         &self,
         canonical: bool,
+        deleted: bool,
         mut f: F,
     ) -> Result<(), SnapshotMapErr<E>> {
         let mut selector = if canonical {
             self.tx
-                .prepare("SELECT record_id FROM Records WHERE key IN (SELECT record_key FROM Identifiers) AND variant = 0")?
+                .prepare("SELECT record_id FROM Records WHERE key IN (SELECT record_key FROM Identifiers) AND variant = ?1")?
         } else {
-            self.tx.prepare("SELECT name FROM Identifiers INNER JOIN Records ON Identifiers.record_key = Records.key WHERE Records.variant = 0")?
+            self.tx.prepare("SELECT name FROM Identifiers INNER JOIN Records ON Identifiers.record_key = Records.key WHERE Records.variant = ?1")?
         };
+        let variant = if deleted { 1 } else { 0 };
 
-        let mut rows = selector.query([])?;
+        let mut rows = selector.query([variant])?;
         while let Some(row) = rows.next()? {
             if let ValueRef::Text(bytes) = row.get_ref_unwrap(0) {
                 // SAFETY: the underlying data is always valid utf-8

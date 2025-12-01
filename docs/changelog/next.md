@@ -23,6 +23,8 @@ Changes since `v0.5.1`.
   Most notably:
   - Import modes no longer exist.
     The default behaviour is to attempt to determine a canonical identifier, and will result in an error if no identifier can be found.
+  - Importing now automatically skips existing data present in your database.
+    To insert updated data, use `autobib import --update`.
   - Retrieving data when importing is no longer possible, but reference identifiers can be mapped to canonical identifiers using `--resolve`.
 
 ## New features
