@@ -1409,6 +1409,44 @@ fn read_only() -> Result<()> {
 }
 
 #[test]
+fn test_dedup() -> Result<()> {
+    let s = TestState::init()?;
+
+    s.set_config("tests/resources/import/config.toml")?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["import", "tests/resources/dedup/init.bib", "--resolve"]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["dedup", "arxiv:1212.1873"]);
+    cmd.assert().success().stderr(contains(
+        "replacement identifier is equivalent to the current identifier",
+    ));
+
+    let mut cmd = s.cmd()?;
+    cmd.args([
+        "edit",
+        "arxiv:1212.1873",
+        "--set-field",
+        "zbmath = {6346461}",
+    ]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["dedup", "arxiv:1212.1873"]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["get", "arxiv:1212.1873"]);
+    cmd.assert().failure().stderr(contains(
+        "Perhaps use the replacement key: 'zbmath:06346461'",
+    ));
+
+    s.close()
+}
+
+#[test]
 fn test_changelog() -> Result<()> {
     let s = TestState::init()?;
     s.create_test_db()?;

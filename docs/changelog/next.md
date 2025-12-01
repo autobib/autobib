@@ -36,6 +36,8 @@ Changes since `v0.5.1`.
 - `autobib update` now supports updating from data present in other records in your database with `autobib update --from-record`.
 - `autobib local` now supports headless methods to creating the local record from data specified at the command line.
 - `autobib import --include-files` imports files specified in the `file` field
+- New command `autobib dedup`, which attempts to find other replacement records which are equivalent to a given record.
+  Currently, it is only possible to deduplicate based on identifiers present in the record data.
 
 ## Fixes
 
