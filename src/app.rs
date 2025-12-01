@@ -25,7 +25,8 @@ use etcetera::{AppStrategy, AppStrategyArgs, choose_app_strategy};
 
 use crate::{
     app::{
-        cli::{HistCommand, PruneCommand},
+        cli::{DedupBy, HistCommand, PruneCommand},
+        import::DeterminedKey,
         log::print_log,
     },
     cite_search::{SourceFileType, get_citekeys},
@@ -263,6 +264,72 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             unreachable!(
                 "Request for completions script should have been handled earlier and the program should have exited then."
             );
+        }
+        Command::Dedup {
+            identifiers,
+            update_aliases,
+            by,
+        } => {
+            let cfg = config::load(&config_path, missing_ok)?;
+            match by {
+                DedupBy::Identifier => {
+                    for identifier in identifiers {
+                        match record_db
+                            .state_from_record_id(identifier, &cfg.alias_transform)?
+                            .require_record()?
+                        {
+                            Some((_, DisambiguatedRecordRow::Entry(record_row, state))) => {
+                                let record_data =
+                                    MutableEntryData::from_entry_data(&record_row.data);
+                                let entry = Entry {
+                                    key: EntryKey::placeholder(),
+                                    record_data,
+                                };
+
+                                let candidate = match import::determine_key(&entry, &cfg) {
+                                    DeterminedKey::Reference(mapped_key, _, _)
+                                    | DeterminedKey::Canonical(mapped_key, _) => mapped_key.mapped,
+                                    _ => {
+                                        bail!(
+                                            "Could not determine replacement identifier from record data"
+                                        )
+                                    }
+                                };
+
+                                match state.update_canonical(&candidate, update_aliases)? {
+                                    RecordRowMoveResult::Updated(state) => {
+                                        state.commit()?;
+                                    }
+                                    RecordRowMoveResult::Unchanged(state, true) => {
+                                        warn!(
+                                            "replacement identifier is equivalent to the current identifier; no changes made"
+                                        );
+                                        state.commit()?;
+                                    }
+                                    RecordRowMoveResult::Unchanged(state, false) => {
+                                        state.commit()?;
+                                        error!(
+                                            "Candidate replacement identifier '{candidate}' does not exist in the database."
+                                        );
+                                        suggest!(
+                                            "Retrieve data first with `autobib get {candidate}`"
+                                        );
+                                    }
+                                }
+                            }
+                            Some((name, DisambiguatedRecordRow::Deleted(_, state))) => {
+                                state.commit()?;
+                                bail!("Record '{name}' is deleted: cannot update provenance");
+                            }
+                            Some((name, DisambiguatedRecordRow::Void(_, state))) => {
+                                state.commit()?;
+                                bail!("Record '{name}' is void: cannot update provenance");
+                            }
+                            None => {}
+                        }
+                    }
+                }
+            }
         }
         Command::DefaultConfig => {
             config::write_default(stdout_lock_wrap())?;

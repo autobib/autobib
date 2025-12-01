@@ -6,7 +6,7 @@ use rusqlite::{OptionalExtension, Row};
 use crate::{
     Alias, RawEntryData, RemoteId,
     db::{Constraint, Identifier, flatten_constraint_violation, get_row_id},
-    logger::debug,
+    logger::{debug, info},
 };
 
 use super::{IsMissing, State, Transaction, version::RevisionId};
@@ -741,6 +741,38 @@ impl<'conn> State<'conn, IsEntry> {
         index: isize,
     ) -> Result<RecordRowMoveResult<'conn, IsArbitrary, IsEntry, RedoError>, rusqlite::Error> {
         self.redo_unchecked(index)
+    }
+
+    /// Soft-delete this row, replacing it with the candidate canonical identifier if the
+    /// identifier exists in the record database.
+    pub fn update_canonical(
+        self,
+        candidate: &RemoteId,
+        update_aliases: bool,
+    ) -> rusqlite::Result<RecordRowMoveResult<'conn, IsDeleted, IsEntry, bool>> {
+        let replacement: Option<i64> = self
+            .tx
+            .prepare("SELECT record_key FROM Identifiers WHERE name = ?1")?
+            .query_row([candidate.name()], |row| row.get("record_key"))
+            .optional()?;
+
+        match replacement {
+            None => Ok(RecordRowMoveResult::Unchanged(self, false)),
+            Some(row_id) => {
+                if row_id == self.row_id() {
+                    Ok(RecordRowMoveResult::Unchanged(self, true))
+                } else {
+                    let repl: String = self
+                        .tx
+                        .prepare("SELECT record_id FROM Records WHERE key = ?1")?
+                        .query_row([row_id], |row| row.get("record_id"))?;
+                    let remote_id = RemoteId::from_string_unchecked(repl);
+                    info!("Replacing row with new canonical id '{remote_id}'");
+                    let deleted = self.soft_delete(&Some(remote_id), update_aliases)?;
+                    Ok(RecordRowMoveResult::Updated(deleted))
+                }
+            }
+        }
     }
 }
 

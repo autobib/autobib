@@ -129,7 +129,6 @@ dependencies = [
  "data-encoding",
  "delegate",
  "edit",
- "either",
  "etcetera",
  "itertools",
  "libc",

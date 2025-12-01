@@ -67,6 +67,14 @@ pub struct Cli {
 }
 
 #[derive(Debug, Copy, Clone, ValueEnum, Default)]
+pub enum DedupBy {
+    /// Use identifiers present in the record.
+    #[default]
+    #[value(alias("id"))]
+    Identifier,
+}
+
+#[derive(Debug, Copy, Clone, ValueEnum, Default)]
 pub enum InfoReportType {
     /// Show all info.
     #[default]
@@ -169,6 +177,20 @@ pub enum Command {
     Completions {
         /// The shell for which to generate the script.
         shell: Shell,
+    },
+    /// Deduplicate an identifier by checking for new provenance.
+    ///
+    /// This is equivalent to `autobib delete --replace` but with an automatically-determined
+    /// replacement key.
+    Dedup {
+        /// The identifier for the operation.
+        identifiers: Vec<RecordId>,
+        /// Whether to update aliases.
+        #[arg(long)]
+        update_aliases: bool,
+        /// How to resolve conflicts with data currently present in your database.
+        #[arg(short = 'b', long, value_enum, default_value_t)]
+        by: DedupBy,
     },
     /// Generate configuration file.
     #[clap(hide = true)]
@@ -551,6 +573,7 @@ impl Command {
             Self::Path { mkdir: true, .. } => return Err(ReadOnlyInvalid::Argument("--mkdir")),
             Self::Alias { .. } => "alias",
             Self::Attach { .. } => "attach",
+            Self::Dedup { .. } => "dedup",
             Self::Delete { .. } => "delete",
             Self::Import { .. } => "import",
             Self::Local { .. } => "local",
