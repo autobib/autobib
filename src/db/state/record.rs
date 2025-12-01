@@ -833,6 +833,22 @@ impl<'conn> State<'conn, IsEntry> {
         Ok(Self::init(self.tx, IsEntry(new_key)))
     }
 
+    /// Create a new row which is a copy of the current row but with an updated modification time.
+    pub fn touch(self) -> rusqlite::Result<Self> {
+        let new_row_id: i64 = self
+            .tx
+            .prepare(
+                "
+INSERT INTO Records (record_id, data, modified, variant, parent_key)
+SELECT record_id, data, ?1, variant, key
+FROM Records
+WHERE key = ?2
+RETURNING key",
+            )?
+            .query_row((Local::now(), self.row_id()), |row| row.get("key"))?;
+        self.transmute(new_row_id)
+    }
+
     /// Replace this row with a deletion marker, preserving the old row as the parent row.
     pub fn soft_delete(
         self,

@@ -287,7 +287,7 @@ SELECT DISTINCT
 FROM Records
 WHERE record_id NOT IN (
     SELECT r.record_id
-    FROM Records r
+    FROM Records AS r
     WHERE r.key IN (SELECT record_key FROM Identifiers)
 )
 ",

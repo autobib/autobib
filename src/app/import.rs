@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    io::Write,
+    path::{Path, PathBuf},
+};
 
 use anyhow::anyhow;
 
@@ -15,7 +18,7 @@ use crate::{
     http::Client,
     logger::{error, info, set_failed, warn},
     normalize::{Normalization, Normalize},
-    output::owriteln,
+    output::stdout_lock_wrap,
     path_hash::PathHash,
     provider::{RemoteIdCandidate, determine_remote_id_candidates, is_canonical},
     record::{
@@ -27,7 +30,7 @@ use crate::{
 /// The configuration used to specify the behaviour when importing data.
 #[derive(Debug)]
 pub struct ImportConfig {
-    pub on_conflict: OnConflict,
+    pub update: Option<OnConflict>,
     pub resolve: bool,
     pub local_fallback: bool,
     pub no_alias: bool,
@@ -54,6 +57,7 @@ where
     } else {
         None
     };
+    let mut stdout = stdout_lock_wrap();
     for res in entries_from_bibtex(scratch) {
         if let Some(p) = attachment_root_buf.as_mut() {
             p.clear();
@@ -70,8 +74,8 @@ where
             )? {
                 ImportOutcome::Success => {}
                 ImportOutcome::Failure(error, entry) => {
-                    owriteln!("% {error}")?;
-                    owriteln!("{entry}")?;
+                    writeln!(&mut stdout, "% {error}")?;
+                    writeln!(&mut stdout, "{entry}")?;
                     set_failed();
                 }
             },
@@ -167,7 +171,7 @@ where
                     match record_db.state_from_remote_id(&mkc.mapped)? {
                         RemoteIdState::Entry(_, state) => Ok(ImportAction::Update(
                             state,
-                            import_config.on_conflict,
+                            import_config.update,
                             mkc.mapped,
                             maybe_alias,
                         )),
@@ -194,7 +198,7 @@ where
                     match record_db.state_from_remote_id(&mkr.mapped)? {
                         RemoteIdState::Entry(data, state) => Ok(ImportAction::Update(
                             state,
-                            import_config.on_conflict,
+                            import_config.update,
                             data.canonical,
                             maybe_alias,
                         )),
@@ -239,7 +243,12 @@ where
 enum ImportAction<'conn> {
     /// The entry already has data corresponding to the provided row; update the row with the
     /// entry.
-    Update(State<'conn, IsEntry>, OnConflict, RemoteId, Option<Alias>),
+    Update(
+        State<'conn, IsEntry>,
+        Option<OnConflict>,
+        RemoteId,
+        Option<Alias>,
+    ),
     /// There is no data for the entry; insert data into the database.
     Insert(State<'conn, IsMissing>, RemoteId, Option<Alias>),
     /// There is a void marker; revive it with new data.
@@ -249,7 +258,7 @@ enum ImportAction<'conn> {
 }
 
 /// A helper function to create a new alias, with logging.
-fn create_alias(
+fn create_alias_and_commit(
     row: State<'_, IsEntry>,
     remote_id: &str,
     no_alias: bool,
@@ -326,22 +335,29 @@ where
 {
     match determine_action(&entry, record_db)? {
         ImportAction::Update(row, update_mode, remote_id, maybe_alias) => {
-            if let Err(err) = normalize_data(&mut entry, nl, attachment_root, &remote_id) {
-                return Ok(ImportOutcome::Failure(err, entry));
+            if let Some(on_conflict) = update_mode {
+                if let Err(err) = normalize_data(&mut entry, nl, attachment_root, &remote_id) {
+                    return Ok(ImportOutcome::Failure(err, entry));
+                }
+
+                let current_data = row.get_data()?.data;
+                let mut existing_record = MutableEntryData::from_entry_data(&current_data);
+                merge_record_data(
+                    on_conflict,
+                    &mut existing_record,
+                    std::iter::once(entry.data()),
+                    &remote_id,
+                )?;
+
+                let new_data = RawEntryData::from_entry_data(&existing_record);
+
+                info!("Updating data for record with identifier '{remote_id}'");
+                let new_row = row.modify(&new_data)?;
+
+                create_alias_and_commit(new_row, remote_id.name(), no_alias, maybe_alias)?;
+            } else {
+                info!("Skipping identifier '{remote_id}': already present in database");
             }
-
-            let raw_record_data = row.get_data()?.data;
-            let mut existing_record = MutableEntryData::from_entry_data(&raw_record_data);
-            merge_record_data(
-                update_mode,
-                &mut existing_record,
-                std::iter::once(entry.data()),
-                &remote_id,
-            )?;
-
-            info!("Updating existing record with identifier '{remote_id}'");
-            let new_row = row.modify(&RawEntryData::from_entry_data(&existing_record))?;
-            create_alias(new_row, remote_id.name(), no_alias, maybe_alias)?;
             Ok(ImportOutcome::Success)
         }
         ImportAction::Insert(missing, canonical, maybe_alias) => {
@@ -351,7 +367,7 @@ where
 
             info!("Inserting new record with identifier '{canonical}'");
             let row = missing.insert_entry_data(&entry.record_data, &canonical)?;
-            create_alias(row, canonical.name(), no_alias, maybe_alias)?;
+            create_alias_and_commit(row, canonical.name(), no_alias, maybe_alias)?;
             Ok(ImportOutcome::Success)
         }
         ImportAction::Revive(void, remote_id, maybe_alias) => {
@@ -361,7 +377,7 @@ where
 
             info!("Re-inserting record with canonical id '{remote_id}'");
             let row = void.reinsert(&RawEntryData::from_entry_data(&entry.record_data))?;
-            create_alias(row, remote_id.name(), no_alias, maybe_alias)?;
+            create_alias_and_commit(row, remote_id.name(), no_alias, maybe_alias)?;
             Ok(ImportOutcome::Success)
         }
         ImportAction::Fail(prompt) => Ok(ImportOutcome::Failure(prompt, entry)),

@@ -223,15 +223,8 @@ pub enum Command {
     /// contents of the record. Updating the fields or the entry type will change the underlying
     /// data, and updating the entry key will create a new alias for the record.
     ///
-    /// Some non-interactive edit methods are also supported. If any are specified, they will
-    /// modify the record without opening your $EDITOR:
-    ///
-    /// `--normalize-whitespace` converts whitespace blocks into a single ASCII space.
-    ///
-    /// `--set-eprint` accepts a list of field keys, and sets the "eprint" and
-    ///   "eprinttype" BibTeX fields from the first field key which is present in the record.
-    ///
-    /// `--strip-journal-series` strips a trailing journal series from the `journal` field
+    /// Non-interactive edit methods are also supported. If any are specified, they will
+    /// modify the record.
     Edit {
         /// The record(s) to edit.
         identifiers: Vec<RecordId>,
@@ -247,20 +240,20 @@ pub enum Command {
         /// Set the entry type.
         #[arg(long, value_name = "ENTRY_TYPE")]
         update_entry_type: Option<EntryType>,
-        /// Delete a field. This is performed before setting field values.
+        /// Delete a field. This is done before setting field values.
         #[arg(long, value_name = "FIELD_KEY")]
         delete_field: Vec<FieldKey>,
-        /// Set specific field values using BibTeX field syntax
+        /// Set a field value using BibTeX field syntax
         #[arg(long, value_name = "FIELD_KEY={VALUE}")]
         set_field: Vec<SetFieldCommand>,
-        /// Insert a new copy with updated modification time regardless of changes.
+        /// Update the modification time, inserting a new copy if the node has children.
         #[arg(long)]
         touch: bool,
     },
     /// Search for an identifier.
     ///
     /// Open an interactive picker to search for a given identifier. The lines in the
-    /// picker are rendered using the template provided by the `--format` option, falling
+    /// picker are rendered using the template provided by the `--template` option, falling
     /// back to the config value or a default template.
     Find {
         /// Set the format template.
@@ -291,7 +284,7 @@ pub enum Command {
         #[arg(long)]
         ignore_null: bool,
     },
-    /// Commands to manipulate version history.
+    /// Manipulate version history.
     Hist {
         #[command(subcommand)]
         hist_command: HistCommand,
@@ -301,16 +294,18 @@ pub enum Command {
     /// The implementation automatically determines a remote identifier from the data, using
     /// your `preferred_providers` config setting and with unspecified fallback if there is no
     /// match.
-    /// Use `--local-fallback` to import as `local:` identifiers if this process fails.
+    /// Use `--local-fallback` to import as `local:` identifiers if no canonical identifier could
+    /// be found.
     ///
-    /// With default flag values, importing is idempotent: if you run an import twice, the result
-    /// will be no different than running this method once, and duplicate entries will not be
-    /// created.
+    /// If the data already exists in your database, it will be updated with the new data if there
+    /// are any changes after merging according to the rules specified in `--on-conflict`. If there
+    /// are no changes, only the modification time will be updated.
     ///
-    /// Failed imports are printed to STDOUT with the error messages inside comments. A potential workflow is to redirect output a file, edit
-    /// the file to resolve issues, and then import again.
+    /// Entries which could not be imported are printed to STDOUT along with error messages in
+    /// BibTeX comments. The recommended workflow is to redirect output a file, edit the file
+    /// to resolve issues indicated in the error message, and then import again.
     ///
-    /// If you use the `--retrieve` option, the determined identifier can be a reference identifier,
+    /// If you use the `--resolve` option, the determined identifier can be a reference identifier,
     /// which will be converted into a canonical identifier using a remote API call.
     Import {
         /// The BibTeX file(s) from which to import.
@@ -318,14 +313,9 @@ pub enum Command {
         #[arg(short, long)]
         /// Map the citation keys to local identifiers if provenance could not be determined.
         local_fallback: bool,
-        /// How to resolve conflicts with data currently present in your database.
-        #[arg(
-            short = 'n',
-            long,
-            value_enum,
-            default_value_t = OnConflict::PreferCurrent,
-        )]
-        on_conflict: OnConflict,
+        /// Update records already in your database.
+        #[arg(short, long)]
+        update: Option<OnConflict>,
         /// Never create aliases.
         #[arg(short = 'A', long)]
         no_alias: bool,
@@ -353,8 +343,8 @@ pub enum Command {
     /// You can provide BibTeX data from a file with the `--from-bibtex` option, or by providing
     /// values using `--with-entry-type` and `--with-field`.
     ///
-    /// The `--with-entry-type` or `--with-field` values will override any
-    /// values present in the data read from the BibTeX file.
+    /// `--with-entry-type` and `--with-field` will override any values present
+    /// in the data read from the BibTeX file.
     ///
     /// This fails if the local identifier already exists in the database.
     Local {
@@ -623,6 +613,7 @@ pub enum HistCommand {
         /// Set to the lastest state with modification time preceding this date-time.
         ///
         /// This is a RFC3339 date-time, so make sure to indicate the timezone as well.
+        /// See, for example, the output of `autobib info -r modified`.
         #[arg(long, group = "reset_target")]
         before: Option<DateTime<Local>>,
     },
@@ -644,7 +635,7 @@ pub enum HistCommand {
         /// The identifier for the revive operation.
         identifier: RecordId,
         /// Create the record using the provided BibTeX data.
-        #[arg(short = 'b', long, value_name = "PATH", group = "input")]
+        #[arg(short = 'b', long, value_name = "PATH")]
         from_bibtex: Option<PathBuf>,
         /// Set the entry type.
         #[arg(long, value_name = "ENTRY_TYPE")]
@@ -672,6 +663,11 @@ pub enum HistCommand {
         #[arg(long, value_name = "LIMIT")]
         limit: Option<u32>,
     },
+    /// Update the modification time of every active record in the database.
+    ///
+    /// On success, print the new modification time of every active entry in
+    /// the database.
+    TouchAll,
     /// Undo the most recent change associated with an identifier.
     Undo {
         /// The identifier for the undo operation.
@@ -692,8 +688,8 @@ pub enum HistCommand {
 
 /// Permanently remove edit history without impacting the active record.
 ///
-/// These operations are performed in bulk on the entire database, so if your database is very
-/// large they can take a while to run, particularly the `autobib prune outdated` operation.
+/// These operations are performed in bulk on the entire database so if your database is
+/// exceptionally large they can take a while to run.
 #[derive(Debug, Subcommand)]
 pub enum PruneCommand {
     /// Prune all inactive entries.
@@ -725,10 +721,13 @@ pub enum UtilCommand {
         #[arg(long)]
         max_age: Option<u32>,
     },
-    /// List all valid keys.
+    /// List all valid identifiers.
     List {
-        /// Only list the canonical keys.
+        /// Only list the canonical identifiers.
         #[arg(short, long)]
         canonical: bool,
+        /// List deleted identifiers instead of those with data.
+        #[arg(short, long)]
+        deleted: bool,
     },
 }

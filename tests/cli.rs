@@ -1228,6 +1228,38 @@ fn import_basic() -> Result<()> {
 }
 
 #[test]
+fn import_idempotent() -> Result<()> {
+    let s = TestState::init()?;
+    s.set_config("tests/resources/import/config.toml")?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["import", "tests/resources/import/file.bib"]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["import", "tests/resources/import/file.bib"]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["import", "tests/resources/import/file.bib"]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["hist", "undo", "attainable-assouad-spectra"]);
+    cmd.assert()
+        .failure()
+        .stderr(contains("Cannot void record"));
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["hist", "undo", "zbMATH06346461"]);
+    cmd.assert()
+        .failure()
+        .stderr(contains("Cannot void record"));
+
+    s.close()
+}
+
+#[test]
 fn import_no_alias() -> Result<()> {
     let s = TestState::init()?;
 
@@ -1359,7 +1391,13 @@ fn import_update() -> Result<()> {
     cmd.assert().success();
 
     let mut cmd = s.cmd()?;
-    cmd.args(["import", "tests/resources/import/retrieve.bib", "--resolve"]);
+    cmd.args([
+        "import",
+        "tests/resources/import/retrieve.bib",
+        "--resolve",
+        "--update",
+        "prefer-current",
+    ]);
     cmd.assert().success();
 
     let mut cmd = s.cmd()?;
@@ -1494,6 +1532,310 @@ fn test_changelog() -> Result<()> {
     ));
 
     s.close()
+}
+
+#[test]
+fn test_prune() -> Result<()> {
+    fn init() -> Result<(TestState, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)> {
+        let s = TestState::init()?;
+
+        // create a node with two children
+        let mut cmd = s.cmd()?;
+        cmd.args(["local", "a", "--with-field", "title = {1}"]);
+        cmd.assert().success();
+
+        let mut cmd = s.cmd()?;
+        cmd.args(["edit", "local:a", "--set-field", "title = {2}"]);
+        cmd.assert().success();
+
+        let mut cmd = s.cmd()?;
+        cmd.args(["info", "local:a", "-r", "revision"]);
+        let output = cmd.output()?;
+        assert!(output.status.success());
+        let rev_1 = output.stdout;
+
+        let mut cmd = s.cmd()?;
+        cmd.args(["hist", "undo", "local:a"]);
+        cmd.assert().success();
+
+        let mut cmd = s.cmd()?;
+        cmd.args(["edit", "local:a", "--set-field", "title = {3}"]);
+        cmd.assert().success();
+
+        // create a node with two children, and then that child has the active node
+        let mut cmd = s.cmd()?;
+        cmd.args(["local", "b", "--with-field", "title = {1}"]);
+        cmd.assert().success();
+
+        let mut cmd = s.cmd()?;
+        cmd.args(["edit", "local:b", "--set-field", "title = {2}"]);
+        cmd.assert().success();
+
+        let mut cmd = s.cmd()?;
+        cmd.args(["info", "local:b", "-r", "revision"]);
+        let output = cmd.output()?;
+        assert!(output.status.success());
+        let rev_2 = output.stdout;
+
+        let mut cmd = s.cmd()?;
+        cmd.args(["hist", "undo", "local:b"]);
+        cmd.assert().success();
+
+        let mut cmd = s.cmd()?;
+        cmd.args(["edit", "local:b", "--set-field", "title = {3}"]);
+        cmd.assert().success();
+
+        let mut cmd = s.cmd()?;
+        cmd.args(["edit", "local:b", "--set-field", "title = {4}"]);
+        cmd.assert().success();
+
+        let mut cmd = s.cmd()?;
+        cmd.args(["edit", "local:b", "--set-field", "title = {5}"]);
+        cmd.assert().success();
+
+        let mut cmd = s.cmd()?;
+        cmd.args(["info", "local:b", "-r", "revision"]);
+        let output = cmd.output()?;
+        assert!(output.status.success());
+        let rev_3 = output.stdout;
+
+        let mut cmd = s.cmd()?;
+        cmd.args(["delete", "local:b"]);
+        cmd.assert().success();
+
+        let mut cmd = s.cmd()?;
+        cmd.args(["info", "local:b", "-r", "revision"]);
+        let output = cmd.output()?;
+        assert!(output.status.success());
+        let rev_4 = output.stdout;
+
+        let mut cmd = s.cmd()?;
+        cmd.args(["hist", "undo", "local:b"]);
+        cmd.assert().success();
+
+        let mut cmd = s.cmd()?;
+        cmd.args(["hist", "undo", "local:b"]);
+        cmd.assert().success();
+
+        Ok((s, rev_1, rev_2, rev_3, rev_4))
+    }
+
+    // pruning all deletes past and present states
+    let (s, rev_1, rev_2, rev_3, _) = init()?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["hist", "prune", "all"]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args([
+        "hist",
+        "reset",
+        "local:a",
+        "--rev",
+        std::str::from_utf8(&rev_1).unwrap().trim_end(),
+    ]);
+    cmd.assert()
+        .failure()
+        .stderr(contains("Revision does not exist"));
+
+    let mut cmd = s.cmd()?;
+    cmd.args([
+        "hist",
+        "reset",
+        "local:b",
+        "--rev",
+        std::str::from_utf8(&rev_2).unwrap().trim_end(),
+    ]);
+    cmd.assert()
+        .failure()
+        .stderr(contains("Revision does not exist"));
+
+    let mut cmd = s.cmd()?;
+    cmd.args([
+        "hist",
+        "reset",
+        "local:b",
+        "--rev",
+        std::str::from_utf8(&rev_3).unwrap().trim_end(),
+    ]);
+    cmd.assert()
+        .failure()
+        .stderr(contains("Revision does not exist"));
+
+    // pruning outdated does not delete future states
+    let (s, rev_1, rev_2, rev_3, _) = init()?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["hist", "prune", "outdated"]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args([
+        "hist",
+        "reset",
+        "local:a",
+        "--rev",
+        std::str::from_utf8(&rev_1).unwrap().trim_end(),
+    ]);
+    cmd.assert()
+        .failure()
+        .stderr(contains("Revision does not exist"));
+
+    let mut cmd = s.cmd()?;
+    cmd.args([
+        "hist",
+        "reset",
+        "local:b",
+        "--rev",
+        std::str::from_utf8(&rev_2).unwrap().trim_end(),
+    ]);
+    cmd.assert()
+        .failure()
+        .stderr(contains("Revision does not exist"));
+
+    let mut cmd = s.cmd()?;
+    cmd.args([
+        "hist",
+        "reset",
+        "local:b",
+        "--rev",
+        std::str::from_utf8(&rev_3).unwrap().trim_end(),
+    ]);
+    cmd.assert().success();
+
+    s.close()?;
+
+    // keep the correct number
+    let (s, rev_1, rev_2, rev_3, _) = init()?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["hist", "prune", "outdated", "--retain", "1"]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args([
+        "hist",
+        "reset",
+        "local:a",
+        "--rev",
+        std::str::from_utf8(&rev_1).unwrap().trim_end(),
+    ]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args([
+        "hist",
+        "reset",
+        "local:b",
+        "--rev",
+        std::str::from_utf8(&rev_2).unwrap().trim_end(),
+    ]);
+    cmd.assert()
+        .failure()
+        .stderr(contains("Revision does not exist"));
+
+    let mut cmd = s.cmd()?;
+    cmd.args([
+        "hist",
+        "reset",
+        "local:b",
+        "--rev",
+        std::str::from_utf8(&rev_3).unwrap().trim_end(),
+    ]);
+    cmd.assert().success();
+
+    s.close()?;
+
+    // keep the correct number
+    let (s, rev_1, rev_2, rev_3, _) = init()?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["hist", "prune", "outdated", "--retain", "2"]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args([
+        "hist",
+        "reset",
+        "local:a",
+        "--rev",
+        std::str::from_utf8(&rev_1).unwrap().trim_end(),
+    ]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args([
+        "hist",
+        "reset",
+        "local:b",
+        "--rev",
+        std::str::from_utf8(&rev_2).unwrap().trim_end(),
+    ]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args([
+        "hist",
+        "reset",
+        "local:b",
+        "--rev",
+        std::str::from_utf8(&rev_3).unwrap().trim_end(),
+    ]);
+    cmd.assert().success();
+
+    s.close()?;
+
+    // prune deleted
+    let (s, rev_1, rev_2, rev_3, rev_4) = init()?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["hist", "prune", "deleted"]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args([
+        "hist",
+        "reset",
+        "local:a",
+        "--rev",
+        std::str::from_utf8(&rev_1).unwrap().trim_end(),
+    ]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args([
+        "hist",
+        "reset",
+        "local:b",
+        "--rev",
+        std::str::from_utf8(&rev_2).unwrap().trim_end(),
+    ]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args([
+        "hist",
+        "reset",
+        "local:b",
+        "--rev",
+        std::str::from_utf8(&rev_3).unwrap().trim_end(),
+    ]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args([
+        "hist",
+        "reset",
+        "local:b",
+        "--rev",
+        std::str::from_utf8(&rev_4).unwrap().trim_end(),
+    ]);
+    cmd.assert().stderr(contains("Revision does not exist"));
+
+    s.close()?;
+
+    Ok(())
 }
 
 macro_rules! test_provider_success {
