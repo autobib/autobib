@@ -1,4 +1,4 @@
-CREATE TABLE "Records" (
+CREATE TABLE "tmp_Records" (
   "key" INTEGER PRIMARY KEY,
   "record_id" TEXT NOT NULL,
   "data" BLOB NOT NULL,

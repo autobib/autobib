@@ -64,6 +64,7 @@ pub fn migrate(conn: &mut Connection, v: i32) -> Result<(), DatabaseError> {
                 Ok(())
             })?;
             if num_faults != 0 {
+                tx.rollback()?;
                 return Err(DatabaseError::Migration(
                     0,
                     format!(
@@ -80,7 +81,61 @@ pub fn migrate(conn: &mut Connection, v: i32) -> Result<(), DatabaseError> {
             debug!("Setting the application id.");
             conn.pragma_update(None, "application_id", application_id())?;
         }
-        1 => return Err(DatabaseError::CannotMigrate(1)),
+        1 => {
+            // procedure from:
+            // https://www.sqlite.org/lang_altertable.html#making_other_kinds_of_table_schema_changes
+            debug!("Turning off foreign key checks");
+            conn.pragma_update(None, "foreign_keys", "OFF")?;
+            let tx = conn.transaction()?;
+
+            debug!("Creating new table 'Identifiers'");
+            tx.prepare(include_str!("migrate/v1/create_table_identifiers.sql"))?
+                .execute([])?;
+
+            debug!("Inserting new data into the table");
+            tx.prepare("INSERT INTO Identifiers SELECT name, record_key FROM CitationKeys")?
+                .execute([])?;
+
+            debug!("Creating table 'tmp_Records'");
+            tx.prepare(include_str!("migrate/v1/create_table_tmp_records.sql"))?
+                .execute([])?;
+
+            debug!("Inserting original Records data into the table");
+            tx.prepare(
+                "INSERT INTO tmp_Records SELECT key, record_id, data, modified, 0, NULL FROM Records",
+            )?
+            .execute([])?;
+
+            debug!("Dropping unused tables");
+            tx.execute_batch(
+                "DROP TABLE Records;
+                 DROP TABLE Changelog;
+                 DROP TABLE CitationKeys;",
+            )?;
+
+            debug!("Renaming tmp_Records table");
+            tx.prepare("ALTER TABLE tmp_Records RENAME TO Records")?
+                .execute([])?;
+
+            debug!("Checking foreign key constraints in new table");
+            let mut num_faults: usize = 0;
+            tx.pragma_query(None, "foreign_key_check", |_| {
+                num_faults += 1;
+                Ok(())
+            })?;
+            if num_faults != 0 {
+                tx.rollback()?;
+                return Err(DatabaseError::Migration(
+                    0,
+                    format!("Failed to migrate: foreign key check returned {num_faults} errors"),
+                ));
+            }
+
+            debug!("Creating indices");
+            tx.execute_batch(include_str!("migrate/v1/create_indices.sql"))?;
+
+            tx.commit()?;
+        }
         // this is only reachable if the user_version was set by a different program
         _ => return Err(DatabaseError::InvalidDatabase),
     }
