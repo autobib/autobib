@@ -325,6 +325,9 @@ pub enum Command {
         /// Attach files specified in the `file` field.
         #[arg(long)]
         include_files: bool,
+        /// A separator for the `files` BibTeX field.
+        #[arg(long, requires = "include_files")]
+        file_sep: Option<String>,
     },
     /// Show metadata associated with an identifier.
     Info {

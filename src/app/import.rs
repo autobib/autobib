@@ -1,4 +1,5 @@
 use std::{
+    fs,
     io::Write,
     path::{Path, PathBuf},
 };
@@ -35,6 +36,7 @@ pub struct ImportConfig {
     pub local_fallback: bool,
     pub no_alias: bool,
     pub include_files: bool,
+    pub file_sep: Option<String>,
 }
 
 /// Import records from the provided buffer.
@@ -114,7 +116,7 @@ where
     import_entry_impl(
         record_db,
         entry,
-        import_config.no_alias,
+        import_config,
         &config.on_insert,
         attachment_root,
         |entry, record_db| {
@@ -289,11 +291,11 @@ fn import_file(
     match source_path.file_name() {
         None => anyhow::bail!("Cannot import filename containing relative path"),
         Some(file_name) => {
-            std::fs::create_dir_all(&target_path)?;
+            fs::create_dir_all(&target_path)?;
             target_path.push(file_name);
             // FIXME: this is a TOCTOU error
             if !target_path.exists() {
-                std::fs::copy(source_path, target_path)?;
+                fs::copy(source_path, target_path)?;
             }
         }
     }
@@ -304,14 +306,23 @@ fn normalize_data(
     entry: &mut Entry<MutableEntryData>,
     nl: &Normalization,
     include_files: Option<&mut PathBuf>,
+    file_sep: &Option<String>,
     canonical: &RemoteId,
 ) -> Result<(), anyhow::Error> {
     entry.record_data.normalize(nl);
     if let Some(target_path) = include_files
         && let Some(path) = entry.record_data.remove("file")
-        && let Err(err) = import_file(path.as_ref().as_ref(), target_path, canonical)
     {
-        anyhow::bail!("Failed to import file '{path}': {err}");
+        let path_str = path.as_ref();
+        if let Some(sep) = file_sep {
+            for component in path_str.split(sep) {
+                if let Err(err) = import_file(component.as_ref(), target_path, canonical) {
+                    anyhow::bail!("Failed to import file '{component}': {err}");
+                }
+            }
+        } else if let Err(err) = import_file(path_str.as_ref(), target_path, canonical) {
+            anyhow::bail!("Failed to import file '{path}': {err}");
+        }
     }
     Ok(())
 }
@@ -322,7 +333,8 @@ fn normalize_data(
 fn import_entry_impl<F>(
     record_db: &mut RecordDatabase,
     mut entry: Entry<MutableEntryData>,
-    no_alias: bool,
+    import_config: &ImportConfig,
+    // no_alias: bool,
     nl: &Normalization,
     attachment_root: Option<&mut PathBuf>,
     mut determine_action: F,
@@ -336,7 +348,13 @@ where
     match determine_action(&entry, record_db)? {
         ImportAction::Update(row, update_mode, remote_id, maybe_alias) => {
             if let Some(on_conflict) = update_mode {
-                if let Err(err) = normalize_data(&mut entry, nl, attachment_root, &remote_id) {
+                if let Err(err) = normalize_data(
+                    &mut entry,
+                    nl,
+                    attachment_root,
+                    &import_config.file_sep,
+                    &remote_id,
+                ) {
                     return Ok(ImportOutcome::Failure(err, entry));
                 }
 
@@ -354,30 +372,47 @@ where
                 info!("Updating data for record with identifier '{remote_id}'");
                 let new_row = row.modify(&new_data)?;
 
-                create_alias_and_commit(new_row, remote_id.name(), no_alias, maybe_alias)?;
+                create_alias_and_commit(
+                    new_row,
+                    remote_id.name(),
+                    import_config.no_alias,
+                    maybe_alias,
+                )?;
             } else {
                 info!("Skipping identifier '{remote_id}': already present in database");
             }
             Ok(ImportOutcome::Success)
         }
         ImportAction::Insert(missing, canonical, maybe_alias) => {
-            if let Err(err) = normalize_data(&mut entry, nl, attachment_root, &canonical) {
+            if let Err(err) = normalize_data(
+                &mut entry,
+                nl,
+                attachment_root,
+                &import_config.file_sep,
+                &canonical,
+            ) {
                 return Ok(ImportOutcome::Failure(err, entry));
             }
 
             info!("Inserting new record with identifier '{canonical}'");
             let row = missing.insert_entry_data(&entry.record_data, &canonical)?;
-            create_alias_and_commit(row, canonical.name(), no_alias, maybe_alias)?;
+            create_alias_and_commit(row, canonical.name(), import_config.no_alias, maybe_alias)?;
             Ok(ImportOutcome::Success)
         }
         ImportAction::Revive(void, remote_id, maybe_alias) => {
-            if let Err(err) = normalize_data(&mut entry, nl, attachment_root, &remote_id) {
+            if let Err(err) = normalize_data(
+                &mut entry,
+                nl,
+                attachment_root,
+                &import_config.file_sep,
+                &remote_id,
+            ) {
                 return Ok(ImportOutcome::Failure(err, entry));
             }
 
             info!("Re-inserting record with canonical id '{remote_id}'");
             let row = void.reinsert(&RawEntryData::from_entry_data(&entry.record_data))?;
-            create_alias_and_commit(row, remote_id.name(), no_alias, maybe_alias)?;
+            create_alias_and_commit(row, remote_id.name(), import_config.no_alias, maybe_alias)?;
             Ok(ImportOutcome::Success)
         }
         ImportAction::Fail(prompt) => Ok(ImportOutcome::Failure(prompt, entry)),
