@@ -437,7 +437,7 @@ pub enum Command {
         #[arg(short = 'b', long, value_name = "PATH", group = "update_from")]
         from_bibtex: Option<PathBuf>,
         /// Read update data from other record data.
-        #[arg(short = 'k', long, value_name = "IDENTIFIER", group = "update_from")]
+        #[arg(short = 'r', long, value_name = "IDENTIFIER", group = "update_from")]
         from_record: Option<RecordId>,
         /// How to resolve conflicting field values.
         #[arg(

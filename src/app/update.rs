@@ -20,14 +20,17 @@ use crate::{
 ///
 /// If the record is null, it cannot be updated by provided data, and will only update if there is
 /// new data to retrieve from remote.
-pub fn update<C: Client>(
+pub fn update<F>(
     on_conflict: OnConflict,
     record_id_state: RecordIdState,
     provided_data: Option<MutableEntryData>,
-    client: &C,
     normalization: &Normalization,
     revive: bool,
-) -> Result<(), anyhow::Error> {
+    produce_data: F,
+) -> Result<(), anyhow::Error>
+where
+    F: FnOnce(RemoteId) -> Result<MutableEntryData, anyhow::Error>,
+{
     match record_id_state {
         RecordIdState::Entry(
             id,
@@ -42,13 +45,14 @@ pub fn update<C: Client>(
             } else {
                 let mut new_raw_data = if let Some(data) = provided_data {
                     data
-                } else if canonical.is_local() {
-                    state.commit()?;
-                    bail!(
-                        "Cannot update local record using remote data: use `autobib edit` or the `--from-bibtex` or `--from-key` options."
-                    );
                 } else {
-                    data_from_remote(canonical, client)?.0
+                    match produce_data(canonical) {
+                        Ok(data) => data,
+                        Err(e) => {
+                            state.commit()?;
+                            return Err(e);
+                        }
+                    }
                 };
 
                 new_raw_data.normalize(normalization);
@@ -63,13 +67,16 @@ pub fn update<C: Client>(
         }
         RecordIdState::Deleted(id, data, state) => {
             if revive {
-                let mut raw_data = if data.canonical.is_local() {
-                    state.commit()?;
-                    bail!(
-                        "Cannot update local record using remote data: use `autobib edit` or the `--from-bibtex` or `--from-key` options."
-                    );
+                let mut raw_data = if let Some(data) = provided_data {
+                    data
                 } else {
-                    data_from_remote(data.canonical, client)?.0
+                    match produce_data(data.canonical) {
+                        Ok(data) => data,
+                        Err(e) => {
+                            state.commit()?;
+                            return Err(e);
+                        }
+                    }
                 };
 
                 raw_data.normalize(normalization);
@@ -97,20 +104,8 @@ pub fn update<C: Client>(
             }
         }
         RecordIdState::NullRemoteId(mapped_remote_id, null_row) => {
-            if provided_data.is_some() {
-                null_row.commit()?;
-                // cannot update a null record with provided data
-                bail!("Null record can only be updated with remote data");
-            } else {
-                // do not need to check is_local since local ids cannot be in the null records
-                // table
-                let (mut data, canonical) = data_from_remote(mapped_remote_id.mapped, client)?;
-                data.normalize(normalization);
-                null_row
-                    .delete()?
-                    .insert_entry_data(&data, &canonical)?
-                    .commit()?;
-            };
+            null_row.commit()?;
+            bail!("Cannot update null record with identifier: {mapped_remote_id}");
         }
         RecordIdState::Unknown(unknown) => {
             let maybe_normalized = unknown.combine_and_commit()?;
@@ -127,7 +122,7 @@ pub fn update<C: Client>(
     Ok(())
 }
 
-fn data_from_remote<C: Client>(
+pub fn data_from_remote<C: Client>(
     remote_id: RemoteId,
     client: &C,
 ) -> Result<(MutableEntryData, RemoteId), anyhow::Error> {

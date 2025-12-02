@@ -17,6 +17,8 @@ Changes since `v0.5.1`.
   Also see `autobib update --from-record` and `autobib delete --update-aliases`.
 - `autobib edit` no longer opens an interactive editor if headless edit methods are specified.
 - `autobib update --from` has been renamed to `autobib update --from-bibtex`.
+- `autobib update` can no longer be used to retrieve new data for null records.
+  To retrieve data, first delete the null record using `autobib util evict`.
 - `autobib local` no longer creates an alias automatically.
 - `autobib import` has been re-implemented.
   Run `autobib help import` for more detail.
