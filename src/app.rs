@@ -833,6 +833,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             update,
             no_alias,
             include_files,
+            file_sep,
         } => {
             let import_config = ImportConfig {
                 update,
@@ -840,6 +841,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 local_fallback,
                 no_alias,
                 include_files,
+                file_sep,
             };
 
             debug!("Using import configuration: {import_config:?}");
