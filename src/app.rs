@@ -1149,16 +1149,19 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
         Command::Update {
             identifier,
             from_bibtex,
-            from_record: from_key,
+            from_record,
             on_conflict,
             revive,
         } => {
             let cfg = config::load(&config_path, missing_ok)?;
 
-            let provided_data = if let Some(record_id) = from_key {
+            // this has to be done first since we need a mutable reference to
+            // record_db, which we cannot use once we start the update
+            // routine. However, we do not determine the data in the other cases
+            // at this point since we would like to defer filesystem / network
+            // operations, unless they are strictly required
+            let provided_data = if let Some(record_id) = from_record {
                 Some(data_from_key(&mut record_db, record_id, &cfg)?)
-            } else if let Some(path) = from_bibtex {
-                Some(data_from_path(path)?)
             } else {
                 None
             };
@@ -1167,9 +1170,19 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 on_conflict,
                 record_db.state_from_record_id(identifier, &cfg.alias_transform)?,
                 provided_data,
-                client,
                 &cfg.on_insert,
                 revive,
+                |canonical| {
+                    if let Some(path) = from_bibtex {
+                        Ok(data_from_path(path)?)
+                    } else if canonical.is_local() {
+                        bail!(
+                            "Cannot update local record using remote data: use `autobib edit` or the `--from-bibtex` or `--from-key` options."
+                        );
+                    } else {
+                        Ok(update::data_from_remote(canonical, client)?.0)
+                    }
+                },
             )?;
         }
         Command::Util { util_command } => match util_command {
