@@ -1216,8 +1216,13 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             UtilCommand::List { canonical, deleted } => {
                 let mut lock = stdout_lock_wrap();
                 let snapshot = record_db.snapshot()?;
-                snapshot
-                    .map_identifiers(canonical, deleted, |key_str| writeln!(lock, "{key_str}"))?;
+                if canonical {
+                    snapshot.map_canonical_identifiers(deleted, |key_str| {
+                        writeln!(lock, "{key_str}")
+                    })?;
+                } else {
+                    snapshot.map_identifiers(deleted, |key_str| writeln!(lock, "{key_str}"))?;
+                }
                 snapshot.commit()?;
             }
         },

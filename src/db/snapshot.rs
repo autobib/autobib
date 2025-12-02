@@ -1,9 +1,9 @@
-use std::{error, fmt};
+use std::{error, fmt, str::from_utf8};
 
 use chrono::{DateTime, Local};
 use rusqlite::types::ValueRef;
 
-use crate::{db::state::create_rewind_target, logger::info};
+use crate::{db::state::create_rewind_target, logger::info, record::RemoteId};
 
 use super::{
     Transaction,
@@ -288,30 +288,47 @@ WHERE variant = 1
         Ok(())
     }
 
-    /// Iterate over all names in the Identifiers table and apply the fallible closure
-    /// `f` to each key. If an error is returned by the closure, it is immediately propagated and
-    /// the function exits early.
-    ///
-    /// If `canonical` is true, only iterate over canonical keys.
-    pub fn map_identifiers<E, F: FnMut(&str) -> Result<(), E>>(
+    /// Iterate over all active canonical identifiers and apply the fallible closure `f` to each
+    /// remote id.
+    pub fn map_canonical_identifiers<E, F: FnMut(RemoteId<&str>) -> Result<(), E>>(
         &self,
-        canonical: bool,
         deleted: bool,
         mut f: F,
     ) -> Result<(), SnapshotMapErr<E>> {
-        let mut selector = if canonical {
-            self.tx
-                .prepare("SELECT record_id FROM Records WHERE key IN (SELECT record_key FROM Identifiers) AND variant = ?1")?
-        } else {
-            self.tx.prepare("SELECT name FROM Identifiers INNER JOIN Records ON Identifiers.record_key = Records.key WHERE Records.variant = ?1")?
-        };
+        let mut selector = self.tx.prepare("SELECT record_id FROM Records WHERE key IN (SELECT record_key FROM Identifiers) AND variant = ?1")?;
         let variant = if deleted { 1 } else { 0 };
 
         let mut rows = selector.query([variant])?;
         while let Some(row) = rows.next()? {
             if let ValueRef::Text(bytes) = row.get_ref_unwrap(0) {
-                // SAFETY: the underlying data is always valid utf-8
-                f(std::str::from_utf8(bytes).unwrap()).map_err(SnapshotMapErr::CallbackFailed)?;
+                f(RemoteId::from_string_unchecked(from_utf8(bytes).unwrap()))
+                    .map_err(SnapshotMapErr::CallbackFailed)?;
+            } else {
+                panic!("'Identifiers' table has unexpected schema: column 'name' is not a TEXT!");
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Iterate over all names in the Identifiers table and apply the fallible closure
+    /// `f` to each key. If an error is returned by the closure, it is immediately propagated and
+    /// the function exits early.
+    pub fn map_identifiers<E, F: FnMut(&str) -> Result<(), E>>(
+        &self,
+        deleted: bool,
+        mut f: F,
+    ) -> Result<(), SnapshotMapErr<E>> {
+        let mut selector =
+            self.tx.prepare("SELECT name FROM Identifiers INNER JOIN Records ON Identifiers.record_key = Records.key WHERE Records.variant = ?1")?;
+        let variant = if deleted { 1 } else { 0 };
+
+        let mut rows = selector.query([variant])?;
+        while let Some(row) = rows.next()? {
+            if let ValueRef::Text(bytes) = row.get_ref_unwrap(0) {
+                f(from_utf8(bytes).unwrap()).map_err(SnapshotMapErr::CallbackFailed)?;
+            } else {
+                panic!("'Identifiers' table has unexpected schema: column 'name' is not a TEXT!");
             }
         }
 
