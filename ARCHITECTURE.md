@@ -33,7 +33,7 @@ PRAGMA user_version;
 ### `Records` table
 
 This table has schema
- ```sql
+```sql
 CREATE TABLE Records (
     key INTEGER PRIMARY KEY,
     record_id TEXT NOT NULL,
@@ -44,7 +44,7 @@ CREATE TABLE Records (
         ON UPDATE RESTRICT
         ON DELETE SET NULL
 ) STRICT;
- ```
+```
 This table stores the record data, and the associated canonical id, as well as the last modified time.
 
 The `data` column contains the raw data associated with the record, with interpretation based
@@ -75,11 +75,11 @@ This is a lookup table mapping identifiers to record keys.
 
 This table has schema
 ```sql
- CREATE TABLE NullRecords (
-     record_id TEXT NOT NULL PRIMARY KEY,
-     attempted TEXT NOT NULL
- ) STRICT;
- ```
+CREATE TABLE NullRecords (
+    record_id TEXT NOT NULL PRIMARY KEY,
+    attempted TEXT NOT NULL
+) STRICT;
+```
 This is a cache table for failed lookup if a provided record is invalid.
 
 ### Database invariants
@@ -87,12 +87,12 @@ This is a cache table for failed lookup if a provided record is invalid.
 The following invariants must be upheld at all times.
 
 1. The `parent_key` row indicates a directed edge leading from a given row to its *parent* row.
-2. The set of rows for a given value of `record_id` must form exactly one tree.
-3. The `modified` column must be sorted in descending order down the tree: that is, each parent must have `modified` time which is greater than the `modified` time of the child node.
-4. If a void node exists, its `parent_key` must be null.
-5. The modification time of the void node must be exactly `-262143-01-01 00:00:00+00:00`.
-6. A row in the 'Records' table with a key that is present in the `Identifiers` table is called *active*.
-7. Exactly one row per `record_id`-tree must be active.
+   The set of rows for a given value of `record_id` must form exactly one tree.
+2. The `modified` column must be sorted in descending order down the tree: that is, each parent must have `modified` time which is greater than the `modified` time of the child node.
+3. If a void node exists, its `parent_key` must be null.
+4. The modification time of the void node must be exactly `-262143-01-01 00:00:00+00:00`.
+5. A row in the 'Records' table with a key that is present in the `Identifiers` table is called *active*.
+   Exactly one row per `record_id`-tree must be active.
 
 ## Internal binary data format
 

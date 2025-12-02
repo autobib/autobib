@@ -56,7 +56,7 @@ However, since the provenance tends to be machine-readable instead of human-read
 These are keys of the form `xyz`, not containing a semicolon to distinguish from provenance, and not beginning with the reserved `#` character (for reasons that will become clear in the next section).
 An alias is just *an alternative name for the provenance*.
 If `xyz` is an alias for `doi:1234/abcd`, then writing `xyz` is equivalent to writing `doi:1234/abcd`.
-The only difference is the name used, including as the citation key in the BibTeX output.
+The alias is also used as the citation key in the BibTeX output.
 
 ## Revisions
 
@@ -78,16 +78,17 @@ There are three states that a record can be in.
    For example, this will cause `autobib get` to automatically retrieve new data for the row.
    It is uncommon for a record to be in this state, but this can be attained manually with `autobib hist void`, or is created automatically with `autobib hist rewind-all` or `autobib hist reset --before` when the threshold time precedes the existence of the record in the database.
 
-Note that `void` entries still contain some state: it preserve aliases, and still tracks the *prov-id* which can be used to more efficiently look-up new data.
+Note that `void` entries still contain some state: it preserves aliases, and still tracks the *prov-id* which can be used to more efficiently look-up new data.
 
 ### Moving around the edit-tree
 
 The simplest operations regarding revisions are `autobib hist undo` and `autobib hist redo`.
 Undo sets the active state to the parent state, if the parent state exists.
-Redo sets the active state to the child if there is exactly one child; otherwise, it is required to pass an explicit index indicating which child to follow.
+Redo sets the active state to the newest child.
+To disambiguate multiple children, it is also possible to pass an explicit index indicating which child branch to follow.
 
 For more complex operations involving the edit-tree, the output of `autobib log --tree` can be useful.
-This prints a branch diagram showing the relationship between all of the states ordered in reverse chronological order.
+This prints a branch diagram showing the relationship between all of the states in reverse chronological order.
 The active state is also highlighted.
 
 The branch diagram also includes special hexadecimal *revisions*, which can be used to refer to specific versions.
@@ -109,5 +110,5 @@ This is achieved either using `autobib revive` (which you must provide with new 
 Operations involving multiple lifetimes often require special flags.
 
 - Visualizing all lifetimes with `autobib log` requires the `--all` flag.
-- `autobib undo` will not undo into a deleted state, unless you use `autobib undo --delete`
-- `autobib redo` will not redo beyond a deleted state, unless you use `autobib redo --revive`.
+- `autobib hist undo` will not undo into a deleted state, unless you use `autobib hist undo --delete`
+- `autobib hist redo` will not redo beyond a deleted state, unless you use `autobib hist redo --revive`.

@@ -367,10 +367,10 @@ pub enum Command {
         /// Show parallel changes, instead of only the history of the active version.
         #[arg(short, long)]
         tree: bool,
-        /// Also traverse pass deletion markers.
+        /// Also traverse past deletion markers.
         #[arg(short, long)]
         all: bool,
-        /// Display newest changes first.
+        /// Display oldest changes first.
         #[arg(short, long)]
         reverse: bool,
     },
@@ -646,11 +646,11 @@ pub enum HistCommand {
     },
     /// Move the database back in time.
     ///
-    /// This is the same as calling `autobib reset --before` on every active entry in the database with
+    /// This is the same as calling `autobib hist reset --before` on every active entry in the database with
     /// modification greater than the provided time.
     ///
     /// Use caution! The modification time may not correspond to the database state at the provided
-    /// date-time if you have used `autobib undo/redo/reset`, since these methods only change the
+    /// date-time if you have used `autobib hist (undo|redo|reset)`, since these methods only change the
     /// active state without introducing new changes. Your old data will still be retrievable, but
     /// it could require a lot of work to unwind the changes.
     RewindAll {

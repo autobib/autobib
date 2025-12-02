@@ -51,6 +51,7 @@ Jump to:
 - [Assigning aliases](#assigning-aliases)
 - [Creating local records](#creating-local-records)
 - [Searching for records](#searching-for-records)
+- [Working with edit history](#working-with-edit-history)
 - [Importing records](#importing-records)
 - [Shell completions](#shell-completions)
 - [User data and configuration file](#user-data-and-configuration-file)
@@ -213,10 +214,10 @@ Read more in the [template syntax documentation](docs/template.md).
 
 Autobib maintains a comprehensive edit history: every change to a record in the database creates a new copy with the changes, and the old copy is saved in the database.
 
-You can recover the previous version(s) using `autobib undo` and `autobib redo`.
+You can recover the previous version(s) using `autobib hist undo` and `autobib hist redo`.
 
 Internally, undo-states are stored as a *tree*: you can visualize the entire edit history associated with an identifier using `autobib log --tree`.
-You can move to arbitrary states in the edit tree using `autobib reset`.
+You can move to arbitrary states in the edit tree using `autobib hist reset`.
 
 Your data is never deleted automatically.
 See `autobib hist prune` for a variety of commands which can be used to delete unwanted revisions.
