@@ -459,15 +459,7 @@ pub fn determine_key<F>(entry: &Entry<MutableEntryData>, config: &Config<F>) -> 
 where
     F: FnOnce() -> Vec<(regex::Regex, String)>,
 {
-    let score_fn = |id: &RemoteId| {
-        std::cmp::Reverse(
-            config
-                .preferred_providers
-                .iter()
-                .position(|pref| pref == id.provider())
-                .unwrap_or(config.preferred_providers.len()),
-        )
-    };
+    let score_fn = |id: &RemoteId| config.score_id(id);
 
     // let from_data = determine_remote_id_candidates(entry.data(), score_fn);
 

@@ -9,7 +9,7 @@ use crate::{
     logger::{debug, info},
 };
 
-use super::{IsMissing, State, Transaction, version::RevisionId};
+use super::{IsMissing, State, Tx, version::RevisionId};
 
 /// Any state which represents a row in the 'Records' table.
 pub trait InRecordsTable {
@@ -64,7 +64,7 @@ impl<D: FromBytesAndVariant> RecordRow<D> {
 
     /// Load from a row id, which the caller promises is a valid row ID in the 'Records' table and
     /// moreover has type `D`.
-    pub(super) fn load_unchecked(tx: &Transaction<'_>, row_id: i64) -> rusqlite::Result<Self> {
+    pub(super) fn load_unchecked(tx: &Tx<'_>, row_id: i64) -> rusqlite::Result<Self> {
         tx.prepare_cached("SELECT record_id, modified, data, variant FROM Records WHERE key = ?1")?
             .query_row((row_id,), |row| Ok(Self::from_row_unchecked(row)))
     }
@@ -84,7 +84,7 @@ impl<D: FromBytesAndVariant> CompleteRecordRow<D> {
         Self { row, parent }
     }
 
-    pub(super) fn load_unchecked(tx: &Transaction<'_>, row_id: i64) -> rusqlite::Result<Self> {
+    pub(super) fn load_unchecked(tx: &Tx<'_>, row_id: i64) -> rusqlite::Result<Self> {
         tx.prepare_cached(
             "SELECT record_id, modified, data, variant, parent_key FROM Records WHERE key = ?1",
         )?
@@ -275,6 +275,16 @@ impl AsRecordRowData for RawEntryData {
     }
 }
 
+impl AsRecordRowData for Option<&RemoteId> {
+    fn data_blob(&self) -> &[u8] {
+        self.map_or(b"", |r| r.name().as_bytes())
+    }
+
+    fn variant(&self) -> i64 {
+        1
+    }
+}
+
 impl AsRecordRowData for Option<RemoteId> {
     fn data_blob(&self) -> &[u8] {
         self.as_ref().map_or(b"", |r| r.name().as_bytes())
@@ -330,7 +340,7 @@ impl AsRecordRowData for () {
 }
 
 /// Get the canonical identifier.
-fn get_canonical(tx: &Transaction, row_id: i64) -> rusqlite::Result<RemoteId> {
+fn get_canonical(tx: &Tx, row_id: i64) -> rusqlite::Result<RemoteId> {
     tx.prepare_cached("SELECT record_id FROM Records WHERE key = ?1")?
         .query_row([row_id], |row| {
             row.get("record_id").map(RemoteId::from_string_unchecked)
@@ -338,7 +348,7 @@ fn get_canonical(tx: &Transaction, row_id: i64) -> rusqlite::Result<RemoteId> {
 }
 
 /// Get the last modified time.
-fn get_last_modified(tx: &Transaction, row_id: i64) -> rusqlite::Result<DateTime<Local>> {
+fn get_last_modified(tx: &Tx, row_id: i64) -> rusqlite::Result<DateTime<Local>> {
     tx.prepare_cached("SELECT modified FROM Records WHERE key = ?1")?
         .query_row([row_id], |row| row.get("modified"))
 }
@@ -374,6 +384,21 @@ pub enum SetActiveError {
 impl<'conn, I: InRecordsTable> State<'conn, I> {
     pub(in crate::db) fn row_id(&self) -> i64 {
         self.id.row_id()
+    }
+
+    /// Hard delete the row. This deletes every entry in the 'Records' with the same canonical
+    /// identifier as the current row.
+    pub fn delete_hard(self) -> Result<State<'conn, IsMissing>, rusqlite::Error> {
+        debug!(
+            "Permanently deleting all rows in the edit-tree associated with the id '{}'",
+            self.row_id()
+        );
+        self.prepare(
+            "DELETE FROM Records WHERE record_id IN (SELECT record_id FROM Records WHERE key = ?1);",
+        )?
+        .execute((self.row_id(),))?;
+
+        Ok(State::init(self.tx, IsMissing))
     }
 
     /// Unchecked conversion with a new row id of any type, updating the rows in the Identifiers table.
@@ -468,21 +493,6 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
     fn update_identifier_lookup(&self, new_key: i64) -> Result<usize, rusqlite::Error> {
         self.prepare("UPDATE Identifiers SET record_key = ?1 WHERE record_key = ?2")?
             .execute((new_key, self.row_id()))
-    }
-
-    /// Hard delete the row. This deletes every entry in the 'Records' with the same canonical
-    /// identifier as the current row.
-    pub fn hard_delete(self) -> Result<State<'conn, IsMissing>, rusqlite::Error> {
-        debug!(
-            "Permanently deleting all rows in the edit-tree associated with the id '{}'",
-            self.row_id()
-        );
-        self.prepare(
-            "DELETE FROM Records WHERE record_id = (SELECT record_id FROM Records WHERE key = ?1);",
-        )?
-        .execute((self.row_id(),))?;
-
-        Ok(State::init(self.tx, IsMissing))
     }
 
     /// Get every key in the `Identifiers` table which references this row.
@@ -672,12 +682,35 @@ impl<'conn, I: NotVoid> State<'conn, I> {
     }
 }
 
+/// Replace the row at `original` with the row at `target`.
+///
+/// The caller is required to guarantee that:
+///
+/// 1. `original` is the row-id of an active row in the 'Records' table with canonical
+///    `original_canonical`.
+/// 2. `target` is a valid row-id of another active row in the 'Records table', which does not have
+///    canonical id `original_canonical`.
+pub fn replace_hard_unchecked<'conn>(
+    tx: Tx<'conn>,
+    original: IsEntry,
+    original_canonical: &RemoteId,
+    target: IsEntry,
+) -> rusqlite::Result<Tx<'conn>> {
+    tx.prepare("UPDATE Identifiers SET record_key = ?1 WHERE record_key = ?2")?
+        .execute((target.0, original.0))?;
+
+    tx.prepare("DELETE FROM Records WHERE record_id = ?1")?
+        .execute([original_canonical.name()])?;
+
+    Ok(tx)
+}
+
 /// Returns a row which can be the target to rewind to.
 ///
 /// If a row exists which has modification time before `before`, this row is returned. Otherwise,
 /// a new void root is created, and the row id is returned.
 pub(in crate::db) fn create_rewind_target(
-    tx: &Transaction<'_>,
+    tx: &Tx<'_>,
     canonical: &str,
     before: DateTime<Local>,
 ) -> rusqlite::Result<i64> {
@@ -698,11 +731,7 @@ pub(in crate::db) fn create_rewind_target(
 }
 
 /// Create a parent to this row which is a void record.
-fn create_void_parent(
-    tx: &Transaction<'_>,
-    root_row_id: i64,
-    canonical: &str,
-) -> rusqlite::Result<i64> {
+fn create_void_parent(tx: &Tx<'_>, root_row_id: i64, canonical: &str) -> rusqlite::Result<i64> {
     // create the void root
     let new_row_id: i64 = tx.prepare("INSERT INTO Records (record_id, data, modified, variant) VALUES (?1, ?2, ?3, ?4) RETURNING key")?
             .query_row((canonical, ().data_blob(), DateTime::<Local>::MIN_UTC, ().variant()), |row| row.get(0))?;
@@ -768,7 +797,7 @@ impl<'conn> State<'conn, IsEntry> {
                         .query_row([row_id], |row| row.get("record_id"))?;
                     let remote_id = RemoteId::from_string_unchecked(repl);
                     info!("Replacing row with new canonical id '{remote_id}'");
-                    let deleted = self.soft_delete(&Some(remote_id), update_aliases)?;
+                    let deleted = self.delete_soft(Some(&remote_id), update_aliases)?;
                     Ok(RecordRowMoveResult::Updated(deleted))
                 }
             }
@@ -850,12 +879,12 @@ RETURNING key",
     }
 
     /// Replace this row with a deletion marker, preserving the old row as the parent row.
-    pub fn soft_delete(
+    pub fn delete_soft(
         self,
-        replacement: &Option<RemoteId>,
+        replacement: Option<&RemoteId>,
         update_aliases: bool,
     ) -> Result<State<'conn, IsDeleted>, rusqlite::Error> {
-        let new_key = self.replace_impl(replacement)?;
+        let new_key = self.replace_impl(&replacement)?;
         if update_aliases {
             match replacement {
                 Some(canonical) => {

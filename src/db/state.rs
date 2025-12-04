@@ -3,7 +3,7 @@
 //! as corresponds to a given [`RecordId`].
 //!
 //! The [`State`] struct is a representation of the database state corresponding to a [`RecordId`].
-//! Internally, the [`State`] struct is a wrapper around a [`Transaction`], which ensures
+//! Internally, the [`State`] struct is a wrapper around a [`Tx`], which ensures
 //! that the underlying database state will not change during the running of this program.
 //!
 //! A [`RecordId`] is represented by the database in exactly one of the following ways, which is
@@ -24,14 +24,6 @@
 //! - [`NotEntry`] is implemented by [`IsDeleted`] and [`IsVoid`]
 //! - [`NotVoid`] is implemented by [`IsEntry`] and [`IsDeleted`]
 //!
-//! Any implementation of [`State`] has access to the following operations:
-//!
-//! - [`commit`](State::commit) the state, which writes the relevant changes to the database.
-//! - [`reset`](State::reset) the state, which re-associates the internal transaction with a new
-//!   state. Since the underlying transaction is preserved, it must be committed even for the
-//!   changes prior to the [`reset`](State::reset) takes place. As a result,
-//!   [`reset`](State::reset) should be used with care to avoid lost data!
-//!
 //! The different states can be converted to each other, and support a variety of other operations.
 //! See the implementation docs for the individual states for more detail.
 mod borrow;
@@ -44,7 +36,7 @@ mod version;
 use rusqlite::{CachedStatement, Error, Statement};
 
 pub use self::{borrow::ArbitraryDataRef, disp::*, missing::*, null::*, record::*, version::*};
-use super::{RowId, Transaction, get_null_row_id, get_row_id};
+use super::{RowId, Tx, get_null_row_id, get_row_id};
 use crate::{
     Alias, AliasOrRemoteId, MappedKey, RecordId, RemoteId,
     config::AliasTransform,
@@ -56,14 +48,18 @@ use crate::{
 /// A representation of the current database state corresponding to a [`RecordId`].
 #[derive(Debug)]
 pub struct State<'conn, I> {
-    tx: Transaction<'conn>,
+    tx: Tx<'conn>,
     id: I,
 }
 
 impl<'conn, I> State<'conn, I> {
-    /// Reset the row, clearing any internal data but preserving the transaction.
-    pub fn reset(self, remote_id: &RemoteId) -> Result<RemoteIdState<'conn>, rusqlite::Error> {
-        RemoteIdState::determine(self.tx, remote_id)
+    /// Obtain the inner transaction, forgetting any other associated data.
+    pub fn into_tx(self) -> Tx<'conn> {
+        self.tx
+    }
+
+    pub fn into_parts(self) -> (Tx<'conn>, I) {
+        (self.tx, self.id)
     }
 
     /// Commit the [`State`], writing the relevant changes to the database.
@@ -72,8 +68,15 @@ impl<'conn, I> State<'conn, I> {
     }
 
     /// Initialize a new state from a transaction.
-    fn init(tx: Transaction<'conn>, id: I) -> Self {
+    fn init(tx: Tx<'conn>, id: I) -> Self {
         Self { tx, id }
+    }
+
+    /// Initialize a new state from an identifier obtained earlier in the transaction.
+    ///
+    /// The caller is required to guarantee that the identifier is still valid.
+    pub fn init_unchecked(tx: Tx<'conn>, id: I) -> Self {
+        Self::init(tx, id)
     }
 
     /// Prepare the SQL statement for execution.
@@ -136,10 +139,10 @@ pub enum RecordIdState<'conn> {
 }
 
 impl<'conn> RecordIdState<'conn> {
-    /// Create a new `Existent` variant from the provided [`Transaction`] and [`RowId`], using the
+    /// Create a new `Existent` variant from the provided [`Tx`] and [`RowId`], using the
     /// provided key as the original key for the request.
     fn existent(
-        tx: Transaction<'conn>,
+        tx: Tx<'conn>,
         row_id: RowId,
         key: impl Into<String>,
     ) -> Result<Self, rusqlite::Error> {
@@ -153,11 +156,11 @@ impl<'conn> RecordIdState<'conn> {
         )
     }
 
-    /// Create a new `Existent` variant from the provided [`Transaction`] and [`RowId`], using the
+    /// Create a new `Existent` variant from the provided [`Tx`] and [`RowId`], using the
     /// provided callback to perform an action on the resulting row if it exists or if it was
     /// deleted.
     fn existent_with_callback<K>(
-        tx: Transaction<'conn>,
+        tx: Tx<'conn>,
         row_id: RowId,
         produce_key_entry: impl FnOnce(&State<'conn, IsEntry>, K) -> Result<String, rusqlite::Error>,
         produce_key_deleted: impl FnOnce(&State<'conn, IsDeleted>, K) -> Result<String, rusqlite::Error>,
@@ -186,7 +189,7 @@ impl<'conn> RecordIdState<'conn> {
     /// value returned by `produce_null`. Otherwise, produce a different variant using the context
     /// and the [`State<Missing>`] database state.
     fn null_or_missing<C>(
-        tx: Transaction<'conn>,
+        tx: Tx<'conn>,
         context: C,
         id_from_context: impl for<'a> FnOnce(&'a C) -> &'a RemoteId,
         produce_null: impl FnOnce(C) -> MappedKey,
@@ -210,7 +213,7 @@ impl<'conn> RecordIdState<'conn> {
     /// Determine the current state of the database, as corresponds to the provided record
     /// identifier.
     pub fn determine<A: AliasTransform>(
-        tx: Transaction<'conn>,
+        tx: Tx<'conn>,
         record_id: RecordId,
         alias_transform: &A,
     ) -> Result<Self, rusqlite::Error> {
@@ -352,10 +355,7 @@ impl<'conn> RemoteIdState<'conn> {
     /// Determine the current state of the database, as corresponds to the provided remote record
     /// identifier.
     #[inline]
-    pub fn determine(
-        tx: Transaction<'conn>,
-        remote_id: &RemoteId,
-    ) -> Result<Self, rusqlite::Error> {
+    pub fn determine(tx: Tx<'conn>, remote_id: &RemoteId) -> Result<Self, rusqlite::Error> {
         Ok(match get_row_id(&tx, remote_id)? {
             Some(row_id) => {
                 debug!("Beginning new transaction for row '{row_id}' in the `Records` table.");

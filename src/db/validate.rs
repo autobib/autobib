@@ -10,7 +10,7 @@ use std::{
 use chrono::{DateTime, Local};
 use rusqlite::types::ValueRef;
 
-use super::{Transaction, schema};
+use super::{Tx, schema};
 use crate::{
     Identifier, RawEntryData, RecordId, RemoteId, error::InvalidBytesError, logger::debug,
 };
@@ -151,7 +151,7 @@ impl fmt::Display for DatabaseFault {
 
 /// Validate the schema of an existing table, or return an appropriate error.
 pub fn check_table_schema(
-    tx: &Transaction,
+    tx: &Tx,
     table_name: &str,
     expected_schema: &str,
 ) -> Result<Option<DatabaseFault>, rusqlite::Error> {
@@ -174,11 +174,11 @@ pub fn check_table_schema(
 }
 
 pub struct DatabaseValidator<'conn> {
-    pub tx: Transaction<'conn>,
+    pub tx: Tx<'conn>,
 }
 
 impl<'conn> DatabaseValidator<'conn> {
-    pub fn into_tx(self) -> Transaction<'conn> {
+    pub fn into_tx(self) -> Tx<'conn> {
         self.tx
     }
 

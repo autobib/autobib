@@ -100,7 +100,7 @@ impl TestState {
         cmd.assert().success();
 
         let mut cmd = self.cmd()?;
-        cmd.args(["delete", "local:first", "--replace", "local:second"]);
+        cmd.args(["replace", "local:first", "--with", "local:second"]);
         cmd.assert().success();
 
         let mut cmd = self.cmd()?;
@@ -1447,7 +1447,7 @@ fn read_only() -> Result<()> {
 }
 
 #[test]
-fn test_dedup() -> Result<()> {
+fn replace_auto() -> Result<()> {
     let s = TestState::init()?;
 
     s.set_config("tests/resources/import/config.toml")?;
@@ -1457,10 +1457,14 @@ fn test_dedup() -> Result<()> {
     cmd.assert().success();
 
     let mut cmd = s.cmd()?;
-    cmd.args(["dedup", "arxiv:1212.1873"]);
-    cmd.assert().success().stderr(contains(
-        "replacement identifier is equivalent to the current identifier",
-    ));
+    cmd.args(["replace", "arxiv:1212.1873", "--auto"]);
+    cmd.assert()
+        .failure()
+        .stderr(contains("is equivalent to the current identifier"));
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["alias", "add", "arx", "arxiv:1212.1873"]);
+    cmd.assert().success();
 
     let mut cmd = s.cmd()?;
     cmd.args([
@@ -1472,7 +1476,7 @@ fn test_dedup() -> Result<()> {
     cmd.assert().success();
 
     let mut cmd = s.cmd()?;
-    cmd.args(["dedup", "arxiv:1212.1873"]);
+    cmd.args(["replace", "arxiv:1212.1873", "--auto"]);
     cmd.assert().success();
 
     let mut cmd = s.cmd()?;
@@ -1481,11 +1485,59 @@ fn test_dedup() -> Result<()> {
         "Perhaps use the replacement key: 'zbmath:06346461'",
     ));
 
+    let mut cmd = s.cmd()?;
+    cmd.args(["get", "arx"]);
+    cmd.assert().failure().stderr(contains(
+        "Perhaps use the replacement key: 'zbmath:06346461'",
+    ));
+
     s.close()
 }
 
 #[test]
-fn test_changelog() -> Result<()> {
+fn replace_hard() -> Result<()> {
+    let s = TestState::init()?;
+
+    s.set_config("tests/resources/import/config.toml")?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["import", "tests/resources/dedup/init.bib", "--resolve"]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["replace", "arxiv:1212.1873", "--auto", "--hard"]);
+    cmd.assert()
+        .failure()
+        .stderr(contains("is equivalent to the current identifier"));
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["alias", "add", "arx", "arxiv:1212.1873"]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args([
+        "edit",
+        "arxiv:1212.1873",
+        "--set-field",
+        "zbmath = {6346461}",
+    ]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["replace", "arxiv:1212.1873", "--auto", "--hard"]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["get", "arx"]);
+    cmd.assert()
+        .success()
+        .stdout(contains("zbmath = {6346461}"));
+
+    s.close()
+}
+
+#[test]
+fn changelog() -> Result<()> {
     let s = TestState::init()?;
     s.create_test_db()?;
 
@@ -1514,7 +1566,7 @@ fn test_changelog() -> Result<()> {
     cmd.assert().success().stdout(
         contains("│ │ │    }")
             .and(contains("├─╯ │"))
-            .and(contains("○ │ │  rev 0008 on"))
+            .and(contains("○ │ │  rev 0009 on"))
             .and(contains(
                 "│ │ │    Replaced 'local:first' with 'local:second'",
             ))
@@ -1522,7 +1574,7 @@ fn test_changelog() -> Result<()> {
     );
 
     let mut cmd = s.cmd()?;
-    cmd.args(["hist", "reset", "local:first", "--rev", "000b"]);
+    cmd.args(["hist", "reset", "local:first", "--rev", "000c"]);
     cmd.assert().success();
 
     let mut cmd = s.cmd()?;

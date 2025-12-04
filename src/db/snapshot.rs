@@ -6,12 +6,12 @@ use rusqlite::types::ValueRef;
 use crate::{db::state::create_rewind_target, logger::info, record::RemoteId};
 
 use super::{
-    Transaction,
+    Tx,
     state::{ArbitraryDataRef, RecordRow, RevisionId},
 };
 
 pub struct Snapshot<'conn> {
-    pub(super) tx: Transaction<'conn>,
+    pub(super) tx: Tx<'conn>,
 }
 
 #[derive(Debug)]

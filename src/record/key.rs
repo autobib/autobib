@@ -332,6 +332,14 @@ impl RemoteId {
         MappedKey::mapped_from_parts(provider, sub_id).map(Into::into)
     }
 
+    /// Forget that this is a [`RemoteId`] and convert back into a [`RecordId`].
+    pub fn forget(self) -> RecordId {
+        RecordId {
+            full_id: self.full_id,
+            provider_len: Some(self.provider_len),
+        }
+    }
+
     /// Create a new `local` [`RecordId`].
     pub fn local(alias: &Alias) -> Self {
         const LOCAL_PROVIDER: &str = "local";

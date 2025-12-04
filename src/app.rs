@@ -7,6 +7,7 @@ mod info;
 mod log;
 mod path;
 mod picker;
+mod replace;
 mod retrieve;
 mod source;
 mod update;
@@ -25,8 +26,7 @@ use etcetera::{AppStrategy, AppStrategyArgs, choose_app_strategy};
 
 use crate::{
     app::{
-        cli::{DedupBy, HistCommand, PruneCommand},
-        import::DeterminedKey,
+        cli::{HistCommand, PruneCommand},
         log::print_log,
     },
     cite_search::{SourceFileType, get_citekeys},
@@ -46,7 +46,8 @@ use crate::{
     logger::{LogDisplay, debug, error, info, suggest, warn},
     normalize::{Normalization, Normalize},
     output::{owriteln, stdout_lock_wrap},
-    record::{Alias, Record, RecordId, RemoteId, get_record_row},
+    provider::{RemoteIdCandidate, determine_key_from_data},
+    record::{Alias, Record, RecordId, RemoteId, get_record_row, get_record_row_tx},
     term::Editor,
 };
 
@@ -265,131 +266,25 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 "Request for completions script should have been handled earlier and the program should have exited then."
             );
         }
-        Command::Dedup {
-            identifiers,
-            update_aliases,
-            by,
-        } => {
-            let cfg = config::load(&config_path, missing_ok)?;
-            match by {
-                DedupBy::Identifier => {
-                    for identifier in identifiers {
-                        match record_db
-                            .state_from_record_id(identifier, &cfg.alias_transform)?
-                            .require_record()?
-                        {
-                            Some((_, DisambiguatedRecordRow::Entry(record_row, state))) => {
-                                let record_data =
-                                    MutableEntryData::from_entry_data(&record_row.data);
-                                let entry = Entry {
-                                    key: EntryKey::placeholder(),
-                                    record_data,
-                                };
-
-                                let candidate = match import::determine_key(&entry, &cfg) {
-                                    DeterminedKey::Reference(mapped_key, _, _)
-                                    | DeterminedKey::Canonical(mapped_key, _) => mapped_key.mapped,
-                                    _ => {
-                                        bail!(
-                                            "Could not determine replacement identifier from record data"
-                                        )
-                                    }
-                                };
-
-                                match state.update_canonical(&candidate, update_aliases)? {
-                                    RecordRowMoveResult::Updated(state) => {
-                                        state.commit()?;
-                                    }
-                                    RecordRowMoveResult::Unchanged(state, true) => {
-                                        warn!(
-                                            "replacement identifier is equivalent to the current identifier; no changes made"
-                                        );
-                                        state.commit()?;
-                                    }
-                                    RecordRowMoveResult::Unchanged(state, false) => {
-                                        state.commit()?;
-                                        error!(
-                                            "Candidate replacement identifier '{candidate}' does not exist in the database."
-                                        );
-                                        suggest!(
-                                            "Retrieve data first with `autobib get {candidate}`"
-                                        );
-                                    }
-                                }
-                            }
-                            Some((name, DisambiguatedRecordRow::Deleted(_, state))) => {
-                                state.commit()?;
-                                bail!("Record '{name}' is deleted: cannot update provenance");
-                            }
-                            Some((name, DisambiguatedRecordRow::Void(_, state))) => {
-                                state.commit()?;
-                                bail!("Record '{name}' is void: cannot update provenance");
-                            }
-                            None => {}
-                        }
-                    }
-                }
-            }
-        }
         Command::DefaultConfig => {
             config::write_default(stdout_lock_wrap())?;
         }
         Command::Delete {
             identifiers,
-            replace,
             hard,
-            update_aliases,
+            delete_aliases,
         } => {
             let cfg = config::load(&config_path, missing_ok)?;
             if hard {
+                if delete_aliases {
+                    warn!("Redundant flag `--delete-aliases` is implied by `--hard`");
+                }
                 for key in identifiers {
                     hard_delete(key, &mut record_db, &cfg)?;
                 }
             } else {
-                let replacement_canonical_id = match replace {
-                    None => None,
-                    Some(replacement) => Some(
-                        match record_db.state_from_record_id(replacement, &cfg.alias_transform)? {
-                            RecordIdState::Entry(_, data, state) => {
-                                state.commit()?;
-                                data.canonical
-                            }
-                            RecordIdState::Deleted(_, data, state) => {
-                                state.commit()?;
-                                data.canonical
-                            }
-                            RecordIdState::Void(_, data, state) => {
-                                state.commit()?;
-                                data.canonical
-                            }
-                            RecordIdState::NullRemoteId(mapped_key, state) => {
-                                state.commit()?;
-                                bail!(
-                                    "Invalid replacement key {mapped_key} corresponds to a null record."
-                                );
-                            }
-                            RecordIdState::Unknown(unknown) => {
-                                let maybe_normalized = unknown.combine_and_commit()?;
-                                bail!(
-                                    "Invalid replacement key {maybe_normalized}: does not exist in the database."
-                                );
-                            }
-                            RecordIdState::UndefinedAlias(alias) => {
-                                bail!("Invalid replacement key: alias '{alias}' is undefined")
-                            }
-                            RecordIdState::InvalidRemoteId(record_error) => bail!("{record_error}"),
-                        },
-                    ),
-                };
-
                 for key in identifiers {
-                    soft_delete(
-                        key,
-                        &replacement_canonical_id,
-                        &mut record_db,
-                        &cfg,
-                        update_aliases,
-                    )?;
+                    soft_delete(key, &None, &mut record_db, &cfg, delete_aliases)?;
                 }
             }
         }
@@ -744,6 +639,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                             cli.no_interactive,
                             &cfg.on_insert,
                             &edit_cmd,
+                            None,
                         )?;
                     }
                     Some((_, DisambiguatedRecordRow::Void(data, state))) => {
@@ -754,6 +650,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                             cli.no_interactive,
                             &cfg.on_insert,
                             &edit_cmd,
+                            None,
                         )?;
                     }
                     None => {}
@@ -932,6 +829,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             from_bibtex,
             with_entry_type,
             with_field,
+            create_alias,
         } => {
             // check if the provided identifier is a valid alias
             let alias = match Alias::from_str(&id) {
@@ -949,6 +847,8 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 set_field: with_field,
                 delete_field: Vec::new(),
             };
+
+            let alias_opt = if create_alias { Some(&alias) } else { None };
 
             // insert the data
             match record_db.state_from_remote_id(&remote_id)?.delete_null()? {
@@ -972,6 +872,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         cli.no_interactive,
                         &cfg.on_insert,
                         &edit_cmd,
+                        alias_opt,
                     )?;
                 }
                 ExistsOrUnknown::Unknown(missing) => {
@@ -983,6 +884,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         cli.no_interactive,
                         &cfg.on_insert,
                         &edit_cmd,
+                        alias_opt,
                     )?;
                 }
             };
@@ -1020,6 +922,58 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             target.push("");
 
             owriteln!("{}", target.display())?;
+        }
+        Command::Replace {
+            identifier,
+            with,
+            auto,
+            hard,
+            on_conflict,
+            update_aliases,
+        } => {
+            let cfg = config::load(&config_path, missing_ok)?;
+
+            if let Some(target) = with {
+                let tx = record_db.transaction()?;
+                replace::replace(
+                    identifier,
+                    tx,
+                    &cfg,
+                    |tx, _| {
+                        get_record_row_tx(tx, target, client, &cfg)?
+                            .exists_or_commit_null("Cannot replace with")
+                    },
+                    hard,
+                    update_aliases,
+                    on_conflict,
+                )?;
+            } else if auto {
+                let tx = record_db.transaction()?;
+                replace::replace(
+                    identifier,
+                    tx,
+                    &cfg,
+                    |tx, data| match determine_key_from_data(data, &cfg) {
+                        RemoteIdCandidate::OptimalReference(mapped_key, _)
+                        | RemoteIdCandidate::OptimalCanonical(mapped_key) => {
+                            let msg = format!(
+                                "Automatically determined identifier '{}' is",
+                                mapped_key.mapped
+                            );
+                            get_record_row_tx(tx, mapped_key.mapped.forget(), client, &cfg)?
+                                .exists_or_commit_null(&msg)
+                        }
+                        RemoteIdCandidate::None => {
+                            bail!("Could not determine replacement identifier from record data")
+                        }
+                    },
+                    hard,
+                    update_aliases,
+                    on_conflict,
+                )?;
+            } else {
+                bail!("Missing replacement target: either use `--with <replacement>` or `--auto`");
+            }
         }
         Command::Source {
             paths,
