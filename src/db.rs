@@ -58,20 +58,14 @@ pub const fn application_id() -> i32 {
 type RowId = i64;
 
 /// Determine the [`RowId`] in the `Records` table corresponding to a [`Identifier`].
-fn get_row_id<K: Identifier>(
-    tx: &Transaction,
-    record_id: &K,
-) -> Result<Option<RowId>, rusqlite::Error> {
+fn get_row_id<K: Identifier>(tx: &Tx, record_id: &K) -> Result<Option<RowId>, rusqlite::Error> {
     tx.prepare_cached("SELECT record_key FROM Identifiers WHERE name = ?1")?
         .query_row([record_id.name()], |row| row.get("record_key"))
         .optional()
 }
 
 /// Determine the [`RowId`] in the `NullRecords` table corresponding to a [`Identifier`].
-pub fn get_null_row_id(
-    tx: &Transaction,
-    remote_id: &RemoteId,
-) -> Result<Option<RowId>, rusqlite::Error> {
+pub fn get_null_row_id(tx: &Tx, remote_id: &RemoteId) -> Result<Option<RowId>, rusqlite::Error> {
     tx.prepare_cached("SELECT rowid FROM NullRecords WHERE record_id = ?1")?
         .query_row([remote_id.name()], |row| row.get("rowid"))
         .optional()
@@ -282,6 +276,10 @@ impl RecordDatabase {
         self.conn.execute("VACUUM", ()).map(|_| ())
     }
 
+    pub fn transaction(&mut self) -> rusqlite::Result<Tx<'_>> {
+        self.conn.transaction().map(Into::into)
+    }
+
     /// Get the [`RecordIdState`] associated with a [`RecordId`].
     #[inline]
     pub fn state_from_record_id<A: AliasTransform>(
@@ -289,7 +287,7 @@ impl RecordDatabase {
         record_id: RecordId,
         alias_transform: &A,
     ) -> Result<RecordIdState<'_>, rusqlite::Error> {
-        RecordIdState::determine(self.conn.transaction()?.into(), record_id, alias_transform)
+        RecordIdState::determine(self.transaction()?, record_id, alias_transform)
     }
 
     /// Get the [`RemoteIdState`] associated with a [`RemoteId`].
@@ -298,7 +296,7 @@ impl RecordDatabase {
         &mut self,
         remote_id: &RemoteId,
     ) -> Result<RemoteIdState<'_>, rusqlite::Error> {
-        RemoteIdState::determine(self.conn.transaction()?.into(), remote_id)
+        RemoteIdState::determine(self.transaction()?, remote_id)
     }
 
     /// Optimize the database.
@@ -353,7 +351,7 @@ impl RecordDatabase {
     /// Attempt to fix a database fault inside a transaction.
     ///
     /// If the fault is fixed, return `true`, and return `false` otherwise.
-    fn fix_fault_tx(tx: &Transaction, fault: &DatabaseFault) -> Result<bool, rusqlite::Error> {
+    fn fix_fault_tx(tx: &Tx, fault: &DatabaseFault) -> Result<bool, rusqlite::Error> {
         match fault {
             DatabaseFault::RowHasInvalidCanonicalId(_, _) => Ok(false),
             DatabaseFault::NullIdentifiers(_) => {
@@ -520,19 +518,20 @@ pub enum DeleteAliasResult {
     Missing,
 }
 
-/// Custom wrapper around a [`rusqlite::Transaction`] to provide additional logging.
+/// A wrapper around a [`rusqlite::Transaction`] which provides additional logging and exposes
+/// fewer public methods.
 #[derive(Debug)]
-pub struct Transaction<'conn> {
+pub struct Tx<'conn> {
     tx: rusqlite::Transaction<'conn>,
 }
 
-impl<'conn> From<rusqlite::Transaction<'conn>> for Transaction<'conn> {
+impl<'conn> From<rusqlite::Transaction<'conn>> for Tx<'conn> {
     fn from(tx: rusqlite::Transaction<'conn>) -> Self {
         Self { tx }
     }
 }
 
-impl Transaction<'_> {
+impl Tx<'_> {
     /// Commit the transaction.
     ///
     /// This method sets the transaction's drop behaviour to [`rusqlite::DropBehavior::Commit`] and then drops it.
@@ -542,25 +541,30 @@ impl Transaction<'_> {
         Ok(())
     }
 
+    /// Roll back the transaction.
+    ///
+    /// This method sets the transaction's drop behaviour to [`rusqlite::DropBehavior::Rollback`] and then drops it.
+    pub fn rollback(mut self) -> rusqlite::Result<()> {
+        self.tx.set_drop_behavior(DropBehavior::Rollback);
+        drop(self);
+        Ok(())
+    }
+
+    // only expose internal methods privately
     delegate! {
         to self.tx {
-            pub fn execute<P>(&self, sql: &str, params: P) ->rusqlite::Result<usize>
-            where
-                P: rusqlite::Params;
-            pub fn last_insert_rowid(&self) -> i64;
-            pub fn pragma_query<F>(&self, schema_name: Option<&str>, pragma_name: &str, f: F) -> rusqlite::Result<()>
+            fn pragma_query<F>(&self, schema_name: Option<&str>, pragma_name: &str, f: F) -> rusqlite::Result<()>
             where
                 F: FnMut(&rusqlite::Row<'_>) -> rusqlite::Result<()>;
-            pub fn pragma_query_value<T, F>(&self, schema_name: Option<&str>, pragma_name: &str, f: F) -> rusqlite::Result<T>
-            where
-                F: FnOnce(&rusqlite::Row<'_>) -> rusqlite::Result<T>;
-            pub fn prepare(&self, sql: &str) -> rusqlite::Result<rusqlite::Statement<'_>>;
-            pub fn prepare_cached(&self, sql: &str) -> rusqlite::Result<rusqlite::CachedStatement<'_>>;
+
+            fn prepare(&self, sql: &str) -> rusqlite::Result<rusqlite::Statement<'_>>;
+
+            fn prepare_cached(&self, sql: &str) -> rusqlite::Result<rusqlite::CachedStatement<'_>>;
         }
     }
 }
 
-impl Drop for Transaction<'_> {
+impl Drop for Tx<'_> {
     #[inline]
     fn drop(&mut self) {
         match self.tx.drop_behavior() {

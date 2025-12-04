@@ -52,28 +52,23 @@ pub fn insert<'conn, I>(
     no_interactive: bool,
     normalization: &Normalization,
     edit: &EntryEditCommand,
+    add_alias: Option<&Alias>,
 ) -> anyhow::Result<()>
 where
     State<'conn, I>: RecordsInsert<'conn>,
 {
-    if let Some(path) = from_bibtex {
+    let exists = if let Some(path) = from_bibtex {
         let mut data = data_from_path(path)?;
         data.normalize(normalization);
-        missing
-            .insert(&RawEntryData::from_entry_data(&data), remote_id)?
-            .commit()?;
+        missing.insert(&RawEntryData::from_entry_data(&data), remote_id)?
     } else if !edit.is_identity() {
         let mut data = MutableEntryData::default();
         data.edit(edit);
-        missing
-            .insert(&RawEntryData::from_entry_data(&data), remote_id)?
-            .commit()?;
+        missing.insert(&RawEntryData::from_entry_data(&data), remote_id)?
     } else if no_interactive {
         let data = MutableEntryData::<&'static str>::default();
-        missing
-            .insert(&RawEntryData::from_entry_data(&data), remote_id)?
-            .commit()?;
-        warn!("Inserted local data with no contents in non-interactive mode");
+        warn!("Inserting local data with no contents in non-interactive mode");
+        missing.insert(&RawEntryData::from_entry_data(&data), remote_id)?
     } else {
         let record_data = MutableEntryData::<String>::default();
         let entry = Entry {
@@ -92,7 +87,16 @@ where
             missing.commit()?;
             set_failed();
         }
+        return Ok(());
     };
+
+    if let Some(alias) = add_alias
+        && !exists.add_alias(alias)?
+    {
+        error!("Alias '{alias}' already exists and references a different record.");
+    }
+
+    exists.commit()?;
     Ok(())
 }
 

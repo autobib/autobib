@@ -22,7 +22,11 @@ pub fn soft_delete<F: FnOnce() -> Vec<(regex::Regex, String)>>(
         id,
         record_db,
         config,
-        |_, state| state.soft_delete(replace, update_aliases)?.commit(),
+        |_, state| {
+            state
+                .delete_soft(replace.as_ref(), update_aliases)?
+                .commit()
+        },
         |original_name, state| {
             error!("Key corresponds to record which is already deleted: '{original_name}'");
             state.commit()
@@ -46,9 +50,9 @@ pub fn hard_delete<F: FnOnce() -> Vec<(regex::Regex, String)>>(
         id,
         record_db,
         config,
-        |_, state| state.hard_delete()?.commit(),
-        |_, state| state.hard_delete()?.commit(),
-        |_, state| state.hard_delete()?.commit(),
+        |_, state| state.delete_hard()?.commit(),
+        |_, state| state.delete_hard()?.commit(),
+        |_, state| state.delete_hard()?.commit(),
     )
 }
 

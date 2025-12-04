@@ -30,7 +30,7 @@ else
     echo "Cache file found: ${AUTOBIB_RESPONSE_CACHE_PATH}"
 fi
 
-cargo test --locked --no-fail-fast --features read_response_cache
+cargo test --locked --no-fail-fast --features read_response_cache -- "$@"
 
 cargo doc --no-deps --locked
 cargo clippy --locked

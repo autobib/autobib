@@ -56,7 +56,7 @@ pub struct Cli {
     pub attachments_dir: Option<PathBuf>,
     /// Do not require user action.
     ///
-    /// This option is set automatically if the standard input is not a terminal.
+    /// This option is set by default if the standard input is not a terminal.
     #[arg(short = 'I', long, global = true, default_value_t = determine_no_interactive())]
     pub no_interactive: bool,
     /// Open the database in read-only mode.
@@ -64,14 +64,6 @@ pub struct Cli {
     pub read_only: bool,
     #[command(flatten)]
     pub verbose: Verbosity<WarnLevel>,
-}
-
-#[derive(Debug, Copy, Clone, ValueEnum, Default)]
-pub enum DedupBy {
-    /// Use identifiers present in the record.
-    #[default]
-    #[value(alias("id"))]
-    Identifier,
 }
 
 #[derive(Debug, Copy, Clone, ValueEnum, Default)]
@@ -178,20 +170,6 @@ pub enum Command {
         /// The shell for which to generate the script.
         shell: Shell,
     },
-    /// Deduplicate an identifier by checking for new provenance.
-    ///
-    /// This is equivalent to `autobib delete --replace` but with an automatically-determined
-    /// replacement key.
-    Dedup {
-        /// The identifier for the operation.
-        identifiers: Vec<RecordId>,
-        /// Whether to update aliases.
-        #[arg(long)]
-        update_aliases: bool,
-        /// How to resolve conflicts with data currently present in your database.
-        #[arg(short = 'b', long, value_enum, default_value_t)]
-        by: DedupBy,
-    },
     /// Generate configuration file.
     #[clap(hide = true)]
     DefaultConfig,
@@ -207,15 +185,12 @@ pub enum Command {
     Delete {
         /// The records to delete.
         identifiers: Vec<RecordId>,
-        /// A replacement key.
-        #[arg(short, long, group = "delete_mode")]
-        replace: Option<RecordId>,
         /// Hard deletion, which removes all history and aliases, and cannot be undone.
         #[arg(long, group = "delete_mode")]
         hard: bool,
-        /// Update aliases, either deleting or changing them to point to the new row if `--replace` is specified.
+        /// Also delete aliases.
         #[arg(long)]
-        update_aliases: bool,
+        delete_aliases: bool,
     },
     /// Edit existing records.
     ///
@@ -362,6 +337,9 @@ pub enum Command {
         /// Set specific field values using BibTeX `key = {value}` syntax
         #[arg(long, value_name = "FIELD_KEY={VALUE}")]
         with_field: Vec<SetFieldCommand>,
+        /// Also create the alias from the ID name.
+        #[arg(short = 'a', long)]
+        create_alias: bool,
     },
     /// Display the revision history associated with an identifier.
     Log {
@@ -381,9 +359,39 @@ pub enum Command {
     Path {
         /// Show directory path associated with this identifier.
         identifier: RecordId,
-        /// Also create the directory.
+        /// Also create the directory if it does not exist.
         #[arg(short, long)]
         mkdir: bool,
+    },
+    /// Replace an identifier with another one and merge the data.
+    ///
+    /// The original identifier must be present in the database. If the target identifier is not in
+    /// the database, its data will be retrieved first.
+    Replace {
+        /// The identifier to replace.
+        identifier: RecordId,
+        /// Replace with another identifier.
+        #[arg(short, long, group = "replace_target")]
+        with: Option<RecordId>,
+        /// Determine the replacement identifier using record data.
+        #[arg(short, long, group = "replace_target")]
+        auto: bool,
+        /// Permanently merge all data into the target.
+        #[arg(long)]
+        hard: bool,
+        /// How to resolve conflicting field values.
+        #[arg(
+            short = 'n',
+            long,
+            value_enum,
+            default_value_if("no_interactive", ArgPredicate::IsPresent, "prefer-current"),
+            default_value_t
+        )]
+        #[arg(long)]
+        on_conflict: OnConflict,
+        /// Update aliases to point to the new identifier.
+        #[arg(long)]
+        update_aliases: bool,
     },
     /// Generate records by searching for identifiers inside files.
     ///
@@ -566,10 +574,10 @@ impl Command {
             Self::Path { mkdir: true, .. } => return Err(ReadOnlyInvalid::Argument("--mkdir")),
             Self::Alias { .. } => "alias",
             Self::Attach { .. } => "attach",
-            Self::Dedup { .. } => "dedup",
             Self::Delete { .. } => "delete",
             Self::Import { .. } => "import",
             Self::Local { .. } => "local",
+            Self::Replace { .. } => "replace",
             Self::Update { .. } => "update",
             Self::Edit { .. } => "edit",
             Self::Hist { .. } => "hist",

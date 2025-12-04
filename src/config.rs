@@ -100,6 +100,19 @@ pub struct Config<F> {
     pub on_insert: Normalization,
 }
 
+impl<F> Config<F> {
+    /// Obtain a score for an identifier, in terms of preferences defined inside
+    /// this configuration. Higher scores are better.
+    pub fn score_id<'a>(&'a self, id: &crate::record::RemoteId) -> impl Ord + use<'a, F> {
+        std::cmp::Reverse(
+            self.preferred_providers
+                .iter()
+                .position(|pref| pref == id.provider())
+                .unwrap_or(self.preferred_providers.len()),
+        )
+    }
+}
+
 #[derive(Debug)]
 pub struct LazyAliasTransform<F> {
     rules: LazyLock<Vec<(Regex, String)>, F>,

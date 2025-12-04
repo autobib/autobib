@@ -3,8 +3,7 @@ use std::{fmt, str::FromStr};
 use rusqlite::types::{FromSql, FromSqlError, ValueRef};
 
 use super::{
-    ArbitraryData, CompleteRecordRow, InRecordsTable, RecordRow, RecordRowDisplay, State,
-    Transaction,
+    ArbitraryData, CompleteRecordRow, InRecordsTable, RecordRow, RecordRowDisplay, State, Tx,
 };
 
 /// A specific version of a record row.
@@ -14,7 +13,7 @@ use super::{
 pub struct Version<'tx, 'conn> {
     pub row: RecordRow<ArbitraryData>,
     pub(in crate::db) row_id: i64,
-    pub(super) tx: &'tx Transaction<'conn>,
+    pub(super) tx: &'tx Tx<'conn>,
     parent_row_id: Option<i64>,
 }
 
@@ -54,7 +53,7 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
 }
 
 impl<'tx, 'conn> Version<'tx, 'conn> {
-    fn init(tx: &'tx Transaction<'conn>, row_id: i64) -> rusqlite::Result<Self> {
+    fn init(tx: &'tx Tx<'conn>, row_id: i64) -> rusqlite::Result<Self> {
         let row = CompleteRecordRow::load_unchecked(tx, row_id)?;
         Ok(Self {
             row: row.row,
@@ -64,11 +63,7 @@ impl<'tx, 'conn> Version<'tx, 'conn> {
         })
     }
 
-    fn new(
-        tx: &'tx Transaction<'conn>,
-        row_id: i64,
-        row: CompleteRecordRow<super::ArbitraryData>,
-    ) -> Self {
+    fn new(tx: &'tx Tx<'conn>, row_id: i64, row: CompleteRecordRow<super::ArbitraryData>) -> Self {
         Self {
             row: row.row,
             parent_row_id: row.parent,
