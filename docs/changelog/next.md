@@ -28,6 +28,7 @@ Changes since `v0.5.1`.
   - Importing now automatically skips existing data present in your database.
     To insert updated data, use `autobib import --update`.
   - Retrieving data when importing is no longer possible, but reference identifiers can be mapped to canonical identifiers using `--resolve`.
+- `autobib path` now fails for records which are not present in your database.
 
 ## New features
 

@@ -815,6 +815,10 @@ fn test_path_platform_consistency() -> Result<()> {
     let s = TestState::init()?;
 
     let mut cmd = s.cmd()?;
+    cmd.args(["get", "zbl:1337.28015"]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
     cmd.args(["path", "zbl:1337.28015"]);
 
     #[cfg(windows)]

@@ -748,6 +748,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
 
             let attachment_root = get_attachment_root(&data_dir, cli.attachments_dir)?;
 
+            let mut stdout = stdout_lock_wrap();
             for bibfile in targets {
                 scratch.clear();
                 match File::open(&bibfile).and_then(|mut file| file.read_to_end(&mut scratch)) {
@@ -760,6 +761,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                             &cfg,
                             &attachment_root,
                             bibfile.display(),
+                            &mut stdout,
                         )?;
                     }
                     Err(err) => error!(
@@ -907,12 +909,18 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
         }
         Command::Path { identifier, mkdir } => {
             let cfg = config::load(&config_path, missing_ok)?;
-            // Extend with the filename.
-            let (record, row) = get_record_row(&mut record_db, identifier, client, &cfg)?
-                .exists_or_commit_null("Cannot show directory for")?;
-            row.commit()?;
-            let mut target = get_attachment_dir(&data_dir, cli.attachments_dir, &record.canonical)?;
 
+            let canonical = match record_db
+                .state_from_record_id(identifier, &cfg.alias_transform)?
+                .require_record()?
+            {
+                Some((_, DisambiguatedRecordRow::Entry(record_row, _))) => record_row.canonical,
+                Some((_, DisambiguatedRecordRow::Deleted(record_row, _))) => record_row.canonical,
+                Some((_, DisambiguatedRecordRow::Void(record_row, _))) => record_row.canonical,
+                None => return Ok(()),
+            };
+
+            let mut target = get_attachment_dir(&data_dir, cli.attachments_dir, &canonical)?;
             if mkdir {
                 create_dir_all(&target)?;
             }
