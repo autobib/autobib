@@ -1,6 +1,5 @@
 use std::{
-    fs,
-    io::Write,
+    fs, io,
     path::{Path, PathBuf},
 };
 
@@ -19,7 +18,6 @@ use crate::{
     http::Client,
     logger::{error, info, set_failed, warn},
     normalize::{Normalization, Normalize},
-    output::stdout_lock_wrap,
     path_hash::PathHash,
     provider::{RemoteIdCandidate, determine_remote_id_candidates, is_canonical},
     record::{
@@ -40,8 +38,9 @@ pub struct ImportConfig {
 }
 
 /// Import records from the provided buffer.
+#[allow(clippy::too_many_arguments)]
 #[inline]
-pub fn from_buffer<F, C>(
+pub fn from_buffer<F, C, W>(
     scratch: &[u8],
     import_config: &ImportConfig,
     record_db: &mut RecordDatabase,
@@ -49,17 +48,19 @@ pub fn from_buffer<F, C>(
     config: &Config<F>,
     attachment_root: &Path,
     bibfile: impl std::fmt::Display,
+    failed: &mut W,
 ) -> Result<(), anyhow::Error>
 where
     F: FnOnce() -> Vec<(regex::Regex, String)>,
     C: Client,
+    W: io::Write + ?Sized,
 {
     let mut attachment_root_buf = if import_config.include_files {
         Some(PathBuf::new())
     } else {
         None
     };
-    let mut stdout = stdout_lock_wrap();
+    // let mut stdout = stdout_lock_wrap();
     for res in entries_from_bibtex(scratch) {
         if let Some(p) = attachment_root_buf.as_mut() {
             p.clear();
@@ -76,8 +77,8 @@ where
             )? {
                 ImportOutcome::Success => {}
                 ImportOutcome::Failure(error, entry) => {
-                    writeln!(&mut stdout, "% {error}")?;
-                    writeln!(&mut stdout, "{entry}")?;
+                    writeln!(failed, "% {error}")?;
+                    writeln!(failed, "{entry}")?;
                     set_failed();
                 }
             },
