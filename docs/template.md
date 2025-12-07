@@ -72,8 +72,8 @@ These are all prefixed by the `%` character:
 
 - `%entry_type`: expands to the entry type, e.g. `article`.
 - `%full_id`: expands to the full canonical id, e.g. `zbmath:06346461`.
-- `%provider`: expands to provider of the canonical id: e.g. `zbmath`
-- `%sub_id`: expands to provider of the canonical id: e.g. `06346461`
+- `%provider`: expands to the provider of the canonical id: e.g. `zbmath`
+- `%sub_id`: expands to the sub-id of the canonical id: e.g. `06346461`
 
 Finally, it is possible to input a *string*, i.e. a [JSON string](https://www.json.org/json-en.html), by quoting text.
 This allows manually inputting invisible characters or specifying Unicode values using escapes by including the value in quotes:

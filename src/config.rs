@@ -8,7 +8,7 @@ use serde::Deserialize;
 use toml::from_str;
 
 use crate::{
-    Alias, CitationKey,
+    Alias, Identifier,
     format::DEFAULT_FIND_TEMPLATE,
     logger::{debug, info, warn},
     normalize::Normalization,
@@ -100,6 +100,19 @@ pub struct Config<F> {
     pub on_insert: Normalization,
 }
 
+impl<F> Config<F> {
+    /// Obtain a score for an identifier, in terms of preferences defined inside
+    /// this configuration. Higher scores are better.
+    pub fn score_id<'a>(&'a self, id: &crate::record::RemoteId) -> impl Ord + use<'a, F> {
+        std::cmp::Reverse(
+            self.preferred_providers
+                .iter()
+                .position(|pref| pref == id.provider())
+                .unwrap_or(self.preferred_providers.len()),
+        )
+    }
+}
+
 #[derive(Debug)]
 pub struct LazyAliasTransform<F> {
     rules: LazyLock<Vec<(Regex, String)>, F>,
@@ -107,7 +120,7 @@ pub struct LazyAliasTransform<F> {
 }
 
 #[cold]
-pub fn write_default<W: ?Sized + io::Write>(writer: &mut W) -> Result<(), io::Error> {
+pub fn write_default<W: io::Write>(mut writer: W) -> Result<(), io::Error> {
     writer
         .write(include_str!("config/default_config.toml").as_bytes())
         .map(|_| ())
@@ -162,7 +175,7 @@ pub trait AliasTransform {
         None
     }
 
-    /// Whether or not to save the alias in the the `CitationKeys` table after mapping.
+    /// Whether or not to save the alias in the the `Identifiers` table after mapping.
     fn create(&self) -> bool {
         false
     }

@@ -2,7 +2,8 @@ use serde::Deserialize;
 use serde_bibtex::de::Deserializer;
 
 use super::{
-    BodyBytes, Client, ProviderBibtex, ProviderError, RecordData, StatusCode, ValidationOutcome,
+    BodyBytes, Client, MutableEntryData, ProviderBibtex, ProviderError, StatusCode,
+    ValidationOutcome,
 };
 
 #[allow(dead_code)]
@@ -26,7 +27,10 @@ pub fn is_valid_id(id: &str) -> ValidationOutcome {
     }
 }
 
-pub fn get_record<C: Client>(id: &str, client: &C) -> Result<Option<RecordData>, ProviderError> {
+pub fn get_record<C: Client>(
+    id: &str,
+    client: &C,
+) -> Result<Option<MutableEntryData>, ProviderError> {
     let response = client.get(format!(
         "https://mathscinet.ams.org/mathscinet/api/publications/format?formats=bib&ids={id}"
     ))?;

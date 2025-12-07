@@ -5,6 +5,7 @@ use std::{
 };
 
 use anyhow::Result;
+use chrono::{DateTime, Local};
 use clap::{
     CommandFactory, Parser, Subcommand, ValueEnum, builder::ArgPredicate, error::ErrorKind,
 };
@@ -14,6 +15,8 @@ use crossterm::style::Stylize;
 
 use crate::{
     cite_search::SourceFileType,
+    db::state::RevisionId,
+    entry::{EntryType, FieldKey, SetFieldCommand},
     error::ShortError,
     format::Template,
     record::{Alias, RecordId},
@@ -53,7 +56,7 @@ pub struct Cli {
     pub attachments_dir: Option<PathBuf>,
     /// Do not require user action.
     ///
-    /// This option is set automatically if the standard input is not a terminal.
+    /// This option is set by default if the standard input is not a terminal.
     #[arg(short = 'I', long, global = true, default_value_t = determine_no_interactive())]
     pub no_interactive: bool,
     /// Open the database in read-only mode.
@@ -81,6 +84,9 @@ pub enum InfoReportType {
     /// Print the last modified time.
     #[value(alias("m"))]
     Modified,
+    /// Print the revision.
+    #[value(alias("m"))]
+    Revision,
 }
 
 #[derive(Debug, Copy, Clone, ValueEnum)]
@@ -148,7 +154,7 @@ pub enum Command {
     /// with the `--rename` option.
     Attach {
         /// The record to associate the file with.
-        citation_key: RecordId,
+        identifier: RecordId,
         /// The path or URL for the file to add.
         file: String,
         /// Rename the file.
@@ -169,21 +175,22 @@ pub enum Command {
     DefaultConfig,
     /// Delete records and associated keys.
     ///
-    /// Delete a record, and all referencing keys (such as aliases) which are associated with the
-    /// record. If there are multiple referencing keys, they will be listed so that you can confirm
-    /// deletion. This can be ignored with the `--force` option.
+    /// By default, this performs a soft delete, where the current data and keys are retained
+    /// but future attempts to read them will result in an error. The data can be recovered with
+    /// `autobib hist undo`. The key provided with the `--replace` option will be used to suggest
+    /// replacements.
     ///
-    /// To delete an alias without deleting the underlying data, use the `autobib alias delete`
-    /// command.
+    /// With the `--hard` option, the data as well as all keys are deleted permanently. This is
+    /// incompatible with the `--replace` option.
     Delete {
-        /// The citation keys to delete.
-        citation_keys: Vec<RecordId>,
-        /// Delete without prompting.
-        ///
-        /// Deletion will fail if user confirmation is required,the program is running
-        /// non-interactively, and this option is not set.
-        #[arg(short, long)]
-        force: bool,
+        /// The records to delete.
+        identifiers: Vec<RecordId>,
+        /// Hard deletion, which removes all history and aliases, and cannot be undone.
+        #[arg(long, group = "delete_mode")]
+        hard: bool,
+        /// Also delete aliases.
+        #[arg(long)]
+        delete_aliases: bool,
     },
     /// Edit existing records.
     ///
@@ -191,30 +198,37 @@ pub enum Command {
     /// contents of the record. Updating the fields or the entry type will change the underlying
     /// data, and updating the entry key will create a new alias for the record.
     ///
-    /// Some non-interactive edit methods are supported. These can be used along with the
-    /// `--no-interactive` option to modify records without opening your $EDITOR:
-    ///
-    /// `--normalize-whitespace` converts whitespace blocks into a single ASCII space.
-    ///
-    /// `--set-eprint` accepts a list of field keys, and sets the "eprint" and
-    ///   "eprinttype" BibTeX fields from the first field key which is present in the record.
+    /// Non-interactive edit methods are also supported. If any are specified, they will
+    /// modify the record.
     Edit {
-        /// The citation key(s) to edit.
-        citation_keys: Vec<RecordId>,
+        /// The record(s) to edit.
+        identifiers: Vec<RecordId>,
         /// Normalize whitespace.
         #[arg(long)]
         normalize_whitespace: bool,
         /// Set "eprint" and "eprinttype" BibTeX fields from provided fields.
-        #[arg(long, value_delimiter = ',', value_name = "FIELD_NAME")]
+        #[arg(long, value_delimiter = ',', value_name = "FIELD_KEY")]
         set_eprint: Vec<String>,
         /// Strip trailing journal series
         #[arg(long)]
         strip_journal_series: bool,
+        /// Set the entry type.
+        #[arg(long, value_name = "ENTRY_TYPE")]
+        update_entry_type: Option<EntryType>,
+        /// Delete a field. This is done before setting field values.
+        #[arg(long, value_name = "FIELD_KEY")]
+        delete_field: Vec<FieldKey>,
+        /// Set a field value using BibTeX field syntax
+        #[arg(long, value_name = "FIELD_KEY={VALUE}")]
+        set_field: Vec<SetFieldCommand>,
+        /// Update the modification time, inserting a new copy if the node has children.
+        #[arg(long)]
+        touch: bool,
     },
-    /// Search for a citation key.
+    /// Search for an identifier.
     ///
-    /// Open an interactive picker to search for a given citation key. The lines in the
-    /// picker are rendered using the template provided by the `--format` option, falling
+    /// Open an interactive picker to search for a given identifier. The lines in the
+    /// picker are rendered using the template provided by the `--template` option, falling
     /// back to the config value or a default template.
     Find {
         /// Set the format template.
@@ -227,77 +241,144 @@ pub enum Command {
         #[arg(short, long, value_enum, default_value_t)]
         mode: FindMode,
     },
-    /// Retrieve records given citation keys.
+    /// Retrieve records given identifiers.
     Get {
-        /// The citation keys to retrieve.
-        citation_keys: Vec<RecordId>,
+        /// The identifiers to retrieve.
+        identifiers: Vec<RecordId>,
         /// Write output to file.
         #[arg(short, long, group = "output", value_name = "PATH")]
         out: Option<PathBuf>,
         /// Append new entries to the output, skipping existing entries.
         #[arg(short, long, requires = "out")]
         append: bool,
-        /// Retrieve records but do not output BibTeX or check the validity of citation keys.
+        /// Retrieve records but do not output BibTeX or check the validity of identifiers as
+        /// valid BibTeX keys.
         #[arg(long, group = "output")]
         retrieve_only: bool,
         /// Ignore null records and aliases.
         #[arg(long)]
         ignore_null: bool,
     },
+    /// Manipulate version history.
+    Hist {
+        #[command(subcommand)]
+        hist_command: HistCommand,
+    },
     /// Import records from a BibTeX file.
+    ///
+    /// The implementation automatically determines a remote identifier from the data, using
+    /// your `preferred_providers` config setting and with unspecified fallback if there is no
+    /// match.
+    /// Use `--local-fallback` to import as `local:` identifiers if no canonical identifier could
+    /// be found.
+    ///
+    /// If the data already exists in your database, it will be updated with the new data if there
+    /// are any changes after merging according to the rules specified in `--on-conflict`. If there
+    /// are no changes, only the modification time will be updated.
+    ///
+    /// Entries which could not be imported are printed to STDOUT along with error messages in
+    /// BibTeX comments. The recommended workflow is to redirect output a file, edit the file
+    /// to resolve issues indicated in the error message, and then import again.
+    ///
+    /// If you use the `--resolve` option, the determined identifier can be a reference identifier,
+    /// which will be converted into a canonical identifier using a remote API call.
     Import {
         /// The BibTeX file(s) from which to import.
         targets: Vec<PathBuf>,
-        #[arg(short = 'm', long, value_enum, default_value_t)]
-        /// The type of import to perform.
-        mode: ImportMode,
-        /// How to resolve conflicting field values.
-        #[arg(
-            short = 'n',
-            long,
-            value_enum,
-            default_value_if("no_interactive", ArgPredicate::IsPresent, "prefer-current"),
-            default_value_t
-        )]
-        on_conflict: OnConflict,
+        #[arg(short, long)]
+        /// Map the citation keys to local identifiers if provenance could not be determined.
+        local_fallback: bool,
+        /// Update records already in your database.
+        #[arg(short, long)]
+        update: Option<OnConflict>,
         /// Never create aliases.
         #[arg(short = 'A', long)]
         no_alias: bool,
-        /// Replace colons in entry keys with a new string.
-        #[arg(long, value_name = "STR")]
-        replace_colons: Option<String>,
-        /// Print entries which could not be imported
+        /// Make a remote request to resolve reference providers if a canonical cannot be found.
         #[arg(long)]
-        log_failures: bool,
+        resolve: bool,
+        /// Attach files specified in the `file` field.
+        #[arg(long)]
+        include_files: bool,
+        /// A separator for the `files` BibTeX field.
+        #[arg(long, requires = "include_files")]
+        file_sep: Option<String>,
     },
-    /// Show metadata for citation key.
+    /// Show metadata associated with an identifier.
     Info {
-        /// The citation key to show info.
-        citation_key: RecordId,
+        /// The identifier.
+        identifier: RecordId,
         /// The type of information to display.
         #[arg(short, long, value_enum, default_value_t)]
         report: InfoReportType,
     },
-    /// Create or edit a local record with the given handle.
+    /// Create a local record with the given handle.
+    ///
+    /// If no arguments are specified, you will be prompted to edit the local record before adding it to the
+    /// database. If the terminal is non-interactive or `--no-interactive` is set, this will insert
+    /// a default value with no contents.
+    ///
+    /// You can provide BibTeX data from a file with the `--from-bibtex` option, or by providing
+    /// values using `--with-entry-type` and `--with-field`.
+    ///
+    /// `--with-entry-type` and `--with-field` will override any values present
+    /// in the data read from the BibTeX file.
+    ///
+    /// This fails if the local identifier already exists in the database.
     Local {
         /// The name for the record.
         id: String,
-        /// Create local record from BibTeX file.
-        #[arg(short, long, value_name = "PATH", group = "input")]
-        from: Option<PathBuf>,
-        /// Rename an existing local record.
-        #[arg(long, value_name = "EXISTING_ID", group = "input")]
-        rename_from: Option<String>,
-        /// Do not create the alias `<ID>` for `local:<ID>`.
-        #[arg(short = 'A', long)]
-        no_alias: bool,
+        /// Create the record using the provided BibTeX data.
+        #[arg(short = 'b', long, value_name = "PATH", group = "input")]
+        from_bibtex: Option<PathBuf>,
+        /// Set the entry type.
+        #[arg(long, value_name = "ENTRY_TYPE")]
+        with_entry_type: Option<EntryType>,
+        /// Set specific field values using BibTeX `key = {value}` syntax
+        #[arg(long, value_name = "FIELD_KEY={VALUE}")]
+        with_field: Vec<SetFieldCommand>,
+        /// Also create the alias from the ID name.
+        #[arg(short = 'a', long)]
+        create_alias: bool,
     },
-    /// Combine multiple records.
-    Merge {
-        /// The highest priority record which will be retained.
-        into: RecordId,
-        /// Records to be merged.
-        from: Vec<RecordId>,
+    /// Display the revision history associated with an identifier.
+    Log {
+        /// The identifier.
+        identifier: RecordId,
+        /// Show parallel changes, instead of only the history of the active version.
+        #[arg(short, long)]
+        tree: bool,
+        /// Also traverse past deletion markers.
+        #[arg(short, long)]
+        all: bool,
+        /// Display oldest changes first.
+        #[arg(short, long)]
+        reverse: bool,
+    },
+    /// Show attachment directory associated with record.
+    Path {
+        /// Show directory path associated with this identifier.
+        identifier: RecordId,
+        /// Also create the directory if it does not exist.
+        #[arg(short, long)]
+        mkdir: bool,
+    },
+    /// Replace an identifier with another one and merge the data.
+    ///
+    /// The original identifier must be present in the database. If the target identifier is not in
+    /// the database, its data will be retrieved first.
+    Replace {
+        /// The identifier to replace.
+        identifier: RecordId,
+        /// Replace with another identifier.
+        #[arg(short, long, group = "replace_target")]
+        with: Option<RecordId>,
+        /// Determine the replacement identifier using record data.
+        #[arg(short, long, group = "replace_target")]
+        auto: bool,
+        /// Permanently merge all data into the target.
+        #[arg(long)]
+        hard: bool,
         /// How to resolve conflicting field values.
         #[arg(
             short = 'n',
@@ -306,20 +387,17 @@ pub enum Command {
             default_value_if("no_interactive", ArgPredicate::IsPresent, "prefer-current"),
             default_value_t
         )]
+        #[arg(long)]
         on_conflict: OnConflict,
+        /// Update aliases to point to the new identifier.
+        #[arg(long)]
+        update_aliases: bool,
     },
-    /// Show attachment directory associated with record.
-    Path {
-        /// Show path for this key.
-        citation_key: RecordId,
-        /// Also create the directory.
-        #[arg(short, long)]
-        mkdir: bool,
-    },
-    /// Generate records by searching for citation keys inside files.
+    /// Generate records by searching for identifiers inside files.
     ///
     /// This is essentially a call to `autobib get`, except with a custom search which attempts
-    /// to find citation keys inside the provided file(s). The search method depends on the file
+    /// to find identifiers inside the provided file(s), typically as citation keys.
+    /// The search method depends on the file
     /// type, which is determined purely based on the extension.
     Source {
         /// The files in which to search.
@@ -336,16 +414,16 @@ pub enum Command {
         /// Append new entries to the output.
         #[arg(short, long, requires = "out")]
         append: bool,
-        /// Retrieve records but do not output BibTeX or check the validity of citation keys.
+        /// Retrieve records but do not output BibTeX or check the validity of identifiers.
         #[arg(long, group = "output")]
         retrieve_only: bool,
-        /// Only print the citation keys which were found (sorted and deduplicated).
+        /// Only print the identifiers keys which were found (sorted and deduplicated).
         #[arg(long, group = "output")]
         print_keys: bool,
-        /// Skip a citation key (if present).
-        #[arg(short, long, value_name = "CITATION_KEYS")]
+        /// Skip an identifier (if present).
+        #[arg(short, long, value_name = "IDENTIFIERS")]
         skip: Vec<RecordId>,
-        /// Skip citation keys which are present in the provided file(s).
+        /// Skip identifiers which are present in the provided file(s).
         #[arg(long, value_name = "PATH")]
         skip_from: Vec<PathBuf>,
         /// Override file type detection for skip files.
@@ -355,20 +433,26 @@ pub enum Command {
         #[arg(long)]
         ignore_null: bool,
     },
-    /// Update data associated with an existing citation key.
+    /// Update data associated with an identifier.
     ///
     /// By default, you will be prompted if there is a conflict between the current and incoming
     /// records.
     ///
-    /// To override this behaviour, use `-p current` or `-p incoming`.
+    /// To override this behaviour, use `-n prefer-current` or `-n prefer-incoming`.
     /// If the terminal is not interactive or the `--no-interactive` global option is set, this
-    /// will result in an error if the `-p current` or `-p incoming` is not explicitly set.
+    /// will result in an error if the `-n prefer-current` or `-n prefer-incoming` is not explicitly set.
     Update {
-        /// The citation key to update.
-        citation_key: RecordId,
-        /// Read update data from local path.
-        #[arg(short, long, value_name = "PATH")]
-        from: Option<PathBuf>,
+        /// The identifier for the update operation.
+        identifier: RecordId,
+        /// Read update data from a BibTeX entry in a file.
+        #[arg(short = 'b', long, value_name = "PATH", group = "update_from")]
+        from_bibtex: Option<PathBuf>,
+        /// Read update data from other record data.
+        #[arg(short = 'r', long, value_name = "IDENTIFIER", group = "update_from")]
+        from_record: Option<RecordId>,
+        /// Read update data from record data in a specific revision.
+        #[arg(long, value_name = "REV", group = "update_from")]
+        from_rev: Option<RevisionId>,
         /// How to resolve conflicting field values.
         #[arg(
             short = 'n',
@@ -378,6 +462,9 @@ pub enum Command {
             default_value_t
         )]
         on_conflict: OnConflict,
+        /// Retrieve new data if the record is deleted.
+        #[arg(long)]
+        revive: bool,
     },
     /// Utilities to manage database.
     Util {
@@ -424,6 +511,14 @@ pub enum AliasCommand {
         alias: Alias,
         /// The name of the new alias.
         new: Alias,
+    },
+    /// Reset an alias to refer to a new record.
+    Reset {
+        /// The name of the existing alias.
+        #[arg(value_parser = with_short_err::<Alias>)]
+        alias: Alias,
+        /// What the alias should point to.
+        target: RecordId,
     },
 }
 
@@ -477,6 +572,7 @@ impl Command {
             | Self::Completions { .. }
             | Self::DefaultConfig
             | Self::Find { .. }
+            | Self::Log { .. }
             | Self::Path { mkdir: false, .. } => return Ok(()),
             Self::Path { mkdir: true, .. } => return Err(ReadOnlyInvalid::Argument("--mkdir")),
             Self::Alias { .. } => "alias",
@@ -484,13 +580,142 @@ impl Command {
             Self::Delete { .. } => "delete",
             Self::Import { .. } => "import",
             Self::Local { .. } => "local",
-            Self::Merge { .. } => "merge",
+            Self::Replace { .. } => "replace",
             Self::Update { .. } => "update",
             Self::Edit { .. } => "edit",
+            Self::Hist { .. } => "hist",
             Self::Util { util_command } => return util_command.validate_read_only_compatibility(),
         };
         Err(ReadOnlyInvalid::Command(invalid_cmd))
     }
+}
+
+/// Commands to manipulate version history.
+#[derive(Debug, Subcommand)]
+pub enum HistCommand {
+    /// Clean up edit history without impacting the active record.
+    Prune {
+        #[command(subcommand)]
+        prune_command: PruneCommand,
+    },
+    /// Redo previously undone changes.
+    ///
+    /// If no arguments are provided, this will redo the most recent change.
+    ///
+    /// The optional INDEX refers to the 0-indexed change, ordered from oldest to newest.
+    /// Negative values of INDEX are permitted and count backwards from newest to oldest.
+    ///
+    /// For example, INDEX 0 is the oldest change and INDEX -1 is the newest change.
+    ///
+    /// View divergent changes using `autobib log --tree`.
+    Redo {
+        /// The identifier for the redo operation.
+        identifier: RecordId,
+        /// The index of the redo, ordered from oldest to newest.
+        index: Option<isize>,
+        /// Redo beyond a deleted state.
+        #[arg(short, long)]
+        revive: bool,
+    },
+    /// Set the active version to a specific revision.
+    Reset {
+        /// The identifier for the reset operation.
+        identifier: RecordId,
+        /// Set using a revision number.
+        #[arg(long, group = "reset_target")]
+        rev: Option<RevisionId>,
+        /// Set to the lastest state with modification time preceding this date-time.
+        ///
+        /// This is a RFC3339 date-time, so make sure to indicate the timezone as well.
+        /// See, for example, the output of `autobib info -r modified`.
+        #[arg(long, group = "reset_target")]
+        before: Option<DateTime<Local>>,
+    },
+    /// Insert new data for a deleted record, concealing any prior changes.
+    ///
+    /// Usually you want to use `autobib hist undo`, and then `edit` the resulting record.
+    /// This method is useful if there is no prior state or if you want to intentionally conceal prior changes.
+    ///
+    /// If no arguments are specified, you will be prompted to edit the local record before adding it to the
+    /// database. If the terminal is non-interactive or `--no-interactive` is set, this will insert
+    /// a default value with no contents.
+    ///
+    /// You can provide BibTeX data from a file with the `--from-bibtex` option, or by providing
+    /// values using `--with-entry-type` and `--with-field`.
+    ///
+    /// The `--with-entry-type` or `--with-field` values will override any
+    /// values present in the data read from the BibTeX file.
+    Revive {
+        /// The identifier for the revive operation.
+        identifier: RecordId,
+        /// Create the record using the provided BibTeX data.
+        #[arg(short = 'b', long, value_name = "PATH")]
+        from_bibtex: Option<PathBuf>,
+        /// Set the entry type.
+        #[arg(long, value_name = "ENTRY_TYPE")]
+        with_entry_type: Option<EntryType>,
+        /// Set specific field values using BibTeX field syntax
+        #[arg(long, value_name = "FIELD_KEY={VALUE}")]
+        with_field: Vec<SetFieldCommand>,
+    },
+    /// Move the database back in time.
+    ///
+    /// This is the same as calling `autobib hist reset --before` on every active entry in the database with
+    /// modification greater than the provided time.
+    ///
+    /// Use caution! The modification time may not correspond to the database state at the provided
+    /// date-time if you have used `autobib hist (undo|redo|reset)`, since these methods only change the
+    /// active state without introducing new changes. Your old data will still be retrievable, but
+    /// it could require a lot of work to unwind the changes.
+    RewindAll {
+        /// The datetime to rewind to.
+        before: DateTime<Local>,
+    },
+    /// Show all database changes in descending order by time.
+    Show {
+        /// Only show LIMIT most recent changes
+        #[arg(long, value_name = "LIMIT")]
+        limit: Option<u32>,
+    },
+    /// Update the modification time of every active record in the database.
+    ///
+    /// On success, print the new modification time of every active entry in
+    /// the database.
+    TouchAll,
+    /// Undo the most recent change associated with an identifier.
+    Undo {
+        /// The identifier for the undo operation.
+        identifier: RecordId,
+        /// Undo into a deleted state.
+        #[arg(short, long)]
+        delete: bool,
+    },
+    /// Void a record.
+    ///
+    /// A voided record is equivalent to a record which is not in the database, but the previous
+    /// history is still recoverable.
+    Void {
+        /// The identifier to void.
+        identifier: RecordId,
+    },
+}
+
+/// Permanently remove edit history without impacting the active record.
+///
+/// These operations are performed in bulk on the entire database so if your database is
+/// exceptionally large they can take a while to run.
+#[derive(Debug, Subcommand)]
+pub enum PruneCommand {
+    /// Prune all inactive entries.
+    All,
+    /// Prune inactive deletion and void markers.
+    Deleted,
+    /// Prune entries which are not a descendent of an active entry.
+    Outdated {
+        /// Also keep entries that are a descendent of a level `n` ancestor of the active entry.
+        #[arg(long, default_value_t = 0)]
+        retain: u32,
+    },
 }
 
 /// Utilities to manage database.
@@ -510,10 +735,13 @@ pub enum UtilCommand {
         #[arg(long)]
         max_age: Option<u32>,
     },
-    /// List all valid keys.
+    /// List all valid identifiers.
     List {
-        /// Only list the canonical keys.
+        /// Only list the canonical identifiers.
         #[arg(short, long)]
         canonical: bool,
+        /// List deleted identifiers instead of those with data.
+        #[arg(short, long)]
+        deleted: bool,
     },
 }
