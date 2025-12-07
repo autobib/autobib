@@ -31,7 +31,7 @@ impl Render<DirEntry> for DirEntryRenderer {
 
 pub fn choose_attachment(att_data: &AttachmentData) -> Picker<DirEntry, DirEntryRenderer> {
     let mut picker = PickerOptions::new()
-        .config(nucleo_picker::nucleo::Config::DEFAULT.match_paths())
+        .match_paths()
         // Use our custom renderer for a `DirEntry`
         .picker(DirEntryRenderer {
             root: att_data.attachment_root.clone(),
