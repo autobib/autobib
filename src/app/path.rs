@@ -8,7 +8,10 @@ use anyhow::bail;
 
 use crate::{
     Config,
-    db::{RecordDatabase, state::RecordIdState},
+    db::{
+        Tx,
+        state::{ArbitraryData, RecordIdState, RecordRow},
+    },
     entry::{Entry, MutableEntryData},
     logger::info,
     path_hash::PathHash,
@@ -52,16 +55,16 @@ pub fn get_attachment_dir(
     Ok(attachments_root)
 }
 
-pub fn data_from_key<F: FnOnce() -> Vec<(regex::Regex, String)>>(
-    record_db: &mut RecordDatabase,
+pub fn data_from_key<'conn, F: FnOnce() -> Vec<(regex::Regex, String)>>(
+    tx: Tx<'conn>,
     record_id: RecordId,
     cfg: &Config<F>,
-) -> Result<MutableEntryData, anyhow::Error> {
-    match record_db.state_from_record_id(record_id, &cfg.alias_transform)? {
-        RecordIdState::Entry(_, entry_row_data, state) => {
-            state.commit()?;
-            Ok(MutableEntryData::from_entry_data(&entry_row_data.data))
-        }
+) -> Result<(MutableEntryData, Tx<'conn>), anyhow::Error> {
+    match RecordIdState::determine(tx, record_id, &cfg.alias_transform)? {
+        RecordIdState::Entry(_, entry_row_data, state) => Ok((
+            MutableEntryData::from_entry_data(&entry_row_data.data),
+            state.into_tx(),
+        )),
         RecordIdState::Deleted(_, _, state) => {
             state.commit()?;
             bail!("Cannot read update data from deleted row");
@@ -84,6 +87,23 @@ pub fn data_from_key<F: FnOnce() -> Vec<(regex::Regex, String)>>(
         RecordIdState::InvalidRemoteId(record_error) => {
             bail!("Cannot read update data: {record_error}");
         }
+    }
+}
+
+pub fn data_from_rev(
+    tx: &Tx<'_>,
+    rev: crate::db::state::RevisionId,
+) -> Result<MutableEntryData, anyhow::Error> {
+    let Some(row) = RecordRow::load(tx, rev)? else {
+        bail!("Revision '{rev}' does not exist in the database!");
+    };
+
+    match row.data {
+        ArbitraryData::Entry(raw_entry_data) => {
+            Ok(MutableEntryData::from_entry_data(&raw_entry_data))
+        }
+        ArbitraryData::Deleted(_) => bail!("Cannot read update data from deleted row"),
+        ArbitraryData::Void => bail!("Cannot read update data from voided row"),
     }
 }
 
