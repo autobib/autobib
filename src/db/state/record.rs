@@ -70,6 +70,14 @@ impl<D: FromBytesAndVariant> RecordRow<D> {
     }
 }
 
+impl RecordRow<ArbitraryData> {
+    /// Load data from a revision id, returning `None` if the ID does not correspond to a row in
+    /// the 'Records' table.
+    pub fn load(tx: &Tx<'_>, rev: RevisionId) -> rusqlite::Result<Option<Self>> {
+        Self::load_unchecked(tx, rev.0).optional()
+    }
+}
+
 /// The data for a row in the 'Records' table, also including information about the parents.
 pub struct CompleteRecordRow<D> {
     pub row: RecordRow<D>,

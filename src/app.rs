@@ -56,7 +56,7 @@ use self::{
     delete::{hard_delete, soft_delete},
     edit::{create_alias_if_valid, insert, merge_record_data},
     import::ImportConfig,
-    path::{data_from_key, data_from_path, get_attachment_dir, get_attachment_root},
+    path::{data_from_key, data_from_path, data_from_rev, get_attachment_dir, get_attachment_root},
     picker::{choose_attachment, choose_attachment_path, choose_canonical_id},
     retrieve::{retrieve_and_validate_entries, retrieve_entries_read_only},
     update::update,
@@ -1114,25 +1114,31 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             identifier,
             from_bibtex,
             from_record,
+            from_rev,
             on_conflict,
             revive,
         } => {
             let cfg = config::load(&config_path, missing_ok)?;
+            let tx = record_db.transaction()?;
 
             // this has to be done first since we need a mutable reference to
             // record_db, which we cannot use once we start the update
             // routine. However, we do not determine the data in the other cases
             // at this point since we would like to defer filesystem / network
             // operations, unless they are strictly required
-            let provided_data = if let Some(record_id) = from_record {
-                Some(data_from_key(&mut record_db, record_id, &cfg)?)
+            let (provided_data, tx) = if let Some(record_id) = from_record {
+                let (data, tx) = data_from_key(tx, record_id, &cfg)?;
+                (Some(data), tx)
+            } else if let Some(rev) = from_rev {
+                let data = data_from_rev(&tx, rev)?;
+                (Some(data), tx)
             } else {
-                None
+                (None, tx)
             };
 
             update(
                 on_conflict,
-                record_db.state_from_record_id(identifier, &cfg.alias_transform)?,
+                RecordIdState::determine(tx, identifier, &cfg.alias_transform)?,
                 provided_data,
                 &cfg.on_insert,
                 revive,

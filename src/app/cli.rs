@@ -450,6 +450,9 @@ pub enum Command {
         /// Read update data from other record data.
         #[arg(short = 'r', long, value_name = "IDENTIFIER", group = "update_from")]
         from_record: Option<RecordId>,
+        /// Read update data from record data in a specific revision.
+        #[arg(long, value_name = "REV", group = "update_from")]
+        from_rev: Option<RevisionId>,
         /// How to resolve conflicting field values.
         #[arg(
             short = 'n',
