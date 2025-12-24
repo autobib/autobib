@@ -45,7 +45,7 @@ ${autobib} edit local:first \
 ${autobib} edit local:first \
     --set-field "title = {5}"
 
-${autobib} delete local:first --replace local:second
+${autobib} replace local:first --with local:second
 
 ${autobib} hist revive local:first \
     --with-field "title = {6}"

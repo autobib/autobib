@@ -249,7 +249,10 @@ impl<'conn> DatabaseValidator<'conn> {
         let mut stmt = self.tx.prepare("SELECT record_id, count(*) as root_count FROM Records WHERE parent_key IS NULL GROUP BY record_id HAVING count(*) != 1")?;
 
         for row in stmt.query_map([], |row| {
-            Ok((row.get("record_id")?, row.get("root_count")?))
+            Ok((
+                row.get("record_id")?,
+                row.get("root_count").map(i64::unsigned_abs)?,
+            ))
         })? {
             let (record_id, n) = row?;
             faults.push(DatabaseFault::OrphanedNodes(record_id, n));
@@ -273,7 +276,10 @@ HAVING count(DISTINCT key) != 1
         )?;
 
         for row in stmt.query_map([], |row| {
-            Ok((row.get("record_id")?, row.get("active_row_count")?))
+            Ok((
+                row.get("record_id")?,
+                row.get("active_row_count").map(i64::unsigned_abs)?,
+            ))
         })? {
             let (record_id, n) = row?;
             faults.push(DatabaseFault::IncorrectActiveRowCount(record_id, n));
