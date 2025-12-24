@@ -113,7 +113,7 @@ impl<'tx, 'conn> Version<'tx, 'conn> {
     pub fn num_children(&self) -> rusqlite::Result<usize> {
         self.tx
             .prepare_cached("SELECT count(*) FROM Records WHERE parent_key = ?1")?
-            .query_row([self.row_id], |row| row.get(0))
+            .query_row([self.row_id], |row| row.get(0).map(isize::unsigned_abs))
     }
 
     /// Returns whether or not the row has children.

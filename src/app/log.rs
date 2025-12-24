@@ -1,6 +1,4 @@
-use std::io::Write;
-
-use ramify::{Config, Generator, branch_writer, writer::RoundedCornersWide};
+use ramify::{Config, TryRamify, writer::Style};
 
 use crate::{
     db::{
@@ -10,19 +8,40 @@ use crate::{
     output::stdout_lock_wrap,
 };
 
-branch_writer! {
-    pub struct InvertedStyle {
-        charset: ["│", "─", "╯", "╰",  "╮", "╭", "┤", "├", "┴", "┼"],
-        gutter_width: 1,
-        inverted: true,
-    }
-}
+fn write_branch_diagram<V, R, W>(
+    mut writer: W,
+    root: V,
+    ramifier: R,
+    invert: bool,
+) -> anyhow::Result<()>
+where
+    R: TryRamify<V>,
+    <R as TryRamify<V>>::Error: 'static + Send + Sync + std::error::Error,
+    W: std::io::Write,
+{
+    let config = Config::new().row_padding(2);
+    let style = Style::rounded_corners()
+        .gutter_width(1)
+        .annotation_margin(2);
 
-fn init_config<S>() -> Config<S> {
-    let mut config = Config::new();
-    config.row_padding = 2;
-    config.annotation_margin = 2;
-    config
+    if invert {
+        let branch_diagram = config
+            .inverted_annotations(true)
+            .generator(root, ramifier)
+            .try_branch_diagram(style.invert())?;
+
+        for line in branch_diagram.lines().rev() {
+            writeln!(writer, "{line}")?;
+        }
+    } else {
+        let mut writer = style.io_writer(writer);
+
+        config
+            .generator(root, ramifier)
+            .try_write_all(&mut writer)?
+            .halt_if_suspended()?;
+    }
+    Ok(())
 }
 
 pub fn print_log<'conn, I: InRecordsTable>(
@@ -33,7 +52,7 @@ pub fn print_log<'conn, I: InRecordsTable>(
     reverse: bool,
     oneline: bool,
 ) -> anyhow::Result<()> {
-    let mut stdout = stdout_lock_wrap();
+    let stdout = stdout_lock_wrap();
     let styled = !no_interactive && stdout.supports_styled_output();
     let ramifier_config = RamifierConfig {
         all,
@@ -41,47 +60,13 @@ pub fn print_log<'conn, I: InRecordsTable>(
         styled,
     };
 
-    // FIXME: copy and paste less here.
-    // probably needs a macro because of dependent type weirdness, especially once
-    // `oneline` also is implemented which will require a different style, again
+    let current = state.current()?;
+
     if tree {
-        let root = state.current()?.root(all)?;
         let ramifier = state.full_history_ramifier(ramifier_config);
-
-        if reverse {
-            let config = init_config::<RoundedCornersWide>();
-            let mut generator = Generator::init(root, ramifier, config);
-
-            while generator.try_write_vertex(&mut stdout)? {}
-        } else {
-            let config = init_config::<InvertedStyle>();
-            let mut generator = Generator::init(root, ramifier, config);
-
-            let mut branch_diagram = String::new();
-            while generator.try_write_vertex_str(&mut branch_diagram)? {}
-            for line in branch_diagram.lines().rev() {
-                writeln!(&mut stdout, "{line}")?;
-            }
-        }
+        write_branch_diagram(stdout, current.root(all)?, ramifier, !reverse)
     } else {
-        let current = state.current()?;
         let ramifier = state.ancestor_ramifier(ramifier_config);
-
-        if reverse {
-            let config = init_config::<InvertedStyle>();
-            let mut generator = Generator::init(current, ramifier, config);
-            let mut branch_diagram = String::new();
-
-            while generator.try_write_vertex_str(&mut branch_diagram)? {}
-
-            for line in branch_diagram.lines().rev() {
-                writeln!(&mut stdout, "{line}")?;
-            }
-        } else {
-            let config = init_config::<RoundedCornersWide>();
-            let mut generator = Generator::init(current, ramifier, config);
-            while generator.try_write_vertex(&mut stdout)? {}
-        }
+        write_branch_diagram(stdout, current, ramifier, reverse)
     }
-    Ok(())
 }

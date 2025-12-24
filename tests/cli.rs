@@ -26,7 +26,7 @@ impl TestState {
     }
 
     fn cmd(&self) -> Result<Command> {
-        let mut cmd = Command::cargo_bin("autobib").unwrap();
+        let mut cmd = Command::new(assert_cmd::cargo_bin!());
         cmd.arg("--database")
             .arg(self.database.as_ref())
             .arg("--config")

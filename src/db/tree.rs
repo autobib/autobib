@@ -1,4 +1,4 @@
-use std::{fmt, marker::PhantomData};
+use std::{fmt::Write as _, marker::PhantomData};
 
 use crossterm::style::{ContentStyle, StyledContent, Stylize};
 use ramify::TryRamify;
@@ -45,18 +45,13 @@ impl<'tx, 'conn> Version<'tx, 'conn> {
 impl<'tx, 'conn> TryRamify<Version<'tx, 'conn>> for FullHistoryRamifier<'tx> {
     type Error = rusqlite::Error;
 
-    fn try_children(
+    fn try_ramify(
         &mut self,
         vtx: Version<'tx, 'conn>,
-    ) -> Result<
-        impl IntoIterator<Item = Version<'tx, 'conn>>,
-        ramify::Replacement<Version<'tx, 'conn>, Self::Error>,
-    > {
+    ) -> Result<impl IntoIterator<Item = Version<'tx, 'conn>>, Self::Error> {
         // we always iterate over children if we are on an entry; otherwise, only iterate if 'all'
         if vtx.is_entry() || self.config.all {
-            let mut children = vtx
-                .children()
-                .map_err(|err| ramify::Replacement { value: vtx, err })?;
+            let mut children = vtx.children()?;
             children.sort_unstable_by_key(|v| v.row.modified);
             Ok(children)
         } else {
@@ -64,7 +59,7 @@ impl<'tx, 'conn> TryRamify<Version<'tx, 'conn>> for FullHistoryRamifier<'tx> {
         }
     }
 
-    fn get_key(&self, vtx: &Version<'tx, 'conn>) -> impl Ord {
+    fn sort_key(&self, vtx: &Version<'tx, 'conn>) -> impl Ord {
         &vtx.row.modified
     }
 
@@ -72,7 +67,7 @@ impl<'tx, 'conn> TryRamify<Version<'tx, 'conn>> for FullHistoryRamifier<'tx> {
         vtx.marker(self.active_row_id)
     }
 
-    fn annotation<B: fmt::Write>(&self, vtx: &Version<'tx, 'conn>, mut buf: B) -> fmt::Result {
+    fn annotate(&self, vtx: &Version<'tx, 'conn>, buf: &mut String) {
         let disp = StyledContent::new(
             ContentStyle::default(),
             RecordRowDisplay::from_version(vtx, self.config.styled),
@@ -84,7 +79,7 @@ impl<'tx, 'conn> TryRamify<Version<'tx, 'conn>> for FullHistoryRamifier<'tx> {
             disp
         };
 
-        write!(buf, "{disp}")
+        write!(buf, "{disp}").expect("Writing to a string should not fail");
     }
 }
 
@@ -98,17 +93,11 @@ pub struct AncestorRamifier<'tx> {
 impl<'tx, 'conn> TryRamify<Version<'tx, 'conn>> for AncestorRamifier<'tx> {
     type Error = rusqlite::Error;
 
-    fn try_children(
+    fn try_ramify(
         &mut self,
         vtx: Version<'tx, 'conn>,
-    ) -> Result<
-        impl IntoIterator<Item = Version<'tx, 'conn>>,
-        ramify::Replacement<Version<'tx, 'conn>, Self::Error>,
-    > {
-        match vtx
-            .parent()
-            .map_err(|err| ramify::Replacement { value: vtx, err })?
-        {
+    ) -> Result<impl IntoIterator<Item = Version<'tx, 'conn>>, Self::Error> {
+        match vtx.parent()? {
             None => Ok(None.into_iter()),
             Some(parent) => {
                 // since this method iterates backwards, we perform the check on the next version
@@ -122,7 +111,7 @@ impl<'tx, 'conn> TryRamify<Version<'tx, 'conn>> for AncestorRamifier<'tx> {
         }
     }
 
-    fn get_key(&self, vtx: &Version<'tx, 'conn>) -> impl Ord {
+    fn sort_key(&self, vtx: &Version<'tx, 'conn>) -> impl Ord {
         &vtx.row.modified
     }
 
@@ -130,7 +119,7 @@ impl<'tx, 'conn> TryRamify<Version<'tx, 'conn>> for AncestorRamifier<'tx> {
         vtx.marker(self.active_row_id)
     }
 
-    fn annotation<B: fmt::Write>(&self, vtx: &Version<'tx, 'conn>, mut buf: B) -> fmt::Result {
+    fn annotate(&self, vtx: &Version<'tx, 'conn>, buf: &mut String) {
         let disp = StyledContent::new(
             ContentStyle::default(),
             RecordRowDisplay::from_version(vtx, self.config.styled),
@@ -142,7 +131,7 @@ impl<'tx, 'conn> TryRamify<Version<'tx, 'conn>> for AncestorRamifier<'tx> {
             disp
         };
 
-        write!(buf, "{disp}")
+        write!(buf, "{disp}").expect("Writing to a string should not fail");
     }
 }
 
