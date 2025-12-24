@@ -1,8 +1,9 @@
-use assert_cmd::prelude::*;
-use assert_fs::fixture::{ChildPath, NamedTempFile, PathChild, TempDir};
-use assert_fs::prelude::*;
-use predicates::prelude::predicate::str::contains;
-use predicates::prelude::*;
+use assert_cmd::assert::OutputAssertExt;
+use assert_fs::{
+    assert::PathAssert,
+    fixture::{ChildPath, FileWriteStr, NamedTempFile, PathChild, TempDir},
+};
+use predicates::{Predicate, boolean::PredicateBooleanExt, prelude::predicate, str::contains};
 
 use std::{fs, path::Path, process::Command};
 
