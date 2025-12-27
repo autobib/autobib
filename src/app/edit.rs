@@ -124,45 +124,89 @@ pub fn merge_record_data<'a, D: EntryData + 'a>(
         OnConflict::Prompt => {
             info!("Updating {id_display} with new data, prompting on conflict");
             for data in new_raw_data {
-                existing_record.merge_with_callback(data, |key, current, incoming| {
-                    eprintln!("Conflict for the field '{key}':");
-                    eprintln!("   Current value: {current}");
-                    eprintln!("  Incoming value: {incoming}");
-                    let prompt = Input::new("Accept incoming value? [y]es / [N]o / [e]dit");
-                    let choice = match prompt.input() {
-                        Ok(r) => r,
-                        Err(error) => {
-                            reraise(&error);
-                            warn!("Keeping current value for '{key}'");
-                            return ConflictResolved::Current;
-                        }
-                    };
-
-                    loop {
-                        match choice.trim() {
-                            "" => return ConflictResolved::Current,
-                            c if "no".starts_with(c) || "NO".starts_with(c) => {
+                // FIXME: don't copy-paste here, but it is annoying to avoid this because
+                // it needs some new trait bounds for operations like `to_owned()` etc.
+                existing_record.merge_with_callback(
+                    data,
+                    |current, incoming| {
+                        eprintln!("Conflict for the entry type:");
+                        eprintln!("   Current value: {current}");
+                        eprintln!("  Incoming value: {incoming}");
+                        let prompt = Input::new("Accept incoming value? [y]es / [N]o / [e]dit");
+                        let choice = match prompt.input() {
+                            Ok(r) => r,
+                            Err(error) => {
+                                reraise(&error);
+                                warn!("Keeping current value for the entry type");
                                 return ConflictResolved::Current;
                             }
-                            c if "yes".starts_with(c) || "YES".starts_with(c) => {
-                                return ConflictResolved::Incoming;
-                            }
-                            c if "edit".starts_with(c) || "EDIT".starts_with(c) => break,
-                            _ => warn!("Invalid selection: {choice}!"),
-                        }
-                    }
+                        };
 
-                    let editor = Editor::new(EditorConfig { suffix: ".tex" });
-                    let val = incoming.to_owned();
-                    match editor.edit(&val) {
-                        Ok(new) => ConflictResolved::New(new.unwrap_or(val)),
-                        Err(error) => {
-                            reraise(&error);
-                            warn!("Keeping current value for '{key}'");
-                            ConflictResolved::Current
+                        loop {
+                            match choice.trim() {
+                                "" => return ConflictResolved::Current,
+                                c if "no".starts_with(c) || "NO".starts_with(c) => {
+                                    return ConflictResolved::Current;
+                                }
+                                c if "yes".starts_with(c) || "YES".starts_with(c) => {
+                                    return ConflictResolved::Incoming;
+                                }
+                                c if "edit".starts_with(c) || "EDIT".starts_with(c) => break,
+                                _ => warn!("Invalid selection: {choice}!"),
+                            }
                         }
-                    }
-                });
+
+                        let editor = Editor::new(EditorConfig { suffix: ".txt" });
+                        let val = incoming.to_owned();
+                        match editor.edit(&val) {
+                            Ok(new) => ConflictResolved::New(new.unwrap_or(val)),
+                            Err(error) => {
+                                reraise(&error);
+                                warn!("Keeping current value for the entry type");
+                                ConflictResolved::Current
+                            }
+                        }
+                    },
+                    |key, current, incoming| {
+                        eprintln!("Conflict for the field '{key}':");
+                        eprintln!("   Current value: {current}");
+                        eprintln!("  Incoming value: {incoming}");
+                        let prompt = Input::new("Accept incoming value? [y]es / [N]o / [e]dit");
+                        let choice = match prompt.input() {
+                            Ok(r) => r,
+                            Err(error) => {
+                                reraise(&error);
+                                warn!("Keeping current value for '{key}'");
+                                return ConflictResolved::Current;
+                            }
+                        };
+
+                        loop {
+                            match choice.trim() {
+                                "" => return ConflictResolved::Current,
+                                c if "no".starts_with(c) || "NO".starts_with(c) => {
+                                    return ConflictResolved::Current;
+                                }
+                                c if "yes".starts_with(c) || "YES".starts_with(c) => {
+                                    return ConflictResolved::Incoming;
+                                }
+                                c if "edit".starts_with(c) || "EDIT".starts_with(c) => break,
+                                _ => warn!("Invalid selection: {choice}!"),
+                            }
+                        }
+
+                        let editor = Editor::new(EditorConfig { suffix: ".tex" });
+                        let val = incoming.to_owned();
+                        match editor.edit(&val) {
+                            Ok(new) => ConflictResolved::New(new.unwrap_or(val)),
+                            Err(error) => {
+                                reraise(&error);
+                                warn!("Keeping current value for '{key}'");
+                                ConflictResolved::Current
+                            }
+                        }
+                    },
+                );
             }
         }
     }
