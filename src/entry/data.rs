@@ -165,13 +165,13 @@ impl EntryEditCommand {
 }
 
 /// The outcome of resolving the conflict when using [`MutableEntryData::merge_with_callback`].
-pub enum ConflictResolved {
+pub enum ConflictResolved<T = FieldValue> {
     /// Keep the current data.
     Current,
     /// Replace with incoming data.
     Incoming,
     /// Use new data.
-    New(FieldValue),
+    New(T),
 }
 
 impl<'r> MutableEntryData<&'r str> {
@@ -291,16 +291,34 @@ impl MutableEntryData {
     /// the key, the existing value in `self` corresponding to the key, and the new value.
     pub fn merge_with_callback<
         D: EntryData,
-        C: FnMut(FieldKey<&str>, FieldValue<&str>, FieldValue<&str>) -> ConflictResolved,
+        T: FnOnce(EntryType<&str>, EntryType<&str>) -> ConflictResolved<EntryType>,
+        F: FnMut(FieldKey<&str>, FieldValue<&str>, FieldValue<&str>) -> ConflictResolved,
     >(
         &mut self,
         other: &D,
-        mut resolve_conflict: C,
+        resolve_entry_type_conflict: T,
+        mut resolve_field_conflict: F,
     ) {
+        let other_entry_type = other.entry_type();
+        if self.entry_type.as_ref() != other_entry_type {
+            match resolve_entry_type_conflict(
+                EntryType(self.entry_type.as_ref()),
+                EntryType(other_entry_type),
+            ) {
+                ConflictResolved::Current => {}
+                ConflictResolved::Incoming => {
+                    self.entry_type = EntryType(other_entry_type.to_owned());
+                }
+                ConflictResolved::New(value) => {
+                    self.entry_type = value;
+                }
+            }
+        }
+
         for (key, value) in other.fields() {
             match self.fields.get_mut(key) {
                 Some(current_value) if current_value != value => {
-                    match resolve_conflict(
+                    match resolve_field_conflict(
                         FieldKey(key),
                         FieldValue(&current_value.0),
                         FieldValue(value),
@@ -327,13 +345,21 @@ impl MutableEntryData {
     /// Merge data from `other`, ignoring fields that already exist in `self`.
     #[inline]
     pub fn merge_or_skip<D: EntryData>(&mut self, other: &D) {
-        self.merge_with_callback(other, |_, _, _| ConflictResolved::Current);
+        self.merge_with_callback(
+            other,
+            |_, _| ConflictResolved::Current,
+            |_, _, _| ConflictResolved::Current,
+        );
     }
 
     /// Merge data from `other`, overwriting fields that already exist in `self`.
     #[inline]
     pub fn merge_or_overwrite<D: EntryData>(&mut self, other: &D) {
-        self.merge_with_callback(other, |_, _, _| ConflictResolved::Incoming);
+        self.merge_with_callback(
+            other,
+            |_, _| ConflictResolved::Incoming,
+            |_, _, _| ConflictResolved::Incoming,
+        );
     }
 
     pub fn try_new(e: String) -> Result<Self, crate::error::RecordDataError> {
