@@ -9,9 +9,11 @@ pub enum ProviderError {
     InvalidIdFromProvider(String),
     #[error("Reference source returned a key corresponding to a null record: '{0}'")]
     UnexpectedNullRemoteFromProvider(String),
+    #[error("Provider returned null record for identifier '{0}' which previously returned data!")]
+    UnexpectedNullFromPreviousData(String),
     #[error("Network failure: {0}")]
     NetworkFailure(#[from] ureq::Error),
-    #[error("Unexpected local record '{0}'")]
+    #[error("Cannot retrieve remote data for key with local provenance: '{0}'")]
     UnexpectedLocal(String),
     #[error(
         "API server is temporarily inaccessible; try again later. If this is a recurring problem, please report it at https://github.com/autobib/autobib/issues"

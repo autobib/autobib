@@ -51,7 +51,9 @@ Jump to:
 - [Assigning aliases](#assigning-aliases)
 - [Creating local records](#creating-local-records)
 - [Searching for records](#searching-for-records)
+- [Working with edit history](#working-with-edit-history)
 - [Importing records](#importing-records)
+- [Managing attachments](#managing-attachments)
 - [Shell completions](#shell-completions)
 - [User data and configuration file](#user-data-and-configuration-file)
 
@@ -119,9 +121,18 @@ You can view and modify the internally stored record with
 autobib edit zbl:1337.28015
 ```
 If the record does not yet exist in your local record database, it will be retrieved before editing.
+Autobib also supports non-interactive edit commands: run `autobib help edit` for more detail.
 
-You can also re-retrieve a record from the remote provider using the `autobib update` command, or remove one from the database using the `autobib delete` command.
-Run `autobib help update` and `autobib help delete` for more details.
+You can also:
+
+- remove a record from the database using the `autobib delete` command,
+- merge an existing record into another (perhaps automatically determined) one using the `autobib replace` command, and
+- re-retrieve a record from the remote provider using the `autobib update` command.
+
+Run `autobib help (delete|replace|update)`.
+
+The modifications performed by edits, deletions, replacements, and updates (except when using the special `--hard` flag) are always recoverable.
+See the [edit history](#working-with-edit-history) section for more detail.
 
 ### Assigning aliases
 
@@ -153,8 +164,8 @@ You can still create aliases using these characters: for instance, `autobib alia
 However, attempting to retrieve the BibTeX entry associated with this alias will result in an error.
 ```txt
 $ autobib get %
-ERROR Invalid bibtex entry key: %
-  Suggested fix: use an alias which does not contain disallowed characters: {}(),=\#%"
+error: Invalid bibtex entry key: %
+suggestion: use an alias which does not contain disallowed characters: {}(),=\#%"
 ```
 Run `autobib help alias` for more options for managing aliases.
 
@@ -162,9 +173,11 @@ Aliases can be used in most locations that the usual identifiers are used.
 For instance, you can run `autobib edit hochman-entropy`, to edit the corresponding record data.
 Note that these edits will apply to the original underlying record.
 
+See the [data model documentation](docs/data_model.md) for more precise information on how Autobib uses identifiers.
+
 Many providers have default key formats; for instance, zbMath internally uses keys of the form `zbMATH06346461`.
 Autobib can be configured to automatically convert aliases matching certain rules to `provider:sub_id` pairs.
-For example, to convert `zbMATH06346461` to `zbmath:06346461` and automatically generate permanent aliases in your database, use the `[alias_transform]` in your [configuration](#user-data-and-configuration-file):
+For example, to convert `zbMATH06346461` to `zbmath:06346461` and automatically generate permanent aliases in your database, use the `[alias_transform]` section in your [configuration](#user-data-and-configuration-file):
 
 ```toml
 [alias_transform]
@@ -182,17 +195,14 @@ For example,
 autobib local my-entry
 ```
 creates a record under the identifier `local:my-entry`.
-You will be prompted to fill in the record, unless you pass the `-I`/`--no-interactive` flag.
+You will be prompted to fill in data for the record.
 To modify the record later, run the above command again or use the [`autobib edit` command](#modifying-records).
 
 It is also possible to create the local record from a BibTeX file:
 ```sh
-autobib -I local my-entry --from source.bib
+autobib local my-entry --from-bibtex source.bib
 ```
 Note that the BibTeX file should contain exactly one entry, or this command will fail.
-
-When you create the local record `local:my-entry`, a new alias `my-entry` (if available) is also created and assigned to the new record.
-As a consequence, the `sub_id` part of a `local:` identifier must be a valid alias, i.e. it cannot contain the colon `:`.
 
 ### Searching for records
 
@@ -207,25 +217,83 @@ will list all of your local records with the `author` and `title` fields availab
 
 Read more in the [template syntax documentation](docs/template.md).
 
+### Working with edit history
+
+Autobib maintains a comprehensive edit history: every change to a record in the database creates a new copy with the changes, and the old copy is saved in the database.
+
+You can recover the previous version(s) using `autobib hist undo` and `autobib hist redo`.
+
+Internally, undo-states are stored as a *tree*: you can visualize the entire edit history associated with an identifier using `autobib log --tree`.
+You can move to arbitrary states in the edit tree using `autobib hist reset`.
+
+Your data is never deleted automatically.
+See `autobib hist prune` for a variety of commands which can be used to delete unwanted revisions.
+
+See the [data model documentation](docs/data_model.md) for more information.
+
 ### Importing records
 
 You can import existing records from BibTeX files using `autobib import`.
-There are four mutually exclusive import modes, specified with flags:
 
-- `--local` (the default behaviour):
-  Each record is added as though it were a local record, similar to `autobib local <key> --from <file>.bib`.
-  The key is determined automatically from the entry key of each record in the passed file.
-- `--determine-key`:
-  Similar to `--local`, but attempt to read a remote identifier (i.e. of the form `provider:sub_id`) from the entry key instead.
-  If you have set the `preferred_providers` configuration option and the identifier could not be determined from the entry key, use heuristics to attempt to determine the identifier from the entry fields.
-- `--retrieve`:
-  If an identifier could be determined (using the same logic as `--determine-key`), make a remote request to attempt to retrieve the data from the provider before importing the record.
-- `--retrieve-only`:
-  Do not import the data from the `.bib` file and only make a remote request to retrieve the data.
+Autobib automatically determines identifiers from the import data.
+To pick an identifier, Autobib first uses the `preferred_providers` section in your configuration, or falls back to whatever identifier it can find.
+Usually this is what you want: for example, if your data contains a `doi = {...}` field and `preferred_providers = ["doi"]` this will always be used as the identifier.
+Note that the `[alias_transform]` section of the [configuration](src/config/default_config.toml) also applies.
+This can be used to define a custom import pattern to map the citation keys to identifiers, if your citation keys are in a special format.
 
-Note that the `[alias_transform]` section of the [configuration](src/config/default_config.toml) applies when determining the key automatically.
-This can be used to define a custom import pattern.
-To handle colons in entry keys, use the `--replace-colons` option to specify a (possibly empty) replacement string.
+If you are importing data with an identifier format that Autobib does not recognize, the `--local-fallback` option creates special `local:...` identifiers using the citation keys in the BibTeX file.
+
+Autobib tries to make imports as fine-grained as possible.
+Even if one entry fails to import, it will continue to try to import the remaining entries.
+Any entry which could not be imported is printed to standard output along with a short description (in a BibTeX comment) explaining why the file could not be imported.
+This means you can use a workflow like the following:
+
+```sh
+# make sure to use a different output filename here, or the redirection will erase
+# the file before Autobib can read it
+autobib import file.bib > failed.bib
+
+# modify the failed entries to fix the issues
+vim failed.bib
+
+# try again
+autobib import failed.bib > failed_again.bib
+```
+
+You can also import attachments using the `--include-files` flag.
+See the [attachments](#managing-attachments) for more detail when working with attachments.
+
+### Managing attachments
+
+Autobib has basic support for working with attachments.
+
+Autobib subscribes to the philosophy that your file-system is the best tool for manipulating attachments.
+Instead of trying to replicate features of your file-system, Autobib instead *looks for files at a specific, consistently-defined location*.
+
+The attachment directory depends only on the [*canonical identifier*](docs/data_model.md) associated with the record and can be obtained with the `autobib path` subcommand:
+```sh
+# by default, prints '~/.local/share/autobib/attachments/zbmath/JX/TT/CT/GA3DGNBWGQ3DC===/'
+autobib path zbl:1337.28015
+```
+
+To manage attachments, simply browse to the relevant attachment directory and manage the files in your preferred way.
+As a convenience method, you can attach new files with
+```sh
+autobib attach <ident> <file>
+```
+This will copy the file into the attachment directory.
+Use the `--rename` option to specify a new filename.
+
+You can also browse attachments using `autobib find --mode attachments`.
+This will open an interactive browser of all records in your database which contain files.
+Upon selecting a record, if there are multiple files, you will be further prompted to select one from those files.
+The resulting filename will be printed.
+
+This means searching for a file by metadata and opening it is as simple as running
+```sh
+open "$(autobib find --mode attachments)"
+```
+replacing `open` with the correct command on your system to open the file with the correct application.
 
 ### Shell completions
 
@@ -269,9 +337,9 @@ Autobib's SQLite database is by default kept at `$XDG_DATA_HOME/autobib/records.
 This path can be modified with the `AUTOBIB_DATABASE_PATH` environment variable.
 
 Autobib stores file attachments in subfolders of `$XDG_DATA_HOME/autobib/attachments`, or `~/.local/share/autobib/attachments` if `$XDG_DATA_HOME` is not set or empty.
-This path can be modified with the `AUTOBIB_DATABASE_PATH` environment variable.
+This path can be modified with the `AUTOBIB_ATTACHMENTS_DIRECTORY` environment variable.
 
-Autobib supports basic global configuration through a TOML file which defaults to `$XDG_CONFIG_HOME/autobib/config.toml`, or `$HOME/.config/autobib/config.toml` if `$XDG_CONFIG_HOME` is not set or empty.
+Autobib supports basic global configuration through a [TOML](https://toml.io/) file which defaults to `$XDG_CONFIG_HOME/autobib/config.toml`, or `$HOME/.config/autobib/config.toml` if `$XDG_CONFIG_HOME` is not set or empty.
 This path can be modified with the `AUTOBIB_CONFIG_PATH` environment variable.
 You can generate a default configuration file with `autobib default-config`, or view the configuration options [here](src/config/default_config.toml).
 

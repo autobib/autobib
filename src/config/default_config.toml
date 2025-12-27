@@ -39,7 +39,7 @@ strip_journal_series = false
 
 # A list of [pattern, provider] pairs. Each matching pattern must have exactly one
 # capture group. The matching capture group matches is used to create a corresponding
-# citation key of the form `provider:captured`. You can validate your configuration with
+# identifier of the form `provider:captured`. You can validate your configuration with
 # `autobib util check`.
 #
 # The regex syntax is documented at https://docs.rs/regex/latest/regex/#syntax

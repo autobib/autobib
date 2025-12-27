@@ -11,7 +11,7 @@ use serde::Serializer as _;
 use serde_bibtex::ser::Serializer;
 
 use crate::{
-    CitationKey,
+    Identifier,
     entry::{Entry, EntryData},
     logger::warn,
     output::stdout_lock_wrap,

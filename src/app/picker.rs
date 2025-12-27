@@ -8,7 +8,8 @@ use nucleo_picker::{Picker, PickerOptions, Render};
 use walkdir::{DirEntry, WalkDir};
 
 use crate::{
-    db::{RecordDatabase, state::RowData},
+    db::{RecordDatabase, state::RecordRow},
+    entry::RawEntryData,
     format::Template,
     path_hash::PathHash,
 };
@@ -30,7 +31,7 @@ impl Render<DirEntry> for DirEntryRenderer {
 
 pub fn choose_attachment(att_data: &AttachmentData) -> Picker<DirEntry, DirEntryRenderer> {
     let mut picker = PickerOptions::new()
-        .config(nucleo_picker::nucleo::Config::DEFAULT.match_paths())
+        .match_paths()
         // Use our custom renderer for a `DirEntry`
         .picker(DirEntryRenderer {
             root: att_data.attachment_root.clone(),
@@ -56,7 +57,7 @@ pub fn choose_attachment_path<F: FnMut(&Path) -> bool + Send + 'static>(
     // populate the picker from a separate thread
     let injector = picker.injector();
     thread::spawn(move || {
-        record_db.inject_records(injector.clone(), |row_data| {
+        record_db.inject_active_records(injector.clone(), |row_data| {
             if strict && !injector.renderer().has_keys_contained_in(&row_data) {
                 return None;
             }
@@ -104,12 +105,13 @@ pub fn choose_attachment_path<F: FnMut(&Path) -> bool + Send + 'static>(
 }
 
 /// Returns a picker which returns the record data associated with the picked item.
+#[allow(clippy::type_complexity)]
 pub fn choose_canonical_id(
     mut record_db: RecordDatabase,
     template: Template,
     strict: bool,
 ) -> (
-    Picker<RowData, Template>,
+    Picker<RecordRow<RawEntryData>, Template>,
     thread::JoinHandle<Result<RecordDatabase, rusqlite::Error>>,
 ) {
     // initialize picker
@@ -122,7 +124,7 @@ pub fn choose_canonical_id(
         // cancellation token; paginate the select using `SELECT ... LIMIT ...` with some sane
         // page size (maybe 10k? this should take <1ms per page), and then check for cancellation
         // between pages.
-        record_db.inject_records(injector.clone(), |row_data| {
+        record_db.inject_active_records(injector.clone(), |row_data| {
             if strict && !injector.renderer().has_keys_contained_in(&row_data) {
                 None
             } else {
@@ -135,10 +137,10 @@ pub fn choose_canonical_id(
     (picker, handle)
 }
 
-/// A wrapper around a [`RowData`] which also contains a list of attachments associated with the
+/// A wrapper around a [`RecordRow`] which also contains a list of attachments associated with the
 /// record.
 pub struct AttachmentData {
-    pub row_data: RowData,
+    pub row_data: RecordRow<RawEntryData>,
     pub attachments: NonEmpty<DirEntry>,
     pub attachment_root: PathBuf,
 }

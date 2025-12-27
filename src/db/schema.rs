@@ -14,10 +14,10 @@ macro_rules! schema {
     };
 }
 
-schema!(changelog, "The citation keys table.");
+schema!(identifiers, "The lookup table for identifiers.");
 
-schema!(citation_keys, "The citation keys table.");
+schema!(records, "The table which stores record data.");
 
-schema!(records, "The citation keys table.");
+schema!(null_records, "The table which caches null records.");
 
-schema!(null_records, "The citation keys table.");
+schema!(create_indices, "Create indices for the tables.");

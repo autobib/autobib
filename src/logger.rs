@@ -1,6 +1,6 @@
 use crossterm::style::{StyledContent, Stylize};
-use log::{Level, Log, Metadata, Record};
-#[allow(unused_imports)]
+pub use log::{Level, max_level};
+use log::{Log, Metadata, Record};
 pub use log::{debug, info, trace, warn};
 use std::{
     fmt,
@@ -102,4 +102,17 @@ impl Log for Logger {
 
     #[inline]
     fn flush(&self) {}
+}
+
+pub trait LogDisplay {
+    fn log_display(&self, styled: bool, buf: impl std::io::Write) -> anyhow::Result<()>;
+
+    fn log_opt(&self) -> anyhow::Result<()> {
+        if max_level() >= Level::Warn {
+            let mut stderr = std::io::stderr();
+            let styled = stderr.is_terminal();
+            self.log_display(styled, &mut stderr)?;
+        }
+        Ok(())
+    }
 }
