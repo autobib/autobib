@@ -47,3 +47,4 @@ Changes since `v0.5.1`.
 
 - `autobib update` now normalizes incoming data using the `on_insert` rules in the configuration.
 - Substantial performance improvements in some cases when working with very large databases with proper use of SQL indices.
+- Commands which merge data (such as `autobib update`) now correctly merge the entry type in addition to field values.
