@@ -1085,7 +1085,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
 
                 // retrieve all of the entries
                 let cfg = config::load(&config_path, missing_ok)?;
-                let keys = all_citekeys.into_iter();
+                let keys = all_citekeys;
                 let valid_entries = if cli.read_only {
                     retrieve_entries_read_only(
                         keys,

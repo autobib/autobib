@@ -40,7 +40,7 @@ where
 
 /// Retrieve and validate BibTeX entries.
 pub fn retrieve_and_validate_entries<
-    T: Iterator<Item = RecordId>,
+    T: IntoIterator<Item = RecordId>,
     F: FnOnce() -> Vec<(regex::Regex, String)>,
     C: Client,
 >(
@@ -51,7 +51,7 @@ pub fn retrieve_and_validate_entries<
     ignore_null: bool,
     config: &Config<F>,
 ) -> BTreeMap<RemoteId, NonEmpty<Entry<RawEntryData>>> {
-    let valid_entries = ids.filter_map(|id| {
+    let valid_entries = ids.into_iter().filter_map(|id| {
         retrieve_and_validate_single_entry(
             record_db,
             id,
@@ -69,7 +69,7 @@ pub fn retrieve_and_validate_entries<
 }
 
 pub fn retrieve_entries_read_only<
-    T: Iterator<Item = RecordId>,
+    T: IntoIterator<Item = RecordId>,
     F: FnOnce() -> Vec<(regex::Regex, String)>,
 >(
     ids: T,
@@ -78,7 +78,7 @@ pub fn retrieve_entries_read_only<
     ignore_null: bool,
     config: &Config<F>,
 ) -> BTreeMap<RemoteId, NonEmpty<Entry<RawEntryData>>> {
-    let valid_entries = ids.filter_map(|record_id| {
+    let valid_entries = ids.into_iter().filter_map(|record_id| {
         retrieve_single_entry_read_only(record_db, record_id, retrieve_only, ignore_null, config)
             .unwrap_or_else(|error| {
                 error!("{error}");
