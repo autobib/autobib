@@ -105,7 +105,7 @@ where
 pub fn merge_record_data<'a, D: EntryData + 'a>(
     on_conflict: OnConflict,
     existing_record: &mut MutableEntryData,
-    new_raw_data: impl Iterator<Item = &'a D>,
+    new_raw_data: impl IntoIterator<Item = &'a D>,
     id_display: impl std::fmt::Display,
 ) -> Result<(), MergeError> {
     match on_conflict {

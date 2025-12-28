@@ -98,14 +98,14 @@ impl<'tx, 'conn> TryRamify<Version<'tx, 'conn>> for AncestorRamifier<'tx> {
         vtx: Version<'tx, 'conn>,
     ) -> Result<impl IntoIterator<Item = Version<'tx, 'conn>>, Self::Error> {
         match vtx.parent()? {
-            None => Ok(None.into_iter()),
+            None => Ok(None),
             Some(parent) => {
                 // since this method iterates backwards, we perform the check on the next version
                 // and only yield it if it is an entry
                 if parent.is_entry() || self.config.all {
-                    Ok(Some(parent).into_iter())
+                    Ok(Some(parent))
                 } else {
-                    Ok(None.into_iter())
+                    Ok(None)
                 }
             }
         }
