@@ -1487,6 +1487,10 @@ fn replace_auto() -> Result<()> {
         "Perhaps use the replacement key: 'zbmath:06346461'",
     ));
 
+    let mut cmd = s.cmd()?;
+    cmd.args(["get", "zbmath:06346461"]);
+    cmd.assert().success().stdout(contains("@article{"));
+
     s.close()
 }
 

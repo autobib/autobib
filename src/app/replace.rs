@@ -63,16 +63,16 @@ where
         );
     }
 
-    // update the target row data if requested
-    let mut existing_record = MutableEntryData::from_entry_data(&original_record.data);
+    // update the target row data
+    let mut incoming_record = MutableEntryData::from_entry_data(&replacement_record.data);
     crate::app::edit::merge_record_data(
         on_conflict,
-        &mut existing_record,
-        Some(&replacement_record.data).into_iter(),
-        &replacement_record.canonical,
+        &mut incoming_record,
+        Some(&original_record.data),
+        &original_record.canonical,
     )?;
     let replacement_row =
-        replacement_row.modify(&RawEntryData::from_entry_data(&existing_record))?;
+        replacement_row.modify(&RawEntryData::from_entry_data(&incoming_record))?;
 
     let (tx, replacement_row_id) = replacement_row.into_parts();
 
