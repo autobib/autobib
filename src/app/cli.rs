@@ -380,6 +380,9 @@ pub enum Command {
         #[arg(long)]
         hard: bool,
         /// How to resolve conflicting field values.
+        ///
+        /// Note that 'incoming' refers to the identifier to replace, and 'current' refers to the
+        /// replacement.
         #[arg(
             short = 'n',
             long,
