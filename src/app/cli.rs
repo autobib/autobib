@@ -84,8 +84,8 @@ pub enum InfoReportType {
     /// Print the last modified time.
     #[value(alias("m"))]
     Modified,
-    /// Print the revision.
-    #[value(alias("m"))]
+    /// Print the revision number.
+    #[value(alias("r"))]
     Revision,
 }
 
