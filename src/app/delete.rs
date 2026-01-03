@@ -40,7 +40,7 @@ pub fn soft_delete<F: FnOnce() -> Vec<(regex::Regex, String)>>(
 
 /// Hard-delete the data associated with the provided identifier.
 ///
-/// This deletes all data (including past data) as well as all keys in the `Identifiers` table.
+/// This deletes all data (including past data) as well as all identifiers in the `Identifiers` table.
 pub fn hard_delete<F: FnOnce() -> Vec<(regex::Regex, String)>>(
     id: RecordId,
     record_db: &mut RecordDatabase,

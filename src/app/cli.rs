@@ -75,7 +75,7 @@ pub enum InfoReportType {
     /// Print the canonical identifer.
     #[value(alias("c"))]
     Canonical,
-    /// Check if the key is valid BibTeX.
+    /// Check if the identifier is a valid BibTeX key.
     #[value(alias("v"))]
     Valid,
     /// Print equivalent identifiers.
@@ -123,23 +123,6 @@ pub enum FindMode {
     CanonicalId,
 }
 
-#[derive(Debug, Copy, Clone, ValueEnum, Default)]
-pub enum ImportMode {
-    /// Import as `local:` records.
-    #[default]
-    #[value(alias("l"))]
-    Local,
-    /// Use automatically determined keys.
-    #[value(alias("k"))]
-    DetermineKey,
-    /// Use automatically determined keys, first retrieving from remote.
-    #[value(alias("r"))]
-    Retrieve,
-    /// Only determine the key and retrieve from remote.
-    #[value(alias("R"))]
-    RetrieveOnly,
-}
-
 #[derive(Debug, Subcommand)]
 pub enum Command {
     /// Manage aliases.
@@ -177,11 +160,9 @@ pub enum Command {
     ///
     /// By default, this performs a soft delete, where the current data and keys are retained
     /// but future attempts to read them will result in an error. The data can be recovered with
-    /// `autobib hist undo`. The key provided with the `--replace` option will be used to suggest
-    /// replacements.
+    /// `autobib hist undo`.
     ///
-    /// With the `--hard` option, the data as well as all keys are deleted permanently. This is
-    /// incompatible with the `--replace` option.
+    /// With the `--hard` option, the data as well as all identifiers are deleted permanently.
     Delete {
         /// The records to delete.
         identifiers: Vec<RecordId>,
@@ -204,9 +185,14 @@ pub enum Command {
         /// The record(s) to edit.
         identifiers: Vec<RecordId>,
         /// Normalize whitespace.
+        ///
+        /// This converts whitespace blocks into a single ASCII space.
         #[arg(long)]
         normalize_whitespace: bool,
         /// Set "eprint" and "eprinttype" BibTeX fields from provided fields.
+        ///
+        /// This sets the "eprint" and "eprinttype" BibTeX fields from the first field key which is
+        /// present in the record.
         #[arg(long, value_delimiter = ',', value_name = "FIELD_KEY")]
         set_eprint: Vec<String>,
         /// Strip trailing journal series
@@ -266,11 +252,10 @@ pub enum Command {
     },
     /// Import records from a BibTeX file.
     ///
-    /// The implementation automatically determines a remote identifier from the data, using
-    /// your `preferred_providers` config setting and with unspecified fallback if there is no
-    /// match.
-    /// Use `--local-fallback` to import as `local:` identifiers if no canonical identifier could
-    /// be found.
+    /// The implementation automatically determines a remote identifier from the data using
+    /// your `preferred_providers` config setting, or with any other remote identifier that can
+    /// be found in the data. Use `--local-fallback` to import as `local:` identifiers if no
+    /// canonical identifier could be found.
     ///
     /// If the data already exists in your database, it will be updated with the new data if there
     /// are any changes after merging according to the rules specified in `--on-conflict`. If there
@@ -369,9 +354,10 @@ pub enum Command {
     /// the database, its data will be retrieved first.
     Replace {
         /// The identifier to replace.
+        #[clap(value_name = "IDENTIFIER")]
         identifier: RecordId,
         /// Replace with another identifier.
-        #[arg(short, long, group = "replace_target")]
+        #[arg(short, long, group = "replace_target", value_name = "IDENTIFIER")]
         with: Option<RecordId>,
         /// Determine the replacement identifier using record data.
         #[arg(short, long, group = "replace_target")]
@@ -515,8 +501,8 @@ pub enum AliasCommand {
         /// The name of the new alias.
         new: Alias,
     },
-    /// Reset an alias to refer to a new record.
-    Reset {
+    /// Reassign an existing alias to refer to a new record.
+    Reassign {
         /// The name of the existing alias.
         #[arg(value_parser = with_short_err::<Alias>)]
         alias: Alias,
@@ -627,7 +613,7 @@ pub enum HistCommand {
         /// Set using a revision number.
         #[arg(long, group = "reset_target")]
         rev: Option<RevisionId>,
-        /// Set to the lastest state with modification time preceding this date-time.
+        /// Set to the latest state with modification time preceding this date-time.
         ///
         /// This is a RFC3339 date-time, so make sure to indicate the timezone as well.
         /// See, for example, the output of `autobib info -r modified`.

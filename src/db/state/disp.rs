@@ -32,10 +32,10 @@ impl<'a> RecordRowDisplay<'a> {
     /// Construct this display adapter by borrowing data from a [`Version`].
     pub fn from_version(version: &'a Version<'_, '_>, styled: bool) -> Self {
         Self {
-            data: version.row.data.get_ref(),
+            data: version.row.data.as_deref(),
             modified: version.row.modified,
             rev_id: version.rev_id(),
-            canonical: version.row.canonical.get_ref(),
+            canonical: version.row.canonical.as_deref(),
             styled,
         }
     }

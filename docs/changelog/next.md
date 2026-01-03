@@ -1,5 +1,11 @@
 # Unreleased
 
+This version migrates the database version from `1` to `2`.
+To run the migration code, report the database version, and validate your local files after updating, run
+```sh
+autobib -v util check
+```
+
 Supported database versions: `<= 2`
 
 Changes since `v0.5.1`.
@@ -13,7 +19,7 @@ Changes since `v0.5.1`.
 - `autobib merge` has been renamed `autobib replace` and the implementation is a bit different.
   The default implementation now performs 'soft replacement', which replaces the original record with a special deletion marker containing the replacement record.
   Subsequent requests for the deleted identifier will return an error message suggesting the replacement.
-  The old behaviour can be obtained with `autobib replace <original> --hard --with <replacement>`.
+  The old behaviour `autobib merge <original> <replacement>` can be obtained with `autobib replace <original> --hard --with <replacement>`.
 - `autobib edit` no longer opens an interactive editor if headless edit methods are specified.
 - `autobib update --from` has been renamed to `autobib update --from-bibtex`.
 - `autobib update` can no longer be used to retrieve new data for null records.
@@ -42,6 +48,7 @@ Changes since `v0.5.1`.
 - `autobib local` now supports headless methods to creating the local record from data specified at the command line.
 - `autobib import --include-files` imports files specified in the `file = {...}` field of entries in the imported bibliography.
 - A new option `autobib replace --auto` has been added to automatically determine a replacement key using data present inside the record data.
+- Added `autobib alias reassign` to make an existing alias refer to a new record.
 
 ## Fixes
 
