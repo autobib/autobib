@@ -35,7 +35,7 @@ use crate::{
         DeleteAliasResult, RecordDatabase, RenameAliasResult,
         state::{
             DisambiguatedRecordRow, ExistsOrUnknown, RecordIdState, RecordRowDisplay,
-            RecordRowMoveResult, RemoteIdState, SetActiveError,
+            RecordRowMoveResult, SetActiveError,
         },
         user_version,
     },
@@ -416,40 +416,71 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         None => error!("No record selected."),
                     }
                 }
-                FindMode::CanonicalId => {
+                FindMode::PreferredId | FindMode::CanonicalId => {
                     let (mut picker, handle) = choose_canonical_id(record_db, template, strict);
-                    match picker.pick()? {
-                        Some(row_data) => {
-                            let cfg = config::load(&config_path, missing_ok)?;
-                            if !cfg.preferred_providers.is_empty() {
-                                // get a key from the preferred provider if possible
-                                let mut record_db =
-                                    handle.join().expect("Thread should not have panicked")?;
-                                match record_db.state_from_remote_id(&row_data.canonical)? {
-                                    RemoteIdState::Entry(_, row) => {
-                                        // try to find a referencing key with the expected provider
-                                        let referencing_ids = row.referencing_remote_ids()?;
-                                        for provider in cfg.preferred_providers {
-                                            if let Some(remote_id) = referencing_ids
-                                                .iter()
-                                                .find(|id| id.provider() == provider)
-                                            {
-                                                owriteln!("{remote_id}")?;
-                                                return Ok(());
-                                            }
+                    let selection = picker.pick_multi()?;
+                    if selection.is_empty() {
+                        error!("No item selected.");
+                    } else {
+                        let mut stdout = stdout_lock_wrap();
+                        let cfg = config::load(&config_path, missing_ok)?;
+                        if cfg.preferred_providers.is_empty()
+                            | matches!(find_mode, FindMode::CanonicalId)
+                        {
+                            // don't bother to wait for the thread to join
+                            for row_data in selection.iter() {
+                                writeln!(&mut stdout, "{}", row_data.canonical)?;
+                            }
+                        } else {
+                            let mut record_db =
+                                handle.join().expect("Thread should not have panicked")?;
+                            let snapshot = record_db.snapshot()?;
+                            let mut referencing_ids = Vec::new();
+
+                            if cfg.preferred_providers.len() <= 4 {
+                                // don't bother sorting
+                                's: for row_data in selection.iter() {
+                                    referencing_ids.clear();
+                                    snapshot.equivalent_remote_ids(&row_data.canonical, |id| {
+                                        referencing_ids.push(id);
+                                    })?;
+
+                                    for provider in &cfg.preferred_providers {
+                                        if let Some(remote_id) = referencing_ids
+                                            .iter()
+                                            .find(|id| id.provider() == provider)
+                                        {
+                                            writeln!(&mut stdout, "{remote_id}")?;
+                                            continue 's;
                                         }
                                     }
-                                    _ => {
-                                        bail!("Record deleted while picker was running!");
-                                    }
-                                };
-                            }
+                                    // no matching preferred provider
+                                    writeln!(&mut stdout, "{}", row_data.canonical)?;
+                                }
+                            } else {
+                                // get a key from the preferred provider if possible
+                                's: for row_data in selection.iter() {
+                                    referencing_ids.clear();
+                                    snapshot.equivalent_remote_ids(&row_data.canonical, |id| {
+                                        referencing_ids.push(id);
+                                    })?;
 
-                            // if there are no preferred providers or none matched, just print
-                            // the canonical identifier
-                            owriteln!("{}", row_data.canonical)?;
+                                    referencing_ids
+                                        .sort_unstable_by(|l, r| l.provider().cmp(r.provider()));
+
+                                    for provider in &cfg.preferred_providers {
+                                        if let Ok(idx) = referencing_ids
+                                            .binary_search_by(|id| id.provider().cmp(provider))
+                                        {
+                                            writeln!(&mut stdout, "{}", &referencing_ids[idx])?;
+                                            continue 's;
+                                        }
+                                    }
+                                    // no matching preferred provider
+                                    writeln!(&mut stdout, "{}", row_data.canonical)?;
+                                }
+                            }
                         }
-                        None => error!("No item selected."),
                     }
                 }
             }
