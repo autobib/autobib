@@ -352,7 +352,7 @@ impl RemoteId {
         Self::new_unchecked(full_id, PROVIDER_LEN)
     }
 
-    pub fn get_ref(&self) -> RemoteId<&str> {
+    pub fn as_deref(&self) -> RemoteId<&str> {
         RemoteId {
             full_id: &self.full_id,
             provider_len: self.provider_len,

@@ -141,7 +141,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     }
                 }
             }
-            AliasCommand::Reset { alias, target } => {
+            AliasCommand::Reassign { alias, target } => {
                 info!("Updating alias '{alias}' to point to '{target}'");
                 let cfg = config::load(&config_path, missing_ok)?;
                 let (_, row) = get_record_row(&mut record_db, target, client, &cfg)?

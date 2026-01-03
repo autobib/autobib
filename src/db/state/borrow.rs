@@ -22,11 +22,11 @@ pub enum ArbitraryDataRef<'r> {
 
 impl ArbitraryData {
     /// Get a reference to the data in this struct.
-    pub fn get_ref(&self) -> ArbitraryDataRef<'_> {
+    pub fn as_deref(&self) -> ArbitraryDataRef<'_> {
         match self {
-            Self::Entry(raw_entry_data) => ArbitraryDataRef::Entry(raw_entry_data.get_ref()),
+            Self::Entry(raw_entry_data) => ArbitraryDataRef::Entry(raw_entry_data.as_deref()),
             Self::Deleted(replacement) => {
-                ArbitraryDataRef::Deleted(replacement.as_ref().map(|r| r.get_ref()))
+                ArbitraryDataRef::Deleted(replacement.as_ref().map(RemoteId::as_deref))
             }
             Self::Void => ArbitraryDataRef::Void,
         }

@@ -110,7 +110,7 @@ impl RawEntryData {
     }
 
     /// Get a borrowed version of the data.
-    pub fn get_ref(&self) -> RawEntryData<&[u8]> {
+    pub fn as_deref(&self) -> RawEntryData<&[u8]> {
         RawEntryData { data: &self.data }
     }
 }
