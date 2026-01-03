@@ -49,6 +49,9 @@ Changes since `v0.5.1`.
 - `autobib import --include-files` imports files specified in the `file = {...}` field of entries in the imported bibliography.
 - A new option `autobib replace --auto` has been added to automatically determine a replacement key using data present inside the record data.
 - Added `autobib alias reassign` to make an existing alias refer to a new record.
+- Improvements to `autobib find`:
+  - Added `autobib find --mode preferred-id` which prints the which prints the best identifier according to the `preferred_providers` configuration setting.
+  - `--mode canonical-id` and `--mode preferred-id` now permit multiple selections.
 
 ## Fixes
 
