@@ -1449,7 +1449,7 @@ fn replace_auto() -> Result<()> {
     s.set_config("tests/resources/import/config.toml")?;
 
     let mut cmd = s.cmd()?;
-    cmd.args(["import", "tests/resources/dedup/init.bib", "--resolve"]);
+    cmd.args(["import", "tests/resources/import/init.bib", "--resolve"]);
     cmd.assert().success();
 
     let mut cmd = s.cmd()?;
@@ -1501,7 +1501,7 @@ fn replace_hard() -> Result<()> {
     s.set_config("tests/resources/import/config.toml")?;
 
     let mut cmd = s.cmd()?;
-    cmd.args(["import", "tests/resources/dedup/init.bib", "--resolve"]);
+    cmd.args(["import", "tests/resources/import/init.bib", "--resolve"]);
     cmd.assert().success();
 
     let mut cmd = s.cmd()?;
