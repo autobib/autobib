@@ -40,7 +40,7 @@ Changes since `v0.5.1`.
 
 - Autobib now has robust support for edit history.
   This includes sub-commands such as undo, redo, soft-deletion, reset, and time-travel, as well as sub-commands for manipulating the edit history.
-  See the [data model documentation](/docs/data_model.md) and `autobib help hist` for more detail.
+  See the [data model documentation](/docs/data-model.md) and `autobib help hist` for more detail.
 - A command `autobib log` has been added to show the edit history associated with an identifier.
 - `autobib edit` now supports headless edit methods.
   Run `autobib help edit` for more detail.

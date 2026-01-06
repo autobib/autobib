@@ -173,7 +173,7 @@ Aliases can be used in most locations that the usual identifiers are used.
 For instance, you can run `autobib edit hochman-entropy`, to edit the corresponding record data.
 Note that these edits will apply to the original underlying record.
 
-See the [data model documentation](docs/data_model.md) for more precise information on how Autobib uses identifiers.
+See the [data model documentation](docs/data-model.md) for more precise information on how Autobib uses identifiers.
 
 Many providers have default key formats; for instance, zbMath internally uses keys of the form `zbMATH06346461`.
 Autobib can be configured to automatically convert aliases matching certain rules to `provider:sub_id` pairs.
@@ -229,7 +229,7 @@ You can move to arbitrary states in the edit tree using `autobib hist reset`.
 Your data is never deleted automatically.
 See `autobib hist prune` for a variety of commands which can be used to delete unwanted revisions.
 
-See the [data model documentation](docs/data_model.md) for more information.
+See the [data model documentation](docs/data-model.md) for more information.
 
 ### Importing records
 
@@ -270,7 +270,7 @@ Autobib has basic support for working with attachments.
 Autobib subscribes to the philosophy that your file-system is the best tool for manipulating attachments.
 Instead of trying to replicate features of your file-system, Autobib instead *looks for files at a specific, consistently-defined location*.
 
-The attachment directory depends only on the [*canonical identifier*](docs/data_model.md) associated with the record and can be obtained with the `autobib path` subcommand:
+The attachment directory depends only on the [*canonical identifier*](docs/data-model.md) associated with the record and can be obtained with the `autobib path` subcommand:
 ```sh
 # by default, prints '~/.local/share/autobib/attachments/zbmath/JX/TT/CT/GA3DGNBWGQ3DC===/'
 autobib path zbl:1337.28015
