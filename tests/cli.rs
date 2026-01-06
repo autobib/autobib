@@ -1546,7 +1546,7 @@ fn changelog() -> Result<()> {
     cmd.assert().success().stdout(contains("Void"));
 
     let mut cmd = s.cmd()?;
-    cmd.args(["hist", "reset", "local:first", "--rev", "0006"]);
+    cmd.args(["hist", "reset", "local:first", "0006"]);
     cmd.assert().success();
 
     let mut cmd = s.cmd()?;
@@ -1574,7 +1574,7 @@ fn changelog() -> Result<()> {
     );
 
     let mut cmd = s.cmd()?;
-    cmd.args(["hist", "reset", "local:first", "--rev", "000c"]);
+    cmd.args(["hist", "reset", "local:first", "000c"]);
     cmd.assert().success();
 
     let mut cmd = s.cmd()?;
@@ -1684,7 +1684,6 @@ fn test_prune() -> Result<()> {
         "hist",
         "reset",
         "local:a",
-        "--rev",
         std::str::from_utf8(&rev_1).unwrap().trim_end(),
     ]);
     cmd.assert()
@@ -1696,7 +1695,6 @@ fn test_prune() -> Result<()> {
         "hist",
         "reset",
         "local:b",
-        "--rev",
         std::str::from_utf8(&rev_2).unwrap().trim_end(),
     ]);
     cmd.assert()
@@ -1708,7 +1706,6 @@ fn test_prune() -> Result<()> {
         "hist",
         "reset",
         "local:b",
-        "--rev",
         std::str::from_utf8(&rev_3).unwrap().trim_end(),
     ]);
     cmd.assert()
@@ -1727,7 +1724,6 @@ fn test_prune() -> Result<()> {
         "hist",
         "reset",
         "local:a",
-        "--rev",
         std::str::from_utf8(&rev_1).unwrap().trim_end(),
     ]);
     cmd.assert()
@@ -1739,7 +1735,6 @@ fn test_prune() -> Result<()> {
         "hist",
         "reset",
         "local:b",
-        "--rev",
         std::str::from_utf8(&rev_2).unwrap().trim_end(),
     ]);
     cmd.assert()
@@ -1751,7 +1746,6 @@ fn test_prune() -> Result<()> {
         "hist",
         "reset",
         "local:b",
-        "--rev",
         std::str::from_utf8(&rev_3).unwrap().trim_end(),
     ]);
     cmd.assert().success();
@@ -1770,7 +1764,6 @@ fn test_prune() -> Result<()> {
         "hist",
         "reset",
         "local:a",
-        "--rev",
         std::str::from_utf8(&rev_1).unwrap().trim_end(),
     ]);
     cmd.assert().success();
@@ -1780,7 +1773,6 @@ fn test_prune() -> Result<()> {
         "hist",
         "reset",
         "local:b",
-        "--rev",
         std::str::from_utf8(&rev_2).unwrap().trim_end(),
     ]);
     cmd.assert()
@@ -1792,7 +1784,6 @@ fn test_prune() -> Result<()> {
         "hist",
         "reset",
         "local:b",
-        "--rev",
         std::str::from_utf8(&rev_3).unwrap().trim_end(),
     ]);
     cmd.assert().success();
@@ -1811,7 +1802,6 @@ fn test_prune() -> Result<()> {
         "hist",
         "reset",
         "local:a",
-        "--rev",
         std::str::from_utf8(&rev_1).unwrap().trim_end(),
     ]);
     cmd.assert().success();
@@ -1821,7 +1811,6 @@ fn test_prune() -> Result<()> {
         "hist",
         "reset",
         "local:b",
-        "--rev",
         std::str::from_utf8(&rev_2).unwrap().trim_end(),
     ]);
     cmd.assert().success();
@@ -1831,7 +1820,6 @@ fn test_prune() -> Result<()> {
         "hist",
         "reset",
         "local:b",
-        "--rev",
         std::str::from_utf8(&rev_3).unwrap().trim_end(),
     ]);
     cmd.assert().success();
@@ -1850,7 +1838,6 @@ fn test_prune() -> Result<()> {
         "hist",
         "reset",
         "local:a",
-        "--rev",
         std::str::from_utf8(&rev_1).unwrap().trim_end(),
     ]);
     cmd.assert().success();
@@ -1860,7 +1847,6 @@ fn test_prune() -> Result<()> {
         "hist",
         "reset",
         "local:b",
-        "--rev",
         std::str::from_utf8(&rev_2).unwrap().trim_end(),
     ]);
     cmd.assert().success();
@@ -1870,7 +1856,6 @@ fn test_prune() -> Result<()> {
         "hist",
         "reset",
         "local:b",
-        "--rev",
         std::str::from_utf8(&rev_3).unwrap().trim_end(),
     ]);
     cmd.assert().success();
@@ -1880,7 +1865,6 @@ fn test_prune() -> Result<()> {
         "hist",
         "reset",
         "local:b",
-        "--rev",
         std::str::from_utf8(&rev_4).unwrap().trim_end(),
     ]);
     cmd.assert().stderr(contains("Revision does not exist"));

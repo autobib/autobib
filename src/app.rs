@@ -26,7 +26,7 @@ use etcetera::{AppStrategy, AppStrategyArgs, choose_app_strategy};
 
 use crate::{
     app::{
-        cli::{HistCommand, PruneCommand},
+        cli::{HistCommand, IdTarget, PruneCommand},
         log::print_log,
     },
     cite_search::{SourceFileType, get_citekeys},
@@ -296,7 +296,6 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             update_entry_type,
             set_field,
             delete_field,
-            touch,
         } => {
             let cfg = config::load(&config_path, missing_ok)?;
             let nl = Normalization {
@@ -311,7 +310,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 delete_field,
             };
 
-            let no_non_interactive_cmd = nl.is_identity() && edit_cmd.is_identity() && !touch;
+            let no_non_interactive_cmd = nl.is_identity() && edit_cmd.is_identity();
 
             for key in identifiers {
                 let (Record { key, data, .. }, row) =
@@ -327,9 +326,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         // non-interactive command is requested, so we perform it without prompting
                         let mut editable_data = MutableEntryData::from_entry_data(&data);
 
-                        let mut changed = touch;
-                        changed |= editable_data.normalize(&nl);
-                        changed |= editable_data.edit(&edit_cmd);
+                        let changed = editable_data.normalize(&nl) || editable_data.edit(&edit_cmd);
 
                         if changed {
                             row.modify(&RawEntryData::from_entry_data(&editable_data))?
@@ -572,11 +569,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     None => {}
                 }
             }
-            HistCommand::Reset {
-                identifier,
-                rev,
-                before,
-            } => {
+            HistCommand::Reset { identifier, rev } => {
                 let cfg = config::load(&config_path, missing_ok)?;
                 if let Some((_, disambiguated)) = record_db
                     .state_from_record_id(identifier, &cfg.alias_transform)?
@@ -584,30 +577,24 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 {
                     let (_, state) = disambiguated.forget();
 
-                    if let Some(revision) = rev {
-                        match state.set_active(revision)? {
-                            RecordRowMoveResult::Updated(state) => {
-                                state.log_opt()?;
-                                state.commit()?;
-                            }
-                            RecordRowMoveResult::Unchanged(state, err) => {
-                                state.commit()?;
-                                match err {
-                                    SetActiveError::RowIdUndefined => {
-                                        error!("Revision does not exist in the 'Records' table");
-                                    }
-                                    SetActiveError::DifferentCanonical(remote_id) => {
-                                        error!(
-                                            "Revision exists, but it corresponds to a different record with canonical identifier '{remote_id}'"
-                                        );
-                                    }
+                    match state.set_active(rev)? {
+                        RecordRowMoveResult::Updated(state) => {
+                            state.log_opt()?;
+                            state.commit()?;
+                        }
+                        RecordRowMoveResult::Unchanged(state, err) => {
+                            state.commit()?;
+                            match err {
+                                SetActiveError::RowIdUndefined => {
+                                    error!("Revision does not exist in the 'Records' table");
+                                }
+                                SetActiveError::DifferentCanonical(remote_id) => {
+                                    error!(
+                                        "Revision exists, but it corresponds to a different record with canonical identifier '{remote_id}'"
+                                    );
                                 }
                             }
                         }
-                    } else if let Some(dt) = before {
-                        let state = state.rewind(dt)?;
-                        state.log_opt()?;
-                        state.commit()?;
                     }
                 }
             }
@@ -656,10 +643,28 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     None => {}
                 }
             }
-            HistCommand::RewindAll { before } => {
-                let snapshot = record_db.snapshot()?;
-                snapshot.rewind_all(before)?;
-                snapshot.commit()?;
+            HistCommand::Rewind {
+                before,
+                target: IdTarget { id, all },
+            } => {
+                if all {
+                    let snapshot = record_db.snapshot()?;
+                    snapshot.rewind_all(before)?;
+                    snapshot.commit()?;
+                } else if let Some(record_id) = id {
+                    let cfg = config::load(&config_path, missing_ok)?;
+                    if let Some((_, disambiguated)) = record_db
+                        .state_from_record_id(record_id, &cfg.alias_transform)?
+                        .require_record()?
+                    {
+                        let (_, state) = disambiguated.forget();
+                        let state = state.rewind(before)?;
+                        state.log_opt()?;
+                        state.commit()?;
+                    }
+                } else {
+                    unreachable!("ArgGroup requires one of these arguments");
+                }
             }
             HistCommand::Show { limit } => {
                 let snapshot = record_db.snapshot()?;
@@ -671,10 +676,24 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 })?;
                 snapshot.commit()?;
             }
-            HistCommand::TouchAll => {
-                let snapshot = record_db.snapshot()?;
-                let modified = snapshot.touch_all()?;
-                snapshot.commit()?;
+            HistCommand::Touch {
+                target: IdTarget { id, all },
+            } => {
+                let modified = if all {
+                    let snapshot = record_db.snapshot()?;
+                    let modified = snapshot.touch_all()?;
+                    snapshot.commit()?;
+                    modified
+                } else if let Some(record_id) = id {
+                    let modified = chrono::Local::now();
+                    let cfg = config::load(&config_path, missing_ok)?;
+                    let (_, row) = get_record_row(&mut record_db, record_id, client, &cfg)?
+                        .exists_or_commit_null("Cannot edit")?;
+                    row.touch_with_timestamp(&modified)?.commit()?;
+                    modified
+                } else {
+                    unreachable!("ArgGroup requires one of these arguments");
+                };
                 owriteln!("{modified}")?;
             }
             HistCommand::Undo { identifier, delete } => {

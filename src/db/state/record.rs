@@ -886,6 +886,23 @@ RETURNING key",
         self.transmute(new_row_id)
     }
 
+    /// Create a new row which is a copy of the current row but with the provided modification
+    /// time.
+    pub fn touch_with_timestamp(self, dt: &DateTime<Local>) -> rusqlite::Result<Self> {
+        let new_row_id: i64 = self
+            .tx
+            .prepare(
+                "
+INSERT INTO Records (record_id, data, modified, variant, parent_key)
+SELECT record_id, data, ?1, variant, key
+FROM Records
+WHERE key = ?2
+RETURNING key",
+            )?
+            .query_row((dt, self.row_id()), |row| row.get("key"))?;
+        self.transmute(new_row_id)
+    }
+
     /// Replace this row with a deletion marker, preserving the old row as the parent row.
     pub fn delete_soft(
         self,
