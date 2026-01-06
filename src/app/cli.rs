@@ -7,7 +7,7 @@ use std::{
 use anyhow::Result;
 use chrono::{DateTime, Local};
 use clap::{
-    CommandFactory, Parser, Subcommand, ValueEnum, builder::ArgPredicate, error::ErrorKind,
+    Args, CommandFactory, Parser, Subcommand, ValueEnum, builder::ArgPredicate, error::ErrorKind,
 };
 use clap_complete::aot::Shell;
 use clap_verbosity_flag::{Verbosity, WarnLevel};
@@ -207,9 +207,6 @@ pub enum Command {
         /// Set a field value using BibTeX field syntax
         #[arg(long, value_name = "FIELD_KEY={VALUE}")]
         set_field: Vec<SetFieldCommand>,
-        /// Update the modification time, inserting a new copy if the node has children.
-        #[arg(long)]
-        touch: bool,
     },
     /// Search for an identifier.
     ///
@@ -579,6 +576,17 @@ impl Command {
     }
 }
 
+#[derive(Debug, Args)]
+#[group(required = true, multiple = false)]
+pub struct IdTarget {
+    /// Apply to the record with this identifier.
+    #[arg(short, long)]
+    pub id: Option<RecordId>,
+    /// Apply to all records.
+    #[arg(short, long)]
+    pub all: bool,
+}
+
 /// Commands to manipulate version history.
 #[derive(Debug, Subcommand)]
 pub enum HistCommand {
@@ -610,15 +618,8 @@ pub enum HistCommand {
     Reset {
         /// The identifier for the reset operation.
         identifier: RecordId,
-        /// Set using a revision number.
-        #[arg(long, group = "reset_target")]
-        rev: Option<RevisionId>,
-        /// Set to the latest state with modification time preceding this date-time.
-        ///
-        /// This is a RFC3339 date-time, so make sure to indicate the timezone as well.
-        /// See, for example, the output of `autobib info -r modified`.
-        #[arg(long, group = "reset_target")]
-        before: Option<DateTime<Local>>,
+        /// The target active revision.
+        rev: RevisionId,
     },
     /// Insert new data for a deleted record, concealing any prior changes.
     ///
@@ -647,18 +648,22 @@ pub enum HistCommand {
         #[arg(long, value_name = "FIELD_KEY={VALUE}")]
         with_field: Vec<SetFieldCommand>,
     },
-    /// Move the database back in time.
+    /// Move record data back in time.
     ///
-    /// This is the same as calling `autobib hist reset --before` on every active entry in the database with
-    /// modification greater than the provided time.
+    /// Rewind specific records with `-i/--id`, or rewind all records with `-a/--all`.
     ///
     /// Use caution! The modification time may not correspond to the database state at the provided
     /// date-time if you have used `autobib hist (undo|redo|reset)`, since these methods only change the
     /// active state without introducing new changes. Your old data will still be retrievable, but
     /// it could require a lot of work to unwind the changes.
-    RewindAll {
+    Rewind {
         /// The datetime to rewind to.
+        ///
+        /// This is a RFC3339 date-time formatted like YYYY-MM-DD HH:MM:SS+HH:MM, with a trailing
+        /// timezone. See, for example, the output of `autobib info -r modified`.
         before: DateTime<Local>,
+        #[command(flatten)]
+        target: IdTarget,
     },
     /// Show all database changes in descending order by time.
     Show {
@@ -666,11 +671,13 @@ pub enum HistCommand {
         #[arg(long, value_name = "LIMIT")]
         limit: Option<u32>,
     },
-    /// Update the modification time of every active record in the database.
+    /// Update the modification time of records.
     ///
-    /// On success, print the new modification time of every active entry in
-    /// the database.
-    TouchAll,
+    /// On success, this prints the new modification time.
+    Touch {
+        #[command(flatten)]
+        target: IdTarget,
+    },
     /// Undo the most recent change associated with an identifier.
     Undo {
         /// The identifier for the undo operation.
