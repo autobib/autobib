@@ -118,8 +118,10 @@ impl Default for OnConflict {
 pub enum FindMode {
     /// Search record attachments and print the selected path.
     Attachments,
-    /// Search records and print the selected canonical identifier.
+    /// Search records and print the preferred remote identifier.
     #[default]
+    PreferredId,
+    /// Search records and print the canonical identifier.
     CanonicalId,
 }
 
