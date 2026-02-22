@@ -259,6 +259,8 @@ pub enum LinkType {
     Http,
     #[serde(rename = "euclid")]
     Euclid,
+    #[serde(rename = "eudml")]
+    Eudml,
 }
 
 impl LinkType {
