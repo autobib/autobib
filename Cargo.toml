@@ -9,7 +9,7 @@ readme = "README.md"
 keywords = ["cli", "bibtex", "biblatex", "bibliography"]
 categories = ["command-line-utilities"]
 version = "0.5.1"
-rust-version = "1.90"
+rust-version = "1.93"
 edition = "2024"
 
 [features]

@@ -3,7 +3,11 @@ use std::{error, fmt, str::from_utf8};
 use chrono::{DateTime, Local};
 use rusqlite::types::ValueRef;
 
-use crate::{db::state::create_rewind_target, logger::info, record::RemoteId};
+use crate::{
+    db::{Identifier, state::create_rewind_target},
+    logger::info,
+    record::RemoteId,
+};
 
 use super::{
     Tx,
@@ -330,6 +334,19 @@ WHERE variant = 1
             } else {
                 panic!("'Identifiers' table has unexpected schema: column 'name' is not a TEXT!");
             }
+        }
+
+        Ok(())
+    }
+
+    pub fn equivalent_remote_ids<I: Identifier, F>(&self, id: &I, mut f: F) -> rusqlite::Result<()>
+    where
+        F: FnMut(RemoteId),
+    {
+        for remote_id in self.tx.prepare("SELECT name FROM Identifiers WHERE record_key = (SELECT record_key FROM Identifiers WHERE name = ?1 AND instr(name, ':') != 0)")?.query_map([id.name()], |row| {
+            Ok(RemoteId::from_string_unchecked(row.get(0)?))
+        })? {
+            f(remote_id?);
         }
 
         Ok(())
