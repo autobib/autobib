@@ -50,7 +50,7 @@ jobs:
       # Load/create HTTP response cache
       - name: Set up response data cache
         id: response-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ env.AUTOBIB_RESPONSE_CACHE_PATH }}
           key: ${{ env.CACHE_PREFIX }}-${{ matrix.image }}-${{ hashFiles(env.REMOTES_FILE, env.CACHE_FORMAT_DEF) }}
@@ -99,7 +99,7 @@ jobs:
 
       # Markdown lints
       - name: Run markdownlint
-        uses: DavidAnson/markdownlint-cli2-action@v20
+        uses: DavidAnson/markdownlint-cli2-action@v22
         with:
           globs: |
             **/*.md
