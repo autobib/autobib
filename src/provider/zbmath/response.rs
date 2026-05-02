@@ -253,14 +253,18 @@ pub enum LinkType {
     Arxiv,
     #[serde(rename = "doi")]
     Doi,
-    #[serde(rename = "https")]
-    Https,
-    #[serde(rename = "http")]
-    Http,
     #[serde(rename = "euclid")]
     Euclid,
     #[serde(rename = "eudml")]
     Eudml,
+    #[serde(rename = "oeis")]
+    Oeis,
+    #[serde(rename = "http")]
+    Http,
+    #[serde(rename = "https")]
+    Https,
+    #[serde(other)]
+    Unknown,
 }
 
 impl LinkType {
