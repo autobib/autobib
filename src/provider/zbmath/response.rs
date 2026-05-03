@@ -16,6 +16,7 @@ impl TryFrom<Entry> for MutableEntryData {
             language,
             database,
             identifier,
+            year,
             ..
         } = value;
 
@@ -112,6 +113,7 @@ impl TryFrom<Entry> for MutableEntryData {
             record_data.check_and_insert_if_non_null("volume", ser.volume)?;
             record_data.check_and_insert_if_non_null("year", ser.year)?;
         }
+        record_data.check_and_insert_if_non_null("year", year)?;
 
         Ok(record_data)
     }
@@ -146,7 +148,7 @@ pub struct Entry {
     links: Vec<Link>,
     source: Source,
     title: Title,
-    // year: Option<String>,
+    year: Option<String>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -253,16 +255,16 @@ pub enum LinkType {
     Arxiv,
     #[serde(rename = "doi")]
     Doi,
-    #[serde(rename = "euclid")]
-    Euclid,
-    #[serde(rename = "eudml")]
-    Eudml,
-    #[serde(rename = "oeis")]
-    Oeis,
-    #[serde(rename = "http")]
-    Http,
-    #[serde(rename = "https")]
-    Https,
+    // #[serde(rename = "euclid")]
+    // Euclid,
+    // #[serde(rename = "eudml")]
+    // Eudml,
+    // #[serde(rename = "oeis")]
+    // Oeis,
+    // #[serde(rename = "http")]
+    // Http,
+    // #[serde(rename = "https")]
+    // Https,
     #[serde(other)]
     Unknown,
 }
