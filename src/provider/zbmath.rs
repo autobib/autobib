@@ -7,11 +7,9 @@ use self::response::Response;
 pub fn is_valid_id(id: &str) -> ValidationOutcome {
     if id.len() == 8 && id.as_bytes().iter().all(u8::is_ascii_digit) {
         ValidationOutcome::Valid
-    } else if id.len() == 7 && id.as_bytes().iter().all(u8::is_ascii_digit) {
-        let mut normalized = String::with_capacity(8);
-        normalized.push('0');
-        normalized.push_str(id);
-        ValidationOutcome::Normalize(normalized)
+    } else if id.len() <= 7 && id.as_bytes().iter().all(u8::is_ascii_digit) {
+        // the `id.is_empty()` case is handled globally
+        ValidationOutcome::Normalize(format!("{id:0>8}"))
     } else {
         ValidationOutcome::Invalid
     }
