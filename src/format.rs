@@ -256,20 +256,20 @@ impl Template {
         let mut ctx = init();
         for span in self.template.spans() {
             match span {
-                Span::Expr(Expression::Bare(Atom::FieldKey(k))) => {
-                    if !contains(k.as_ref(), &mut ctx) {
-                        return false;
-                    }
+                Span::Expr(Expression::Bare(Atom::FieldKey(k)))
+                    if !contains(k.as_ref(), &mut ctx) =>
+                {
+                    return false;
                 }
-                Span::Expr(Expression::IfDefined(k1, Atom::FieldKey(k2))) => {
-                    if contains(k1.as_ref(), &mut ctx) && !contains(k2.as_ref(), &mut ctx) {
-                        return false;
-                    }
+                Span::Expr(Expression::IfDefined(k1, Atom::FieldKey(k2)))
+                    if contains(k1.as_ref(), &mut ctx) && !contains(k2.as_ref(), &mut ctx) =>
+                {
+                    return false;
                 }
-                Span::Expr(Expression::IfUndefined(k1, Atom::FieldKey(k2))) => {
-                    if !contains(k1.as_ref(), &mut ctx) && !contains(k2.as_ref(), &mut ctx) {
-                        return false;
-                    }
+                Span::Expr(Expression::IfUndefined(k1, Atom::FieldKey(k2)))
+                    if !contains(k1.as_ref(), &mut ctx) && !contains(k2.as_ref(), &mut ctx) =>
+                {
+                    return false;
                 }
                 _ => {}
             }
