@@ -43,7 +43,7 @@ pub use snapshot::{Snapshot, SnapshotMapErr};
 
 /// The current database version expected by the application.
 pub const fn user_version() -> i32 {
-    2
+    3
 }
 
 /// The unique application id used to determine if the opened database matches one used by this

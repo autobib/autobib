@@ -136,6 +136,35 @@ pub fn migrate(conn: &mut Connection, v: i32) -> Result<(), DatabaseError> {
 
             tx.commit()?;
         }
+        2 => {
+            let tx = conn.transaction()?;
+
+            debug!("Stripping zbmath padding from Records.record_id");
+            tx.execute(
+                "UPDATE Records
+                 SET record_id = 'zbmath:' || CAST(CAST(substr(record_id, 8) AS INTEGER) AS TEXT)
+                 WHERE record_id GLOB 'zbmath:0[0-9][0-9][0-9][0-9][0-9][0-9][0-9]'",
+                (),
+            )?;
+
+            debug!("Stripping zbmath padding from Identifiers.name");
+            tx.execute(
+                "UPDATE Identifiers
+                 SET name = 'zbmath:' || CAST(CAST(substr(name, 8) AS INTEGER) AS TEXT)
+                 WHERE name GLOB 'zbmath:0[0-9][0-9][0-9][0-9][0-9][0-9][0-9]'",
+                (),
+            )?;
+
+            debug!("Stripping zbmath padding from NullRecords.record_id");
+            tx.execute(
+                "UPDATE NullRecords
+                 SET record_id = 'zbmath:' || CAST(CAST(substr(record_id, 8) AS INTEGER) AS TEXT)
+                 WHERE record_id GLOB 'zbmath:0[0-9][0-9][0-9][0-9][0-9][0-9][0-9]'",
+                (),
+            )?;
+
+            tx.commit()?;
+        }
         // this is only reachable if the user_version was set by a different program
         _ => return Err(DatabaseError::InvalidDatabase),
     }

@@ -66,7 +66,7 @@ impl TryFrom<Entry> for MutableEntryData {
         }
 
         // zbmath, zbl, jfm keys
-        record_data.check_and_insert("zbmath".into(), format!("{id:0>8}"))?;
+        record_data.check_and_insert("zbmath".into(), id.to_string())?;
         if let Some(s) = identifier {
             record_data.check_and_insert(database.as_bibtex().into(), s)?;
         }
