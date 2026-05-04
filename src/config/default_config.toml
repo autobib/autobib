@@ -53,12 +53,12 @@ strip_journal_series = false
 # - mr: ([0-9]{6,7})
 # - ol: ([0-9]{8}M)
 # - zbl: ([0-9]{4}\.[0-9]{5})
-# - zbmath: ([0-9]{7,8})
+# - zbmath: ([0-9]{4,8})
 #
 # For example, to automatically transform 'zbMATH'-style aliases of the form
 # 'zbMATH06346461', one would set
 #
-# rules = [["^zbMATH([0-9]{7,8})$", "zbmath"]]
+# rules = [["^zbMATH([0-9]{4,8})$", "zbmath"]]
 rules = []
 
 # Whether or not to automatically create new permanent aliases in the database from
