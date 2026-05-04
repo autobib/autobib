@@ -30,7 +30,7 @@
   titleaddon = {3rd ed.},
   year = {2014},
   zbl = {1285.28011},
-  zbmath = {06245248},
+  zbmath = {6245248},
 }
 
 @article{zbl:1337.28015,
@@ -46,5 +46,5 @@
   volume = {180},
   year = {2014},
   zbl = {1337.28015},
-  zbmath = {06346461},
+  zbmath = {6346461},
 }

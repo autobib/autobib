@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 // Bump this variable to forcibly break cache
 #[allow(unused)]
-static FORMAT_VERSION: u32 = 1;
+static FORMAT_VERSION: u32 = 2;
 
 use bincode::{Decode, Encode};
 
