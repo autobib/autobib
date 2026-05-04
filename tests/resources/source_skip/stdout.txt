@@ -9,7 +9,7 @@
   title = {Grundlagen der Mathematik. I.},
   volume = {40},
   year = {1934},
-  zbmath = {02537022},
+  zbmath = {2537022},
 }
 
 @article{zbmath:06346461,
@@ -25,5 +25,5 @@
   volume = {180},
   year = {2014},
   zbl = {1337.28015},
-  zbmath = {06346461},
+  zbmath = {6346461},
 }
