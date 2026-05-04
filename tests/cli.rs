@@ -564,7 +564,7 @@ fn alias_remote() -> Result<()> {
     let s = TestState::init()?;
 
     let mut cmd = s.cmd()?;
-    cmd.args(["alias", "add", "al", "zbmath:06346461"]);
+    cmd.args(["alias", "add", "al", "zbmath:6346461"]);
     cmd.assert().success();
 
     let mut cmd = s.cmd()?;
@@ -733,13 +733,13 @@ fn list() -> Result<()> {
     cmd.args(["list"]);
     cmd.assert()
         .success()
-        .stdout(contains("zbmath:06346461").and(contains("my_alias")));
+        .stdout(contains("zbmath:6346461").and(contains("my_alias")));
 
     let mut cmd = s.cmd()?;
     cmd.args(["--read-only", "list"]);
     cmd.assert()
         .success()
-        .stdout(contains("zbmath:06346461").and(contains("my_alias")));
+        .stdout(contains("zbmath:6346461").and(contains("my_alias")));
 
     let mut cmd = s.cmd()?;
     cmd.args(["list", "--canonical"]);
@@ -784,7 +784,7 @@ fn info() -> Result<()> {
 
     let mut cmd = s.cmd()?;
     cmd.args(["info", "zbl:1337.28015", "--report", "canonical"]);
-    cmd.assert().success().stdout("zbmath:06346461\n");
+    cmd.assert().success().stdout("zbmath:6346461\n");
 
     let mut cmd = s.cmd()?;
     cmd.args([
@@ -794,17 +794,17 @@ fn info() -> Result<()> {
         "--report",
         "canonical",
     ]);
-    cmd.assert().success().stdout("zbmath:06346461\n");
+    cmd.assert().success().stdout("zbmath:6346461\n");
 
     let mut cmd = s.cmd()?;
-    cmd.args(["alias", "add", "%", "zbmath:06346461"]);
+    cmd.args(["alias", "add", "%", "zbmath:6346461"]);
     cmd.assert().success();
 
     let mut cmd = s.cmd()?;
     cmd.args(["info", "zbl:1337.28015", "-r", "equivalent"]);
     cmd.assert().success().stdout(
         contains("%")
-            .and(contains("zbmath:06346461"))
+            .and(contains("zbmath:6346461"))
             .and(contains("zbl:1337.28015")),
     );
 
@@ -817,7 +817,7 @@ fn info() -> Result<()> {
     cmd.assert().success().stdout(
         contains("Data last modified:")
             .and(contains("Equivalent references:"))
-            .and(contains("Canonical: zbmath:06346461\n"))
+            .and(contains("Canonical: zbmath:6346461\n"))
             .and(contains("Valid BibTeX? no")),
     );
 
@@ -971,7 +971,7 @@ fn update() -> Result<()> {
     let s = TestState::init()?;
 
     let mut cmd = s.cmd()?;
-    cmd.args(["update", "zbmath:06346461"]);
+    cmd.args(["update", "zbmath:6346461"]);
     cmd.assert()
         .failure()
         .stderr(contains("does not exist in database").and(contains("Use `autobib get`")));
@@ -1016,7 +1016,7 @@ fn consistency() -> Result<()> {
     cmd.args([
         "get",
         "--retrieve-only",
-        "zbmath:06346461",
+        "zbmath:6346461",
         "zbl:1337.28015",
         "mr:3224722",
     ]);
@@ -1025,7 +1025,7 @@ fn consistency() -> Result<()> {
     // perform some destructive changes to the database
     let conn = Connection::open(s.database.path())?;
     conn.pragma_update(None, "foreign_keys", 0)?;
-    conn.prepare("DELETE FROM Records WHERE record_id = 'zbmath:06346461'")?
+    conn.prepare("DELETE FROM Records WHERE record_id = 'zbmath:6346461'")?
         .execute(())?;
     conn.prepare("DELETE FROM Identifiers WHERE name = 'mr:3224722'")?
         .execute(())?;
@@ -1033,7 +1033,7 @@ fn consistency() -> Result<()> {
 
     // check that things are broken
     let mut cmd = s.cmd()?;
-    cmd.args(["get", "zbmath:06346461"]);
+    cmd.args(["get", "zbmath:6346461"]);
     cmd.assert().failure().stderr(predicate::str::contains(
         "Database error: SQLite error: Query returned no rows",
     ));
@@ -1057,7 +1057,7 @@ fn repeat() -> Result<()> {
 
     let mut cmd = s.cmd()?;
     cmd.args(["source", "--stdin", "txt"])
-        .write_stdin("zbmath:06346461\nzbl:1337.28015");
+        .write_stdin("zbmath:6346461\nzbl:1337.28015");
     cmd.assert()
         .success()
         .stderr(contains("Multiple keys for "));
@@ -1068,7 +1068,7 @@ fn repeat() -> Result<()> {
 
     let mut cmd = s.cmd()?;
     cmd.args(["source", "--stdin", "txt"])
-        .write_stdin("zbmath:06346461\na");
+        .write_stdin("zbmath:6346461\na");
     cmd.assert()
         .success()
         .stderr(contains("Multiple keys for "));
@@ -1170,10 +1170,10 @@ fn test_normalize() -> Result<()> {
     );
 
     let mut cmd = s.cmd()?;
-    cmd.args(["info", "zbmath:1111111"]);
+    cmd.args(["info", "zbmath:01111111"]);
     cmd.assert()
         .failure()
-        .stderr(contains("converted from 'zbmath:1111111'"));
+        .stderr(contains("converted from 'zbmath:01111111'"));
 
     s.close()
 }
@@ -1261,7 +1261,7 @@ fn import_basic() -> Result<()> {
     );
 
     let mut cmd = s.cmd()?;
-    cmd.args(["get", "zbmath:06346461"]);
+    cmd.args(["get", "zbmath:6346461"]);
     cmd.assert()
         .success()
         .stdout(contains("doi = {10.4007/annals.2014.180.2.7}"));
@@ -1419,7 +1419,7 @@ fn import_retrieve() -> Result<()> {
 
     let mut cmd = s.cmd()?;
     cmd.args(["info", "abc", "--report", "canonical"]);
-    cmd.assert().success().stdout("zbmath:06346461\n");
+    cmd.assert().success().stdout("zbmath:6346461\n");
 
     s.close()
 }
@@ -1540,17 +1540,17 @@ fn replace_auto() -> Result<()> {
     let mut cmd = s.cmd()?;
     cmd.args(["get", "arxiv:1212.1873"]);
     cmd.assert().failure().stderr(contains(
-        "Perhaps use the replacement key: 'zbmath:06346461'",
+        "Perhaps use the replacement key: 'zbmath:6346461'",
     ));
 
     let mut cmd = s.cmd()?;
     cmd.args(["get", "arx"]);
     cmd.assert().failure().stderr(contains(
-        "Perhaps use the replacement key: 'zbmath:06346461'",
+        "Perhaps use the replacement key: 'zbmath:6346461'",
     ));
 
     let mut cmd = s.cmd()?;
-    cmd.args(["get", "zbmath:06346461"]);
+    cmd.args(["get", "zbmath:6346461"]);
     cmd.assert().success().stdout(contains("@article{"));
 
     s.close()
