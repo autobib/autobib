@@ -14,7 +14,7 @@ CACHE_ROOT="${AUTOBIB_RESPONSE_CACHE_DIR:=${CACHE_HOME}/autobib}"
 
 # set up cache directory
 mkdir -p "${CACHE_ROOT}"
-HASH="$(cat "${REMOTES_FILE}" "${CACHE_FORMAT_DEF}" | sha256)"
+HASH="$(cat "${REMOTES_FILE}" "${CACHE_FORMAT_DEF}" | shasum -a 256 | head -c 64)"
 CACHE_DIR="${CACHE_ROOT}/test-cache-${HASH}"
 
 export AUTOBIB_RESPONSE_CACHE_PATH="${CACHE_DIR}/responses.dat"

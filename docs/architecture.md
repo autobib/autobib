@@ -21,9 +21,9 @@ This is tracked in the SQLite `application_id` field, and can be read with
 PRAGMA application_id;
 ```
 The application id is hex `16611f2f` or decimal `375463727`.
-This is the `sha256` hash of the string `Autobib`:
+This is the SHA-256 hash of the string `Autobib`:
 ```sh
-echo -n "Autobib" | sha256 | head -c 8
+echo -n "Autobib" | shasum -a 256 | head -c 8
 ```
 The database version is tracked in the SQLite `user_version` tag, and can be read with
 ```sql
