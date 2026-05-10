@@ -151,6 +151,20 @@ impl RecordDatabase {
         #[cfg(feature = "in_memory_database")]
         let mut conn = Connection::open_in_memory_with_flags(flags)?;
 
+        #[cfg(not(feature = "bundled-sqlite"))]
+        {
+            if !read_only {
+                // 3.35, since this is when the RETURNING class is introduced
+                if rusqlite::version_number() < 3_035_000 {
+                    return Err(DatabaseError::UnsupportedSQLiteVersion(rusqlite::version()));
+                }
+
+                // we only need this when using system sqlite since the bundled version is compiled
+                // so that foreign keys are always enabled at startup
+                conn.pragma_update(None, "foreign_keys", "ON")?;
+            }
+        }
+
         Self::initialize(&mut conn, read_only)?;
 
         Ok(Self { conn })

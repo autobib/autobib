@@ -19,6 +19,7 @@ In order to automate the above steps, and also run other checks, you can use [`s
 ```sh
 ./scripts/test.sh
 ```
+Set `LIBSQLITE3_SYS_USE_PKG_CONFIG=1` to run the tests using the SQLite library available on your system instead of a bundled copy of SQLite.
 This script has the following dependencies:
 
 - [`shellcheck`](https://www.shellcheck.net/)

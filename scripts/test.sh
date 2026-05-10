@@ -19,21 +19,27 @@ CACHE_DIR="${CACHE_ROOT}/test-cache-${HASH}"
 
 export AUTOBIB_RESPONSE_CACHE_PATH="${CACHE_DIR}/responses.dat"
 
+if [[ "${LIBSQLITE3_SYS_USE_PKG_CONFIG:-0}" != "0" ]]; then
+    FEATURE_ARGS=(--no-default-features)
+else
+    FEATURE_ARGS=()
+fi
+
 if [[ ! -f "${AUTOBIB_RESPONSE_CACHE_PATH}" ]]; then
     echo 2>&1 "Cache file not found. Generating cache file: ${AUTOBIB_RESPONSE_CACHE_PATH}"
 
     mkdir -p "${CACHE_DIR}"
 
     # Generate the cache file
-    cargo run --locked --features write_response_cache -- -vv source --retrieve-only --ignore-null "${REMOTES_FILE}"
+    cargo run --locked "${FEATURE_ARGS[@]}" --features write_response_cache -- -vv source --retrieve-only --ignore-null "${REMOTES_FILE}"
 else
     echo 2>&1 "Cache file found: ${AUTOBIB_RESPONSE_CACHE_PATH}"
 fi
 
-cargo test --locked --no-fail-fast --features read_response_cache -- "$@"
+cargo test --locked --no-fail-fast "${FEATURE_ARGS[@]}" --features read_response_cache -- "$@"
 
-cargo doc --no-deps --locked
-cargo clippy --locked
+cargo doc --no-deps --locked "${FEATURE_ARGS[@]}"
+cargo clippy --locked "${FEATURE_ARGS[@]}"
 cargo fmt --check
 sort -C "${REMOTES_FILE}"
 REPETITIONS="$(uniq -d < "${REMOTES_FILE}" | wc -w)"

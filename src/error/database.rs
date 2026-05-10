@@ -4,6 +4,8 @@ use thiserror::Error;
 pub enum DatabaseError {
     #[error("SQLite error: {0}")]
     SQLiteError(#[from] rusqlite::Error),
+    #[error("System SQLite version {0} is too old. Minimum supported SQLite version is 3.35.0")]
+    UnsupportedSQLiteVersion(&'static str),
     #[error("Error while migrating from old database (version v'{0}'): '{1}'")]
     Migration(i32, String),
     #[error(
