@@ -34,6 +34,7 @@ Make sure the [rust toolchain](https://www.rust-lang.org/tools/install) is insta
 ```sh
 cargo install --locked autobib
 ```
+See the [build docs](docs/build.md) for more options.
 
 ## Basic usage
 
