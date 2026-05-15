@@ -12,9 +12,8 @@
     The release workflow will automatically compile the binaries and publish to `crates.io`.
     It will also create a draft release with all of the release binaries.
 9. Go to the 'releases' tab on GitHub and publish the draft release.
-    This will trigger the Homebrew workflow, which creates a PR on the autobib/homebrew-autobib tap repo to update the formula, and in turn starts a workflow on that repo to test and bottle the updated formula.
-10. Wait for the bottling workflow to complete on the tap repo PR, then apply the `pr-pull` label.
-    The label triggers another workflow on the tap repo that pushes the formula bump and new bottle hashes onto the main branch, and closes the PR.
+10. Manually start a run of the "formula bump" workflow on the autobib/homebrew-autobib tap repo to update the autobib formula.
+    See [...] for more details on the formula bump process.
 
 ## Automation
 
