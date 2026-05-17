@@ -5,9 +5,22 @@ use assert_fs::{
 };
 use predicates::{Predicate, boolean::PredicateBooleanExt, prelude::predicate, str::contains};
 
-use std::{fs, path::Path};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
+fn native_path<const N: usize>(parts: [&str; N]) -> String {
+    PathBuf::from_iter(parts).display().to_string()
+}
+
+fn native_path_dir<const N: usize>(parts: [&str; N]) -> String {
+    let mut path = PathBuf::from_iter(parts);
+    path.push("");
+    path.display().to_string()
+}
 
 struct TestState {
     database: NamedTempFile,
@@ -27,13 +40,17 @@ impl TestState {
     }
 
     fn cmd(&self) -> Result<Command> {
+        self.cmd_with_attachments_dir(self.attach_dir.as_ref())
+    }
+
+    fn cmd_with_attachments_dir<P: AsRef<Path>>(&self, attachments_dir: P) -> Result<Command> {
         let mut cmd = Command::new(assert_cmd::cargo_bin!());
         cmd.arg("--database")
             .arg(self.database.as_ref())
             .arg("--config")
             .arg(self.config.as_ref())
             .arg("--attachments-dir")
-            .arg(self.attach_dir.as_ref())
+            .arg(attachments_dir.as_ref())
             .arg("--no-interactive");
         Ok(cmd)
     }
@@ -227,7 +244,7 @@ fn get() -> Result<()> {
     .write_stdin("arxiv:1212.1873\nmr:3224722");
     cmd.assert()
         .success()
-        .stdout("Falconer, Kenneth2014zbmath:06245248$$Hochman, Michael2014arxiv:1212.1873$$Hochman, Michael2014mr:3224722\n")
+        .stdout("Falconer, Kenneth2014zbmath:6245248$$Hochman, Michael2014arxiv:1212.1873$$Hochman, Michael2014mr:3224722\n")
         .stderr(predicate::str::is_empty());
 
     s.close()
@@ -825,7 +842,7 @@ fn info() -> Result<()> {
 }
 
 #[test]
-fn test_attach() -> Result<()> {
+fn attach() -> Result<()> {
     let s = TestState::init()?;
 
     let temp = assert_fs::NamedTempFile::new("attachment.txt")?;
@@ -880,7 +897,7 @@ fn test_attach() -> Result<()> {
 
 /// Check that `autobib path` always returns the same values.
 #[test]
-fn test_path_platform_consistency() -> Result<()> {
+fn path_platform_consistency() -> Result<()> {
     let s = TestState::init()?;
 
     let mut cmd = s.cmd()?;
@@ -890,11 +907,10 @@ fn test_path_platform_consistency() -> Result<()> {
     let mut cmd = s.cmd()?;
     cmd.args(["path", "zbl:1337.28015"]);
 
-    #[cfg(windows)]
-    let value = "\\zbmath\\JX\\TT\\CT\\GA3DGNBWGQ3DC===\\\n";
-
-    #[cfg(not(windows))]
-    let value = "/zbmath/JX/TT/CT/GA3DGNBWGQ3DC===/\n";
+    let value = format!(
+        "{}\n",
+        native_path_dir(["zbmath", "JX", "TT", "CT", "GA3DGNBWGQ3DC==="])
+    );
 
     cmd.assert()
         .success()
@@ -909,17 +925,256 @@ fn test_path_platform_consistency() -> Result<()> {
     ]);
     cmd.assert().success();
 
-    #[cfg(windows)]
-    let value = "\\doi\\XN\\UL\\PE\\GEYC4MJQGE3C6MBQGIYS2OBWHEZSQOBZFE4TAMRVGYWTC===\\\n";
-
-    #[cfg(not(windows))]
-    let value = "/doi/XN/UL/PE/GEYC4MJQGE3C6MBQGIYS2OBWHEZSQOBZFE4TAMRVGYWTC===/\n";
+    let value = format!(
+        "{}\n",
+        native_path_dir([
+            "doi",
+            "XN",
+            "UL",
+            "PE",
+            "GEYC4MJQGE3C6MBQGIYS2OBWHEZSQOBZFE4TAMRVGYWTC===",
+        ])
+    );
 
     let mut cmd = s.cmd()?;
     cmd.args(["path", "my-alias"]);
     cmd.assert()
         .success()
         .stdout(predicate::str::ends_with(value));
+
+    s.close()
+}
+
+fn import_zbmath_record(s: &TestState) -> Result<()> {
+    fs::write(s.config.as_ref(), "preferred_providers = [\"zbmath\"]\n")?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["import", "tests/resources/import/file.bib"]);
+    cmd.assert().success();
+
+    Ok(())
+}
+
+#[test]
+fn attachment_format_missing_uses_v0() -> Result<()> {
+    let s = TestState::init()?;
+
+    import_zbmath_record(&s)?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["path", "zbmath:6346461"]);
+
+    let value = format!(
+        "{}\n",
+        native_path_dir(["zbmath", "JX", "TT", "CT", "GA3DGNBWGQ3DC==="])
+    );
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::ends_with(value));
+
+    s.attachment(".autobib-format")
+        .assert(predicate::path::missing());
+
+    s.close()
+}
+
+#[test]
+fn attachment_format_v1_uses_normalized_zbmath_id() -> Result<()> {
+    let s = TestState::init()?;
+    fs::create_dir_all(s.attach_dir.join(".autobib-format/v1"))?;
+
+    import_zbmath_record(&s)?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["path", "zbmath:6346461"]);
+
+    let value = format!(
+        "{}\n",
+        native_path_dir(["zbmath", "6D", "UP", "TS", "GYZTINRUGYYQ===="])
+    );
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::ends_with(value));
+
+    s.close()
+}
+
+#[test]
+fn attachment_format_v1_migrating_errors() -> Result<()> {
+    let s = TestState::init()?;
+    s.create_test_db()?;
+    fs::create_dir_all(s.attach_dir.join(".autobib-format/v1-migrating"))?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["path", "local:first"]);
+    cmd.assert()
+        .failure()
+        .stderr(contains("currently being migrated"));
+
+    s.close()
+}
+
+#[test]
+fn attachment_format_unknown_errors() -> Result<()> {
+    let s = TestState::init()?;
+    s.create_test_db()?;
+    fs::create_dir_all(s.attach_dir.join(".autobib-format"))?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["path", "local:first"]);
+    cmd.assert()
+        .failure()
+        .stderr(contains("incompatible attachment format"));
+
+    s.attachment(".autobib-format/v0")
+        .assert(predicate::path::missing());
+
+    s.close()
+}
+
+#[test]
+fn migrate_attachments() -> Result<()> {
+    let s = TestState::init()?;
+
+    let local_old_attachment = s.attachment("local/OM/KH/CW/MZUXE43U/attachment.txt");
+    local_old_attachment.write_str("local attachment contents")?;
+    let zbmath_old_attachment = s.attachment("zbmath/JX/TT/CT/GA3DGNBWGQ3DC===/attachment.txt");
+    zbmath_old_attachment.write_str("zbmath attachment contents")?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["util", "migrate-attachments"]);
+    cmd.assert().success();
+
+    local_old_attachment.assert(predicate::path::missing());
+    s.attachment("local/QH/OV/RX/MZUXE43U/attachment.txt")
+        .assert(predicate::eq("local attachment contents"));
+    zbmath_old_attachment.assert(predicate::path::missing());
+    s.attachment("zbmath/6D/UP/TS/GYZTINRUGYYQ====/attachment.txt")
+        .assert(predicate::eq("zbmath attachment contents"));
+    s.attachment(".autobib-format/v0")
+        .assert(predicate::path::missing());
+    s.attachment(".autobib-format/v1-migrating")
+        .assert(predicate::path::missing());
+    s.attachment(".autobib-format/v1")
+        .assert(predicate::path::is_dir());
+
+    s.close()
+}
+
+#[test]
+fn migrate_attachments_missing_root() -> Result<()> {
+    let s = TestState::init()?;
+    let missing_root = s.attach_dir.join("missing");
+
+    let mut cmd = s.cmd_with_attachments_dir(&missing_root)?;
+    cmd.args(["util", "migrate-attachments"]);
+    cmd.assert()
+        .failure()
+        .stderr(contains("provided attachment directory is empty"));
+
+    assert!(!missing_root.exists());
+
+    s.close()
+}
+
+#[test]
+fn migrate_attachments_resume() -> Result<()> {
+    let s = TestState::init()?;
+    fs::create_dir_all(s.attach_dir.join(".autobib-format/v1-migrating"))?;
+
+    let old_attachment = s.attachment("local/OM/KH/CW/MZUXE43U/attachment.txt");
+    old_attachment.write_str("attachment contents")?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["util", "migrate-attachments"]);
+    cmd.assert().success();
+
+    old_attachment.assert(predicate::path::missing());
+    s.attachment("local/QH/OV/RX/MZUXE43U/attachment.txt")
+        .assert(predicate::eq("attachment contents"));
+    s.attachment(".autobib-format/v1-migrating")
+        .assert(predicate::path::missing());
+    s.attachment(".autobib-format/v1")
+        .assert(predicate::path::is_dir());
+
+    s.close()
+}
+
+#[test]
+fn migrate_attachments_conflict() -> Result<()> {
+    let s = TestState::init()?;
+
+    s.attachment("local/OM/KH/CW/MZUXE43U/attachment.txt")
+        .write_str("old attachment contents")?;
+    s.attachment("local/QH/OV/RX/MZUXE43U/attachment.txt")
+        .write_str("new attachment contents")?;
+    let zbmath_old_attachment = s.attachment("zbmath/JX/TT/CT/GA3DGNBWGQ3DC===/attachment.txt");
+    zbmath_old_attachment.write_str("zbmath attachment contents")?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["util", "migrate-attachments"]);
+    cmd.assert().failure().stderr(
+        contains("Target directory already exists")
+            .and(contains(native_path([
+                "local", "OM", "KH", "CW", "MZUXE43U",
+            ])))
+            .and(contains(native_path([
+                "local", "QH", "OV", "RX", "MZUXE43U",
+            ])))
+            .and(contains("Attachment migration failed"))
+            .and(contains("migrate-attachments")),
+    );
+
+    zbmath_old_attachment.assert(predicate::path::missing());
+    s.attachment("zbmath/6D/UP/TS/GYZTINRUGYYQ====/attachment.txt")
+        .assert(predicate::eq("zbmath attachment contents"));
+    s.attachment(".autobib-format/v1-migrating")
+        .assert(predicate::path::is_dir());
+    s.attachment(".autobib-format/v1")
+        .assert(predicate::path::missing());
+
+    s.close()
+}
+
+#[test]
+fn migrate_attachments_unrecognized() -> Result<()> {
+    let s = TestState::init()?;
+
+    s.attachment("local/not/base32/path/not-base32")
+        .write_str("ignored contents")?;
+    fs::create_dir_all(s.attach_dir.join("local/AA/AA/AA/not-base32"))?;
+    fs::create_dir_all(s.attach_dir.join("unknown/AA/AA/AA/MZUXE43U"))?;
+    fs::create_dir_all(s.attach_dir.join("local/AA/AA/AA/MZUXE43U"))?;
+
+    let old_attachment = s.attachment("local/OM/KH/CW/MZUXE43U/attachment.txt");
+    old_attachment.write_str("attachment contents")?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["util", "migrate-attachments"]);
+    cmd.assert().success().stderr(
+        contains("Skipping invalid attachment directory")
+            .and(contains("not-base32"))
+            .and(contains(native_path([
+                "unknown", "AA", "AA", "AA", "MZUXE43U",
+            ])))
+            .and(contains(native_path([
+                "local", "AA", "AA", "AA", "MZUXE43U",
+            ]))),
+    );
+
+    s.attachment("local/not/base32/path/not-base32")
+        .assert(predicate::eq("ignored contents"));
+    s.attachment("local/AA/AA/AA/not-base32")
+        .assert(predicate::path::is_dir());
+    s.attachment("unknown/AA/AA/AA/MZUXE43U")
+        .assert(predicate::path::is_dir());
+    s.attachment("local/AA/AA/AA/MZUXE43U")
+        .assert(predicate::path::is_dir());
+    old_attachment.assert(predicate::path::missing());
+    s.attachment("local/QH/OV/RX/MZUXE43U/attachment.txt")
+        .assert(predicate::eq("attachment contents"));
 
     s.close()
 }
@@ -1113,7 +1368,7 @@ fn on_insert() -> Result<()> {
 
 /// Test identifiers which have previously caused errors
 #[test]
-fn test_identifier_exceptions() -> Result<()> {
+fn identifier_exceptions() -> Result<()> {
     let s = TestState::init()?;
 
     let mut cmd = s.cmd()?;
@@ -1124,7 +1379,7 @@ fn test_identifier_exceptions() -> Result<()> {
 }
 
 #[test]
-fn test_quiet_returns_error() -> Result<()> {
+fn quiet_returns_error() -> Result<()> {
     let s = TestState::init()?;
 
     let mut cmd = s.cmd()?;
@@ -1135,7 +1390,7 @@ fn test_quiet_returns_error() -> Result<()> {
 }
 
 #[test]
-fn test_cache_evict() -> Result<()> {
+fn cache_evict() -> Result<()> {
     let s = TestState::init()?;
 
     let mut cmd = s.cmd()?;
@@ -1158,7 +1413,7 @@ fn test_cache_evict() -> Result<()> {
 }
 
 #[test]
-fn test_normalize() -> Result<()> {
+fn normalize() -> Result<()> {
     let s = TestState::init()?;
 
     let mut cmd = s.cmd()?;
@@ -1179,7 +1434,7 @@ fn test_normalize() -> Result<()> {
 }
 
 #[test]
-fn test_strip_journal_series() -> Result<()> {
+fn strip_journal_series() -> Result<()> {
     let s = TestState::init()?;
 
     s.set_config(Path::new(
@@ -1198,7 +1453,7 @@ fn test_strip_journal_series() -> Result<()> {
 }
 
 #[test]
-fn test_auto_alias() -> Result<()> {
+fn auto_alias() -> Result<()> {
     let s = TestState::init()?;
 
     s.set_config(Path::new("tests/resources/auto_alias/config.toml"))?;
@@ -1501,6 +1756,23 @@ fn read_only() -> Result<()> {
         .failure()
         .stderr(contains("Cannot obtain report for record not in database"));
 
+    s.attachment(".autobib-format")
+        .assert(predicate::path::missing());
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["--read-only", "path", "zbl:1337.28015"]);
+    cmd.assert().success();
+
+    s.attachment(".autobib-format")
+        .assert(predicate::path::missing());
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["path", "zbl:1337.28015"]);
+    cmd.assert().success();
+
+    s.attachment(".autobib-format")
+        .assert(predicate::path::missing());
+
     Ok(())
 }
 
@@ -1649,7 +1921,7 @@ fn changelog() -> Result<()> {
 }
 
 #[test]
-fn test_prune() -> Result<()> {
+fn prune() -> Result<()> {
     fn init() -> Result<(TestState, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)> {
         let s = TestState::init()?;
 

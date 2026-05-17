@@ -7,6 +7,7 @@ mod hist;
 mod import;
 mod info;
 mod log;
+mod migrate_attachments;
 mod path;
 mod picker;
 mod replace;
@@ -60,7 +61,11 @@ use self::{
     edit::{create_alias_if_valid, insert, merge_record_data},
     find::output_find_selection,
     import::ImportConfig,
-    path::{data_from_key, data_from_path, data_from_rev, get_attachment_dir, get_attachment_root},
+    migrate_attachments::migrate_attachments,
+    path::{
+        data_from_key, data_from_path, data_from_rev, get_attachment_dir, get_attachment_root,
+        get_attachment_root_path,
+    },
     picker::{choose_attachment, choose_attachment_path, choose_canonical_id},
     retrieve::{retrieve_entries, retrieve_entries_read_only},
     update::update,
@@ -197,8 +202,12 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             let (record, row) = get_record_row(&mut record_db, identifier, client, &cfg)?
                 .exists_or_commit_null("Cannot attach file for")?;
             row.commit()?;
-            let mut target =
-                get_attachment_dir(&data_dir, cli.attachments_dir, &record.row.canonical)?;
+            let mut target = get_attachment_dir(
+                &data_dir,
+                cli.attachments_dir,
+                cli.read_only,
+                &record.row.canonical,
+            )?;
 
             let mut opts = OpenOptions::new();
             opts.write(true);
@@ -400,11 +409,13 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
 
             match find_mode {
                 FindMode::Attachments => {
+                    let attachment_root =
+                        get_attachment_root(&data_dir, cli.attachments_dir, cli.read_only)?;
                     let mut picker = choose_attachment_path(
                         record_db,
                         template,
                         strict,
-                        get_attachment_root(&data_dir, cli.attachments_dir)?,
+                        attachment_root,
                         cfg.find.ignore_hidden,
                         Path::is_file,
                     );
@@ -766,7 +777,15 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 resolve,
                 local_fallback,
                 no_alias,
-                include_files,
+                file_import_root: if include_files {
+                    Some(get_attachment_root(
+                        &data_dir,
+                        cli.attachments_dir,
+                        cli.read_only,
+                    )?)
+                } else {
+                    None
+                },
                 file_sep,
             };
 
@@ -774,8 +793,6 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             let cfg = config::load(&config_path, missing_ok)?;
 
             let mut scratch = Vec::new();
-
-            let attachment_root = get_attachment_root(&data_dir, cli.attachments_dir)?;
 
             let mut stdout = stdout_lock_wrap();
             for bibfile in targets {
@@ -788,7 +805,6 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                             &mut record_db,
                             client,
                             &cfg,
-                            &attachment_root,
                             bibfile.display(),
                             &mut stdout,
                         )?;
@@ -991,7 +1007,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 None => return Ok(()),
             };
 
-            let mut target = get_attachment_dir(&data_dir, cli.attachments_dir, &canonical)?;
+            let mut target = get_attachment_dir(&data_dir, cli.attachments_dir, true, &canonical)?;
             if mkdir {
                 create_dir_all(&target)?;
             }
@@ -1251,6 +1267,10 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     record_db.evict_cache()?;
                 }
             },
+            UtilCommand::MigrateAttachments => {
+                let attachment_root = get_attachment_root_path(&data_dir, cli.attachments_dir);
+                migrate_attachments(&attachment_root)?;
+            }
         },
     };
 

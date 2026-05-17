@@ -594,6 +594,7 @@ impl UtilCommand {
             Self::Check { fix: true, .. } => Err(ReadOnlyInvalid::Argument("--fix")),
             Self::Optimize => Err(ReadOnlyInvalid::Command("util optimize")),
             Self::Evict { .. } => Err(ReadOnlyInvalid::Command("util evict")),
+            Self::MigrateAttachments => Err(ReadOnlyInvalid::Command("util migrate-attachments")),
         }
     }
 }
@@ -783,4 +784,5 @@ pub enum UtilCommand {
         #[arg(long)]
         max_age: Option<u32>,
     },
+    MigrateAttachments,
 }

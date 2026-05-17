@@ -14,7 +14,7 @@ use crate::{
     },
     entry::{Entry, MutableEntryData},
     logger::info,
-    path_hash::PathHash,
+    path_hash::AttachmentRoot,
     record::{RecordId, RemoteId},
 };
 
@@ -23,12 +23,23 @@ use crate::{
 pub fn get_attachment_root(
     data_dir: &Path,
     default_attachments_dir: Option<PathBuf>,
-) -> Result<PathBuf, anyhow::Error> {
+    read_only: bool,
+) -> Result<AttachmentRoot, anyhow::Error> {
+    let root = get_attachment_root_path(data_dir, default_attachments_dir);
+    AttachmentRoot::resolve(root, read_only)
+}
+
+/// Get the attachment root directory path, either as a default from the data directory or using the
+/// user provided value.
+pub fn get_attachment_root_path(
+    data_dir: &Path,
+    default_attachments_dir: Option<PathBuf>,
+) -> PathBuf {
     // Initialize the file directory path
-    Ok(if let Some(file_dir) = default_attachments_dir {
+    if let Some(file_dir) = default_attachments_dir {
         // at a user-provided path
         info!(
-            "Using user-provided file directory '{}'",
+            "Using user-provided attachment directory '{}'",
             file_dir.display()
         );
         file_dir
@@ -36,23 +47,23 @@ pub fn get_attachment_root(
         // at the default path
         let default_attachments_path = data_dir.join("attachments");
         info!(
-            "Using default file directory '{}'",
+            "Using default attachment directory '{}'",
             default_attachments_path.display()
         );
 
         default_attachments_path
-    })
+    }
 }
 
 /// Get the attachment directory corresponding to the provided identifier.
 pub fn get_attachment_dir(
     data_dir: &Path,
     default_attachments_dir: Option<PathBuf>,
+    read_only: bool,
     canonical: &RemoteId,
 ) -> Result<PathBuf, anyhow::Error> {
-    let mut attachments_root = get_attachment_root(data_dir, default_attachments_dir)?;
-    canonical.extend_attachments_path(&mut attachments_root);
-    Ok(attachments_root)
+    let attachments_root = get_attachment_root(data_dir, default_attachments_dir, read_only)?;
+    Ok(attachments_root.attachment_dir(canonical))
 }
 
 pub fn data_from_key<'conn, F: FnOnce() -> Vec<(regex::Regex, String)>>(
