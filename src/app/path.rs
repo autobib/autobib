@@ -25,8 +25,18 @@ pub fn get_attachment_root(
     default_attachments_dir: Option<PathBuf>,
     read_only: bool,
 ) -> Result<AttachmentRoot, anyhow::Error> {
+    let root = get_attachment_root_path(data_dir, default_attachments_dir);
+    AttachmentRoot::resolve(root, read_only)
+}
+
+/// Get the attachment root directory path, either as a default from the data directory or using the
+/// user provided value.
+pub fn get_attachment_root_path(
+    data_dir: &Path,
+    default_attachments_dir: Option<PathBuf>,
+) -> PathBuf {
     // Initialize the file directory path
-    let root = if let Some(file_dir) = default_attachments_dir {
+    if let Some(file_dir) = default_attachments_dir {
         // at a user-provided path
         info!(
             "Using user-provided attachment directory '{}'",
@@ -42,8 +52,7 @@ pub fn get_attachment_root(
         );
 
         default_attachments_path
-    };
-    AttachmentRoot::resolve(root, read_only)
+    }
 }
 
 /// Get the attachment directory corresponding to the provided identifier.

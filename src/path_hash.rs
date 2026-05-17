@@ -14,17 +14,7 @@
 // 3. `.autobib-format/v1` exists: this is the new attachment format, using
 //    `rapidhash::v3` and `zbmath` identifiers without 0-padding.
 // 4. Else: the attachment format is unknown to the current binary, resulting in an error
-//
-// When migrating:
-//
-// 1. Run `rmdir .autobib-format/v0`:
-//    - If successful: this puts the directory into an invalid state, so other `autobib` instances do not try
-//        to read.
-//    - If this fails: the version is not `v0` so migration should not be performed; bail.
-// 2. Create `.autobib-format/v1-migrating`.
-// 3. Perform the migration.
-// 4. Create `.autobib-format/v2`.
-// 5. Delete `.autobib-format/v1-migrating`.
+
 use std::{
     fs, io,
     path::{Path, PathBuf},
@@ -34,6 +24,11 @@ use data_encoding::BASE32;
 use rapidhash::{v1::rapidhash_v1, v3::rapidhash_v3};
 
 use crate::RemoteId;
+
+pub(crate) const FORMAT_DIR: &str = ".autobib-format";
+pub(crate) const FORMAT_V0: &str = "v0";
+pub(crate) const FORMAT_V1_MIGRATING: &str = "v1-migrating";
+pub(crate) const FORMAT_V1: &str = "v1";
 
 /// Attachment directory format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -79,11 +74,6 @@ impl AttachmentFormat {
     ///
     /// If the format marker does not exist, initialize it as `v0` (unless `read_only`)
     pub fn resolve(attachment_root: &Path, read_only: bool) -> Result<Self, anyhow::Error> {
-        const FORMAT_DIR: &str = ".autobib-format";
-        const FORMAT_V0: &str = "v0";
-        const FORMAT_V1_MIGRATING: &str = "v1-migrating";
-        const FORMAT_V1: &str = "v1";
-
         let format_root = attachment_root.join(FORMAT_DIR);
 
         // fast-path checks: look for a matching format directory
@@ -91,9 +81,7 @@ impl AttachmentFormat {
             Ok(Self::V0)
         } else if format_root.join(FORMAT_V1_MIGRATING).is_dir() {
             anyhow::bail!(
-                "The attachment directory format is being migrated by a future version of autobib. \
-                 The migration process was interrupted. Complete the migration with that binary, \
-                 and this version can read the attachment directory afterwards."
+                "The attachment directory format is currently being migrated. Run `autobib util migrate-attachments` to resume migration."
             );
         } else if format_root.join(FORMAT_V1).is_dir() {
             Ok(Self::V1)
@@ -131,9 +119,17 @@ pub trait PathHash {
     fn extend_attachments_path(&self, path_buf: &mut PathBuf);
 }
 
-struct RemoteIdAttachmentPathV0<'a>(&'a RemoteId);
+struct RemoteIdAttachmentPathV0<'a, S: AsRef<str>>(&'a RemoteId<S>);
 
-struct RemoteIdAttachmentPathV1<'a>(&'a RemoteId);
+struct RemoteIdAttachmentPathV1<'a, S: AsRef<str>>(&'a RemoteId<S>);
+
+pub(crate) fn extend_attachment_path_v0<S: AsRef<str>>(id: &RemoteId<S>, path_buf: &mut PathBuf) {
+    RemoteIdAttachmentPathV0(id).extend_attachments_path(path_buf);
+}
+
+pub(crate) fn extend_attachment_path_v1<S: AsRef<str>>(id: &RemoteId<S>, path_buf: &mut PathBuf) {
+    RemoteIdAttachmentPathV1(id).extend_attachments_path(path_buf);
+}
 
 /// In order to reduce the number of files which are in the same directory, we apply a 30-bit
 /// header to each path, which is encoded in base32 as `xx/xx/xx`. Then the corresponding path is:
@@ -168,7 +164,7 @@ fn extend_hashed_path<H: for<'a> FnOnce(&'a [u8]) -> u64>(
     ]);
 }
 
-impl PathHash for RemoteIdAttachmentPathV0<'_> {
+impl<S: AsRef<str>> PathHash for RemoteIdAttachmentPathV0<'_, S> {
     fn extend_attachments_path(&self, path_buf: &mut PathBuf) {
         let id = self.0;
         if id.provider() == "zbmath" && id.sub_id().len() < 8 {
@@ -188,7 +184,7 @@ impl PathHash for RemoteIdAttachmentPathV0<'_> {
     }
 }
 
-impl PathHash for RemoteIdAttachmentPathV1<'_> {
+impl<S: AsRef<str>> PathHash for RemoteIdAttachmentPathV1<'_, S> {
     fn extend_attachments_path(&self, path_buf: &mut PathBuf) {
         let id = self.0;
         extend_hashed_path(

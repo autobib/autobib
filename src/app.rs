@@ -5,6 +5,7 @@ mod hist;
 mod import;
 mod info;
 mod log;
+mod migrate_attachments;
 mod path;
 mod picker;
 mod replace;
@@ -56,7 +57,11 @@ use self::{
     delete::{hard_delete, soft_delete},
     edit::{create_alias_if_valid, insert, merge_record_data},
     import::ImportConfig,
-    path::{data_from_key, data_from_path, data_from_rev, get_attachment_dir, get_attachment_root},
+    migrate_attachments::migrate_attachments,
+    path::{
+        data_from_key, data_from_path, data_from_rev, get_attachment_dir, get_attachment_root,
+        get_attachment_root_path,
+    },
     picker::{choose_attachment, choose_attachment_path, choose_canonical_id},
     retrieve::{retrieve_and_validate_entries, retrieve_entries_read_only},
     update::update,
@@ -951,8 +956,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 None => return Ok(()),
             };
 
-            let mut target =
-                get_attachment_dir(&data_dir, cli.attachments_dir, cli.read_only, &canonical)?;
+            let mut target = get_attachment_dir(&data_dir, cli.attachments_dir, true, &canonical)?;
             if mkdir {
                 create_dir_all(&target)?;
             }
@@ -1226,6 +1230,10 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     snapshot.map_identifiers(deleted, |key_str| writeln!(lock, "{key_str}"))?;
                 }
                 snapshot.commit()?;
+            }
+            UtilCommand::MigrateAttachments => {
+                let attachment_root = get_attachment_root_path(&data_dir, cli.attachments_dir);
+                migrate_attachments(&attachment_root)?;
             }
         },
     };
