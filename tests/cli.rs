@@ -856,6 +856,97 @@ fn test_path_platform_consistency() -> Result<()> {
     s.close()
 }
 
+fn import_zbmath_record(s: &TestState) -> Result<()> {
+    fs::write(s.config.as_ref(), "preferred_providers = [\"zbmath\"]\n")?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["import", "tests/resources/import/file.bib"]);
+    cmd.assert().success();
+
+    Ok(())
+}
+
+#[test]
+fn attachment_format_missing_uses_v0() -> Result<()> {
+    let s = TestState::init()?;
+
+    import_zbmath_record(&s)?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["path", "zbmath:6346461"]);
+
+    #[cfg(windows)]
+    let value = "\\zbmath\\JX\\TT\\CT\\GA3DGNBWGQ3DC===\\\n";
+
+    #[cfg(not(windows))]
+    let value = "/zbmath/JX/TT/CT/GA3DGNBWGQ3DC===/\n";
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::ends_with(value));
+
+    s.attachment(".autobib-format/v0")
+        .assert(predicate::path::is_dir());
+
+    s.close()
+}
+
+#[test]
+fn attachment_format_v1_uses_normalized_zbmath_id() -> Result<()> {
+    let s = TestState::init()?;
+    fs::create_dir_all(s.attach_dir.join(".autobib-format/v1"))?;
+
+    import_zbmath_record(&s)?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["path", "zbmath:6346461"]);
+
+    #[cfg(windows)]
+    let value = "\\zbmath\\6D\\UP\\TS\\GYZTINRUGYYQ====\\\n";
+
+    #[cfg(not(windows))]
+    let value = "/zbmath/6D/UP/TS/GYZTINRUGYYQ====/\n";
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::ends_with(value));
+
+    s.close()
+}
+
+#[test]
+fn attachment_format_v1_migrating_errors() -> Result<()> {
+    let s = TestState::init()?;
+    s.create_test_db()?;
+    fs::create_dir_all(s.attach_dir.join(".autobib-format/v1-migrating"))?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["path", "local:first"]);
+    cmd.assert()
+        .failure()
+        .stderr(contains("migration process was interrupted"));
+
+    s.close()
+}
+
+#[test]
+fn attachment_format_unknown_errors() -> Result<()> {
+    let s = TestState::init()?;
+    s.create_test_db()?;
+    fs::create_dir_all(s.attach_dir.join(".autobib-format"))?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["path", "local:first"]);
+    cmd.assert()
+        .failure()
+        .stderr(contains("incompatible attachment format"));
+
+    s.attachment(".autobib-format/v0")
+        .assert(predicate::path::missing());
+
+    s.close()
+}
+
 #[test]
 fn edit() -> Result<()> {
     let s = TestState::init()?;
@@ -1438,6 +1529,16 @@ fn read_only() -> Result<()> {
     cmd.assert()
         .failure()
         .stderr(contains("Cannot obtain report for record not in database"));
+
+    s.attachment(".autobib-format")
+        .assert(predicate::path::missing());
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["--read-only", "path", "zbl:1337.28015"]);
+    cmd.assert().success();
+
+    s.attachment(".autobib-format")
+        .assert(predicate::path::missing());
 
     Ok(())
 }

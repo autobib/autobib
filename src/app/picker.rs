@@ -11,7 +11,7 @@ use crate::{
     db::{RecordDatabase, state::RecordRow},
     entry::RawEntryData,
     format::Template,
-    path_hash::PathHash,
+    path_hash::AttachmentRoot,
 };
 
 pub struct DirEntryRenderer {
@@ -47,7 +47,7 @@ pub fn choose_attachment_path<F: FnMut(&Path) -> bool + Send + 'static>(
     mut record_db: RecordDatabase,
     template: Template,
     strict: bool,
-    attachment_root: PathBuf,
+    attachment_root: AttachmentRoot,
     ignore_hidden: bool,
     mut filter: F,
 ) -> Picker<AttachmentData, Template> {
@@ -63,10 +63,7 @@ pub fn choose_attachment_path<F: FnMut(&Path) -> bool + Send + 'static>(
             }
 
             // fill the buffer with the attachment path
-            let mut attachment_root = attachment_root.to_path_buf();
-            row_data
-                .canonical
-                .extend_attachments_path(&mut attachment_root);
+            let attachment_root = attachment_root.attachment_dir(&row_data.canonical);
 
             // walk through all of the entries in the attachment path
             let paths = if ignore_hidden {

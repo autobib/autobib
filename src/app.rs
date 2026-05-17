@@ -193,7 +193,12 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             let (record, row) = get_record_row(&mut record_db, identifier, client, &cfg)?
                 .exists_or_commit_null("Cannot attach file for")?;
             row.commit()?;
-            let mut target = get_attachment_dir(&data_dir, cli.attachments_dir, &record.canonical)?;
+            let mut target = get_attachment_dir(
+                &data_dir,
+                cli.attachments_dir,
+                cli.read_only,
+                &record.canonical,
+            )?;
 
             let mut opts = OpenOptions::new();
             opts.write(true);
@@ -385,11 +390,13 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
 
             match find_mode {
                 FindMode::Attachments => {
+                    let attachment_root =
+                        get_attachment_root(&data_dir, cli.attachments_dir, cli.read_only)?;
                     let mut picker = choose_attachment_path(
                         record_db,
                         template,
                         strict,
-                        get_attachment_root(&data_dir, cli.attachments_dir)?,
+                        attachment_root,
                         cfg.find.ignore_hidden,
                         Path::is_file,
                     );
@@ -756,7 +763,15 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 resolve,
                 local_fallback,
                 no_alias,
-                include_files,
+                file_import_root: if include_files {
+                    Some(get_attachment_root(
+                        &data_dir,
+                        cli.attachments_dir,
+                        cli.read_only,
+                    )?)
+                } else {
+                    None
+                },
                 file_sep,
             };
 
@@ -764,8 +779,6 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             let cfg = config::load(&config_path, missing_ok)?;
 
             let mut scratch = Vec::new();
-
-            let attachment_root = get_attachment_root(&data_dir, cli.attachments_dir)?;
 
             let mut stdout = stdout_lock_wrap();
             for bibfile in targets {
@@ -778,7 +791,6 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                             &mut record_db,
                             client,
                             &cfg,
-                            &attachment_root,
                             bibfile.display(),
                             &mut stdout,
                         )?;
@@ -939,7 +951,8 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 None => return Ok(()),
             };
 
-            let mut target = get_attachment_dir(&data_dir, cli.attachments_dir, &canonical)?;
+            let mut target =
+                get_attachment_dir(&data_dir, cli.attachments_dir, cli.read_only, &canonical)?;
             if mkdir {
                 create_dir_all(&target)?;
             }
