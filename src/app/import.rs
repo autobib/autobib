@@ -18,7 +18,7 @@ use crate::{
     http::Client,
     logger::{error, info, set_failed, warn},
     normalize::{Normalization, Normalize},
-    path_hash::PathHash,
+    path_hash::AttachmentRoot,
     provider::{RemoteIdCandidate, determine_remote_id_candidates, is_canonical},
     record::{
         Alias, MappedAliasOrRemoteId, MappedKey, RecordId, RecursiveRemoteResponse, RemoteId,
@@ -33,7 +33,7 @@ pub struct ImportConfig {
     pub resolve: bool,
     pub local_fallback: bool,
     pub no_alias: bool,
-    pub include_files: bool,
+    pub file_import_root: Option<AttachmentRoot>, // if is_some(), import files to that directory
     pub file_sep: Option<String>,
 }
 
@@ -46,7 +46,6 @@ pub fn from_buffer<F, C, W>(
     record_db: &mut RecordDatabase,
     client: &C,
     config: &Config<F>,
-    attachment_root: &Path,
     bibfile: impl std::fmt::Display,
     failed: &mut W,
 ) -> Result<(), anyhow::Error>
@@ -55,17 +54,12 @@ where
     C: Client,
     W: io::Write + ?Sized,
 {
-    let mut attachment_root_buf = if import_config.include_files {
-        Some(PathBuf::new())
-    } else {
-        None
-    };
     // let mut stdout = stdout_lock_wrap();
+    let mut file_import_target = import_config
+        .file_import_root
+        .as_ref()
+        .map(FileImportTarget::new);
     for res in entries_from_bibtex(scratch) {
-        if let Some(p) = attachment_root_buf.as_mut() {
-            p.clear();
-            p.push(attachment_root);
-        };
         match res {
             Ok(entry) => match import_entry(
                 entry,
@@ -73,7 +67,7 @@ where
                 record_db,
                 client,
                 config,
-                attachment_root_buf.as_mut(),
+                file_import_target.as_mut(),
             )? {
                 ImportOutcome::Success => {}
                 ImportOutcome::Failure(error, entry) => {
@@ -108,7 +102,7 @@ fn import_entry<F, C>(
     record_db: &mut RecordDatabase,
     client: &C,
     config: &Config<F>,
-    attachment_root: Option<&mut PathBuf>,
+    file_import_target: Option<&mut FileImportTarget<'_>>,
 ) -> Result<ImportOutcome, anyhow::Error>
 where
     F: FnOnce() -> Vec<(regex::Regex, String)>,
@@ -119,7 +113,7 @@ where
         entry,
         import_config,
         &config.on_insert,
-        attachment_root,
+        file_import_target,
         |entry, record_db| {
             let determined = determine_key::<F>(entry, config);
 
@@ -283,45 +277,61 @@ fn create_alias_and_commit(
     Ok(())
 }
 
-fn import_file(
-    source_path: &Path,
-    target_path: &mut PathBuf,
-    canonical: &RemoteId,
-) -> Result<(), anyhow::Error> {
-    canonical.extend_attachments_path(target_path);
-    match source_path.file_name() {
-        None => anyhow::bail!("Cannot import filename containing relative path"),
-        Some(file_name) => {
-            fs::create_dir_all(&target_path)?;
-            target_path.push(file_name);
-            // FIXME: this is a TOCTOU error
-            if !target_path.exists() {
-                fs::copy(source_path, target_path)?;
-            }
+/// File import struct with stratch space to reduce re-allocation.
+struct FileImportTarget<'a> {
+    root: &'a AttachmentRoot,
+    path: PathBuf,
+}
+
+impl<'a> FileImportTarget<'a> {
+    fn new(root: &'a AttachmentRoot) -> Self {
+        Self {
+            root,
+            path: PathBuf::new(),
         }
     }
-    Ok(())
+
+    /// Import the file at the provided path to the attachment directory of the provided identifier.
+    fn import_file(
+        &mut self,
+        source_path: &Path,
+        canonical: &RemoteId,
+    ) -> Result<(), anyhow::Error> {
+        self.root.attachment_dir_in(canonical, &mut self.path);
+        match source_path.file_name() {
+            None => anyhow::bail!("Cannot import filename containing relative path"),
+            Some(file_name) => {
+                fs::create_dir_all(&self.path)?;
+                self.path.push(file_name);
+                // FIXME: this is a TOCTOU error
+                if !self.path.exists() {
+                    fs::copy(source_path, &self.path)?;
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 fn normalize_data(
     entry: &mut Entry<MutableEntryData>,
     nl: &Normalization,
-    include_files: Option<&mut PathBuf>,
+    file_import_target: Option<&mut FileImportTarget<'_>>,
     file_sep: &Option<String>,
     canonical: &RemoteId,
 ) -> Result<(), anyhow::Error> {
     entry.record_data.normalize(nl);
-    if let Some(target_path) = include_files
+    if let Some(file_import_target) = file_import_target
         && let Some(path) = entry.record_data.remove("file")
     {
         let path_str = path.as_ref();
         if let Some(sep) = file_sep {
             for component in path_str.split(sep) {
-                if let Err(err) = import_file(component.as_ref(), target_path, canonical) {
+                if let Err(err) = file_import_target.import_file(component.as_ref(), canonical) {
                     anyhow::bail!("Failed to import file '{component}': {err}");
                 }
             }
-        } else if let Err(err) = import_file(path_str.as_ref(), target_path, canonical) {
+        } else if let Err(err) = file_import_target.import_file(path_str.as_ref(), canonical) {
             anyhow::bail!("Failed to import file '{path}': {err}");
         }
     }
@@ -337,7 +347,7 @@ fn import_entry_impl<F>(
     import_config: &ImportConfig,
     // no_alias: bool,
     nl: &Normalization,
-    attachment_root: Option<&mut PathBuf>,
+    file_import_target: Option<&mut FileImportTarget<'_>>,
     mut determine_action: F,
 ) -> Result<ImportOutcome, anyhow::Error>
 where
@@ -352,7 +362,7 @@ where
                 if let Err(err) = normalize_data(
                     &mut entry,
                     nl,
-                    attachment_root,
+                    file_import_target,
                     &import_config.file_sep,
                     &remote_id,
                 ) {
@@ -388,7 +398,7 @@ where
             if let Err(err) = normalize_data(
                 &mut entry,
                 nl,
-                attachment_root,
+                file_import_target,
                 &import_config.file_sep,
                 &canonical,
             ) {
@@ -404,7 +414,7 @@ where
             if let Err(err) = normalize_data(
                 &mut entry,
                 nl,
-                attachment_root,
+                file_import_target,
                 &import_config.file_sep,
                 &remote_id,
             ) {

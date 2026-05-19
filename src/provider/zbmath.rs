@@ -5,13 +5,20 @@ use super::{BodyBytes, Client, MutableEntryData, ProviderError, StatusCode, Vali
 use self::response::Response;
 
 pub fn is_valid_id(id: &str) -> ValidationOutcome {
-    if id.len() == 8 && id.as_bytes().iter().all(u8::is_ascii_digit) {
-        ValidationOutcome::Valid
-    } else if id.len() <= 7 && id.as_bytes().iter().all(u8::is_ascii_digit) {
-        // the `id.is_empty()` case is handled globally
-        ValidationOutcome::Normalize(format!("{id:0>8}"))
-    } else {
+    // `10` is a rather arbitrary choice; do this to avoid O(n) check if the id is unreasonably long
+    // all ids have length <= 8 in practice; allow 9-digit ids for convenience
+    if id.len() >= 10 || !id.as_bytes().iter().all(u8::is_ascii_digit) {
+        return ValidationOutcome::Invalid;
+    }
+
+    let trimmed = id.trim_start_matches('0');
+
+    if trimmed.is_empty() {
         ValidationOutcome::Invalid
+    } else if trimmed.len() != id.len() {
+        ValidationOutcome::Normalize(trimmed.into())
+    } else {
+        ValidationOutcome::Valid
     }
 }
 
