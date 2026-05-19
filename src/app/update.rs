@@ -1,15 +1,19 @@
-use std::iter::once;
+use std::{fs::read_to_string, iter::once, path::Path, str::FromStr};
 
 use anyhow::bail;
 
 use crate::{
-    RemoteId,
+    Config,
     app::{cli::OnConflict, merge_record_data},
-    db::state::{RecordIdState, RecordRow},
-    entry::{MutableEntryData, RawEntryData},
+    db::{
+        Tx,
+        state::{ArbitraryData, RecordIdState, RecordRow},
+    },
+    entry::{Entry, MutableEntryData, RawEntryData},
     http::Client,
     logger::{error, suggest},
     normalize::{Normalization, Normalize},
+    record::{RecordId, RemoteId},
     record::{RecursiveRemoteResponse, get_remote_response_recursive},
 };
 
@@ -132,4 +136,63 @@ pub fn data_from_remote<C: Client>(
             bail!("Remote data for canonical id '{null_remote_id}' is null");
         }
     }
+}
+
+pub fn data_from_key<'conn, F: FnOnce() -> Vec<(regex::Regex, String)>>(
+    tx: Tx<'conn>,
+    record_id: RecordId,
+    cfg: &Config<F>,
+) -> Result<(MutableEntryData, Tx<'conn>), anyhow::Error> {
+    match RecordIdState::determine(tx, record_id, &cfg.alias_transform)? {
+        RecordIdState::Entry(_, entry_row_data, state) => Ok((
+            MutableEntryData::from_entry_data(&entry_row_data.data),
+            state.into_tx(),
+        )),
+        RecordIdState::Deleted(_, _, state) => {
+            state.commit()?;
+            bail!("Cannot read update data from deleted row");
+        }
+        RecordIdState::Void(_, _, state) => {
+            state.commit()?;
+            bail!("Cannot read update data from voided row");
+        }
+        RecordIdState::NullRemoteId(_, state) => {
+            state.commit()?;
+            bail!("Cannot read update data from null record");
+        }
+        RecordIdState::Unknown(unknown) => {
+            unknown.combine_and_commit()?;
+            bail!("Cannot read update data from record not present in database");
+        }
+        RecordIdState::UndefinedAlias(_) => {
+            bail!("Cannot read update data from undefined alias");
+        }
+        RecordIdState::InvalidRemoteId(record_error) => {
+            bail!("Cannot read update data: {record_error}");
+        }
+    }
+}
+
+pub fn data_from_rev(
+    tx: &Tx<'_>,
+    rev: crate::db::state::RevisionId,
+) -> Result<MutableEntryData, anyhow::Error> {
+    let Some(row) = RecordRow::load(tx, rev)? else {
+        bail!("Revision '{rev}' does not exist in the database!");
+    };
+
+    match row.data {
+        ArbitraryData::Entry(raw_entry_data) => {
+            Ok(MutableEntryData::from_entry_data(&raw_entry_data))
+        }
+        ArbitraryData::Deleted(_) => bail!("Cannot read update data from deleted row"),
+        ArbitraryData::Void => bail!("Cannot read update data from voided row"),
+    }
+}
+
+/// Obtain data from a bibtex record at a provided path.
+pub fn data_from_path<P: AsRef<Path>>(path: P) -> Result<MutableEntryData, anyhow::Error> {
+    let bibtex = read_to_string(path)?;
+    let entry = Entry::<MutableEntryData>::from_str(&bibtex)?;
+    Ok(entry.record_data)
 }

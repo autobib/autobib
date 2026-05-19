@@ -58,13 +58,10 @@ use self::{
     edit::{create_alias_if_valid, insert, merge_record_data},
     import::ImportConfig,
     migrate_attachments::migrate_attachments,
-    path::{
-        data_from_key, data_from_path, data_from_rev, get_attachment_dir, get_attachment_root,
-        get_attachment_root_path,
-    },
+    path::{get_attachment_dir, get_attachment_root, get_attachment_root_path},
     picker::{choose_attachment, choose_attachment_path, choose_canonical_id},
     retrieve::{retrieve_and_validate_entries, retrieve_entries_read_only},
-    update::update,
+    update::{data_from_key, data_from_path, data_from_rev, update},
     write::{init_outfile, output_entries, output_keys},
 };
 
