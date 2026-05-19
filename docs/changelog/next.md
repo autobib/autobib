@@ -21,5 +21,5 @@ Changes since `v0.6.1`.
 
 - Autobib is migrating to a new attachment folder format.
   The new folder format is not compatibile with autobib versions `< v0.7.0`.
-- This version is able to read both the legacy format and the new format.
-- Adds a command `autobib util migrate-attachments` which migrates the attachment format to the new format.
+  - This version is able to read both the legacy format and the new format.
+  - Adds a command `autobib util migrate-attachments` which migrates the attachment format to the new format.
