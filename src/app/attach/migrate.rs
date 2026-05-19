@@ -16,25 +16,23 @@ use crate::{
 };
 
 /// Migrate attachment directory from v0 to v1
-pub fn migrate_attachments(attachment_root: &Path) -> Result<(), anyhow::Error> {
+pub fn migrate_attachments(attachment_root: &Path) -> Result<bool, anyhow::Error> {
     init_migration(attachment_root)?;
 
     let migrations = migration_candidates(attachment_root)?;
-    let mut failed = false;
+    let mut success = true;
     for (source, target) in migrations {
         if !migrate_attachment_dir(&source, &target)? {
-            failed = true;
+            success = false;
         }
     }
 
-    if failed {
-        anyhow::bail!(
-            "Attachment migration failed. Resolve the errors above, then rerun `autobib util migrate-attachments`."
-        );
+    if success {
+        finish_migration(attachment_root)?;
+        Ok(true)
+    } else {
+        Ok(false)
     }
-
-    finish_migration(attachment_root)?;
-    Ok(())
 }
 
 /// Determine a list of candidate migrations to perform by walking the attachment directory.
