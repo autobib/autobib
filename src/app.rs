@@ -1,3 +1,4 @@
+mod attach;
 mod cli;
 mod delete;
 mod edit;
@@ -7,8 +8,6 @@ mod hist;
 mod import;
 mod info;
 mod log;
-mod migrate_attachments;
-mod path;
 mod picker;
 mod replace;
 mod retrieve;
@@ -56,19 +55,17 @@ use crate::{
 };
 
 use self::{
+    attach::{
+        get_attachment_dir, get_attachment_root, get_attachment_root_path, migrate_attachments,
+    },
     cli::{AliasCommand, FindMode, InfoReportType, OnConflict, UtilCommand},
     delete::{hard_delete, soft_delete},
     edit::{create_alias_if_valid, insert, merge_record_data},
     find::output_find_selection,
     import::ImportConfig,
-    migrate_attachments::migrate_attachments,
-    path::{
-        data_from_key, data_from_path, data_from_rev, get_attachment_dir, get_attachment_root,
-        get_attachment_root_path,
-    },
     picker::{choose_attachment, choose_attachment_path, choose_canonical_id},
     retrieve::{retrieve_entries, retrieve_entries_read_only},
-    update::update,
+    update::{data_from_key, data_from_path, data_from_rev, update},
     write::{init_outfile, output_entries_bibtex, output_entries_json, output_keys},
 };
 
