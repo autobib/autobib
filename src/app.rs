@@ -28,6 +28,7 @@ use etcetera::{AppStrategy, AppStrategyArgs, choose_app_strategy};
 
 use crate::{
     app::{
+        attach::cleanup_empty_attachment_dirs,
         cli::{HistCommand, IdTarget, PruneCommand},
         log::print_log,
         retrieve::{sync_entries, sync_entries_read_only},
@@ -1266,7 +1267,19 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             },
             UtilCommand::MigrateAttachments => {
                 let attachment_root = get_attachment_root_path(&data_dir, cli.attachments_dir);
-                migrate_attachments(&attachment_root)?;
+                if migrate_attachments(&attachment_root)? {
+                    cleanup_empty_attachment_dirs(&attachment_root)?;
+                } else {
+                    error!(
+                        "Attachment migration is incomplete. Resolve the above conflicts and re-run `autobib util migrate-attachments`."
+                    );
+                }
+            }
+            UtilCommand::CleanupAttachments { empty } => {
+                if empty {
+                    let attachment_root = get_attachment_root_path(&data_dir, cli.attachments_dir);
+                    cleanup_empty_attachment_dirs(&attachment_root)?;
+                }
             }
         },
     };

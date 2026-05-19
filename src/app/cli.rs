@@ -595,6 +595,9 @@ impl UtilCommand {
             Self::Optimize => Err(ReadOnlyInvalid::Command("util optimize")),
             Self::Evict { .. } => Err(ReadOnlyInvalid::Command("util evict")),
             Self::MigrateAttachments => Err(ReadOnlyInvalid::Command("util migrate-attachments")),
+            Self::CleanupAttachments { .. } => {
+                Err(ReadOnlyInvalid::Command("util cleanup-attachments"))
+            }
         }
     }
 }
@@ -785,4 +788,10 @@ pub enum UtilCommand {
         max_age: Option<u32>,
     },
     MigrateAttachments,
+    /// Cleanup the attachment directory.
+    CleanupAttachments {
+        /// Delete empty subdirectories
+        #[arg(short, long)]
+        empty: bool,
+    },
 }
