@@ -194,19 +194,30 @@ fn migrate_attachment_dir(source: &Path, target: &Path) -> Result<bool, anyhow::
     if let Some(parent) = target.parent() {
         fs::create_dir_all(parent)?;
     }
-    if target.exists() {
-        error!(
-            "Target directory already exists.\n\
-             source: {}\n\
-             target: {}\n\
-             Merge, remove, or rename one of these directories, then rerun `autobib util migrate-attachments`.",
-            source.display(),
-            target.display()
-        );
-        return Ok(false);
+
+    // since `source` is a folder, `target` will not be overwritten unless it is
+    // an empty directory; see https://doc.rust-lang.org/std/fs/fn.rename.html#platform-specific-behavior
+    match fs::rename(source, target) {
+        Ok(()) => {}
+        Err(err)
+            if matches!(
+                err.kind(),
+                io::ErrorKind::AlreadyExists | io::ErrorKind::DirectoryNotEmpty
+            ) =>
+        {
+            error!(
+                "Target directory already exists.\n\
+                 source: {}\n\
+                 target: {}\n\
+                 Merge, remove, or rename one of these directories, then rerun `autobib util migrate-attachments`.",
+                source.display(),
+                target.display()
+            );
+            return Ok(false);
+        }
+        Err(err) => return Err(err.into()),
     }
 
-    fs::rename(source, target)?;
     Ok(true)
 }
 
