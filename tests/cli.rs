@@ -1103,6 +1103,27 @@ fn migrate_attachments_resume() -> Result<()> {
 }
 
 #[test]
+fn migrate_replaces_empty_dir() -> Result<()> {
+    let s = TestState::init()?;
+
+    let old_attachment = s.attachment("local/OM/KH/CW/MZUXE43U/attachment.txt");
+    old_attachment.write_str("attachment contents")?;
+    fs::create_dir_all(s.attach_dir.join("local/QH/OV/RX/MZUXE43U"))?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["util", "migrate-attachments"]);
+    cmd.assert().success();
+
+    old_attachment.assert(predicate::path::missing());
+    s.attachment("local/QH/OV/RX/MZUXE43U/attachment.txt")
+        .assert(predicate::eq("attachment contents"));
+    s.attachment(".autobib-format/v1")
+        .assert(predicate::path::is_dir());
+
+    s.close()
+}
+
+#[test]
 fn migrate_attachments_conflict() -> Result<()> {
     let s = TestState::init()?;
 
@@ -1123,7 +1144,7 @@ fn migrate_attachments_conflict() -> Result<()> {
             .and(contains(native_path([
                 "local", "QH", "OV", "RX", "MZUXE43U",
             ])))
-            .and(contains("Attachment migration failed"))
+            .and(contains("Attachment migration is incomplete"))
             .and(contains("migrate-attachments")),
     );
 
@@ -1144,9 +1165,12 @@ fn migrate_attachments_unrecognized() -> Result<()> {
 
     s.attachment("local/not/base32/path/not-base32")
         .write_str("ignored contents")?;
-    fs::create_dir_all(s.attach_dir.join("local/AA/AA/AA/not-base32"))?;
-    fs::create_dir_all(s.attach_dir.join("unknown/AA/AA/AA/MZUXE43U"))?;
-    fs::create_dir_all(s.attach_dir.join("local/AA/AA/AA/MZUXE43U"))?;
+    s.attachment("local/AA/AA/AA/not-base32/attachment.txt")
+        .write_str("ignored contents")?;
+    s.attachment("unknown/AA/AA/AA/MZUXE43U/attachment.txt")
+        .write_str("ignored contents")?;
+    s.attachment("local/AA/AA/AA/MZUXE43U/attachment.txt")
+        .write_str("ignored contents")?;
 
     let old_attachment = s.attachment("local/OM/KH/CW/MZUXE43U/attachment.txt");
     old_attachment.write_str("attachment contents")?;
