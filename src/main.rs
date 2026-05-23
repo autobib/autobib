@@ -2,6 +2,7 @@ mod app;
 pub mod cite_search;
 mod config;
 pub mod db;
+pub mod edit;
 mod entry;
 pub mod error;
 pub mod format;
