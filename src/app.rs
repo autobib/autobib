@@ -1,6 +1,7 @@
 mod cli;
 mod delete;
 mod edit;
+mod find;
 mod hist;
 mod import;
 mod info;
@@ -55,6 +56,7 @@ use self::{
     cli::{AliasCommand, FindMode, InfoReportType, OnConflict, UtilCommand},
     delete::{hard_delete, soft_delete},
     edit::{create_alias_if_valid, insert, merge_record_data},
+    find::output_find_selection,
     import::ImportConfig,
     path::{data_from_key, data_from_path, data_from_rev, get_attachment_dir, get_attachment_root},
     picker::{choose_attachment, choose_attachment_path, choose_canonical_id},
@@ -366,6 +368,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             template: format,
             strict,
             mode: find_mode,
+            multi,
         } => {
             if cli.no_interactive {
                 bail!("`autobib find` cannot run in non-interactive mode");
@@ -418,69 +421,25 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     }
                 }
                 FindMode::PreferredId | FindMode::CanonicalId => {
-                    let (mut picker, handle) = choose_canonical_id(record_db, template, strict);
-                    let selection = picker.pick_multi()?;
-                    if selection.is_empty() {
-                        error!("No item selected.");
+                    let (mut picker, handle) =
+                        choose_canonical_id(record_db, template, strict, multi);
+                    let canonical = matches!(find_mode, FindMode::CanonicalId);
+                    if multi.is_some() {
+                        let selection = picker.pick_multi()?;
+                        output_find_selection(
+                            &selection,
+                            canonical,
+                            &cfg.preferred_providers,
+                            handle,
+                        )?;
                     } else {
-                        let mut stdout = stdout_lock_wrap();
-                        if cfg.preferred_providers.is_empty()
-                            | matches!(find_mode, FindMode::CanonicalId)
-                        {
-                            // don't bother to wait for the thread to join
-                            for row_data in selection.iter() {
-                                writeln!(&mut stdout, "{}", row_data.canonical)?;
-                            }
-                        } else {
-                            let mut record_db =
-                                handle.join().expect("Thread should not have panicked")?;
-                            let snapshot = record_db.snapshot()?;
-                            let mut referencing_ids = Vec::new();
-
-                            if cfg.preferred_providers.len() <= 4 {
-                                // don't bother sorting
-                                's: for row_data in selection.iter() {
-                                    referencing_ids.clear();
-                                    snapshot.equivalent_remote_ids(&row_data.canonical, |id| {
-                                        referencing_ids.push(id);
-                                    })?;
-
-                                    for provider in &cfg.preferred_providers {
-                                        if let Some(remote_id) = referencing_ids
-                                            .iter()
-                                            .find(|id| id.provider() == provider)
-                                        {
-                                            writeln!(&mut stdout, "{remote_id}")?;
-                                            continue 's;
-                                        }
-                                    }
-                                    // no matching preferred provider
-                                    writeln!(&mut stdout, "{}", row_data.canonical)?;
-                                }
-                            } else {
-                                // get a key from the preferred provider if possible
-                                's: for row_data in selection.iter() {
-                                    referencing_ids.clear();
-                                    snapshot.equivalent_remote_ids(&row_data.canonical, |id| {
-                                        referencing_ids.push(id);
-                                    })?;
-
-                                    referencing_ids
-                                        .sort_unstable_by(|l, r| l.provider().cmp(r.provider()));
-
-                                    for provider in &cfg.preferred_providers {
-                                        if let Ok(idx) = referencing_ids
-                                            .binary_search_by(|id| id.provider().cmp(provider))
-                                        {
-                                            writeln!(&mut stdout, "{}", &referencing_ids[idx])?;
-                                            continue 's;
-                                        }
-                                    }
-                                    // no matching preferred provider
-                                    writeln!(&mut stdout, "{}", row_data.canonical)?;
-                                }
-                            }
-                        }
+                        let selection = picker.pick()?;
+                        output_find_selection(
+                            &selection,
+                            canonical,
+                            &cfg.preferred_providers,
+                            handle,
+                        )?;
                     }
                 }
             }
