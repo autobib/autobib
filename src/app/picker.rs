@@ -1,4 +1,5 @@
 use std::{
+    num::NonZero,
     path::{Path, PathBuf},
     thread,
 };
@@ -110,12 +111,17 @@ pub fn choose_canonical_id(
     mut record_db: RecordDatabase,
     template: Template,
     strict: bool,
+    multi: Option<Option<NonZero<u32>>>,
 ) -> (
     Picker<RecordRow<RawEntryData>, Template>,
     thread::JoinHandle<Result<RecordDatabase, rusqlite::Error>>,
 ) {
-    // initialize picker
-    let picker = Picker::new(template);
+    let picker = if let Some(max_selection_count) = multi {
+        PickerOptions::new().max_selection_count(max_selection_count)
+    } else {
+        PickerOptions::new()
+    }
+    .picker(template);
 
     // populate the picker from a separate thread
     let injector = picker.injector();

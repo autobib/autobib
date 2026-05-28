@@ -1,5 +1,6 @@
 use std::{
     io::{self, IsTerminal},
+    num::NonZero,
     path::PathBuf,
     str::FromStr,
 };
@@ -225,6 +226,9 @@ pub enum Command {
         /// The type of search to perform.
         #[arg(short, long, value_enum, default_value_t)]
         mode: FindMode,
+        /// Enable multiple selections with optional bound on selection count.
+        #[arg(long, value_name = "N", num_args = 0..=1, require_equals = true)]
+        multi: Option<Option<NonZero<u32>>>,
     },
     /// Retrieve records given identifiers.
     Get {
@@ -554,6 +558,21 @@ impl Cli {
                 name,
                 s.stylize().yellow(),
                 "--read-only".stylize().yellow(),
+            );
+            cmd.error(ErrorKind::ArgumentConflict, err_msg).exit();
+        }
+
+        if let Command::Find {
+            mode: FindMode::Attachments,
+            multi: Some(_),
+            ..
+        } = &self.command
+        {
+            let mut cmd = Self::command();
+            let err_msg = format!(
+                "'{}' cannot be used with '{}'",
+                "--multi".stylize().yellow(),
+                "--mode attachments".stylize().yellow(),
             );
             cmd.error(ErrorKind::ArgumentConflict, err_msg).exit();
         }
