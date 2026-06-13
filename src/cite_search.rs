@@ -26,6 +26,7 @@ pub mod bib;
 pub mod tex;
 pub mod tex_auxfile;
 pub mod txt;
+pub mod typ;
 
 use std::{ffi::OsStr, path::Path, str::FromStr};
 
@@ -42,6 +43,8 @@ pub enum SourceFileType {
     Aux,
     /// Read citation keys from a BibTeX file.
     Bib,
+    /// Typst contents, such as `.typ` files.
+    Typ,
 }
 
 impl FromStr for SourceFileType {
@@ -53,6 +56,7 @@ impl FromStr for SourceFileType {
             "txt" => Ok(Self::Txt),
             "aux" => Ok(Self::Aux),
             "bib" => Ok(Self::Bib),
+            "typ" => Ok(Self::Typ),
             ext => Err(Error::UnsupportedFileType(ext.into())),
         }
     }
@@ -93,6 +97,7 @@ pub fn get_citekeys_filter<T: Extend<RecordId>, F: FnMut(&RecordId) -> bool>(
         SourceFileType::Aux => tex_auxfile::get_citekeys,
         SourceFileType::Bib => bib::get_citekeys,
         SourceFileType::Txt => txt::get_citekeys,
+        SourceFileType::Typ => typ::get_citekeys,
     };
     get_citekey_impl(buffer, &mut FilterExtend { container, f });
 }
