@@ -13,8 +13,9 @@ rust-version = "1.94"
 edition = "2024"
 
 [features]
-default = ["bundled-sqlite"]
+default = ["bundled-sqlite", "typst"]
 bundled-sqlite = ["rusqlite/bundled"]
+typst = ["dep:typst-syntax"]
 in_memory_database = []
 read_response_cache = ["dep:bincode"]
 write_response_cache = ["dep:bincode", "in_memory_database"]
@@ -50,7 +51,7 @@ shell-words = "1.1"
 tempfile = "3.27"
 thiserror = "2.0"
 toml = "1.0"
-typst-syntax = "0.14"
+typst-syntax = { version = "0.14", optional = true }
 ureq = { version = "3.1", features = ["json", "socks-proxy"] }
 walkdir = "2.5"
 which = "8.0"
