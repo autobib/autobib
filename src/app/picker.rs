@@ -111,24 +111,21 @@ pub fn choose_canonical_id(
     mut record_db: RecordDatabase,
     template: Template,
     strict: bool,
-    multi: Option<Option<NonZero<u32>>>,
+    max_selection_count: Option<NonZero<u32>>,
 ) -> (
     Picker<RecordRow<RawEntryData>, Template>,
     thread::JoinHandle<Result<RecordDatabase, rusqlite::Error>>,
 ) {
-    let picker = if let Some(max_selection_count) = multi {
-        PickerOptions::new().max_selection_count(max_selection_count)
-    } else {
-        PickerOptions::new()
-    }
-    .picker(template);
+    let picker = PickerOptions::new()
+        .max_selection_count(max_selection_count)
+        .picker(template);
 
     // populate the picker from a separate thread
     let injector = picker.injector();
     let handle = thread::spawn(move || {
         // TODO: to better support cancellation here, we could use an Arc<AtomicBool>
         // cancellation token; paginate the select using `SELECT ... LIMIT ...` with some sane
-        // page size (maybe 10k? this should take <1ms per page), and then check for cancellation
+        // page size (maybe 1k? this should take <1ms per page), and then check for cancellation
         // between pages.
         record_db.inject_active_records(injector.clone(), |row_data| {
             if strict && !injector.renderer().has_keys_contained_in(&row_data) {
