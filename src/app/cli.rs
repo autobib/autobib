@@ -227,8 +227,13 @@ pub enum Command {
         #[arg(short, long, value_enum, default_value_t)]
         mode: FindMode,
         /// Enable multiple selections with optional bound on selection count.
-        #[arg(long, value_name = "N", num_args = 0..=1, require_equals = true)]
+        // NOTE: the outer `Option` specifies if the flag was passed at the command line
+        // and the inner option specifies if a value was specified
+        #[arg(short, long, value_name = "N", num_args = 0..=1, require_equals = true, conflicts_with = "no_multi")]
         multi: Option<Option<NonZero<u32>>>,
+        /// Disable multiple selections.
+        #[arg(long, conflicts_with = "multi")]
+        no_multi: bool,
     },
     /// Retrieve records given identifiers.
     Get {
