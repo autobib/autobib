@@ -12,10 +12,11 @@ If you just want a list of the keys which were found, you can also use `--print-
 By default, Autobib tries to guess the format of your file based on the file name.
 The following filetypes are supported:
 
-- `.tex`, `.sty`: identifiers contained in `\cite`{...}` commands, and relatives.
+- `.tex`, `.sty`: identifiers contained in `\cite`{...}` commands, and relatives
 - `.txt`: a single identifier per line
 - `.aux`: the aux format `\abx@aux@cite{0}{...}`
 - `.bib`: the bibtex identifiers
+- `.typ`: explicit citations in the form `#cite(<key>)` or `#cite(label("key"))`
 
 You can force the filetype behaviour with the `--file-type` flag.
 

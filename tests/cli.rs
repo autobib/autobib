@@ -294,6 +294,30 @@ fn source_keys_only() -> Result<()> {
     s.close()
 }
 
+/// Check that `.typ` source detection works.
+#[test]
+fn source_typ() -> Result<()> {
+    let s = TestState::init()?;
+
+    let predicate_file =
+        predicate::path::eq_file(Path::new("tests/resources/source_typ/stdout.txt"))
+            .utf8()
+            .unwrap();
+
+    let mut cmd = s.cmd()?;
+    cmd.args([
+        "source",
+        "tests/resources/source_typ/main.typ",
+        "--print-keys",
+    ]);
+    cmd.assert()
+        .success()
+        .stdout(predicate_file)
+        .stderr(predicate::str::is_empty());
+
+    s.close()
+}
+
 /// Check that the `--skip*` and `--append` options for `autobib source`
 /// work as expected
 #[test]
