@@ -117,7 +117,7 @@ Read more at [`docs/source.md`](docs/source.md).
 On the first run, Autobib retrieves the data directly from a remote provider.
 The data is stored locally in a [SQLite](https://www.sqlite.org/) database, so that subsequent runs are substantially faster.
 
-You can view and modify the internally stored record with
+You can view and modify the internally stored record with `autobib edit`:
 ```sh
 autobib edit zbl:1337.28015
 ```
@@ -130,7 +130,7 @@ You can also:
 - merge an existing record into another (perhaps automatically determined) one using the `autobib replace` command, and
 - re-retrieve a record from the remote provider using the `autobib update` command.
 
-Run `autobib help (delete|replace|update)`.
+Run `autobib help (delete|replace|update)` for more detail.
 
 The modifications performed by edits, deletions, replacements, and updates (except when using the special `--hard` flag) are always recoverable.
 See the [edit history](#working-with-edit-history) section for more detail.
@@ -182,7 +182,7 @@ For example, to convert `zbMATH06346461` to `zbmath:06346461` and automatically 
 
 ```toml
 [alias_transform]
-rules = [["^zbMATH([0-9]{8})$", "zbmath"]]
+rules = [["^zbMATH([0-9]{4,8})$", "zbmath"]]
 create_alias = true
 ```
 Read the [default configuration](src/config/default_config.toml) for more detail.
