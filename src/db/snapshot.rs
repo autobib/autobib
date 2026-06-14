@@ -304,7 +304,7 @@ WHERE variant = 1
                 f(RemoteId::from_string_unchecked(from_utf8(bytes).unwrap()))
                     .map_err(SnapshotMapErr::CallbackFailed)?;
             } else {
-                panic!("'Identifiers' table has unexpected schema: column 'name' is not a TEXT!");
+                panic!("'Identifiers' table has unexpected schema: column 'name' is not TEXT!");
             }
         }
 

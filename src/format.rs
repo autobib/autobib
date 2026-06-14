@@ -277,7 +277,7 @@ impl Template {
         true
     }
 
-    /// Returns whether if this template can be rendered by the provided row data without having
+    /// Returns whether this template can be rendered by the provided row data without having
     /// any non-optional undefined keys.
     pub fn has_keys_contained_in(&self, row: &RecordRow<RawEntryData>) -> bool {
         match self.strategy {

@@ -38,7 +38,7 @@ strip_journal_series = false
 [alias_transform]
 
 # A list of [pattern, provider] pairs. Each matching pattern must have exactly one
-# capture group. The matching capture group matches is used to create a corresponding
+# capture group. The text captured by the group is used to create a corresponding
 # identifier of the form `provider:captured`. You can validate your configuration with
 # `autobib util check`.
 #
