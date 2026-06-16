@@ -793,7 +793,10 @@ pub enum UtilCommand {
     /// This is a no-op without any flags.
     CleanupAttachments {
         /// Delete empty subdirectories.
-        #[arg(short, long)]
+        #[arg(long)]
         empty: bool,
+        /// Delete spurious lock directory.
+        #[arg(long)]
+        lockdir: bool,
     },
 }

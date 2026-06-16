@@ -50,6 +50,7 @@ use crate::{
     logger::{LogDisplay, debug, error, info, suggest, warn},
     normalize::{Normalization, Normalize},
     output::{owriteln, stdout_lock_wrap},
+    path_hash::{AttachmentRoot, AttachmentRootLock},
     provider::{RemoteIdCandidate, determine_key_from_data},
     record::{Alias, Record, RecordId, RemoteId, get_record_row, get_record_row_tx},
     term::Editor,
@@ -776,11 +777,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 local_fallback,
                 no_alias,
                 file_import_root: if include_files {
-                    Some(get_attachment_root(
-                        &data_dir,
-                        cli.attachments_dir,
-                        cli.read_only,
-                    )?)
+                    Some(get_attachment_root(&data_dir, cli.attachments_dir, false)?)
                 } else {
                     None
                 },
@@ -1266,19 +1263,20 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 }
             },
             UtilCommand::MigrateAttachments => {
-                let attachment_root = get_attachment_root_path(&data_dir, cli.attachments_dir);
-                if migrate_attachments(&attachment_root)? {
-                    cleanup_empty_attachment_dirs(&attachment_root)?;
-                } else {
-                    error!(
-                        "Attachment migration is incomplete. Resolve the above conflicts and re-run `autobib util migrate-attachments`."
-                    );
-                }
+                let root_path = get_attachment_root_path(&data_dir, cli.attachments_dir);
+                let mut at_root = AttachmentRoot::resolve_unchecked(root_path, false)?;
+                migrate_attachments(&mut at_root)?;
+                cleanup_empty_attachment_dirs(&mut at_root)?;
+                drop(at_root);
             }
-            UtilCommand::CleanupAttachments { empty } => {
-                if empty {
-                    let attachment_root = get_attachment_root_path(&data_dir, cli.attachments_dir);
-                    cleanup_empty_attachment_dirs(&attachment_root)?;
+            UtilCommand::CleanupAttachments { empty, lockdir } => {
+                if lockdir || empty {
+                    let root_path = get_attachment_root_path(&data_dir, cli.attachments_dir);
+                    if lockdir {
+                        AttachmentRootLock::cleanup(&root_path)?;
+                    }
+                    let mut at_root = AttachmentRoot::resolve(root_path, false)?;
+                    cleanup_empty_attachment_dirs(&mut at_root)?;
                 }
             }
         },
