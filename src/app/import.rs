@@ -277,7 +277,7 @@ fn create_alias_and_commit(
     Ok(())
 }
 
-/// File import struct with stratch space to reduce re-allocation.
+/// File import struct with scratch space to reduce re-allocation.
 struct FileImportTarget<'a> {
     root: &'a AttachmentRoot,
     path: PathBuf,

@@ -13,13 +13,14 @@ Changes since `v0.6.1`.
 ## Breaking changes
 
 - `zbmath` identifiers are now stored internally without 0-padding to length 8
-- Autobib is migrating to a new attachment folder format.
-  The new folder format is not compatibile with autobib versions `< v0.7.0`.
-  - This version is able to read both the legacy format and the new format.
-  - Adds a command `autobib util migrate-attachments` which migrates the attachment format to the new format.
 - SQLite is now only bundled when the Cargo feature `bundled-sqlite` is enabled.
   This feature is enabled by default, but this may cause breakage with builds using `--no-default-features`.
   Disabling this feature will cause the compiled binary to link to your SQLite system library instead.
+- In a future version, Autobib will migrate to a new attachment folder format.
+  The new folder format is not compatibile with autobib versions `< 0.7.0`.
+  - This version is able to read both the legacy format and the new format.
+  - You can migrate early by running `autobib util migrate-attachments`.
+    Note that the attachments will no longer be readable by an old version of Autobib.
 - Renamed `autobib util list` to `autobib util print-identifiers`.
   `autobib util list` is still usable as an alias, but this will be removed in the future.
 - Aliases can no longer contain control characters.

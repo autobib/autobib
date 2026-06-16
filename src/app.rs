@@ -408,7 +408,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             match find_mode {
                 FindMode::Attachments => {
                     let attachment_root =
-                        get_attachment_root(&data_dir, cli.attachments_dir, cli.read_only)?;
+                        get_attachment_root(&data_dir, cli.attachments_dir, true)?;
                     let mut picker = choose_attachment_path(
                         record_db,
                         template,
