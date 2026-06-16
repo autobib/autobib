@@ -59,6 +59,8 @@ impl AttachmentRoot {
     }
 
     /// Overwrite the provided buffer with the attachment directory corresponding to the identifier.
+    ///
+    /// This is used to reduce allocations in case the caller already has a [`PathBuf`].
     pub fn attachment_dir_in(&self, id: &RemoteId, path: &mut PathBuf) {
         path.clear();
         path.push(&self.root);

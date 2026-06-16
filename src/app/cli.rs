@@ -788,9 +788,11 @@ pub enum UtilCommand {
         max_age: Option<u32>,
     },
     MigrateAttachments,
-    /// Cleanup the attachment directory.
+    /// Run various cleanup operations in the attachment directory.
+    ///
+    /// This is a no-op without any flags.
     CleanupAttachments {
-        /// Delete empty subdirectories
+        /// Delete empty subdirectories.
         #[arg(short, long)]
         empty: bool,
     },

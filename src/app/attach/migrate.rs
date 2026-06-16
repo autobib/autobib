@@ -187,6 +187,7 @@ fn migrate_attachment_dir(source: &Path, target: &Path) -> Result<bool, anyhow::
                 "Skipping invalid path which is not a directory: {}",
                 source.display()
             );
+            return Ok(true);
         }
         Err(err) => return Err(err.into()),
     };
