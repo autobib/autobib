@@ -1024,9 +1024,9 @@ fn attachment_format_unknown_errors() -> Result<()> {
 
     let mut cmd = s.cmd()?;
     cmd.args(["path", "local:first"]);
-    cmd.assert()
-        .failure()
-        .stderr(contains("incompatible attachment format"));
+    cmd.assert().failure().stderr(contains(
+        "attachment directory exists but is not in a recognized state",
+    ));
 
     s.attachment(".autobib-format/v0")
         .assert(predicate::path::missing());
@@ -1059,22 +1059,6 @@ fn migrate_attachments() -> Result<()> {
         .assert(predicate::path::missing());
     s.attachment(".autobib-format/v1")
         .assert(predicate::path::is_dir());
-
-    s.close()
-}
-
-#[test]
-fn migrate_attachments_missing_root() -> Result<()> {
-    let s = TestState::init()?;
-    let missing_root = s.attach_dir.join("missing");
-
-    let mut cmd = s.cmd_with_attachments_dir(&missing_root)?;
-    cmd.args(["util", "migrate-attachments"]);
-    cmd.assert()
-        .failure()
-        .stderr(contains("provided attachment directory is empty"));
-
-    assert!(!missing_root.exists());
 
     s.close()
 }

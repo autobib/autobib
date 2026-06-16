@@ -16,7 +16,7 @@
 // 4. Else: the attachment format is unknown to the current binary, resulting in an error
 
 use std::{
-    fs, io,
+    fs,
     path::{Path, PathBuf},
 };
 
@@ -25,33 +25,192 @@ use rapidhash::{v1::rapidhash_v1, v3::rapidhash_v3};
 
 use crate::RemoteId;
 
-pub(crate) const FORMAT_DIR: &str = ".autobib-format";
-pub(crate) const FORMAT_V0: &str = "v0";
-pub(crate) const FORMAT_V1_MIGRATING: &str = "v1-migrating";
-pub(crate) const FORMAT_V1: &str = "v1";
-
 /// Attachment directory format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AttachmentFormat {
     /// 0-padded zbmath identifiers and [`rapidhash::v1`]
     V0,
+    /// Migrating from [`Self::V0`] to [`Self::V1`]
+    V1Migrating,
     /// [`rapidhash::v3`]
     V1,
 }
 
-/// The attachment directory root along with the format.
-#[derive(Debug, Clone)]
-pub struct AttachmentRoot {
+impl AttachmentFormat {
+    fn fmt_dir(root: &Path) -> PathBuf {
+        root.join(".autobib-format")
+    }
+
+    fn subdir_name(&self) -> &'static str {
+        match self {
+            Self::V0 => "v0",
+            Self::V1Migrating => "v1-migrating",
+            Self::V1 => "v1",
+        }
+    }
+
+    fn subdir(&self, root: &Path) -> PathBuf {
+        let mut fmt_dir = Self::fmt_dir(root);
+        fmt_dir.push(self.subdir_name());
+        fmt_dir
+    }
+
+    /// Read the attachment format, or return `None` if the attachment format subdirectory does not
+    /// exist.
+    fn read(root: &Path) -> Result<Option<Self>, anyhow::Error> {
+        let mut fmt_dir = Self::fmt_dir(root);
+
+        if !fmt_dir.try_exists()? {
+            return Ok(None);
+        }
+
+        // first matching directory sets the format
+        for variant in [Self::V0, Self::V1Migrating, Self::V1] {
+            fmt_dir.push(variant.subdir_name());
+            if fmt_dir.try_exists()? {
+                return Ok(Some(variant));
+            }
+            fmt_dir.pop();
+        }
+
+        anyhow::bail!("attachment directory exists but is not in a recognized state")
+    }
+}
+
+/// A read-only or read-write lock on the attachment folder.
+///
+/// Acquiring the lock requires writing a directory, and therefore cannot be done when Autobib is
+/// run in read-only mode.
+#[derive(Debug)]
+pub struct AttachmentRootLock {
     root: PathBuf,
+    read_only: bool,
+}
+
+impl Drop for AttachmentRootLock {
+    fn drop(&mut self) {
+        if !self.read_only {
+            self.root.push(Self::lockdir());
+            let _ = fs::remove_dir(&self.root);
+        }
+    }
+}
+
+impl AttachmentRootLock {
+    fn lockdir() -> &'static str {
+        "LOCKDIR"
+    }
+
+    pub(crate) fn cleanup(root: &Path) -> Result<(), anyhow::Error> {
+        fs::remove_dir(root.join(Self::lockdir())).map_err(|err| {
+            if err.kind() == std::io::ErrorKind::NotFound {
+                anyhow::anyhow!("No lock directory to cleanup")
+            } else {
+                err.into()
+            }
+        })
+    }
+
+    fn acquire(root: PathBuf, read_only: bool) -> Result<Self, anyhow::Error> {
+        let ld = root.join(Self::lockdir());
+        if read_only {
+            if ld.exists() {
+                anyhow::bail!(
+                    "Failed to acquire read lock in attachment directory.\n Retry later or clean up spurious locks with `autobib util cleanup-attachments --lockdir`"
+                )
+            } else {
+                Ok(Self { root, read_only })
+            }
+        } else {
+            fs::create_dir_all(&root)?;
+            match fs::create_dir(&ld) {
+                Ok(()) => Ok(Self { root, read_only }),
+                Err(_) => anyhow::bail!(
+                    "Failed to acquire read-write lock in attachment directory.\n Retry later or clean up spurious locks with `autobib util cleanup-attachments --lockdir`"
+                ),
+            }
+        }
+    }
+
+    fn root(&self) -> &Path {
+        &self.root
+    }
+}
+
+/// The attachment directory root along with the format.
+///
+/// The attachment root uses a lock directory `$LOCKDIR`, which is an empty directory
+/// `$AUTOBIB_ATTACHMENTS_DIRECTORY/LOCKDIR`. The attachment root can be initialized in read-only
+/// mode or in read-write mode.
+///
+/// - In read-only mode, at startup the process checks for the presence of `$LOCKDIR` and aborts if
+///   it exists. However, no further checks are made, and reads may be inconsistent with the actual
+///   state of the attachments directory.
+/// - In read-write mode, at initialization this method creates `$LOCKDIR` and deletes
+///   `$LOCKDIR` when dropped.
+///
+/// Note that early versions of Autobib do not respect `$LOCKDIR`. Similarly, other non-Autobib
+/// processes may not respect `$LOCKDIR` at all. Therefore, one must still ensure that mutable
+/// operations never overwrite existing files.
+#[derive(Debug)]
+pub struct AttachmentRoot {
+    lock: AttachmentRootLock,
     format: AttachmentFormat,
 }
 
 impl AttachmentRoot {
-    pub fn resolve(root: PathBuf, read_only: bool) -> Result<Self, anyhow::Error> {
-        let format = AttachmentFormat::resolve(&root, read_only)?;
-        Ok(Self { root, format })
+    /// Acquire a lock (if necessary) and resolve the attachment format, without checking if we are
+    /// in a `migrating` state.
+    pub fn resolve_unchecked(root: PathBuf, read_only: bool) -> Result<Self, anyhow::Error> {
+        let lock = AttachmentRootLock::acquire(root, read_only)?;
+        let format = if read_only {
+            AttachmentFormat::read(lock.root())?.unwrap_or(AttachmentFormat::V0)
+        } else {
+            match AttachmentFormat::read(lock.root())? {
+                Some(f) => f,
+                None => {
+                    let v0 = AttachmentFormat::V0.subdir(lock.root());
+                    fs::create_dir_all(&v0)?;
+                    AttachmentFormat::V0
+                }
+            }
+        };
+        Ok(Self { lock, format })
     }
 
+    /// Acquire a lock (if necessary) and resolve the attachment format.
+    pub fn resolve(root: PathBuf, read_only: bool) -> Result<Self, anyhow::Error> {
+        let at_root = Self::resolve_unchecked(root, read_only)?;
+        if at_root.format() == AttachmentFormat::V1Migrating {
+            anyhow::bail!(
+                "Attachment directory is currently being migrated. Resume with `autobib util migrate-attachments` in order to read and write to the directory."
+            );
+        }
+        Ok(at_root)
+    }
+
+    /// The format of the attachment directory on creation.
+    pub fn format(&self) -> AttachmentFormat {
+        self.format
+    }
+
+    /// The root attachments directory.
+    pub fn dir(&self) -> &Path {
+        self.lock.root()
+    }
+
+    /// Change the format.
+    pub fn set_format(&mut self, new: AttachmentFormat) -> Result<(), anyhow::Error> {
+        if new != self.format {
+            let rt = self.lock.root();
+            fs::rename(self.format.subdir(rt), new.subdir(rt))?;
+            self.format = new;
+        }
+
+        Ok(())
+    }
+
+    /// Get the attachment directory corresponding to the identifier.
     pub fn attachment_dir(&self, id: &RemoteId) -> PathBuf {
         let mut path = PathBuf::new();
         self.attachment_dir_in(id, &mut path);
@@ -60,57 +219,15 @@ impl AttachmentRoot {
 
     /// Overwrite the provided buffer with the attachment directory corresponding to the identifier.
     ///
-    /// This is used to reduce allocations in case the caller already has a [`PathBuf`].
+    /// This is useful for reducing allocations in case the caller already has a [`PathBuf`].
     pub fn attachment_dir_in(&self, id: &RemoteId, path: &mut PathBuf) {
         path.clear();
-        path.push(&self.root);
+        path.push(self.lock.root());
         match self.format {
             AttachmentFormat::V0 => RemoteIdAttachmentPathV0(id).extend_attachments_path(path),
-            AttachmentFormat::V1 => RemoteIdAttachmentPathV1(id).extend_attachments_path(path),
-        }
-    }
-}
-
-impl AttachmentFormat {
-    /// Determine the attachment format using a marker directory.
-    ///
-    /// If the format marker does not exist, initialize it as `v0` (unless `read_only`)
-    pub fn resolve(attachment_root: &Path, read_only: bool) -> Result<Self, anyhow::Error> {
-        let format_root = attachment_root.join(FORMAT_DIR);
-
-        // fast-path checks: look for a matching format directory
-        if format_root.join(FORMAT_V0).is_dir() {
-            Ok(Self::V0)
-        } else if format_root.join(FORMAT_V1_MIGRATING).is_dir() {
-            anyhow::bail!(
-                "The attachment directory format is currently being migrated. Run `autobib util migrate-attachments` to resume migration."
-            );
-        } else if format_root.join(FORMAT_V1).is_dir() {
-            Ok(Self::V1)
-        } else {
-            // we did not find any of the `v0`, `v1-migrating`, or `v1` directories, so there
-            // are two cases:
-            // 1. The `.autobib-format` directory itself does not yet exist, in which case we
-            //    initialize with the `v0` file
-            // 2. The format is incompatible.
-            if read_only {
-                if !format_root.exists() {
-                    return Ok(Self::V0);
-                }
-            } else {
-                fs::create_dir_all(attachment_root)?;
-
-                match fs::create_dir(&format_root) {
-                    Ok(()) => {
-                        fs::create_dir(format_root.join(FORMAT_V0))?;
-                        return Ok(Self::V0);
-                    }
-                    Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {}
-                    Err(err) => return Err(err.into()),
-                }
+            AttachmentFormat::V1Migrating | AttachmentFormat::V1 => {
+                RemoteIdAttachmentPathV1(id).extend_attachments_path(path);
             }
-
-            anyhow::bail!("The attachment directory uses an incompatible attachment format.");
         }
     }
 }

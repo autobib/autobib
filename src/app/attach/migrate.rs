@@ -10,16 +10,15 @@ use crate::{
     RemoteId,
     logger::{error, warn},
     path_hash::{
-        FORMAT_DIR, FORMAT_V0, FORMAT_V1, FORMAT_V1_MIGRATING, extend_attachment_path_v0,
-        extend_attachment_path_v1,
+        AttachmentFormat, AttachmentRoot, extend_attachment_path_v0, extend_attachment_path_v1,
     },
 };
 
 /// Migrate attachment directory from v0 to v1
-pub fn migrate_attachments(attachment_root: &Path) -> Result<bool, anyhow::Error> {
-    init_migration(attachment_root)?;
+pub fn migrate_attachments(at_root: &mut AttachmentRoot) -> Result<(), anyhow::Error> {
+    init_migration(at_root)?;
 
-    let migrations = migration_candidates(attachment_root)?;
+    let migrations = migration_candidates(at_root)?;
     let mut success = true;
     for (source, target) in migrations {
         if !migrate_attachment_dir(&source, &target)? {
@@ -28,16 +27,21 @@ pub fn migrate_attachments(attachment_root: &Path) -> Result<bool, anyhow::Error
     }
 
     if success {
-        finish_migration(attachment_root)?;
-        Ok(true)
+        finish_migration(at_root)?;
+        Ok(())
     } else {
-        Ok(false)
+        anyhow::bail!(
+            "Attachment migration is incomplete. Resolve the above conflicts and re-run `autobib util migrate-attachments`"
+        );
     }
 }
 
 /// Determine a list of candidate migrations to perform by walking the attachment directory.
-fn migration_candidates(attachment_root: &Path) -> Result<Vec<(PathBuf, PathBuf)>, anyhow::Error> {
+fn migration_candidates(
+    at_root: &AttachmentRoot,
+) -> Result<Vec<(PathBuf, PathBuf)>, anyhow::Error> {
     let mut migrations = Vec::new();
+    let attachment_root = at_root.dir();
 
     // nothing to do
     if !attachment_root.exists() {
@@ -127,51 +131,18 @@ fn decode_attachment_dir_id(provider: &str, source: &Path) -> Option<RemoteId> {
     }
 }
 
-fn init_migration(attachment_root: &Path) -> Result<(), anyhow::Error> {
-    let format_root = attachment_root.join(FORMAT_DIR);
-    let v0 = format_root.join(FORMAT_V0);
-    let migrating = format_root.join(FORMAT_V1_MIGRATING);
-    let v1 = format_root.join(FORMAT_V1);
-
-    match fs::remove_dir(&v0) {
-        Ok(()) => {
-            // `v0` exists and we just deleted it, so create `v1-migrating` to indicate that
-            // migration is in progress
-            fs::create_dir_all(&migrating)?;
-            Ok(())
+fn init_migration(at_root: &mut AttachmentRoot) -> Result<(), anyhow::Error> {
+    match at_root.format() {
+        AttachmentFormat::V0 => {
+            at_root.set_format(AttachmentFormat::V1Migrating)?;
         }
-        Err(err) if err.kind() == io::ErrorKind::NotFound => {
-            // `v0` does not exist but `v1-migrating` does; currently migrating
-            if migrating.is_dir() {
-                Ok(())
-            } else if v1.is_dir() {
-                // already migrated
-                anyhow::bail!("Attachment directory already uses the v1 attachment format.");
-            } else {
-                // check if the format directory exists at all
-                match fs::create_dir(&format_root) {
-                    Ok(()) => {
-                        // it does not, so we assume it is currently in `v0` format
-                        fs::create_dir(&migrating)?;
-                        Ok(())
-                    }
-                    Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {
-                        // it exists, but none of the expected checks could determine the format
-                        anyhow::bail!(
-                            "The attachment directory is in an unrecognizable format or is currently being edited by another program."
-                        );
-                    }
-                    Err(err) if err.kind() == io::ErrorKind::NotFound => {
-                        anyhow::bail!(
-                            "The provided attachment directory is empty; no attachment migration is necessary."
-                        );
-                    }
-                    Err(err) => Err(err.into()),
-                }
-            }
+        AttachmentFormat::V1Migrating => {}
+        AttachmentFormat::V1 => {
+            anyhow::bail!("Attachment directory already uses the v1 attachment format.")
         }
-        Err(err) => Err(err.into()),
     }
+
+    Ok(())
 }
 
 fn migrate_attachment_dir(source: &Path, target: &Path) -> Result<bool, anyhow::Error> {
@@ -222,10 +193,7 @@ fn migrate_attachment_dir(source: &Path, target: &Path) -> Result<bool, anyhow::
     Ok(true)
 }
 
-fn finish_migration(attachment_root: &Path) -> Result<(), anyhow::Error> {
-    let format_root = attachment_root.join(FORMAT_DIR);
-
-    fs::create_dir_all(format_root.join(FORMAT_V1))?;
-    fs::remove_dir(format_root.join(FORMAT_V1_MIGRATING))?;
+fn finish_migration(attachment_root: &mut AttachmentRoot) -> Result<(), anyhow::Error> {
+    attachment_root.set_format(AttachmentFormat::V1)?;
     Ok(())
 }

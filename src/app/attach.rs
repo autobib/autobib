@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use crate::{logger::info, path_hash::AttachmentRoot, record::RemoteId};
 pub use {cleanup::cleanup_empty_attachment_dirs, migrate::migrate_attachments};
 
-/// Get the attachment root directory, either as a default from the data directory or using the
+/// Get the attachment root, either as a default from the data directory or using the
 /// user provided value.
 pub fn get_attachment_root(
     data_dir: &Path,
