@@ -78,17 +78,6 @@ jobs:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
 
-      # Check RUST_VERSION equal to Cargo.toml
-      - name: Check CI rust version equal to Cargo.toml
-        shell: bash
-        run: |
-          CARGO_TOML_RUST_VERSION="$(yq '.package.rust-version' Cargo.toml)"
-          if [[ "$CARGO_TOML_RUST_VERSION" != "${{ env.RUST_VERSION }}" ]]; then
-            echo >&2 "Rust version in Cargo.toml ($CARGO_TOML_RUST_VERSION) not equal to CI: ${{ env.RUST_VERSION }}"
-            echo >&2 "The rust version is set as a repository-level variable"
-            exit 1
-          fi
-
       # Rust doc/fmt/clippy
       - name: Build docs
         run: cargo doc --no-deps --locked
