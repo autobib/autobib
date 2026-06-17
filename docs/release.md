@@ -10,9 +10,8 @@
 7. Wait for CI to succeed, merge the PR.
 8. Create (and push) a new tag on the release commit of the form `vX.Y.Z`.
     The release workflow will automatically compile the binaries and publish to `crates.io`.
-    It will also create a draft release with all of the release binaries.
-9. Go to the 'releases' tab on GitHub and publish the draft release.
-10. Start a run of the "formula bump" workflow on the autobib/homebrew-autobib tap repo to update the autobib formula.
+    It will also create a GitHub release with all of the release binaries.
+9. Start a run of the "formula bump" workflow on the autobib/homebrew-autobib tap repo to update the autobib formula.
     See [the tap's docs](https://github.com/autobib/homebrew-autobib/blob/main/docs/formula-bumps.md) for more details on the formula bump process.
 
 ## Automation

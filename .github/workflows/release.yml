@@ -239,3 +239,13 @@ jobs:
         run: cargo publish
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+
+  publish-github-release:
+    name: Publish GitHub release
+    needs: [create-release, upload-binary, publish-crates-io]
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release edit ${{ github.ref_name }} --draft=false --verify-tag
