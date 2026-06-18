@@ -369,7 +369,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             strict,
             mode: find_mode,
             limit,
-            single,
+            one,
         } => {
             if cli.no_interactive {
                 bail!("`autobib find` cannot run in non-interactive mode");
@@ -423,7 +423,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 }
                 FindMode::Records => {
                     let (mut picker, _) = choose_canonical_id(record_db, template, strict, limit);
-                    if single {
+                    if one {
                         let selection = picker.pick()?;
                         output_find_selection(&selection)?;
                     } else {
