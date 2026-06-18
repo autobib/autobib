@@ -121,12 +121,13 @@ impl Default for OnConflict {
 #[derive(Debug, Copy, Clone, ValueEnum, Default)]
 pub enum FindMode {
     /// Search record attachments and print the selected path.
+    #[value(aliases(["a", "attach"]))]
     Attachments,
-    /// Search records and print the preferred remote identifier.
-    #[default]
-    PreferredId,
     /// Search records and print the canonical identifier.
-    CanonicalId,
+    #[default]
+    // FIXME: alias("canonical=id") is for backwards compat and should be removed eventually
+    #[value(aliases(["r", "record", "canonical-id"]))]
+    Records,
 }
 
 #[derive(Debug, Subcommand)]

@@ -421,26 +421,14 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         None => error!("No record selected."),
                     }
                 }
-                FindMode::PreferredId | FindMode::CanonicalId => {
-                    let (mut picker, handle) =
-                        choose_canonical_id(record_db, template, strict, limit);
-                    let canonical = matches!(find_mode, FindMode::CanonicalId);
+                FindMode::Records => {
+                    let (mut picker, _) = choose_canonical_id(record_db, template, strict, limit);
                     if single {
                         let selection = picker.pick()?;
-                        output_find_selection(
-                            &selection,
-                            canonical,
-                            &cfg.preferred_providers,
-                            handle,
-                        )?;
+                        output_find_selection(&selection)?;
                     } else {
                         let selection = picker.pick_multi()?;
-                        output_find_selection(
-                            &selection,
-                            canonical,
-                            &cfg.preferred_providers,
-                            handle,
-                        )?;
+                        output_find_selection(&selection)?;
                     }
                 }
             }

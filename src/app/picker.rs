@@ -105,7 +105,8 @@ pub fn choose_attachment_path<F: FnMut(&Path) -> bool + Send + 'static>(
     picker
 }
 
-/// Returns a picker which returns the record data associated with the picked item.
+/// Returns a picker which returns the record data associated with the picked item, as well as a
+/// handle for the thread which is populating the picker.
 #[allow(clippy::type_complexity)]
 pub fn choose_canonical_id(
     mut record_db: RecordDatabase,
