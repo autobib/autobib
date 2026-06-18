@@ -231,11 +231,11 @@ pub enum Command {
         #[arg(short, long, value_enum, default_value_t)]
         mode: FindMode,
         /// Limit the number of selections
-        #[arg(long, conflicts_with = "single")]
+        #[arg(long, conflicts_with = "one", value_name = "N")]
         limit: Option<NonZero<u32>>,
         /// Force exactly one selection.
-        #[arg(long, conflicts_with = "limit")]
-        single: bool,
+        #[arg(short = '1', long, conflicts_with = "limit")]
+        one: bool,
     },
     /// Retrieve records given identifiers.
     Get {
