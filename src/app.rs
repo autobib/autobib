@@ -368,8 +368,8 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             template: format,
             strict,
             mode: find_mode,
-            multi,
-            no_multi,
+            limit,
+            single,
         } => {
             if cli.no_interactive {
                 bail!("`autobib find` cannot run in non-interactive mode");
@@ -423,9 +423,9 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 }
                 FindMode::PreferredId | FindMode::CanonicalId => {
                     let (mut picker, handle) =
-                        choose_canonical_id(record_db, template, strict, multi.flatten());
+                        choose_canonical_id(record_db, template, strict, limit);
                     let canonical = matches!(find_mode, FindMode::CanonicalId);
-                    if no_multi {
+                    if single {
                         let selection = picker.pick()?;
                         output_find_selection(
                             &selection,
@@ -821,12 +821,12 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             let cfg = config::load(&config_path, missing_ok)?;
             match record_db.state_from_record_id(identifier, &cfg.alias_transform)? {
                 RecordIdState::Entry(key, data, state) => {
-                    info::database_report(key, data, state, report, |_, stdout| {
+                    info::database_report(&cfg, key, data, state, report, |_, stdout| {
                         writeln!(stdout, "Record with data")
                     })?;
                 }
                 RecordIdState::Deleted(key, data, state) => {
-                    info::database_report(key, data, state, report, |data, stdout| {
+                    info::database_report(&cfg, key, data, state, report, |data, stdout| {
                         if let Some(repl) = data {
                             writeln!(stdout, "Deleted and replaced by reference: {repl}")
                         } else {
@@ -835,7 +835,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     })?;
                 }
                 RecordIdState::Void(key, data, state) => {
-                    info::database_report(key, data, state, report, |_, stdout| {
+                    info::database_report(&cfg, key, data, state, report, |_, stdout| {
                         writeln!(stdout, "Voided record")
                     })?;
                 }
@@ -850,6 +850,9 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     }
                     InfoReportType::Valid => {
                         bail!("Null record '{remote_id}' is automatically invalid");
+                    }
+                    InfoReportType::Preferred => {
+                        bail!("No preferred keys for null record '{remote_id}'");
                     }
                     InfoReportType::Equivalent => {
                         bail!("No equivalent keys for null record '{remote_id}'");
