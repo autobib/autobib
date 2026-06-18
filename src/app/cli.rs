@@ -82,6 +82,9 @@ pub enum InfoReportType {
     /// Print equivalent identifiers.
     #[value(alias("e"))]
     Equivalent,
+    /// Print preferred identifier.
+    #[value(alias("p"))]
+    Preferred,
     /// Print the last modified time.
     #[value(alias("m"))]
     Modified,
@@ -226,14 +229,12 @@ pub enum Command {
         /// The type of search to perform.
         #[arg(short, long, value_enum, default_value_t)]
         mode: FindMode,
-        /// Enable multiple selections with optional bound on selection count.
-        // NOTE: the outer `Option` specifies if the flag was passed at the command line
-        // and the inner option specifies if a value was specified
-        #[arg(short, long, value_name = "N", num_args = 0..=1, require_equals = true, conflicts_with = "no_multi")]
-        multi: Option<Option<NonZero<u32>>>,
-        /// Disable multiple selections.
-        #[arg(long, conflicts_with = "multi")]
-        no_multi: bool,
+        /// Limit the number of selections
+        #[arg(long, conflicts_with = "single")]
+        limit: Option<NonZero<u32>>,
+        /// Force exactly one selection.
+        #[arg(long, conflicts_with = "limit")]
+        single: bool,
     },
     /// Retrieve records given identifiers.
     Get {
@@ -563,21 +564,6 @@ impl Cli {
                 name,
                 s.stylize().yellow(),
                 "--read-only".stylize().yellow(),
-            );
-            cmd.error(ErrorKind::ArgumentConflict, err_msg).exit();
-        }
-
-        if let Command::Find {
-            mode: FindMode::Attachments,
-            multi: Some(_),
-            ..
-        } = &self.command
-        {
-            let mut cmd = Self::command();
-            let err_msg = format!(
-                "'{}' cannot be used with '{}'",
-                "--multi".stylize().yellow(),
-                "--mode attachments".stylize().yellow(),
             );
             cmd.error(ErrorKind::ArgumentConflict, err_msg).exit();
         }
