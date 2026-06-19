@@ -11,7 +11,6 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  RUSTFLAGS: -D warnings
   RUSTDOCFLAGS: -D warnings
   RUST_BACKTRACE: 1
   RUST_VERSION: ${{ vars.RUST_VERSION }}
@@ -163,7 +162,9 @@ jobs:
       - name: Build release binary
         shell: bash
         run: |
-          cargo build --verbose --release --locked --target ${{ matrix.target }}
+          cargo build --verbose --release --locked \
+            --config 'target."cfg(all())".rustflags = ["-D", "warnings"]' \
+            --target ${{ matrix.target }}
           if [[ "${{ matrix.image }}" = "windows-latest" ]]; then
             bin="target/${{ matrix.target }}/release/autobib.exe"
           else
