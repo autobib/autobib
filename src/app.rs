@@ -1002,7 +1002,8 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 None => return Ok(()),
             };
 
-            let mut target = get_attachment_dir(&data_dir, cli.attachments_dir, true, &canonical)?;
+            let mut target =
+                get_attachment_dir(&data_dir, cli.attachments_dir, !mkdir, &canonical)?;
             if mkdir {
                 create_dir_all(&target)?;
             }
@@ -1275,8 +1276,10 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     if lockdir {
                         AttachmentRootLock::cleanup(&root_path)?;
                     }
-                    let mut at_root = AttachmentRoot::resolve(root_path, false)?;
-                    cleanup_empty_attachment_dirs(&mut at_root)?;
+                    if empty {
+                        let mut at_root = AttachmentRoot::resolve(root_path, false)?;
+                        cleanup_empty_attachment_dirs(&mut at_root)?;
+                    }
                 }
             }
         },
