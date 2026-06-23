@@ -1,11 +1,11 @@
 mod data;
 mod deserialize;
 
-use std::{fmt, str::FromStr};
+use std::{fmt, io, str::FromStr};
 
 use delegate::delegate;
 use serde::ser::{Serialize, SerializeSeq, SerializeStruct, Serializer};
-use serde_bibtex::{MacroDictionary, de::Deserializer, to_string_unchecked};
+use serde_bibtex::{MacroDictionary, de::Deserializer, ser::Formatter};
 
 pub use self::data::{
     BorrowedEntryData, ConflictResolved, EntryData, EntryEditCommand, EntryKey, EntryType,
@@ -104,10 +104,53 @@ impl FromStr for Entry<MutableEntryData> {
 
 impl<D: EntryData, S: AsRef<str>> fmt::Display for Entry<D, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        struct FormatterWriter<'a, 'b> {
+            formatter: &'a mut fmt::Formatter<'b>,
+            failed: bool,
+        }
+
+        impl io::Write for FormatterWriter<'_, '_> {
+            fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+                // SAFETY: serde_bibtex only emits calls which are valid strings
+                let s = unsafe { std::str::from_utf8_unchecked(buf) };
+                if self.formatter.write_str(s).is_err() {
+                    self.failed = true;
+                    return Err(io::Error::other(fmt::Error));
+                }
+                Ok(buf.len())
+            }
+
+            fn flush(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+
+        struct NoTrailingNewlineFormatter;
+
+        impl Formatter for NoTrailingNewlineFormatter {
+            fn write_bibliography_end<W>(&mut self, _: &mut W) -> io::Result<()>
+            where
+                W: ?Sized + io::Write,
+            {
+                Ok(())
+            }
+        }
+
         // SAFETY: the RecordData::try_new and RecordData::check_and_insert methods only accept
         //         entry types and field keys which satisfy stricter requirements than the
         //         serde_bibtex syntax
-        let buffer = to_string_unchecked(&[self]).expect("serialization should not fail");
-        f.write_str(&buffer)
+        let mut writer = FormatterWriter {
+            formatter: f,
+            failed: false,
+        };
+        let mut ser = serde_bibtex::ser::Serializer::new_with_formatter(
+            &mut writer,
+            NoTrailingNewlineFormatter,
+        );
+        match [self].serialize(&mut ser) {
+            Ok(()) => Ok(()),
+            Err(_) if writer.failed => Err(fmt::Error),
+            Err(err) => panic!("serialization should not fail: {err}"),
+        }
     }
 }

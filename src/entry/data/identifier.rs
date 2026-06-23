@@ -23,11 +23,17 @@ impl<S: AsRef<str>> EntryKey<S> {
         Ok(Self(s))
     }
 }
+impl EntryKey<&'static str> {
+    /// A placeholder value used for displaying keys which are not valid bibtex.
+    pub fn placeholder() -> Self {
+        Self("::")
+    }
+}
 
 impl EntryKey {
     /// A placeholder value used for displaying keys which are not valid bibtex.
     pub fn placeholder() -> Self {
-        Self(":not_valid_bibtex".to_owned())
+        Self("::".to_owned())
     }
 
     /// Substitute a character with a different entry key.

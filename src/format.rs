@@ -9,7 +9,9 @@ use self::parse::{Kind, Lexer, Token};
 
 use crate::{
     db::{Identifier, state::RecordRow},
-    entry::{EntryData, FieldKey, MutableEntryData, RawEntryData, RawRecordFieldsIter},
+    entry::{
+        Entry, EntryData, EntryKey, FieldKey, MutableEntryData, RawEntryData, RawRecordFieldsIter,
+    },
     error::{ClapTemplateError, KeyParseError, KeyParseErrorKind},
 };
 
@@ -24,6 +26,8 @@ pub enum Meta {
     SubId,
     /// `{%full_id}`
     FullId,
+    /// `{%bibtex}`
+    Bibtex,
 }
 
 impl FromStr for Meta {
@@ -35,6 +39,7 @@ impl FromStr for Meta {
             "provider" => Ok(Self::Provider),
             "sub_id" => Ok(Self::SubId),
             "full_id" => Ok(Self::FullId),
+            "bibtex" => Ok(Self::Bibtex),
             _ => Err(KeyParseErrorKind::InvalidMeta(s.into())),
         }
     }
@@ -342,6 +347,7 @@ enum DisplayedRow<'row, 'ast, 'state> {
     Row(&'row str),
     Ast(&'ast str),
     State(&'state str),
+    Entry(&'row str, &'row RawEntryData),
     Skip,
 }
 
@@ -351,6 +357,15 @@ impl<'r, 'ast, 'state> fmt::Display for DisplayedRow<'r, 'ast, 'state> {
             Self::Row(s) => f.write_str(s),
             Self::Ast(s) => f.write_str(s),
             Self::State(s) => f.write_str(s),
+            Self::Entry(canonical, data) => {
+                let key = EntryKey::try_new(*canonical)
+                    .unwrap_or_else(|_| EntryKey::<&'static str>::placeholder());
+                let entry = Entry {
+                    key,
+                    record_data: *data,
+                };
+                entry.fmt(f)
+            }
             Self::Skip => Ok(()),
         }
     }
@@ -394,6 +409,7 @@ impl<'row, 'ast, 'state> DisplayedRow<'row, 'ast, 'state> {
                 Meta::Provider => DisplayedRow::Row(row_data.canonical.provider()),
                 Meta::SubId => DisplayedRow::Row(row_data.canonical.sub_id()),
                 Meta::FullId => DisplayedRow::Row(row_data.canonical.name()),
+                Meta::Bibtex => DisplayedRow::Entry(row_data.canonical.name(), &row_data.data),
             },
         }
     }
@@ -641,5 +657,23 @@ mod tests {
             Strategy::Sorted,
             "AAAA",
         );
+    }
+
+    #[test]
+    fn render_bibtex_meta() {
+        let template = Template::compile("{%bibtex}").unwrap();
+        let mut data = MutableEntryData::<String>::default();
+        data.check_and_insert("a".into(), "A".into()).unwrap();
+        data.check_and_insert("b".into(), "B".into()).unwrap();
+
+        let row_data = RecordRow::<RawEntryData> {
+            data: RawEntryData::from_entry_data(&data),
+            canonical: RemoteId::from_parts("local", "12345").unwrap(),
+            modified: Local::now(),
+        };
+
+        let rendered = template.render(&row_data);
+
+        assert_eq!(rendered, "@misc{local:12345,\n  a = {A},\n  b = {B},\n}");
     }
 }
