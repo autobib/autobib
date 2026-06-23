@@ -14,7 +14,7 @@ pub fn is_valid_id(id: &str) -> ValidationOutcome {
     let trimmed = id.trim_start_matches('0');
 
     if trimmed.is_empty() {
-        ValidationOutcome::Invalid
+        ValidationOutcome::Normalize("0".into())
     } else if trimmed.len() != id.len() {
         ValidationOutcome::Normalize(trimmed.into())
     } else {

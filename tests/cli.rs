@@ -1438,6 +1438,12 @@ fn normalize() -> Result<()> {
         .failure()
         .stderr(contains("converted from 'zbmath:01111111'"));
 
+    let mut cmd = s.cmd()?;
+    cmd.args(["info", "zbmath:00000000"]);
+    cmd.assert()
+        .failure()
+        .stderr(contains("converted from 'zbmath:00000000'"));
+
     s.close()
 }
 
