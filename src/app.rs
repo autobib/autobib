@@ -339,7 +339,8 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         // only perform normalization
                         let record_data = MutableEntryData::from_entry_data(&data);
                         let entry = Entry {
-                            key: EntryKey::try_new(key).unwrap_or_else(|_| EntryKey::placeholder()),
+                            key: EntryKey::try_new(key)
+                                .unwrap_or_else(|_| EntryKey::<String>::placeholder()),
                             record_data,
                         };
 

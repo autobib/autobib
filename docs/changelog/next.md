@@ -11,6 +11,7 @@ Changes since `v0.6.1`.
 ## Added
 
 - New command `autobib list` which prints records using the template syntax.
+- Added new template meta `%bibtex`, which expands to the full bibtex record.
 
 ## Changed
 

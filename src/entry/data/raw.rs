@@ -329,3 +329,21 @@ unsafe impl<T: AsRef<[u8]>> EntryData for RawEntryData<T> {
         self.data.as_ref().len()
     }
 }
+
+unsafe impl<T: AsRef<[u8]>> EntryData for &RawEntryData<T> {
+    fn fields(&self) -> impl Iterator<Item = (&str, &str)> {
+        let (_, data_blocks) = self.split_blocks();
+        RawRecordFieldsIter {
+            remaining: data_blocks,
+        }
+    }
+
+    fn entry_type(&self) -> &str {
+        let (type_block, _) = self.split_blocks();
+        from_utf8(&type_block[1..]).unwrap()
+    }
+
+    fn raw_len(&self) -> usize {
+        self.data.as_ref().len()
+    }
+}
