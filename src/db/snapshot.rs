@@ -1,4 +1,4 @@
-use std::{error, fmt, str::from_utf8};
+use std::{convert::Infallible, error, fmt, str::from_utf8};
 
 use chrono::{DateTime, Local};
 use rusqlite::types::ValueRef;
@@ -18,6 +18,13 @@ pub struct Snapshot<'conn> {
 pub enum SnapshotMapErr<E> {
     CallbackFailed(E),
     DatabaseError(rusqlite::Error),
+}
+
+impl From<SnapshotMapErr<Infallible>> for rusqlite::Error {
+    fn from(value: SnapshotMapErr<Infallible>) -> Self {
+        let SnapshotMapErr::DatabaseError(err) = value;
+        err
+    }
 }
 
 impl<E> From<rusqlite::Error> for SnapshotMapErr<E> {

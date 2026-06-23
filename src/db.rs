@@ -38,7 +38,7 @@ use crate::{
     error::DatabaseError,
     logger::{debug, error, info, warn},
 };
-pub use snapshot::Snapshot;
+pub use snapshot::{Snapshot, SnapshotMapErr};
 
 /// The current database version expected by the application.
 pub const fn user_version() -> i32 {
@@ -418,6 +418,8 @@ impl RecordDatabase {
     /// The provided `filter_map` closure plays a similar role to [`Iterator::filter_map`]
     /// by transforming a [`RecordRow`] into the picker item type, with the option to exclude
     /// the item from being sent to the matcher entirely by returning [`None`].
+    ///
+    /// This is a wrapper around [`map_active_records`](Self::map_active_records).
     pub fn inject_active_records<T, F, R>(
         &mut self,
         injector: Injector<T, R>,
@@ -427,15 +429,29 @@ impl RecordDatabase {
         F: FnMut(RecordRow<RawEntryData>) -> Option<T>,
         R: Render<T>,
     {
-        debug!("Sending all database records to an injector.");
+        self.map_active_records(|res| {
+            if let Some(data) = filter_map(res) {
+                injector.push(data);
+            }
+            Ok(())
+        })?;
+        Ok(())
+    }
+
+    /// Iterate over all active entries in the Records table and apply the fallible closure
+    /// `f` to each row. If an error is returned by the closure, it is immediately propagated and
+    /// the function exits early.
+    pub fn map_active_records<E, F>(&mut self, mut f: F) -> Result<(), SnapshotMapErr<E>>
+    where
+        F: FnMut(RecordRow<RawEntryData>) -> Result<(), E>,
+    {
+        debug!("Mapping over all active database records.");
         let mut retriever = self
             .conn
             .prepare("SELECT record_id, modified, data, variant FROM Records WHERE key IN (SELECT record_key FROM Identifiers) AND variant = 0")?;
 
         for res in retriever.query_map([], |row| Ok(RecordRow::from_row_unchecked(row)))? {
-            if let Some(data) = filter_map(res?) {
-                injector.push(data);
-            }
+            f(res?).map_err(SnapshotMapErr::CallbackFailed)?;
         }
 
         Ok(())

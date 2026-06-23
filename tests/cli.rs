@@ -657,7 +657,7 @@ fn delete() -> Result<()> {
     s.close()
 }
 
-/// Test citation key listing.
+/// Test record and citation key listing.
 #[test]
 fn list() -> Result<()> {
     let s = TestState::init()?;
@@ -680,16 +680,42 @@ fn list() -> Result<()> {
     cmd.assert().success();
 
     let mut cmd = s.cmd()?;
-    cmd.args(["util", "list"]);
+    cmd.args(["list", "{%full_id}: {title}"]);
+    cmd.assert()
+        .success()
+        .stdout(contains("local:first: My favourite book").and(contains(
+            "zbmath:06346461: On self-similar sets with overlaps and inverse theorems for entropy",
+        )));
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["--read-only", "list", "{%full_id}"]);
+    cmd.assert().success().stdout(contains("zbmath:06346461"));
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["list", "--strict", "{journal}: {title}"]);
+    cmd.assert().success().stdout(
+        contains("My favourite book")
+            .not()
+            .and(contains("Ann. Math.")),
+    );
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["util", "print-keys"]);
     cmd.assert()
         .success()
         .stdout(contains("zbmath:06346461").and(contains("my_alias")));
 
     let mut cmd = s.cmd()?;
-    cmd.args(["--read-only", "util", "list"]);
+    cmd.args(["--read-only", "util", "print-keys"]);
     cmd.assert()
         .success()
         .stdout(contains("zbmath:06346461").and(contains("my_alias")));
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["util", "print-keys", "--canonical"]);
+    cmd.assert()
+        .success()
+        .stdout(contains("my_alias").not().and(contains("local:first")));
 
     let mut cmd = s.cmd()?;
     cmd.args(["util", "list", "--canonical"]);

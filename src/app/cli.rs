@@ -323,6 +323,14 @@ pub enum Command {
         #[arg(short = 'a', long)]
         create_alias: bool,
     },
+    /// Print every record in the database using a template.
+    List {
+        /// The template to use for printing.
+        template: Template,
+        /// Only include records which contain all of the fields in the template.
+        #[arg(short, long)]
+        strict: bool,
+    },
     /// Display the revision history associated with an identifier.
     Log {
         /// The identifier.
@@ -539,7 +547,7 @@ impl UtilCommand {
     /// Check if the command is read-only compatible.
     pub fn validate_read_only_compatibility(&self) -> Result<(), ReadOnlyInvalid> {
         match self {
-            Self::List { .. } | Self::Check { fix: false } => Ok(()),
+            Self::PrintKeys { .. } | Self::Check { fix: false } => Ok(()),
             Self::Check { fix: true, .. } => Err(ReadOnlyInvalid::Argument("--fix")),
             Self::Optimize => Err(ReadOnlyInvalid::Command("util optimize")),
             Self::Evict { .. } => Err(ReadOnlyInvalid::Command("util evict")),
@@ -558,6 +566,7 @@ impl Command {
             | Self::Completions { .. }
             | Self::DefaultConfig
             | Self::Find { .. }
+            | Self::List { .. }
             | Self::Log { .. }
             | Self::Path { mkdir: false, .. } => return Ok(()),
             Self::Path { mkdir: true, .. } => return Err(ReadOnlyInvalid::Argument("--mkdir")),
@@ -731,12 +740,15 @@ pub enum UtilCommand {
         #[arg(long)]
         max_age: Option<u32>,
     },
-    /// List all valid identifiers.
-    List {
-        /// Only list the canonical identifiers.
+    /// Print all valid identifiers.
+    ///
+    /// The deprecated `list` alias has the same behaviour.
+    #[command(alias = "list")]
+    PrintKeys {
+        /// Only print the canonical identifiers.
         #[arg(short, long)]
         canonical: bool,
-        /// List deleted identifiers instead of those with data.
+        /// Print deleted identifiers instead of those with data.
         #[arg(short, long)]
         deleted: bool,
     },

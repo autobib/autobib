@@ -1,6 +1,6 @@
 mod parse;
 
-use std::{convert::Infallible, fmt, iter::Peekable, str::FromStr};
+use std::{convert::Infallible, fmt, io, iter::Peekable, str::FromStr};
 
 use mufmt::{Ast, Manifest, ManifestMut, Span, SyntaxError};
 use nucleo_picker::Render;
@@ -450,6 +450,21 @@ impl<'r> ManifestMut<Expression> for ManifestLarge<'r> {
         state: &mut Self::State<'_>,
     ) -> Result<impl fmt::Display, Self::Error> {
         Ok(DisplayedRow::from_data(self.0, ast, |k| state.get_field(k)))
+    }
+}
+
+impl Template {
+    /// Render the template into a writer using the provided record data.
+    pub fn render_io<W: io::Write>(
+        &self,
+        writer: W,
+        item: &RecordRow<RawEntryData>,
+    ) -> Result<(), io::Error> {
+        Ok(match self.strategy {
+            Strategy::Sorted => self.template.render_io(&ManifestSorted(item), writer),
+            Strategy::Small => self.template.render_io(&ManifestSmall(item), writer),
+            Strategy::Large => self.template.render_io(&ManifestLarge(item), writer),
+        }?)
     }
 }
 

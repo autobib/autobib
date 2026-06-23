@@ -454,6 +454,16 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 }
             }
         }
+        Command::List { template, strict } => {
+            let mut lock = stdout_lock_wrap();
+            record_db.map_active_records(|row_data| {
+                if strict && !template.has_keys_contained_in(&row_data) {
+                    return Ok(());
+                }
+
+                template.render_io(&mut lock, &row_data)
+            })?;
+        }
         Command::Get {
             identifiers,
             out,
@@ -1202,7 +1212,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     record_db.evict_cache()?;
                 }
             },
-            UtilCommand::List { canonical, deleted } => {
+            UtilCommand::PrintKeys { canonical, deleted } => {
                 let mut lock = stdout_lock_wrap();
                 let snapshot = record_db.snapshot()?;
                 if canonical {
