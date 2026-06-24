@@ -330,9 +330,15 @@ pub enum Command {
         /// Only print records which contain all of the fields in the template.
         #[arg(short, long)]
         strict: bool,
-        /// The separator to print between records.
+        /// Text to print between records.
         #[arg(long, default_value = "\n")]
         sep: String,
+        /// Text to print at the start.
+        #[arg(long, default_value = "")]
+        prefix: String,
+        /// Text to print at the end.
+        #[arg(long, default_value = "\n")]
+        suffix: String,
     },
     /// Display the revision history associated with an identifier.
     Log {

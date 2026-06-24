@@ -459,16 +459,25 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             template,
             strict,
             sep,
+            prefix,
+            suffix,
         } => {
             let mut lock = stdout_lock_wrap();
+            write!(&mut lock, "{prefix}")?;
+            let mut first = true;
             record_db.map_active_records(|row_data| {
                 if strict && !template.has_keys_contained_in(&row_data) {
                     return Ok(());
                 }
+                if first {
+                    first = false;
+                } else {
+                    write!(&mut lock, "{sep}")?;
+                }
 
-                template.render_io(&mut lock, &row_data)?;
-                write!(&mut lock, "{sep}")
+                template.render_io(&mut lock, &row_data)
             })?;
+            write!(&mut lock, "{suffix}")?;
         }
         Command::Get {
             identifiers,
