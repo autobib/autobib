@@ -108,6 +108,7 @@ pub struct AliasConversionError {
 pub enum AliasErrorKind {
     Empty,
     IsRemoteId,
+    ContainsControl,
 }
 
 impl AliasErrorKind {
@@ -115,6 +116,7 @@ impl AliasErrorKind {
         match self {
             Self::Empty => "alias must contain non-whitespace characters",
             Self::IsRemoteId => "alias must not contain a colon",
+            Self::ContainsControl => "alias must not contain control characters",
         }
     }
 }

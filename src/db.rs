@@ -37,6 +37,7 @@ use crate::{
     entry::RawEntryData,
     error::DatabaseError,
     logger::{debug, error, info, warn},
+    record::LegacyAlias,
 };
 pub use snapshot::{Snapshot, SnapshotMapErr};
 
@@ -483,13 +484,13 @@ impl RecordDatabase {
     /// Rename an alias, returning the status of the renaming.
     pub fn rename_alias(
         &mut self,
-        old: &Alias,
+        old: &LegacyAlias,
         new: &Alias,
     ) -> Result<RenameAliasResult, rusqlite::Error> {
         let mut updater = self
             .conn
             .prepare("UPDATE Identifiers SET name = ?1 WHERE name = ?2")?;
-        match flatten_constraint_violation(updater.execute((new.name(), old.name())))? {
+        match flatten_constraint_violation(updater.execute((new.name(), old.as_ref())))? {
             Constraint::Satisfied(_) => Ok(RenameAliasResult::Renamed),
             Constraint::Violated => Ok(RenameAliasResult::TargetExists),
         }

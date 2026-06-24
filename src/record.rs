@@ -4,7 +4,9 @@ mod mapped;
 use anyhow::bail;
 use nonempty::NonEmpty;
 
-pub use self::key::{Alias, AliasOrRemoteId, MappedAliasOrRemoteId, MappedKey, RecordId, RemoteId};
+pub use self::key::{
+    Alias, AliasOrRemoteId, LegacyAlias, MappedAliasOrRemoteId, MappedKey, RecordId, RemoteId,
+};
 use crate::{
     Config,
     config::AliasTransform,

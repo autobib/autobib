@@ -19,7 +19,7 @@ use crate::{
     entry::{EntryType, FieldKey, SetFieldCommand},
     error::ShortError,
     format::Template,
-    record::{Alias, RecordId},
+    record::{Alias, LegacyAlias, RecordId},
 };
 
 /// Determine the default value for `no_interactive` based on interactivity of stdin and stderr.
@@ -311,7 +311,7 @@ pub enum Command {
         /// The name for the record.
         id: String,
         /// Create the record using the provided BibTeX data.
-        #[arg(short = 'b', long, value_name = "PATH", group = "input")]
+        #[arg(short = 'b', long, value_name = "PATH")]
         from_bibtex: Option<PathBuf>,
         /// Set the entry type.
         #[arg(long, value_name = "ENTRY_TYPE")]
@@ -515,9 +515,9 @@ pub enum AliasCommand {
     #[command(alias = "mv")]
     Rename {
         /// The name of the existing alias.
-        #[arg(value_parser = with_short_err::<Alias>)]
-        alias: Alias,
+        alias: LegacyAlias,
         /// The name of the new alias.
+        #[arg(value_parser = with_short_err::<Alias>)]
         new: Alias,
     },
     /// Reassign an existing alias to refer to a new record.
