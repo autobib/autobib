@@ -102,38 +102,24 @@ impl<D: EntryData, S: AsRef<str>> fmt::Display for Entry<D, S> {
     }
 }
 
-#[derive(Debug, PartialEq)]
-pub struct Bibliography<E> {
-    entries: E,
-}
-
-impl<'r, E, D, S> Bibliography<E>
+pub fn entries_to_bibtex<'r, W, E, D, S>(mut writer: W, entries: E) -> Result<(), io::Error>
 where
+    W: io::Write,
     D: EntryData + 'r,
     S: AsRef<str> + 'r,
-    E: Iterator<Item = &'r Entry<D, S>>,
+    E: IntoIterator<Item = &'r Entry<D, S>>,
 {
-    pub fn new(entries: E) -> Self {
-        Self { entries }
-    }
-
-    fn write_generic<W: EntryWrite>(self, mut writer: W) -> Result<(), W::Error> {
-        let mut first = true;
-        for entry in self.entries {
-            if first {
-                first = false;
-            } else {
-                write!(writer, "\n\n")?;
-            }
-
-            entry.write_generic(&mut writer)?;
+    let mut first = true;
+    for entry in entries {
+        if first {
+            first = false;
+        } else {
+            write!(writer, "\n\n")?;
         }
-        writeln!(writer)
-    }
 
-    pub fn write_io<W: io::Write>(self, writer: W) -> Result<(), io::Error> {
-        self.write_generic(IOWriteWrap(writer))
+        entry.write_io(&mut writer)?;
     }
+    writeln!(writer)
 }
 
 pub fn entries_from_bibtex(
