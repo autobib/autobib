@@ -497,11 +497,14 @@ impl RecordDatabase {
     }
 
     /// Delete an alias, returning the status of the deletion.
-    pub fn delete_alias(&mut self, alias: &Alias) -> Result<DeleteAliasResult, rusqlite::Error> {
+    pub fn delete_alias(
+        &mut self,
+        alias: &LegacyAlias,
+    ) -> Result<DeleteAliasResult, rusqlite::Error> {
         let mut deleter = self
             .conn
             .prepare("DELETE FROM Identifiers WHERE name = ?1")?;
-        if deleter.execute((alias.name(),))? == 0 {
+        if deleter.execute((alias.as_ref(),))? == 0 {
             Ok(DeleteAliasResult::Missing)
         } else {
             Ok(DeleteAliasResult::Deleted)

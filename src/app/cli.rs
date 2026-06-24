@@ -508,13 +508,14 @@ pub enum AliasCommand {
     #[command(alias = "rm")]
     Delete {
         /// The existing alias to delete.
-        #[arg(value_parser = with_short_err::<Alias>)]
-        alias: Alias,
+        #[arg(value_parser = with_short_err::<LegacyAlias>)]
+        alias: LegacyAlias,
     },
     /// Rename an existing alias.
     #[command(alias = "mv")]
     Rename {
         /// The name of the existing alias.
+        #[arg(value_parser = with_short_err::<LegacyAlias>)]
         alias: LegacyAlias,
         /// The name of the new alias.
         #[arg(value_parser = with_short_err::<Alias>)]
