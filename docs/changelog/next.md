@@ -13,5 +13,7 @@ Changes since `v0.6.1`.
 ## New features
 
 - New command `autobib list` which prints records using the template syntax.
-- Added new template meta `%bibtex`, which expands to the full BibTeX record.
+- New template metas:
+  - `%bibtex`, which expands to the full BibTeX record.
+  - `%json`, which JSON encodes the record data (excluding the canonical identifier)
 - Adds basic support for sourcing from [Typst](https://typst.app) files (using `autobib source file.typ`)
