@@ -7,12 +7,10 @@ use std::{
 
 use itertools::Itertools;
 use nonempty::NonEmpty;
-use serde::Serializer as _;
-use serde_bibtex::ser::Serializer;
 
 use crate::{
     Identifier,
-    entry::{Entry, EntryData},
+    entry::{Bibliography, Entry, EntryData},
     logger::warn,
     output::stdout_lock_wrap,
     record::RemoteId,
@@ -90,10 +88,8 @@ pub fn output_entries<D: EntryData>(
 fn write_entries<W: io::Write, D: EntryData>(
     writer: W,
     grouped_entries: BTreeMap<RemoteId, NonEmpty<Entry<D>>>,
-) -> Result<(), serde_bibtex::Error> {
-    let mut serializer = Serializer::unchecked(writer);
-
-    serializer.collect_seq(grouped_entries.iter().flat_map(|(canonical, entry_group)| {
+) -> Result<(), io::Error> {
+    let all_entries_iter = grouped_entries.iter().flat_map(|(canonical, entry_group)| {
         if entry_group.len() > 1 {
             warn!(
                 "Multiple keys for '{canonical}': {}",
@@ -101,5 +97,7 @@ fn write_entries<W: io::Write, D: EntryData>(
             );
         };
         entry_group
-    }))
+    });
+
+    Bibliography::new(all_entries_iter).write_io(writer)
 }

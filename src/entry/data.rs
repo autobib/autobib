@@ -65,6 +65,13 @@ pub unsafe trait EntryData: PartialEq {
     /// Get the `entry_type` as a string slice.
     fn entry_type(&self) -> &str;
 
+    /// Get the fields and entry type at the same time.
+    ///
+    /// The default implementation calls the `fields` and `entry_type` functions separately.
+    fn entry_type_and_fields(&self) -> (&str, impl Iterator<Item = (&str, &str)>) {
+        (self.entry_type(), self.fields())
+    }
+
     /// Get the exact size (in bytes) of the binary format representation of the [`EntryData`].
     ///
     /// The default implementation is performed by iterating over all fields.

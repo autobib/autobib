@@ -4,8 +4,7 @@ mod deserialize;
 use std::{fmt, io, str::FromStr};
 
 use delegate::delegate;
-use serde::ser::{Serialize, SerializeSeq, SerializeStruct, Serializer};
-use serde_bibtex::{MacroDictionary, de::Deserializer, ser::Formatter};
+use serde_bibtex::{MacroDictionary, de::Deserializer};
 
 pub use self::data::{
     BorrowedEntryData, ConflictResolved, EntryData, EntryEditCommand, EntryKey, EntryType,
@@ -40,35 +39,100 @@ impl<D: EntryData, S> Entry<D, S> {
         to self.record_data {
             pub fn fields(&self) -> impl Iterator<Item = (&str, &str)>;
             pub fn entry_type(&self) -> &str;
+            pub fn entry_type_and_fields(&self) -> (&str, impl Iterator<Item = (&str, &str)>);
         }
     }
 }
 
-struct RecordDataWrapper<D>(D);
+trait EntryWrite {
+    type Error;
 
-impl<D: EntryData> Serialize for RecordDataWrapper<&'_ D> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut state = serializer.serialize_seq(None)?;
-        for (key, value) in self.0.fields() {
-            state.serialize_element(&(key, value))?;
-        }
-        state.end()
+    fn write_fmt(&mut self, args: std::fmt::Arguments<'_>) -> Result<(), Self::Error>;
+}
+
+impl<W: EntryWrite> EntryWrite for &mut W {
+    type Error = W::Error;
+
+    fn write_fmt(&mut self, args: std::fmt::Arguments<'_>) -> Result<(), Self::Error> {
+        (*self).write_fmt(args)
     }
 }
 
-impl<D: EntryData, S: AsRef<str>> Serialize for Entry<D, S> {
-    fn serialize<T>(&self, serializer: T) -> Result<T::Ok, T::Error>
-    where
-        T: Serializer,
-    {
-        let mut state = serializer.serialize_struct("Entry", 3)?;
-        state.serialize_field("entry_type", &self.entry_type())?;
-        state.serialize_field("entry_key", &self.key.as_ref())?;
-        state.serialize_field("fields", &RecordDataWrapper(&self.record_data))?;
-        state.end()
+struct IOWriteWrap<W>(W);
+
+impl<W: io::Write> EntryWrite for IOWriteWrap<W> {
+    type Error = io::Error;
+
+    fn write_fmt(&mut self, args: std::fmt::Arguments<'_>) -> Result<(), Self::Error> {
+        self.0.write_fmt(args)
+    }
+}
+
+struct FmtWriteWrap<W>(W);
+
+impl<W: fmt::Write> EntryWrite for FmtWriteWrap<W> {
+    type Error = fmt::Error;
+
+    fn write_fmt(&mut self, args: std::fmt::Arguments<'_>) -> Result<(), Self::Error> {
+        self.0.write_fmt(args)
+    }
+}
+
+impl<D: EntryData, S: AsRef<str>> Entry<D, S> {
+    fn write_generic<W: EntryWrite>(&self, mut writer: W) -> Result<(), W::Error> {
+        let (entry_type, fields) = self.entry_type_and_fields();
+        writeln!(writer, "@{}{{{},", entry_type, self.key.as_ref())?;
+        for (key, value) in fields {
+            writeln!(writer, "  {key} = {{{value}}},")?;
+        }
+        write!(writer, "}}")
+    }
+
+    pub fn write_io<W: io::Write>(&self, writer: W) -> Result<(), io::Error> {
+        self.write_generic(IOWriteWrap(writer))
+    }
+
+    pub fn write_fmt<W: fmt::Write>(&self, writer: W) -> Result<(), fmt::Error> {
+        self.write_generic(FmtWriteWrap(writer))
+    }
+}
+impl<D: EntryData, S: AsRef<str>> fmt::Display for Entry<D, S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.write_fmt(f)
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct Bibliography<E> {
+    entries: E,
+}
+
+impl<'r, E, D, S> Bibliography<E>
+where
+    D: EntryData + 'r,
+    S: AsRef<str> + 'r,
+    E: Iterator<Item = &'r Entry<D, S>>,
+{
+    pub fn new(entries: E) -> Self {
+        Self { entries }
+    }
+
+    fn write_generic<W: EntryWrite>(self, mut writer: W) -> Result<(), W::Error> {
+        let mut first = true;
+        for entry in self.entries {
+            if first {
+                first = false;
+            } else {
+                write!(writer, "\n\n")?;
+            }
+
+            entry.write_generic(&mut writer)?;
+        }
+        writeln!(writer)
+    }
+
+    pub fn write_io<W: io::Write>(self, writer: W) -> Result<(), io::Error> {
+        self.write_generic(IOWriteWrap(writer))
     }
 }
 
@@ -98,59 +162,6 @@ impl FromStr for Entry<MutableEntryData> {
             }
             Some(Err(err)) => Err(Self::Err::BibtexParseError(err)),
             None => Err(Self::Err::Empty),
-        }
-    }
-}
-
-impl<D: EntryData, S: AsRef<str>> fmt::Display for Entry<D, S> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        struct FormatterWriter<'a, 'b> {
-            formatter: &'a mut fmt::Formatter<'b>,
-            failed: bool,
-        }
-
-        impl io::Write for FormatterWriter<'_, '_> {
-            fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-                // SAFETY: serde_bibtex only emits calls which are valid strings
-                let s = unsafe { std::str::from_utf8_unchecked(buf) };
-                if self.formatter.write_str(s).is_err() {
-                    self.failed = true;
-                    return Err(io::Error::other(fmt::Error));
-                }
-                Ok(buf.len())
-            }
-
-            fn flush(&mut self) -> io::Result<()> {
-                Ok(())
-            }
-        }
-
-        struct NoTrailingNewlineFormatter;
-
-        impl Formatter for NoTrailingNewlineFormatter {
-            fn write_bibliography_end<W>(&mut self, _: &mut W) -> io::Result<()>
-            where
-                W: ?Sized + io::Write,
-            {
-                Ok(())
-            }
-        }
-
-        // SAFETY: the RecordData::try_new and RecordData::check_and_insert methods only accept
-        //         entry types and field keys which satisfy stricter requirements than the
-        //         serde_bibtex syntax
-        let mut writer = FormatterWriter {
-            formatter: f,
-            failed: false,
-        };
-        let mut ser = serde_bibtex::ser::Serializer::new_with_formatter(
-            &mut writer,
-            NoTrailingNewlineFormatter,
-        );
-        match [self].serialize(&mut ser) {
-            Ok(()) => Ok(()),
-            Err(_) if writer.failed => Err(fmt::Error),
-            Err(err) => panic!("serialization should not fail: {err}"),
         }
     }
 }
