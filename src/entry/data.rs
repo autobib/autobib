@@ -18,6 +18,10 @@ use std::{
 
 use delegate::delegate;
 use regex::Regex;
+use serde::{
+    Serialize, Serializer,
+    ser::{SerializeSeq, SerializeStruct},
+};
 
 pub use identifier::{EntryKey, EntryType, FieldKey, FieldValue, validate_ascii_identifier};
 pub(crate) use raw::{EntryTypeHeader, KeyHeader, ValueHeader};
@@ -48,6 +52,10 @@ pub trait BorrowedEntryData<'r>: EntryData {
     }
 }
 
+pub trait EntryFields<'r> {
+    fn pairs(&self) -> impl Iterator<Item = (&'r str, &'r str)>;
+}
+
 /// This trait represents types which encapsulate the data content of a single BibTeX entry.
 ///
 /// # Safety
@@ -60,7 +68,7 @@ pub trait BorrowedEntryData<'r>: EntryData {
 /// 3. The `(key, value)` pairs are sorted by key and no key is repeated.
 pub unsafe trait EntryData: PartialEq {
     /// Iterate over `(key, value)` pairs in order.
-    fn fields(&self) -> impl Iterator<Item = (&str, &str)>;
+    fn fields(&self) -> impl EntryFields<'_>;
 
     /// Get the `entry_type` as a string slice.
     fn entry_type(&self) -> &str;
@@ -68,7 +76,7 @@ pub unsafe trait EntryData: PartialEq {
     /// Get the fields and entry type at the same time.
     ///
     /// The default implementation calls the `fields` and `entry_type` functions separately.
-    fn entry_type_and_fields(&self) -> (&str, impl Iterator<Item = (&str, &str)>) {
+    fn entry_type_and_fields(&self) -> (&str, impl EntryFields<'_>) {
         (self.entry_type(), self.fields())
     }
 
@@ -80,6 +88,7 @@ pub unsafe trait EntryData: PartialEq {
             + (1 + self.entry_type().len()) // the entry type, plus the 1-byte header
             + self // the key value pairs, plus the 3-byte header
                 .fields()
+                .pairs()
                 .map(|(k, v)| 3 + k.len() + v.len())
                 .sum::<usize>()
     }
@@ -88,7 +97,7 @@ pub unsafe trait EntryData: PartialEq {
     ///
     /// The default implementation iterates over all fields and returns the first match.
     fn get_field<'r>(&'r self, field_name: &str) -> Option<&'r str> {
-        for (key, val) in self.fields() {
+        for (key, val) in self.fields().pairs() {
             if field_name < key {
                 return None;
             }
@@ -105,6 +114,49 @@ pub unsafe trait EntryData: PartialEq {
     /// The default implementation checks that `get_field` returns `Some(_)`.
     fn contains_field(&self, field_name: &str) -> bool {
         self.get_field(field_name).is_some()
+    }
+
+    /// Returns a wrapper which can be serialized.
+    fn serialize(&self) -> impl Serialize
+    where
+        Self: Sized,
+    {
+        struct EntryDataSer<'r, D> {
+            data: &'r D,
+        }
+
+        impl<D: EntryData> Serialize for EntryDataSer<'_, D> {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: Serializer,
+            {
+                struct FieldsWrapper<F>(F);
+
+                impl<'a, F> Serialize for FieldsWrapper<F>
+                where
+                    F: EntryFields<'a>,
+                {
+                    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+                    where
+                        S: Serializer,
+                    {
+                        let mut state = serializer.serialize_seq(None)?;
+                        for (key, value) in self.0.pairs() {
+                            state.serialize_element(&(key, value))?;
+                        }
+                        state.end()
+                    }
+                }
+
+                let mut state = serializer.serialize_struct("EntryData", 2)?;
+                let (entry_type, fields) = self.data.entry_type_and_fields();
+                state.serialize_field("entry_type", entry_type)?;
+                state.serialize_field("fields", &FieldsWrapper(fields))?;
+                state.end()
+            }
+        }
+
+        EntryDataSer { data: self }
     }
 }
 
@@ -184,7 +236,7 @@ pub enum ConflictResolved<T = FieldValue> {
 impl<'r> MutableEntryData<&'r str> {
     pub fn borrow_entry_data<D: EntryData>(data: &'r D) -> Self {
         let mut new = Self::new(EntryType(data.entry_type()));
-        for (key, value) in data.fields() {
+        for (key, value) in data.fields().pairs() {
             new.fields.insert(FieldKey(key), FieldValue(value));
         }
         new
@@ -194,7 +246,7 @@ impl<'r> MutableEntryData<&'r str> {
 impl MutableEntryData {
     pub fn from_entry_data<D: EntryData>(data: &D) -> Self {
         let mut new = Self::new(EntryType(data.entry_type().to_owned()));
-        for (key, value) in data.fields() {
+        for (key, value) in data.fields().pairs() {
             new.fields
                 .insert(FieldKey(key.to_owned()), FieldValue(value.to_owned()));
         }
@@ -278,7 +330,7 @@ impl MutableEntryData {
         self.entry_type.0.clear();
         self.entry_type.0.push_str(data.entry_type());
 
-        for (key, value) in data.fields() {
+        for (key, value) in data.fields().pairs() {
             match self.fields.get_mut(key) {
                 Some(existing) => {
                     existing.0.clear();
@@ -322,7 +374,7 @@ impl MutableEntryData {
             }
         }
 
-        for (key, value) in other.fields() {
+        for (key, value) in other.fields().pairs() {
             match self.fields.get_mut(key) {
                 Some(current_value) if current_value != value => {
                     match resolve_field_conflict(
@@ -433,11 +485,15 @@ impl<S: AsRef<str> + Ord> MutableEntryData<S> {
     }
 }
 
+impl<'r, S: AsRef<str>> EntryFields<'r> for &'r BTreeMap<identifier::FieldKey<S>, FieldValue<S>> {
+    fn pairs(&self) -> impl Iterator<Item = (&'r str, &'r str)> {
+        self.iter().map(|(k, v)| (k.as_ref(), v.as_ref()))
+    }
+}
+
 unsafe impl<S: AsRef<str> + Ord> EntryData for MutableEntryData<S> {
-    fn fields(&self) -> impl Iterator<Item = (&str, &str)> {
-        self.fields
-            .iter()
-            .map(|(k, v)| (k.0.as_ref(), v.0.as_ref()))
+    fn fields(&self) -> impl EntryFields<'_> {
+        &self.fields
     }
 
     fn entry_type(&self) -> &str {

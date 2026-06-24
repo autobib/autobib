@@ -8,7 +8,11 @@ use chrono::{DateTime, Local};
 use crossterm::style::{ContentStyle, StyledContent, Stylize};
 
 use super::{ArbitraryDataRef, InRecordsTable, RecordRow, RevisionId, State, Version};
-use crate::{entry::EntryData, logger::LogDisplay, record::RemoteId};
+use crate::{
+    entry::{EntryData, EntryFields},
+    logger::LogDisplay,
+    record::RemoteId,
+};
 
 impl<'conn, I: InRecordsTable> LogDisplay for State<'conn, I> {
     fn log_display(&self, styled: bool, mut buf: impl std::io::Write) -> anyhow::Result<()> {
@@ -94,7 +98,7 @@ impl<'a> fmt::Display for RecordRowDisplay<'a> {
                         self.canonical
                     )?;
                 }
-                for (key, val) in raw_entry_data.fields() {
+                for (key, val) in raw_entry_data.fields().pairs() {
                     if self.styled {
                         writeln!(buf, "{PREFIX}  {} = {{{val}}},", key.blue())?;
                     } else {

@@ -19,7 +19,7 @@ use ureq::http::StatusCode;
 // re-imports exposed to provider implementations
 use crate::{
     MappedKey, RemoteId,
-    entry::{EntryData, EntryType, MutableEntryData},
+    entry::{EntryData, EntryFields, EntryType, MutableEntryData},
     error::{ProviderError, RecordDataError},
     http::{BodyBytes, Client},
 };
@@ -189,7 +189,7 @@ pub fn determine_remote_id_candidates<K: Ord, D: EntryData, F: FnMut(&RemoteId) 
         (c, s)
     });
     // first determine candidates using provider-specific fields
-    for (name, value) in data.fields() {
+    for (name, value) in data.fields().pairs() {
         if let Some(provider) = field_name_to_provider(name) {
             update_in_place(provider, value, &mut score, &mut bc, &mut br);
         }
