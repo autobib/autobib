@@ -324,17 +324,14 @@ pub enum Command {
         create_alias: bool,
     },
     /// Format records using a template.
-    ///
-    /// By default, this formats all records in the database. Records can also be passed
-    /// records
     Format {
         /// The format template.
         template: Template,
         /// Identifiers to format.
         identifiers: Vec<RecordId>,
-        /// Format all records in the database.
-        #[arg(short, long)]
-        all: bool,
+        /// Format records in the database with matching identifier.
+        #[arg(short, long, value_name = "GLOB")]
+        matching: Option<String>,
         /// Only format records which contain all of the fields in the template.
         #[arg(short, long)]
         strict: bool,

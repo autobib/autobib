@@ -8,11 +8,13 @@ use nucleo_picker::Render;
 use self::parse::{Kind, Lexer, Token};
 
 use crate::{
+    RemoteId,
     db::{Identifier, state::RecordRow},
     entry::{
         Entry, EntryData, EntryKey, FieldKey, MutableEntryData, RawEntryData, RawRecordFieldsIter,
     },
     error::{ClapTemplateError, KeyParseError, KeyParseErrorKind},
+    record::Record,
 };
 
 /// A `{%meta}` token.
@@ -287,15 +289,15 @@ impl Template {
 
     /// Returns whether this template can be rendered by the provided row data without having
     /// any non-optional undefined keys.
-    pub fn has_keys_contained_in(&self, row: &RecordRow<RawEntryData>) -> bool {
+    pub fn has_keys_contained_in<T: Renderable>(&self, row: &T) -> bool {
         match self.strategy {
             Strategy::Sorted => self.contained_impl(
                 || BibtexFields::new(row),
                 |k, fields| fields.get_field_ordered(k).is_some(),
             ),
-            Strategy::Small => self.contained_impl(|| (), |k, ()| row.data.contains_field(k)),
+            Strategy::Small => self.contained_impl(|| (), |k, ()| row.data().contains_field(k)),
             Strategy::Large => self.contained_impl(
-                || MutableEntryData::borrow_entry_data(&row.data),
+                || MutableEntryData::borrow_entry_data(row.data()),
                 |k, data| data.contains_field(k),
             ),
         }
@@ -323,9 +325,9 @@ pub struct BibtexFields<'a> {
 }
 
 impl<'a> BibtexFields<'a> {
-    pub fn new(row: &'a RecordRow<RawEntryData>) -> Self {
+    pub fn new<T: Renderable>(row: &'a T) -> Self {
         Self {
-            inner: row.data.raw_fields().peekable(),
+            inner: row.data().raw_fields().peekable(),
         }
     }
 
@@ -409,13 +411,10 @@ impl<'r, 'ast, 'state> fmt::Display for DisplayedRow<'r, 'ast, 'state> {
 }
 
 impl<'row, 'ast, 'state> DisplayedRow<'row, 'ast, 'state> {
-    fn from_data<F>(
-        row_data: &'row RecordRow<RawEntryData>,
-        ast: &'ast Expression,
-        mut f: F,
-    ) -> Self
+    fn from_data<F, T>(row_data: &'row T, ast: &'ast Expression, mut f: F) -> Self
     where
         F: FnMut(&str) -> Option<&'state str>,
+        T: Renderable,
     {
         let token = match ast {
             Expression::IfDefined(field_key, token) => {
@@ -442,20 +441,20 @@ impl<'row, 'ast, 'state> DisplayedRow<'row, 'ast, 'state> {
             },
             Atom::String(s) => DisplayedRow::Ast(s),
             Atom::Meta(meta) => match meta {
-                Meta::EntryType => DisplayedRow::Row(row_data.data.entry_type()),
-                Meta::Provider => DisplayedRow::Row(row_data.canonical.provider()),
-                Meta::SubId => DisplayedRow::Row(row_data.canonical.sub_id()),
-                Meta::FullId => DisplayedRow::Row(row_data.canonical.name()),
-                Meta::Bibtex => DisplayedRow::Entry(row_data.canonical.name(), &row_data.data),
-                Meta::Json => DisplayedRow::Json(&row_data.data),
+                Meta::EntryType => DisplayedRow::Row(row_data.data().entry_type()),
+                Meta::Provider => DisplayedRow::Row(row_data.canonical().provider()),
+                Meta::SubId => DisplayedRow::Row(row_data.canonical().sub_id()),
+                Meta::FullId => DisplayedRow::Row(row_data.canonical().name()),
+                Meta::Bibtex => DisplayedRow::Entry(row_data.canonical().name(), row_data.data()),
+                Meta::Json => DisplayedRow::Json(row_data.data()),
             },
         }
     }
 }
 
-pub struct ManifestSorted<'r>(&'r RecordRow<RawEntryData>);
+pub struct ManifestSorted<'r, T>(&'r T);
 
-impl<'r> ManifestMut<Expression> for ManifestSorted<'r> {
+impl<'r, T: Renderable> ManifestMut<Expression> for ManifestSorted<'r, T> {
     type Error = Infallible;
 
     type State<'a> = BibtexFields<'a>;
@@ -475,27 +474,27 @@ impl<'r> ManifestMut<Expression> for ManifestSorted<'r> {
     }
 }
 
-pub struct ManifestSmall<'r>(&'r RecordRow<RawEntryData>);
+pub struct ManifestSmall<'r, T>(&'r T);
 
-impl<'r> Manifest<Expression> for ManifestSmall<'r> {
+impl<'r, T: Renderable> Manifest<Expression> for ManifestSmall<'r, T> {
     type Error = Infallible;
 
     fn manifest(&self, ast: &Expression) -> Result<impl fmt::Display, Self::Error> {
         Ok(DisplayedRow::from_data(self.0, ast, |k| {
-            self.0.data.get_field(k)
+            self.0.data().get_field(k)
         }))
     }
 }
 
-pub struct ManifestLarge<'r>(&'r RecordRow<RawEntryData>);
+pub struct ManifestLarge<'r, T>(&'r T);
 
-impl<'r> ManifestMut<Expression> for ManifestLarge<'r> {
+impl<'r, T: Renderable> ManifestMut<Expression> for ManifestLarge<'r, T> {
     type Error = Infallible;
 
     type State<'s> = MutableEntryData<&'s str>;
 
     fn init_state(&self) -> Self::State<'_> {
-        MutableEntryData::borrow_entry_data(&self.0.data)
+        MutableEntryData::borrow_entry_data(self.0.data())
     }
 
     fn manifest_mut(
@@ -509,10 +508,10 @@ impl<'r> ManifestMut<Expression> for ManifestLarge<'r> {
 
 impl Template {
     /// Render the template into a writer using the provided record data.
-    pub fn render_io<W: io::Write>(
+    pub fn render_io<W: io::Write, T: Renderable>(
         &self,
         writer: W,
-        item: &RecordRow<RawEntryData>,
+        item: &T,
     ) -> Result<(), io::Error> {
         Ok(match self.strategy {
             Strategy::Sorted => self.template.render_io(&ManifestSorted(item), writer),
@@ -522,10 +521,39 @@ impl Template {
     }
 }
 
-impl Render<RecordRow<RawEntryData>> for Template {
-    type Str<'a> = String;
+/// Types which can be rendered by a [`Template`].
+pub trait Renderable {
+    fn data(&self) -> &RawEntryData;
+    fn canonical(&self) -> &RemoteId;
+}
 
-    fn render<'a>(&self, item: &'a RecordRow<RawEntryData>) -> Self::Str<'a> {
+impl Renderable for RecordRow<RawEntryData> {
+    fn data(&self) -> &RawEntryData {
+        &self.data
+    }
+
+    fn canonical(&self) -> &RemoteId {
+        &self.canonical
+    }
+}
+
+impl Renderable for Record<RawEntryData> {
+    fn data(&self) -> &RawEntryData {
+        &self.data
+    }
+
+    fn canonical(&self) -> &RemoteId {
+        &self.canonical
+    }
+}
+
+impl<T: Renderable> Render<T> for Template {
+    type Str<'a>
+        = String
+    where
+        T: 'a;
+
+    fn render<'a>(&self, item: &'a T) -> Self::Str<'a> {
         match self.strategy {
             Strategy::Sorted => {
                 let Ok(s) = self.template.render(&ManifestSorted(item));
@@ -539,6 +567,58 @@ impl Render<RecordRow<RawEntryData>> for Template {
                 let Ok(s) = self.template.render(&ManifestLarge(item));
                 s
             }
+        }
+    }
+}
+
+pub struct FormatWriter<'r, W: ?Sized> {
+    first: bool,
+    strict: bool,
+    template: Template,
+    writer: &'r mut W,
+    prefix: &'r str,
+    sep: &'r str,
+    suffix: &'r str,
+}
+
+impl<'r, W: io::Write + ?Sized> FormatWriter<'r, W> {
+    pub fn new(
+        strict: bool,
+        template: Template,
+        writer: &'r mut W,
+        prefix: &'r str,
+        sep: &'r str,
+        suffix: &'r str,
+    ) -> Self {
+        Self {
+            first: true,
+            strict,
+            template,
+            writer,
+            prefix,
+            sep,
+            suffix,
+        }
+    }
+
+    pub fn write_item<T: Renderable>(&mut self, item: &T) -> Result<(), io::Error> {
+        if self.strict && !self.template.has_keys_contained_in(item) {
+            return Ok(());
+        }
+        if self.first {
+            self.first = false;
+            write!(self.writer, "{}", self.prefix)?;
+        } else {
+            write!(self.writer, "{}", self.sep)?;
+        }
+        self.template.render_io(&mut self.writer, item)
+    }
+
+    pub fn finish(self) -> Result<(), io::Error> {
+        if self.first {
+            Ok(())
+        } else {
+            write!(self.writer, "{}", self.suffix)
         }
     }
 }
