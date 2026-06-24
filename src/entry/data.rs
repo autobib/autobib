@@ -20,7 +20,7 @@ use delegate::delegate;
 use regex::Regex;
 use serde::{
     Serialize, Serializer,
-    ser::{SerializeSeq, SerializeStruct},
+    ser::{SerializeMap, SerializeStruct},
 };
 
 pub use identifier::{EntryKey, EntryType, FieldKey, FieldValue, validate_ascii_identifier};
@@ -140,9 +140,9 @@ pub unsafe trait EntryData: PartialEq {
                     where
                         S: Serializer,
                     {
-                        let mut state = serializer.serialize_seq(None)?;
+                        let mut state = serializer.serialize_map(None)?;
                         for (key, value) in self.0.pairs() {
-                            state.serialize_element(&(key, value))?;
+                            state.serialize_entry(&key, &value)?;
                         }
                         state.end()
                     }

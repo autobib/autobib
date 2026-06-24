@@ -28,6 +28,8 @@ pub enum Meta {
     FullId,
     /// `{%bibtex}`
     Bibtex,
+    /// `{%json}`
+    Json,
 }
 
 impl FromStr for Meta {
@@ -40,6 +42,7 @@ impl FromStr for Meta {
             "sub_id" => Ok(Self::SubId),
             "full_id" => Ok(Self::FullId),
             "bibtex" => Ok(Self::Bibtex),
+            "json" => Ok(Self::Json),
             _ => Err(KeyParseErrorKind::InvalidMeta(s.into())),
         }
     }
@@ -348,6 +351,7 @@ enum DisplayedRow<'row, 'ast, 'state> {
     Ast(&'ast str),
     State(&'state str),
     Entry(&'row str, &'row RawEntryData),
+    Json(&'row RawEntryData),
     Skip,
 }
 
@@ -365,6 +369,39 @@ impl<'r, 'ast, 'state> fmt::Display for DisplayedRow<'r, 'ast, 'state> {
                     record_data: *data,
                 };
                 entry.fmt(f)
+            }
+            Self::Json(data) => {
+                struct FormatterAdapter<'a, 'b>(&'a mut fmt::Formatter<'b>);
+
+                impl io::Write for FormatterAdapter<'_, '_> {
+                    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+                        let s = unsafe {
+                            // serde_json does not emit invalid UTF-8
+                            std::str::from_utf8_unchecked(buf)
+                        };
+
+                        match self.0.write_str(s) {
+                            Ok(()) => Ok(s.len()),
+                            Err(fmt::Error) => Err(io::ErrorKind::Other.into()),
+                        }
+                    }
+
+                    fn flush(&mut self) -> io::Result<()> {
+                        Ok(())
+                    }
+                }
+
+                let adapter = FormatterAdapter(f);
+                match serde_json::to_writer(adapter, &data.serialize()) {
+                    Ok(()) => Ok(()),
+                    Err(err) => {
+                        if err.is_io() {
+                            Err(fmt::Error)
+                        } else {
+                            panic!("JSON serialization should not fail")
+                        }
+                    }
+                }
             }
             Self::Skip => Ok(()),
         }
@@ -410,6 +447,7 @@ impl<'row, 'ast, 'state> DisplayedRow<'row, 'ast, 'state> {
                 Meta::SubId => DisplayedRow::Row(row_data.canonical.sub_id()),
                 Meta::FullId => DisplayedRow::Row(row_data.canonical.name()),
                 Meta::Bibtex => DisplayedRow::Entry(row_data.canonical.name(), &row_data.data),
+                Meta::Json => DisplayedRow::Json(&row_data.data),
             },
         }
     }
@@ -675,5 +713,26 @@ mod tests {
         let rendered = template.render(&row_data);
 
         assert_eq!(rendered, "@misc{local:12345,\n  a = {A},\n  b = {B},\n}");
+    }
+
+    #[test]
+    fn render_json_meta() {
+        let template = Template::compile("{%json}").unwrap();
+        let mut data = MutableEntryData::<String>::default();
+        data.check_and_insert("a".into(), "A".into()).unwrap();
+        data.check_and_insert("b".into(), "B".into()).unwrap();
+
+        let row_data = RecordRow::<RawEntryData> {
+            data: RawEntryData::from_entry_data(&data),
+            canonical: RemoteId::from_parts("local", "12345").unwrap(),
+            modified: Local::now(),
+        };
+
+        let rendered = template.render(&row_data);
+
+        assert_eq!(
+            rendered,
+            r#"{"entry_type":"misc","fields":{"a":"A","b":"B"}}"#
+        );
     }
 }

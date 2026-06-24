@@ -75,6 +75,7 @@ These are all prefixed by the `%` character:
 - `%provider`: expands to the provider of the canonical id: e.g. `zbmath`
 - `%sub_id`: expands to the sub-id of the canonical id: e.g. `06346461`
 - `%bibtex`: expands to the full BibTeX record with entry key given by the value of `%full_id`, or placeholder text `::` if `%full_id` is not a valid BibTeX key.
+- `%json`: expands to a JSON dictionary containing the entry type and fields
 
 Finally, it is possible to input a *string*, i.e. a [JSON string](https://www.json.org/json-en.html), by quoting text.
 This allows manually inputting invisible characters or specifying Unicode values using escapes by including the value in quotes:
