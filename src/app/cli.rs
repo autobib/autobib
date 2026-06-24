@@ -323,11 +323,19 @@ pub enum Command {
         #[arg(short = 'a', long)]
         create_alias: bool,
     },
-    /// Print every record in the database using a template.
-    List {
-        /// The template to use for printing.
+    /// Format records using a template.
+    ///
+    /// By default, this formats all records in the database. Records can also be passed
+    /// records
+    Format {
+        /// The format template.
         template: Template,
-        /// Only print records which contain all of the fields in the template.
+        /// Identifiers to format.
+        identifiers: Vec<RecordId>,
+        /// Format all records in the database.
+        #[arg(short, long)]
+        all: bool,
+        /// Only format records which contain all of the fields in the template.
         #[arg(short, long)]
         strict: bool,
         /// Text to print between records.
@@ -420,7 +428,7 @@ pub enum Command {
         /// Retrieve records but do not output BibTeX or check the validity of identifiers.
         #[arg(long, group = "output")]
         retrieve_only: bool,
-        /// Only print the identifiers keys which were found (sorted and deduplicated).
+        /// Only print the identifiers which were found (sorted and deduplicated).
         #[arg(long, group = "output")]
         print_keys: bool,
         /// Skip an identifier (if present).
@@ -575,7 +583,7 @@ impl Command {
             | Self::Completions { .. }
             | Self::DefaultConfig
             | Self::Find { .. }
-            | Self::List { .. }
+            | Self::Format { .. }
             | Self::Log { .. }
             | Self::Path { mkdir: false, .. } => return Ok(()),
             Self::Path { mkdir: true, .. } => return Err(ReadOnlyInvalid::Argument("--mkdir")),

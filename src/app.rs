@@ -455,8 +455,10 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 }
             }
         }
-        Command::List {
+        Command::Format {
             template,
+            identifiers,
+            all,
             strict,
             sep,
             prefix,
@@ -465,7 +467,8 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             let mut lock = stdout_lock_wrap();
             write!(&mut lock, "{prefix}")?;
             let mut first = true;
-            record_db.map_active_records(|row_data| {
+
+            let mut formatter = |row_data| {
                 if strict && !template.has_keys_contained_in(&row_data) {
                     return Ok(());
                 }
@@ -476,7 +479,37 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 }
 
                 template.render_io(&mut lock, &row_data)
-            })?;
+            };
+
+            if all {
+                record_db.map_active_records(&mut formatter)?;
+            }
+            if !identifiers.is_empty() {
+                let cfg = config::load(&config_path, missing_ok)?;
+                // TODO: should we use get_record here instead?
+                for id in identifiers {
+                    if let Some((_, record_row)) = record_db
+                        .state_from_record_id(id, &cfg.alias_transform)?
+                        .require_record()?
+                    {
+                        match record_row {
+                            DisambiguatedRecordRow::Entry(record_row, state) => {
+                                state.commit()?;
+                                formatter(record_row)?;
+                            }
+                            DisambiguatedRecordRow::Deleted(_, state) => {
+                                state.commit()?;
+                                error!("Cannot format record data for deleted row.");
+                            }
+                            DisambiguatedRecordRow::Void(_, state) => {
+                                state.commit()?;
+                                error!("Cannot format record data for void row.");
+                            }
+                        }
+                    }
+                }
+            }
+
             write!(&mut lock, "{suffix}")?;
         }
         Command::Get {
