@@ -327,9 +327,12 @@ pub enum Command {
     List {
         /// The template to use for printing.
         template: Template,
-        /// Only include records which contain all of the fields in the template.
+        /// Only print records which contain all of the fields in the template.
         #[arg(short, long)]
         strict: bool,
+        /// The separator to print between records.
+        #[arg(long, default_value = "\n")]
+        sep: String,
     },
     /// Display the revision history associated with an identifier.
     Log {

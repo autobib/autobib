@@ -455,14 +455,19 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 }
             }
         }
-        Command::List { template, strict } => {
+        Command::List {
+            template,
+            strict,
+            sep,
+        } => {
             let mut lock = stdout_lock_wrap();
             record_db.map_active_records(|row_data| {
                 if strict && !template.has_keys_contained_in(&row_data) {
                     return Ok(());
                 }
 
-                template.render_io(&mut lock, &row_data)
+                template.render_io(&mut lock, &row_data)?;
+                write!(&mut lock, "{sep}")
             })?;
         }
         Command::Get {
