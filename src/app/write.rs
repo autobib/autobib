@@ -10,7 +10,7 @@ use nonempty::NonEmpty;
 
 use crate::{
     Identifier,
-    entry::{Bibliography, Entry, EntryData},
+    entry::{Entry, EntryData, entries_to_bibtex},
     logger::warn,
     output::stdout_lock_wrap,
     record::RemoteId,
@@ -99,5 +99,5 @@ fn write_entries<W: io::Write, D: EntryData>(
         entry_group
     });
 
-    Bibliography::new(all_entries_iter).write_io(writer)
+    entries_to_bibtex(writer, all_entries_iter)
 }
