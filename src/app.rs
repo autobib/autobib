@@ -458,59 +458,38 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
         Command::Format {
             template,
             identifiers,
-            all,
+            matching,
             strict,
             sep,
             prefix,
             suffix,
         } => {
             let mut lock = stdout_lock_wrap();
-            write!(&mut lock, "{prefix}")?;
-            let mut first = true;
+            let mut fmt_w = crate::format::FormatWriter::new(
+                strict, template, &mut lock, &prefix, &sep, &suffix,
+            );
 
-            let mut formatter = |row_data| {
-                if strict && !template.has_keys_contained_in(&row_data) {
-                    return Ok(());
-                }
-                if first {
-                    first = false;
-                } else {
-                    write!(&mut lock, "{sep}")?;
-                }
-
-                template.render_io(&mut lock, &row_data)
-            };
-
-            if all {
-                record_db.map_active_records(&mut formatter)?;
-            }
+            // explicit arguments
             if !identifiers.is_empty() {
                 let cfg = config::load(&config_path, missing_ok)?;
-                // TODO: should we use get_record here instead?
-                for id in identifiers {
-                    if let Some((_, record_row)) = record_db
-                        .state_from_record_id(id, &cfg.alias_transform)?
-                        .require_record()?
-                    {
-                        match record_row {
-                            DisambiguatedRecordRow::Entry(record_row, state) => {
-                                state.commit()?;
-                                formatter(record_row)?;
-                            }
-                            DisambiguatedRecordRow::Deleted(_, state) => {
-                                state.commit()?;
-                                error!("Cannot format record data for deleted row.");
-                            }
-                            DisambiguatedRecordRow::Void(_, state) => {
-                                state.commit()?;
-                                error!("Cannot format record data for void row.");
-                            }
-                        }
-                    }
+                for record_id in identifiers {
+                    let (record, row) = get_record_row(&mut record_db, record_id, client, &cfg)?
+                        .exists_or_commit_null("Cannot format")?;
+                    row.commit()?;
+                    fmt_w.write_item(&record)?;
                 }
             }
 
-            write!(&mut lock, "{suffix}")?;
+            // then stdin
+            // TODO!
+
+            // then matching
+            if let Some(pat) = matching {
+                record_db
+                    .map_matching_active_records(&pat, |row_data| fmt_w.write_item(&row_data))?;
+            }
+
+            fmt_w.finish()?;
         }
         Command::Get {
             identifiers,
