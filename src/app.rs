@@ -897,6 +897,9 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         bail!("local sub-id must contain non-whitespace characters")
                     }
                     AliasErrorKind::IsRemoteId => bail!("local sub-id must not contain a colon"),
+                    AliasErrorKind::ContainsControl => {
+                        bail!("local sub-id must not contain control characters")
+                    }
                 },
             };
             let remote_id = RemoteId::local(&alias);

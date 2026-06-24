@@ -211,27 +211,76 @@ impl FromStr for Alias {
     type Err = AliasConversionError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let trimmed = s.trim();
-        if trimmed.is_empty() {
-            Err(AliasConversionError {
-                input: s.to_owned(),
+        let input = s.trim().to_owned();
+
+        if input.is_empty() {
+            return Err(AliasConversionError {
+                input,
                 kind: AliasErrorKind::Empty,
-            })
-        } else {
-            match trimmed.find(':') {
-                Some(_) => Err(AliasConversionError {
-                    input: s.to_owned(),
-                    kind: AliasErrorKind::IsRemoteId,
-                }),
-                None => Ok(Self(trimmed.to_owned())),
-            }
+            });
         }
+
+        if input.find(':').is_some() {
+            return Err(AliasConversionError {
+                input,
+                kind: AliasErrorKind::IsRemoteId,
+            });
+        }
+
+        if input.chars().any(char::is_control) {
+            return Err(AliasConversionError {
+                input,
+                kind: AliasErrorKind::ContainsControl,
+            });
+        }
+
+        Ok(Self(input))
     }
 }
 
 impl fmt::Display for Alias {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
+    }
+}
+
+/// A validated legacy `alias`.
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+pub struct LegacyAlias(String);
+
+impl FromStr for LegacyAlias {
+    type Err = AliasConversionError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let input = s.trim().to_owned();
+
+        if input.is_empty() {
+            return Err(AliasConversionError {
+                input,
+                kind: AliasErrorKind::Empty,
+            });
+        }
+
+        if input.find(':').is_some() {
+            return Err(AliasConversionError {
+                input,
+                kind: AliasErrorKind::IsRemoteId,
+            });
+        }
+
+        Ok(Self(input))
+    }
+}
+
+impl fmt::Display for LegacyAlias {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl AsRef<str> for LegacyAlias {
+    fn as_ref(&self) -> &str {
+        &self.0
     }
 }
 
