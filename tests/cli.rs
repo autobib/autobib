@@ -700,19 +700,19 @@ fn list() -> Result<()> {
     );
 
     let mut cmd = s.cmd()?;
-    cmd.args(["util", "print-keys"]);
+    cmd.args(["util", "print-identifiers"]);
     cmd.assert()
         .success()
         .stdout(contains("zbmath:06346461").and(contains("my_alias")));
 
     let mut cmd = s.cmd()?;
-    cmd.args(["--read-only", "util", "print-keys"]);
+    cmd.args(["--read-only", "util", "print-identifiers"]);
     cmd.assert()
         .success()
         .stdout(contains("zbmath:06346461").and(contains("my_alias")));
 
     let mut cmd = s.cmd()?;
-    cmd.args(["util", "print-keys", "--canonical"]);
+    cmd.args(["util", "print-identifiers", "--canonical"]);
     cmd.assert()
         .success()
         .stdout(contains("my_alias").not().and(contains("local:first")));

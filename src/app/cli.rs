@@ -547,7 +547,7 @@ impl UtilCommand {
     /// Check if the command is read-only compatible.
     pub fn validate_read_only_compatibility(&self) -> Result<(), ReadOnlyInvalid> {
         match self {
-            Self::PrintKeys { .. } | Self::Check { fix: false } => Ok(()),
+            Self::PrintIdentifiers { .. } | Self::Check { fix: false } => Ok(()),
             Self::Check { fix: true, .. } => Err(ReadOnlyInvalid::Argument("--fix")),
             Self::Optimize => Err(ReadOnlyInvalid::Command("util optimize")),
             Self::Evict { .. } => Err(ReadOnlyInvalid::Command("util evict")),
@@ -744,7 +744,7 @@ pub enum UtilCommand {
     ///
     /// The deprecated `list` alias has the same behaviour.
     #[command(alias = "list")]
-    PrintKeys {
+    PrintIdentifiers {
         /// Only print the canonical identifiers.
         #[arg(short, long)]
         canonical: bool,
