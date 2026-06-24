@@ -14,7 +14,7 @@ use crate::{
         ConflictResolved, Entry, EntryData, EntryEditCommand, EntryKey, MutableEntryData,
         RawEntryData,
     },
-    error::MergeError,
+    error::{MergeError, ShortError},
     logger::{error, info, reraise, set_failed, suggest, warn},
     normalize::{Normalization, Normalize},
     record::{Alias, RemoteId},
@@ -32,7 +32,10 @@ pub fn create_alias_if_valid(key: &str, row: &State<IsEntry>) -> Result<(), rusq
             }
         }
         Err(err) => {
-            error!("Bibtex key '{key}' is not a valid alias: {err}.");
+            error!(
+                "Bibtex key '{key}' is not a valid alias: {}.",
+                err.short_err()
+            );
             suggest!("Edits to the entry key are only used to create new aliases.");
         }
     }
