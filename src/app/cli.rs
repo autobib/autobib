@@ -247,7 +247,7 @@ pub enum Command {
         #[command(subcommand)]
         hist_command: HistCommand,
     },
-    /// Import records from a BibTeX file.
+    /// Import records from BibTeX files.
     ///
     /// The implementation automatically determines a remote identifier from the data using
     /// your `preferred_providers` config setting, or with any other remote identifier that can
@@ -282,7 +282,7 @@ pub enum Command {
         /// Attach files specified in the `file` field.
         #[arg(long)]
         include_files: bool,
-        /// A separator for the `files` BibTeX field.
+        /// A separator for the `file` field.
         #[arg(long, requires = "include_files")]
         file_sep: Option<String>,
     },

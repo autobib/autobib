@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{collections::BTreeMap, fmt};
 
 use serde::de::{self, Deserializer, Error, SeqAccess, Unexpected, Visitor};
 
@@ -82,8 +82,8 @@ impl<'de> de::Deserialize<'de> for FieldValue {
             ))
         } else {
             // SAFETY: we do not check for the 'balanced `{}`' rule here because this rule is
-            // automatically checked during bibtex deserialization process, and if we get it wrong,
-            // it will not result in data corruption (just invalid output)
+            // automatically checked when parsing bibtex, and if we get it wrong, it will
+            // not result in data corruption (just invalid output)
             Ok(Self(inner))
         }
     }
@@ -109,11 +109,11 @@ impl<'de> de::Deserialize<'de> for Entry<MutableEntryData> {
             {
                 let entry_type: EntryType<String> = seq
                     .next_element()?
-                    .ok_or_else(|| de::Error::invalid_length(1, &self))?;
+                    .ok_or_else(|| de::Error::invalid_length(0, &self))?;
                 let entry_key: String = seq
                     .next_element()?
-                    .ok_or_else(|| de::Error::invalid_length(0, &self))?;
-                let fields: std::collections::BTreeMap<FieldKey<String>, FieldValue<String>> = seq
+                    .ok_or_else(|| de::Error::invalid_length(1, &self))?;
+                let fields: BTreeMap<FieldKey<String>, FieldValue<String>> = seq
                     .next_element()?
                     .ok_or_else(|| de::Error::invalid_length(2, &self))?;
                 Ok(Entry {
