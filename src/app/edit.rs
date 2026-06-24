@@ -82,7 +82,7 @@ where
 
         if let Some(Entry { key, record_data }) = Editor::new_bibtex().edit(&entry)? {
             let row = missing.insert(&RawEntryData::from_entry_data(&record_data), remote_id)?;
-            if key.as_ref() != remote_id.name() {
+            if key.as_ref() != remote_id.name() && !key.is_placeholder() {
                 create_alias_if_valid(key.as_ref(), &row)?;
             }
             row.commit()?;
