@@ -704,7 +704,7 @@ fn list() -> Result<()> {
     cmd.assert().success();
 
     let mut cmd = s.cmd()?;
-    cmd.args(["list", "{%full_id}: {title}"]);
+    cmd.args(["format", "--all", "{%full_id}: {title}"]);
     cmd.assert()
         .success()
         .stdout(contains("local:first: My favourite book").and(contains(
@@ -712,11 +712,11 @@ fn list() -> Result<()> {
         )).and(contains("\n")));
 
     let mut cmd = s.cmd()?;
-    cmd.args(["--read-only", "list", "{%full_id}"]);
+    cmd.args(["--read-only", "format", "--all", "{%full_id}"]);
     cmd.assert().success().stdout(contains("zbmath:06346461"));
 
     let mut cmd = s.cmd()?;
-    cmd.args(["list", "--strict", "{journal}: {title}"]);
+    cmd.args(["format", "--strict", "--all", "{journal}: {title}"]);
     cmd.assert().success().stdout(
         contains("My favourite book")
             .not()
