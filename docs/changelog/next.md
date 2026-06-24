@@ -12,7 +12,7 @@ Changes since `v0.6.1`.
 
 ## New features
 
-- New command `autobib list` which prints records using the template syntax.
+- New command `autobib format` which prints records using the template syntax.
 - New template metas:
   - `%bibtex`, which expands to the full BibTeX record.
   - `%json`, which JSON encodes the record data (excluding the canonical identifier)
