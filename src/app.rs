@@ -349,7 +349,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         {
                             let new_row =
                                 row.modify(&RawEntryData::from_entry_data(&record_data))?;
-                            if key.as_ref() != entry.key.as_ref() {
+                            if key.as_ref() != entry.key.as_ref() && !key.is_placeholder() {
                                 create_alias_if_valid(key.as_ref(), &new_row)?;
                             }
                             new_row.commit()?;

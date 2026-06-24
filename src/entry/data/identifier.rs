@@ -22,7 +22,12 @@ impl<S: AsRef<str>> EntryKey<S> {
 
         Ok(Self(s))
     }
+
+    pub fn is_placeholder(&self) -> bool {
+        self.0.as_ref().starts_with(':')
+    }
 }
+
 impl EntryKey<&'static str> {
     /// A placeholder value used for displaying keys which are not valid bibtex.
     pub fn placeholder() -> Self {
