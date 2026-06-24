@@ -58,7 +58,7 @@ use std::str::from_utf8;
 
 use serde_bibtex::token::is_balanced;
 
-use super::{BorrowedEntryData, EntryData, validate_ascii_identifier};
+use super::{BorrowedEntryData, EntryData, EntryFields, validate_ascii_identifier};
 use crate::error::InvalidBytesError;
 
 /// The size (in bytes) of the version header.
@@ -94,7 +94,7 @@ impl RawEntryData {
         data.push(entry_type_len);
         data.extend(entry_type.as_bytes());
 
-        for (key, value) in entry_data.fields() {
+        for (key, value) in entry_data.fields().pairs() {
             let key_len = KeyHeader::try_from(key.len()).unwrap();
             let value_len = ValueHeader::try_from(value.len()).unwrap().to_le_bytes();
 
@@ -312,12 +312,22 @@ impl<'r> BorrowedEntryData<'r> for RawEntryData<&'r [u8]> {
     }
 }
 
-unsafe impl<T: AsRef<[u8]>> EntryData for RawEntryData<T> {
-    fn fields(&self) -> impl Iterator<Item = (&str, &str)> {
-        let (_, data_blocks) = self.split_blocks();
+struct RawFields<'r> {
+    data: &'r [u8],
+}
+
+impl<'r> EntryFields<'r> for RawFields<'r> {
+    fn pairs(&self) -> impl Iterator<Item = (&'r str, &'r str)> {
         RawRecordFieldsIter {
-            remaining: data_blocks,
+            remaining: self.data,
         }
+    }
+}
+
+unsafe impl<T: AsRef<[u8]>> EntryData for RawEntryData<T> {
+    fn fields(&self) -> impl EntryFields<'_> {
+        let (_, data) = self.split_blocks();
+        RawFields { data }
     }
 
     fn entry_type(&self) -> &str {
@@ -325,14 +335,9 @@ unsafe impl<T: AsRef<[u8]>> EntryData for RawEntryData<T> {
         from_utf8(&type_block[1..]).unwrap()
     }
 
-    fn entry_type_and_fields(&self) -> (&str, impl Iterator<Item = (&str, &str)>) {
-        let (type_block, data_blocks) = self.split_blocks();
-        (
-            from_utf8(&type_block[1..]).unwrap(),
-            RawRecordFieldsIter {
-                remaining: data_blocks,
-            },
-        )
+    fn entry_type_and_fields(&self) -> (&str, impl EntryFields<'_>) {
+        let (type_block, data) = self.split_blocks();
+        (from_utf8(&type_block[1..]).unwrap(), RawFields { data })
     }
 
     fn raw_len(&self) -> usize {
@@ -341,16 +346,19 @@ unsafe impl<T: AsRef<[u8]>> EntryData for RawEntryData<T> {
 }
 
 unsafe impl<T: AsRef<[u8]>> EntryData for &RawEntryData<T> {
-    fn fields(&self) -> impl Iterator<Item = (&str, &str)> {
-        let (_, data_blocks) = self.split_blocks();
-        RawRecordFieldsIter {
-            remaining: data_blocks,
-        }
+    fn fields(&self) -> impl EntryFields<'_> {
+        let (_, data) = self.split_blocks();
+        RawFields { data }
     }
 
     fn entry_type(&self) -> &str {
         let (type_block, _) = self.split_blocks();
         from_utf8(&type_block[1..]).unwrap()
+    }
+
+    fn entry_type_and_fields(&self) -> (&str, impl EntryFields<'_>) {
+        let (type_block, data) = self.split_blocks();
+        (from_utf8(&type_block[1..]).unwrap(), RawFields { data })
     }
 
     fn raw_len(&self) -> usize {

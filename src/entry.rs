@@ -7,8 +7,9 @@ use delegate::delegate;
 use serde_bibtex::{MacroDictionary, de::Deserializer};
 
 pub use self::data::{
-    BorrowedEntryData, ConflictResolved, EntryData, EntryEditCommand, EntryKey, EntryType,
-    FieldKey, FieldValue, MutableEntryData, RawEntryData, RawRecordFieldsIter, SetFieldCommand,
+    BorrowedEntryData, ConflictResolved, EntryData, EntryEditCommand, EntryFields, EntryKey,
+    EntryType, FieldKey, FieldValue, MutableEntryData, RawEntryData, RawRecordFieldsIter,
+    SetFieldCommand,
 };
 pub(crate) use self::data::{EntryTypeHeader, KeyHeader, ValueHeader};
 
@@ -37,9 +38,9 @@ impl<D: EntryData, S> Entry<D, S> {
 
     delegate! {
         to self.record_data {
-            pub fn fields(&self) -> impl Iterator<Item = (&str, &str)>;
+            pub fn fields(&self) -> impl EntryFields<'_>;
             pub fn entry_type(&self) -> &str;
-            pub fn entry_type_and_fields(&self) -> (&str, impl Iterator<Item = (&str, &str)>);
+            pub fn entry_type_and_fields(&self) -> (&str, impl EntryFields<'_>);
         }
     }
 }
@@ -82,7 +83,7 @@ impl<D: EntryData, S: AsRef<str>> Entry<D, S> {
     fn write_generic<W: EntryWrite>(&self, mut writer: W) -> Result<(), W::Error> {
         let (entry_type, fields) = self.entry_type_and_fields();
         writeln!(writer, "@{}{{{},", entry_type, self.key.as_ref())?;
-        for (key, value) in fields {
+        for (key, value) in fields.pairs() {
             writeln!(writer, "  {key} = {{{value}}},")?;
         }
         write!(writer, "}}")
