@@ -9,6 +9,8 @@ Changes since `v0.6.1`.
   Disabling this feature will cause the compiled binary to link to your SQLite system library instead.
 - Renamed `autobib util list` to `autobib util print-identifiers`.
   `autobib util list` is still usable as an alias, but this will be removed in the future.
+- Aliases can no longer contain control characters.
+  - Existing aliases containing control characters can still be accessed and renamed.
 
 ## New features
 
