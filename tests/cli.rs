@@ -709,7 +709,7 @@ fn list() -> Result<()> {
         .success()
         .stdout(contains("local:first: My favourite book").and(contains(
             "zbmath:06346461: On self-similar sets with overlaps and inverse theorems for entropy",
-        )));
+        )).and(contains("\n")));
 
     let mut cmd = s.cmd()?;
     cmd.args(["--read-only", "list", "{%full_id}"]);
