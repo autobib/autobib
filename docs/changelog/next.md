@@ -11,9 +11,9 @@ Changes since `v0.6.1`.
 ## Added
 
 - New command `autobib list` which prints records using the template syntax.
-- Added new template meta `%bibtex`, which expands to the full bibtex record.
+- Added new template meta `%bibtex`, which expands to the full BibTeX record.
 
 ## Changed
 
-- Renamed `autobib util list` to `autobib util print-keys`.
+- Renamed `autobib util list` to `autobib util print-identifiers`.
   `autobib util list` is still usable as an alias, but this will be removed in the future.

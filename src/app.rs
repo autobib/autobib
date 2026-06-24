@@ -1213,7 +1213,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     record_db.evict_cache()?;
                 }
             },
-            UtilCommand::PrintKeys { canonical, deleted } => {
+            UtilCommand::PrintIdentifiers { canonical, deleted } => {
                 let mut lock = stdout_lock_wrap();
                 let snapshot = record_db.snapshot()?;
                 if canonical {
