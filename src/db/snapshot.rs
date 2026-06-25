@@ -304,12 +304,13 @@ WHERE variant = 1
     pub fn map_canonical_identifiers<E, F: FnMut(RemoteId<&str>) -> Result<(), E>>(
         &self,
         deleted: bool,
+        pattern: &str,
         mut f: F,
     ) -> Result<(), SnapshotMapErr<E>> {
-        let mut selector = self.tx.prepare("SELECT record_id FROM Records WHERE key IN (SELECT record_key FROM Identifiers) AND variant = ?1")?;
+        let mut selector = self.tx.prepare("SELECT record_id FROM Records WHERE key IN (SELECT record_key FROM Identifiers) AND variant = ?1  AND record_id GLOB ?2")?;
         let variant = if deleted { 1 } else { 0 };
 
-        let mut rows = selector.query([variant])?;
+        let mut rows = selector.query((variant, pattern))?;
         while let Some(row) = rows.next()? {
             if let ValueRef::Text(bytes) = row.get_ref_unwrap(0) {
                 f(RemoteId::from_string_unchecked(from_utf8(bytes).unwrap()))
@@ -328,13 +329,14 @@ WHERE variant = 1
     pub fn map_identifiers<E, F: FnMut(&str) -> Result<(), E>>(
         &self,
         deleted: bool,
+        pattern: &str,
         mut f: F,
     ) -> Result<(), SnapshotMapErr<E>> {
         let mut selector =
-            self.tx.prepare("SELECT name FROM Identifiers INNER JOIN Records ON Identifiers.record_key = Records.key WHERE Records.variant = ?1")?;
+            self.tx.prepare("SELECT name FROM Identifiers INNER JOIN Records ON Identifiers.record_key = Records.key WHERE Records.variant = ?1 AND Identifiers.name GLOB ?2")?;
         let variant = if deleted { 1 } else { 0 };
 
-        let mut rows = selector.query([variant])?;
+        let mut rows = selector.query((variant, pattern))?;
         while let Some(row) = rows.next()? {
             if let ValueRef::Text(bytes) = row.get_ref_unwrap(0) {
                 f(from_utf8(bytes).unwrap()).map_err(SnapshotMapErr::CallbackFailed)?;

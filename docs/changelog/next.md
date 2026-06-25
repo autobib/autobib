@@ -20,6 +20,8 @@ Changes since `v0.6.1`.
    There are also new features:
    - Added `--template` option, to format records with an arbitrary template instead of as bibtex.
    - Added the ability to read from stdin.
+- `autobib util list` has been renamed to `autobib list`.
+  `autobib list` also accepts an optional glob pattern against which the identifiers are filtered.
 
 ## New features
 

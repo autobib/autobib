@@ -858,6 +858,23 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 RecordIdState::InvalidRemoteId(err) => bail!("{err}"),
             }
         }
+        Command::List {
+            matching,
+            canonical,
+            deleted,
+        } => {
+            let mut lock = stdout_lock_wrap();
+            let snapshot = record_db.snapshot()?;
+            if canonical {
+                snapshot.map_canonical_identifiers(deleted, &matching, |key_str| {
+                    writeln!(lock, "{key_str}")
+                })?;
+            } else {
+                snapshot
+                    .map_identifiers(deleted, &matching, |key_str| writeln!(lock, "{key_str}"))?;
+            }
+            snapshot.commit()?;
+        }
         Command::Local {
             id,
             from_bibtex,
@@ -1215,18 +1232,6 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     record_db.evict_cache()?;
                 }
             },
-            UtilCommand::PrintIdentifiers { canonical, deleted } => {
-                let mut lock = stdout_lock_wrap();
-                let snapshot = record_db.snapshot()?;
-                if canonical {
-                    snapshot.map_canonical_identifiers(deleted, |key_str| {
-                        writeln!(lock, "{key_str}")
-                    })?;
-                } else {
-                    snapshot.map_identifiers(deleted, |key_str| writeln!(lock, "{key_str}"))?;
-                }
-                snapshot.commit()?;
-            }
         },
     };
 

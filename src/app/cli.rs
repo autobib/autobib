@@ -319,6 +319,19 @@ pub enum Command {
         #[arg(short, long, value_enum, default_value_t)]
         report: InfoReportType,
     },
+    /// List identifiers present in the database.
+    #[command(alias = "ls")]
+    List {
+        /// A glob pattern to match against.
+        #[arg(default_value = "*")]
+        matching: String,
+        /// Only print canonical identifiers.
+        #[arg(short, long)]
+        canonical: bool,
+        /// Print deleted identifiers instead of those with data.
+        #[arg(short, long)]
+        deleted: bool,
+    },
     /// Create a local record with the given handle.
     ///
     /// If no arguments are specified, you will be prompted to edit the local record before adding it to the
@@ -568,7 +581,7 @@ impl UtilCommand {
     /// Check if the command is read-only compatible.
     pub fn validate_read_only_compatibility(&self) -> Result<(), ReadOnlyInvalid> {
         match self {
-            Self::PrintIdentifiers { .. } | Self::Check { fix: false } => Ok(()),
+            Self::Check { fix: false } => Ok(()),
             Self::Check { fix: true, .. } => Err(ReadOnlyInvalid::Argument("--fix")),
             Self::Optimize => Err(ReadOnlyInvalid::Command("util optimize")),
             Self::Evict { .. } => Err(ReadOnlyInvalid::Command("util evict")),
@@ -588,6 +601,7 @@ impl Command {
             | Self::DefaultConfig
             | Self::Find { .. }
             | Self::Log { .. }
+            | Self::List { .. }
             | Self::Path { mkdir: false, .. } => return Ok(()),
             Self::Path { mkdir: true, .. } => return Err(ReadOnlyInvalid::Argument("--mkdir")),
             Self::Alias { .. } => "alias",
@@ -759,17 +773,5 @@ pub enum UtilCommand {
         /// Clear cached items which are at least `seconds` old.
         #[arg(long)]
         max_age: Option<u32>,
-    },
-    /// Print all valid identifiers.
-    ///
-    /// The deprecated `list` alias has the same behaviour.
-    #[command(alias = "list")]
-    PrintIdentifiers {
-        /// Only print the canonical identifiers.
-        #[arg(short, long)]
-        canonical: bool,
-        /// Print deleted identifiers instead of those with data.
-        #[arg(short, long)]
-        deleted: bool,
     },
 }
