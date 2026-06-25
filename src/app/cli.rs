@@ -239,14 +239,9 @@ pub enum Command {
     },
     /// Retrieve records given identifiers.
     ///
-    /// Identifiers are read in the following order:
-    ///
-    /// * Those which match the `--matching` glob.
-    /// * Those passed as explicit arguments.
-    /// * Those present in STDIN, one per line.
-    ///
-    /// There is no sorting or deduplication, and output is streamed as records are received.
-    /// See `autobib source` for much more intput and output processing options.
+    /// There is no sorting or deduplication, and output is streamed as records are received. Any
+    /// identifiers passed as command-line arguments are processed before standard input.
+    /// See `autobib source` for much more input and output processing options.
     ///
     /// By default, the output is formatted as BibTeX entries corresponding to the identifiers.
     /// Identifiers which are invalid BibTeX entry keys are skipped. In order to write other data
@@ -256,9 +251,6 @@ pub enum Command {
     Get {
         /// Identifiers to retrieve.
         identifiers: Vec<RecordId>,
-        // /// Retrieve records in the database with matching identifier.
-        // #[arg(short, long, value_name = "GLOB")]
-        // matching: Option<String>,
         /// Retrieve records but do not write any output.
         #[arg(long, group = "get-output")]
         retrieve_only: bool,
@@ -271,7 +263,7 @@ pub enum Command {
         /// Skip records which are missing fields from the template.
         #[arg(short, long, requires = "template")]
         strict: bool,
-        /// A separator to print between templates.
+        /// A separator to print between records.
         #[arg(long, requires = "template", default_value_t = String::from("\n"))]
         sep: String,
     },
