@@ -33,6 +33,7 @@ mod null;
 mod record;
 mod version;
 
+use chrono::{DateTime, Local};
 use rusqlite::{CachedStatement, Error, Statement};
 
 pub use self::{borrow::ArbitraryDataRef, disp::*, missing::*, null::*, record::*, version::*};
@@ -45,11 +46,24 @@ use crate::{
     logger::{debug, error, reraise},
 };
 
+/// An updated state, along with the timestamp at which it was updated.
+pub struct Updated<'conn, I> {
+    pub state: State<'conn, I>,
+    pub modified: DateTime<Local>,
+}
+
 /// A representation of the current database state corresponding to a [`RecordId`].
 #[derive(Debug)]
 pub struct State<'conn, I> {
     tx: Tx<'conn>,
     id: I,
+}
+
+impl<'conn, I> Updated<'conn, I> {
+    /// Commit the [`State`], writing the relevant changes to the database.
+    pub fn commit(self) -> Result<(), Error> {
+        self.state.tx.commit()
+    }
 }
 
 impl<'conn, I> State<'conn, I> {
@@ -65,6 +79,13 @@ impl<'conn, I> State<'conn, I> {
     /// Commit the [`State`], writing the relevant changes to the database.
     pub fn commit(self) -> Result<(), Error> {
         self.tx.commit()
+    }
+
+    pub fn with_timestamp(self, modified: DateTime<Local>) -> Updated<'conn, I> {
+        Updated {
+            state: self,
+            modified,
+        }
     }
 
     /// Initialize a new state from a transaction.

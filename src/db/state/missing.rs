@@ -1,6 +1,6 @@
 use chrono::Local;
 
-use super::{IsEntry, IsNull, NotEntry, State};
+use super::{IsEntry, IsNull, NotEntry, State, Updated};
 use crate::{RawEntryData, RemoteId, db::Identifier, entry::EntryData, logger::debug};
 
 /// Types which know how to insert new data.
@@ -13,7 +13,7 @@ pub trait RecordsInsert<'conn> {
         self,
         data: &RawEntryData,
         canonical: &RemoteId,
-    ) -> Result<State<'conn, IsEntry>, rusqlite::Error>;
+    ) -> Result<Updated<'conn, IsEntry>, rusqlite::Error>;
 }
 
 impl<'conn> RecordsInsert<'conn> for State<'conn, IsMissing> {
@@ -21,7 +21,7 @@ impl<'conn> RecordsInsert<'conn> for State<'conn, IsMissing> {
         self,
         data: &RawEntryData,
         canonical: &RemoteId,
-    ) -> Result<State<'conn, IsEntry>, rusqlite::Error> {
+    ) -> Result<Updated<'conn, IsEntry>, rusqlite::Error> {
         self.insert_new(data, canonical)
     }
 }
@@ -31,13 +31,17 @@ impl<'conn, I: NotEntry> RecordsInsert<'conn> for State<'conn, I> {
         self,
         data: &RawEntryData,
         _: &RemoteId,
-    ) -> Result<State<'conn, IsEntry>, rusqlite::Error> {
+    ) -> Result<Updated<'conn, IsEntry>, rusqlite::Error> {
         self.reinsert(data)
     }
 }
 
 impl<'conn> RecordsInsert<'conn> for State<'conn, IsEntry> {
-    fn insert(self, data: &RawEntryData, _: &RemoteId) -> Result<Self, rusqlite::Error> {
+    fn insert(
+        self,
+        data: &RawEntryData,
+        _: &RemoteId,
+    ) -> Result<Updated<'conn, IsEntry>, rusqlite::Error> {
         self.modify(data)
     }
 }
@@ -67,15 +71,16 @@ impl<'conn> State<'conn, IsMissing> {
         data: &RawEntryData,
         canonical: &RemoteId,
         refs: R,
-    ) -> Result<State<'conn, IsEntry>, rusqlite::Error> {
+    ) -> Result<Updated<'conn, IsEntry>, rusqlite::Error> {
         debug!("Inserting data for canonical id '{canonical}'");
+        let modified = Local::now();
         let row_id: i64 = self.prepare_cached("INSERT OR ABORT INTO Records (record_id, data, modified) values (?1, ?2, ?3) RETURNING key")?.query_row(
-            (canonical.name(), data.to_byte_repr(), &Local::now()),
+            (canonical.name(), data.to_byte_repr(), &modified),
             |row| row.get(0),
         )?;
         let row = State::init(self.tx, IsEntry(row_id));
         row.add_refs(refs)?;
-        Ok(row)
+        Ok(row.with_timestamp(modified))
     }
 
     /// A convenience wrapper around [`insert`](Self::insert) which first converts any type which
@@ -84,7 +89,7 @@ impl<'conn> State<'conn, IsMissing> {
         self,
         data: &D,
         canonical: &RemoteId,
-    ) -> Result<State<'conn, IsEntry>, rusqlite::Error> {
+    ) -> Result<Updated<'conn, IsEntry>, rusqlite::Error> {
         let raw_record_data = RawEntryData::from_entry_data(data);
         self.insert_new(&raw_record_data, canonical)
     }
@@ -94,7 +99,7 @@ impl<'conn> State<'conn, IsMissing> {
         self,
         data: &RawEntryData,
         canonical: &RemoteId,
-    ) -> Result<State<'conn, IsEntry>, rusqlite::Error> {
+    ) -> Result<Updated<'conn, IsEntry>, rusqlite::Error> {
         // SAFETY: 'canonical' is passed as a ref.
         let row = self.insert_with_refs(data, canonical, std::iter::once(canonical))?;
         Ok(row)

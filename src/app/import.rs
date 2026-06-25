@@ -371,7 +371,7 @@ where
                 let new_data = RawEntryData::from_entry_data(&existing_record);
 
                 info!("Updating data for record with identifier '{remote_id}'");
-                let new_row = row.modify(&new_data)?;
+                let new_row = row.modify(&new_data)?.state;
 
                 create_alias_and_commit(
                     new_row,
@@ -396,7 +396,9 @@ where
             }
 
             info!("Inserting new record with identifier '{canonical}'");
-            let row = missing.insert_entry_data(&entry.record_data, &canonical)?;
+            let row = missing
+                .insert_entry_data(&entry.record_data, &canonical)?
+                .state;
             create_alias_and_commit(row, canonical.name(), import_config.no_alias, maybe_alias)?;
             Ok(ImportOutcome::Success)
         }
@@ -412,7 +414,9 @@ where
             }
 
             info!("Re-inserting record with canonical id '{remote_id}'");
-            let row = void.reinsert(&RawEntryData::from_entry_data(&entry.record_data))?;
+            let row = void
+                .reinsert(&RawEntryData::from_entry_data(&entry.record_data))?
+                .state;
             create_alias_and_commit(row, remote_id.name(), import_config.no_alias, maybe_alias)?;
             Ok(ImportOutcome::Success)
         }

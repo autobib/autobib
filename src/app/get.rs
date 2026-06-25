@@ -110,7 +110,8 @@ impl<'r, W: io::Write + ?Sized> Output for TemplateOutput<'r, W> {
     type Data = Record<RawEntryData>;
 
     fn write_item(&mut self, item: Self::Data) -> Result<(), io::Error> {
-        if self.strict && !self.template.has_keys_contained_in(&item) {
+        let row = item.row;
+        if self.strict && !self.template.has_keys_contained_in(&row) {
             return Ok(());
         }
         if self.first {
@@ -118,7 +119,7 @@ impl<'r, W: io::Write + ?Sized> Output for TemplateOutput<'r, W> {
         } else {
             write!(self.writer, "{}", self.sep)?;
         }
-        self.template.render_io(&mut self.writer, &item)
+        self.template.render_io(&mut self.writer, &row)
     }
 
     fn filter_map(record: Record<RawEntryData>, _: &State<'_, IsEntry>) -> Option<Self::Data> {

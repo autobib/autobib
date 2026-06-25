@@ -19,7 +19,6 @@ Changes since `v0.6.1`.
 - New command `autobib format` which prints records using the template syntax.
 - New template metas:
   - `%json`, which JSON encodes the record data (excluding the canonical identifier)
-  - `%key`, which expands to the citation key associated with the record
 - Added basic support for sourcing from [Typst](https://typst.app) files (using `autobib source file.typ`)
 - Added support for multiple selections in `autobib find` by default.
   - The number of selections can be limited with the `--limit` option.

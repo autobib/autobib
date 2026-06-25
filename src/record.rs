@@ -14,7 +14,7 @@ use crate::{
         RecordDatabase, Tx,
         state::{
             IsDeleted, IsEntry, IsMissing, IsNull, IsVoid, RecordIdState, RecordRow, RemoteIdState,
-            State, Unknown,
+            State, Unknown, Updated,
         },
     },
     entry::{MutableEntryData, RawEntryData},
@@ -31,18 +31,21 @@ use crate::{
 pub struct Record<D> {
     /// The original key.
     pub key: String,
-    /// The raw data.
-    pub data: D,
-    /// The canonical identifier.
-    pub canonical: RemoteId,
+    /// The record row.
+    pub row: RecordRow<D>,
+}
+
+impl<D> From<Record<D>> for RecordRow<D> {
+    fn from(record: Record<D>) -> Self {
+        record.row
+    }
 }
 
 impl<D> Record<D> {
     fn new<K: Into<String>>(key: K, row: RecordRow<D>) -> Self {
         Self {
             key: key.into(),
-            data: row.data,
-            canonical: row.canonical,
+            row,
         }
     }
 }
@@ -87,7 +90,7 @@ impl<'conn> RecordRowResponse<'conn> {
             RecordRowResponse::Exists(record, row) => Ok((record, row)),
             RecordRowResponse::Deleted(data, deleted_row) => {
                 f(deleted_row.into_tx())?;
-                if let Some(repl) = data.data {
+                if let Some(repl) = data.row.data {
                     bail!(
                         "{err_prefix} deleted record '{}' (replaced by key '{repl}')",
                         data.key
@@ -122,7 +125,7 @@ impl<'conn> RecordRowResponse<'conn> {
             RecordRowResponse::Exists(record, row) => Ok((record, row)),
             RecordRowResponse::Deleted(data, deleted_row) => {
                 deleted_row.commit()?;
-                if let Some(repl) = data.data {
+                if let Some(repl) = data.row.data {
                     bail!(
                         "{err_prefix} deleted record '{}' (replaced by key '{repl}')",
                         data.key
@@ -169,15 +172,18 @@ where
         RecordIdState::UndefinedAlias(alias) => Ok(RecordRowResponse::NullAlias(alias)),
         RecordIdState::InvalidRemoteId(err) => Ok(RecordRowResponse::InvalidRemoteId(err)),
         RecordIdState::Void(key, data, void) => {
-            let (raw_entry_data, entry) =
+            let (raw_entry_data, updated) =
                 revive_void(void, &data.canonical, client, &config.on_insert)?;
             Ok(RecordRowResponse::Exists(
                 Record {
                     key,
-                    canonical: data.canonical,
-                    data: raw_entry_data,
+                    row: RecordRow {
+                        canonical: data.canonical,
+                        data: raw_entry_data,
+                        modified: updated.modified,
+                    },
                 },
-                entry,
+                updated.state,
             ))
         }
         RecordIdState::Unknown(Unknown::MappedAlias(alias, mapped, missing)) => {
@@ -269,7 +275,7 @@ fn get_record_row_recursive<'conn, O, C: Client>(
                 // SAFETY: the provided canonical identifier is present in the provided references
                 let row =
                     missing.insert_with_refs(&raw_record_data, history.last(), history.iter())?;
-                let maybe_key = exists_callback(&row, original)?;
+                let maybe_key = exists_callback(&row.state, original)?;
 
                 let NonEmpty { head, mut tail } = history;
                 let (key, canonical) = match (maybe_key, tail.pop()) {
@@ -282,20 +288,18 @@ fn get_record_row_recursive<'conn, O, C: Client>(
                 break Ok(RecordRowResponse::Exists(
                     Record {
                         key,
-                        data: RawEntryData::from_entry_data(&data),
-                        canonical,
+                        row: RecordRow {
+                            data: RawEntryData::from_entry_data(&data),
+                            canonical,
+                            modified: row.modified,
+                        },
                     },
-                    row,
+                    row.state,
                 ));
             }
             RemoteResponse::Reference(new_remote_id) => {
                 match RemoteIdState::determine(missing.into_tx(), &new_remote_id)? {
-                    RemoteIdState::Entry(
-                        RecordRow::<RawEntryData> {
-                            data, canonical, ..
-                        },
-                        state,
-                    ) => {
+                    RemoteIdState::Entry(row, state) => {
                         // not necessary to insert `new_remote_id` since we just saw that it
                         // is present in the database
                         state.add_refs(history.iter())?;
@@ -303,26 +307,19 @@ fn get_record_row_recursive<'conn, O, C: Client>(
                         break Ok(RecordRowResponse::Exists(
                             Record {
                                 key: maybe_key.unwrap_or(history.head.into()),
-                                data,
-                                canonical,
+                                row,
                             },
                             state,
                         ));
                     }
-                    RemoteIdState::Deleted(
-                        RecordRow {
-                            data, canonical, ..
-                        },
-                        state,
-                    ) => {
+                    RemoteIdState::Deleted(row, state) => {
                         // we still add the refs to the deleted row
                         state.add_refs(history.iter())?;
                         let maybe_key = deleted_callback(&state, original)?;
                         break Ok(RecordRowResponse::Deleted(
                             Record {
                                 key: maybe_key.unwrap_or(history.head.into()),
-                                data,
-                                canonical,
+                                row,
                             },
                             state,
                         ));
@@ -343,16 +340,20 @@ fn get_record_row_recursive<'conn, O, C: Client>(
                         let (data, entry) =
                             revive_void(void, &record_row.canonical, client, normalization)?;
                         // add the new references
-                        entry.add_refs(history.iter())?;
-                        let key = exists_callback(&entry, original)?.unwrap_or(history.head.into());
+                        entry.state.add_refs(history.iter())?;
+                        let key =
+                            exists_callback(&entry.state, original)?.unwrap_or(history.head.into());
 
                         break Ok(RecordRowResponse::Exists(
                             Record {
-                                data,
                                 key,
-                                canonical: record_row.canonical,
+                                row: RecordRow {
+                                    data,
+                                    canonical: record_row.canonical,
+                                    modified: entry.modified,
+                                },
                             },
-                            entry,
+                            entry.state,
                         ));
                     }
                 }
@@ -387,7 +388,7 @@ pub fn revive_void<'conn, C: Client>(
     canonical: &RemoteId,
     client: &C,
     normalization: &Normalization,
-) -> Result<(RawEntryData, State<'conn, IsEntry>), Error> {
+) -> Result<(RawEntryData, Updated<'conn, IsEntry>), Error> {
     match get_remote_response(client, canonical)? {
         RemoteResponse::Data(mut mutable_entry_data) => {
             mutable_entry_data.normalize(normalization);

@@ -56,15 +56,15 @@ where
     let (replacement_record, replacement_row) = data_cb(tx, &original_record.data)?;
 
     // make sure they aren't the same row
-    if replacement_record.canonical == original_record.canonical {
+    if replacement_record.row.canonical == original_record.canonical {
         bail!(
             "replacement identifier '{}' is equivalent to the current identifier",
-            replacement_record.canonical
+            replacement_record.row.canonical
         );
     }
 
     // update the target row data
-    let mut incoming_record = MutableEntryData::from_entry_data(&replacement_record.data);
+    let mut incoming_record = MutableEntryData::from_entry_data(&replacement_record.row.data);
     crate::app::edit::merge_record_data(
         on_conflict,
         &mut incoming_record,
@@ -74,7 +74,7 @@ where
     let replacement_row =
         replacement_row.modify(&RawEntryData::from_entry_data(&incoming_record))?;
 
-    let (tx, replacement_row_id) = replacement_row.into_parts();
+    let (tx, replacement_row_id) = replacement_row.state.into_parts();
 
     // FIXME: find a way to hold 'joint state' in some reasonable way
     if hard {
@@ -92,7 +92,7 @@ where
     } else {
         let original_row = State::init_unchecked(tx, original_row_id);
         original_row
-            .delete_soft(Some(&replacement_record.canonical), update_aliases)?
+            .delete_soft(Some(&replacement_record.row.canonical), update_aliases)?
             .commit()?;
     }
 
