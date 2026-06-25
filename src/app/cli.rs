@@ -418,8 +418,8 @@ pub enum Command {
     ///
     /// This is essentially a call to `autobib get`, except with a custom search which attempts
     /// to find identifiers inside the provided file(s), typically as citation keys.
-    /// The search method depends on the file
-    /// type, which is determined purely based on the extension.
+    /// The search method depends on the file type, which is determined purely based
+    /// on the extension. File type detection can be overrided manually.
     Source {
         /// The files in which to search.
         paths: Vec<PathBuf>,
