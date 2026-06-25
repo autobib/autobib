@@ -2,8 +2,10 @@ mod parse;
 
 use std::{convert::Infallible, fmt, io, iter::Peekable, str::FromStr};
 
+use chrono::{DateTime, Local};
 use mufmt::{Ast, Manifest, ManifestMut, Span, SyntaxError};
 use nucleo_picker::Render;
+use serde::{Serialize, ser::SerializeStruct};
 
 use self::parse::{Kind, Lexer, Token};
 
@@ -24,6 +26,8 @@ pub enum Meta {
     SubId,
     /// `{%full_id}`
     FullId,
+    /// `{%modified}`
+    Modified,
     /// `{%json}`
     Json,
 }
@@ -37,6 +41,7 @@ impl FromStr for Meta {
             "provider" => Ok(Self::Provider),
             "sub_id" => Ok(Self::SubId),
             "full_id" => Ok(Self::FullId),
+            "modified" => Ok(Self::Modified),
             "json" => Ok(Self::Json),
             _ => Err(KeyParseErrorKind::InvalidMeta(s.into())),
         }
@@ -345,7 +350,8 @@ enum DisplayedRow<'row, 'ast, 'state> {
     Row(&'row str),
     Ast(&'ast str),
     State(&'state str),
-    Json(&'row RawEntryData),
+    Json(&'row RecordRow<RawEntryData>),
+    Timestamp(&'row DateTime<Local>),
     Skip,
 }
 
@@ -356,6 +362,7 @@ impl<'r, 'ast, 'state> fmt::Display for DisplayedRow<'r, 'ast, 'state> {
             Self::Ast(s) => f.write_str(s),
             Self::State(s) => f.write_str(s),
             Self::Json(data) => {
+                // an adapter to use io writing methods with fmt
                 struct FormatterAdapter<'a, 'b>(&'a mut fmt::Formatter<'b>);
 
                 impl io::Write for FormatterAdapter<'_, '_> {
@@ -377,7 +384,7 @@ impl<'r, 'ast, 'state> fmt::Display for DisplayedRow<'r, 'ast, 'state> {
                 }
 
                 let adapter = FormatterAdapter(f);
-                match serde_json::to_writer(adapter, &data.serialize()) {
+                match serde_json::to_writer(adapter, &data) {
                     Ok(()) => Ok(()),
                     Err(err) => {
                         if err.is_io() {
@@ -388,6 +395,7 @@ impl<'r, 'ast, 'state> fmt::Display for DisplayedRow<'r, 'ast, 'state> {
                     }
                 }
             }
+            Self::Timestamp(modified) => modified.fmt(f),
             Self::Skip => Ok(()),
         }
     }
@@ -431,7 +439,8 @@ impl<'row, 'ast, 'state> DisplayedRow<'row, 'ast, 'state> {
                 Meta::Provider => DisplayedRow::Row(row_data.canonical.provider()),
                 Meta::SubId => DisplayedRow::Row(row_data.canonical.sub_id()),
                 Meta::FullId => DisplayedRow::Row(row_data.canonical.name()),
-                Meta::Json => DisplayedRow::Json(&row_data.data),
+                Meta::Modified => DisplayedRow::Timestamp(&row_data.modified),
+                Meta::Json => DisplayedRow::Json(row_data),
             },
         }
     }
@@ -524,6 +533,19 @@ impl Render<RecordRow<RawEntryData>> for Template {
                 s
             }
         }
+    }
+}
+
+impl<D: EntryData, T: AsRef<str>> Serialize for RecordRow<D, T> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut state = serializer.serialize_struct("RecordRow", 3)?;
+        state.serialize_field("data", &self.data.serialize())?;
+        state.serialize_field("canonical", self.canonical.name())?;
+        state.serialize_field("modified", &self.modified)?;
+        state.end()
     }
 }
 
@@ -696,9 +718,6 @@ mod tests {
 
         let rendered = template.render(&row_data);
 
-        assert_eq!(
-            rendered,
-            r#"{"entry_type":"misc","fields":{"a":"A","b":"B"}}"#
-        );
+        assert!(rendered.starts_with(r#"{"data":{"entry_type":"misc","fields":{"a":"A","b":"B"}},"canonical":"local:12345","modified":"#));
     }
 }
