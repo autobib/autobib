@@ -7,6 +7,7 @@ use std::{
 
 use itertools::Itertools;
 use nonempty::NonEmpty;
+use serde::{Serialize, ser::SerializeMap};
 
 use crate::{
     Identifier,
@@ -52,11 +53,35 @@ pub fn output_keys<'a>(keys: impl Iterator<Item = &'a crate::RecordId>) -> Resul
     Ok(())
 }
 
+pub fn output_entries_json<D: EntryData>(
+    grouped_entries: &BTreeMap<RemoteId, NonEmpty<Entry<D>>>,
+) -> Result<(), anyhow::Error> {
+    struct Wrapper<'a, D>(&'a BTreeMap<RemoteId, NonEmpty<Entry<D>>>);
+
+    impl<'a, D: EntryData> Serialize for Wrapper<'a, D> {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            let mut state = serializer.serialize_map(None)?;
+            for entry in flatten_and_warn(self.0) {
+                state.serialize_entry(entry.key.as_ref(), &entry.record_data.serialize())?;
+            }
+            state.end()
+        }
+    }
+
+    let mut lock = stdout_lock_wrap();
+    serde_json::to_writer_pretty(&mut lock, &Wrapper(grouped_entries))?;
+    writeln!(lock)?;
+    Ok(())
+}
+
 /// Either write records to stdout, or to a provided file.
-pub fn output_entries<D: EntryData>(
+pub fn output_entries_bibtex<D: EntryData>(
     out: Option<std::fs::File>,
     append: bool,
-    grouped_entries: BTreeMap<RemoteId, NonEmpty<Entry<D>>>,
+    grouped_entries: &BTreeMap<RemoteId, NonEmpty<Entry<D>>>,
 ) -> Result<(), serde_bibtex::Error> {
     match out {
         Some(file) => {
@@ -64,7 +89,7 @@ pub fn output_entries<D: EntryData>(
             if append && !grouped_entries.is_empty() {
                 writer.write_all(b"\n")?;
             }
-            write_entries(writer, grouped_entries)?;
+            entries_to_bibtex(writer, flatten_and_warn(grouped_entries))?;
         }
         _ => {
             let stdout = io::stdout();
@@ -72,11 +97,11 @@ pub fn output_entries<D: EntryData>(
                 // do not write an extra newline if interactive and there is nothing to write
                 if !grouped_entries.is_empty() {
                     // no need to use `stdout_lock_wrap` as broken pipe error cannot occur
-                    write_entries(stdout.lock(), grouped_entries)?;
+                    entries_to_bibtex(stdout.lock(), flatten_and_warn(grouped_entries))?;
                 }
             } else {
                 let writer = io::BufWriter::new(stdout_lock_wrap());
-                write_entries(writer, grouped_entries)?;
+                entries_to_bibtex(writer, flatten_and_warn(grouped_entries))?;
             }
         }
     };
@@ -84,12 +109,10 @@ pub fn output_entries<D: EntryData>(
     Ok(())
 }
 
-/// Iterate over records, writing the entries and warning about duplicates.
-fn write_entries<W: io::Write, D: EntryData>(
-    writer: W,
-    grouped_entries: BTreeMap<RemoteId, NonEmpty<Entry<D>>>,
-) -> Result<(), io::Error> {
-    let all_entries_iter = grouped_entries.iter().flat_map(|(canonical, entry_group)| {
+fn flatten_and_warn<D: EntryData>(
+    grouped_entries: &BTreeMap<RemoteId, NonEmpty<Entry<D>>>,
+) -> impl Iterator<Item = &Entry<D>> {
+    grouped_entries.iter().flat_map(|(canonical, entry_group)| {
         if entry_group.len() > 1 {
             warn!(
                 "Multiple keys for '{canonical}': {}",
@@ -97,7 +120,5 @@ fn write_entries<W: io::Write, D: EntryData>(
             );
         };
         entry_group
-    });
-
-    entries_to_bibtex(writer, all_entries_iter)
+    })
 }
