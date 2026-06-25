@@ -75,6 +75,7 @@ These are all prefixed by the `%` character:
 - `%provider`: expands to the provider of the canonical id: e.g. `zbmath`
 - `%sub_id`: expands to the sub-id of the canonical id: e.g. `06346461`
 - `%json`: expands to a JSON dictionary containing all of the record data
+- `%modified`: expands to the timestamp when the record was last modified
 
 Finally, it is possible to input a *string*, i.e. a [JSON string](https://www.json.org/json-en.html), by quoting text.
 This allows manually inputting invisible characters or specifying Unicode values using escapes by including the value in quotes:
