@@ -257,7 +257,7 @@ pub enum Command {
         /// Ignore null records and aliases.
         #[arg(long)]
         ignore_null: bool,
-        /// Format output using a template instead of as a BibTeX record.
+        /// Format output using a template.
         #[arg(short, long, group = "get-output")]
         template: Option<Template>,
         /// Skip records which are missing fields from the template.
@@ -329,8 +329,17 @@ pub enum Command {
         #[arg(short, long)]
         canonical: bool,
         /// Print deleted identifiers instead of those with data.
-        #[arg(short, long)]
+        #[arg(short, long, conflicts_with = "template")]
         deleted: bool,
+        /// Format identifier data using a template.
+        #[arg(short, long)]
+        template: Option<Template>,
+        /// Skip records which are missing fields from the template.
+        #[arg(short, long, requires = "template")]
+        strict: bool,
+        /// A separator to print between records.
+        #[arg(long, requires = "template", default_value_t = String::from("\n"))]
+        sep: String,
     },
     /// Create a local record with the given handle.
     ///

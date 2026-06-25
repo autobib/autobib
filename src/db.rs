@@ -461,6 +461,29 @@ impl RecordDatabase {
     /// Iterate over all active entries in the Records table and apply the fallible closure
     /// `f` to each row. If an error is returned by the closure, it is immediately propagated and
     /// the function exits early.
+    pub fn map_matching_canonical_active_records<E, F>(
+        &mut self,
+        glob: &str,
+        mut f: F,
+    ) -> Result<(), SnapshotMapErr<E>>
+    where
+        F: FnMut(RecordRow<RawEntryData>) -> Result<(), E>,
+    {
+        debug!("Mapping over all active database records with canonical ID matching '{glob}'.");
+        let mut retriever = self
+            .conn
+            .prepare("SELECT record_id, modified, data, variant FROM Records WHERE key IN (SELECT record_key FROM Identifiers) AND variant = 0 AND record_id GLOB ?1")?;
+
+        for res in retriever.query_map([glob], |row| Ok(RecordRow::from_row_unchecked(row)))? {
+            f(res?).map_err(SnapshotMapErr::CallbackFailed)?;
+        }
+
+        Ok(())
+    }
+
+    /// Iterate over all active entries in the Records table and apply the fallible closure
+    /// `f` to each row. If an error is returned by the closure, it is immediately propagated and
+    /// the function exits early.
     pub fn map_matching_active_records<E, F>(
         &mut self,
         glob: &str,

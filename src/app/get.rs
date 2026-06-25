@@ -10,7 +10,7 @@ use crate::{
     config::Config,
     db::{
         RecordDatabase,
-        state::{IsEntry, State},
+        state::{IsEntry, RecordRow, State},
     },
     entry::{Entry, RawEntryData},
     format::Template,
@@ -107,10 +107,9 @@ impl<'r, W: io::Write + ?Sized> TemplateOutput<'r, W> {
 }
 
 impl<'r, W: io::Write + ?Sized> Output for TemplateOutput<'r, W> {
-    type Data = Record<RawEntryData>;
+    type Data = RecordRow<RawEntryData>;
 
-    fn write_item(&mut self, item: Self::Data) -> Result<(), io::Error> {
-        let row = item.row;
+    fn write_item(&mut self, row: Self::Data) -> Result<(), io::Error> {
         if self.strict && !self.template.has_keys_contained_in(&row) {
             return Ok(());
         }
@@ -123,7 +122,7 @@ impl<'r, W: io::Write + ?Sized> Output for TemplateOutput<'r, W> {
     }
 
     fn filter_map(record: Record<RawEntryData>, _: &State<'_, IsEntry>) -> Option<Self::Data> {
-        Some(record)
+        Some(record.row)
     }
 
     fn finish(&mut self) -> Result<(), io::Error> {
@@ -148,19 +147,12 @@ where
     F: FnOnce() -> Vec<(Regex, String)>,
     C: Client,
 {
-    // matching
-    // if let Some(pat) = matching {
-    //     record_db.map_matching_active_records(&pat, |row_data| writer.write_item(&row_data))?;
-    // }
-
     // then explicit arguments
-    if !identifiers.is_empty() {
-        for id in identifiers {
-            if let Some(item) =
-                retrieve_single_entry(record_db, id, client, ignore_null, cfg, W::filter_map)?
-            {
-                writer.write_item(item)?;
-            }
+    for id in identifiers {
+        if let Some(item) =
+            retrieve_single_entry(record_db, id, client, ignore_null, cfg, W::filter_map)?
+        {
+            writer.write_item(item)?;
         }
     }
 
@@ -188,19 +180,12 @@ where
     W: Output,
     F: FnOnce() -> Vec<(Regex, String)>,
 {
-    // matching
-    // if let Some(pat) = matching {
-    //     record_db.map_matching_active_records(&pat, |row_data| writer.write_item(&row_data))?;
-    // }
-
     // explicit arguments
-    if !identifiers.is_empty() {
-        for id in identifiers {
-            if let Some(item) =
-                retrieve_single_entry_read_only(record_db, id, ignore_null, cfg, W::filter_map)?
-            {
-                writer.write_item(item)?;
-            }
+    for id in identifiers {
+        if let Some(item) =
+            retrieve_single_entry_read_only(record_db, id, ignore_null, cfg, W::filter_map)?
+        {
+            writer.write_item(item)?;
         }
     }
 
