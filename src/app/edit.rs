@@ -81,7 +81,9 @@ where
         };
 
         if let Some(Entry { key, record_data }) = Editor::new_bibtex().edit(&entry)? {
-            let row = missing.insert(&RawEntryData::from_entry_data(&record_data), remote_id)?;
+            let row = missing
+                .insert(&RawEntryData::from_entry_data(&record_data), remote_id)?
+                .state;
             if key.as_ref() != remote_id.name() && !key.is_placeholder() {
                 create_alias_if_valid(key.as_ref(), &row)?;
             }
@@ -94,7 +96,7 @@ where
     };
 
     if let Some(alias) = add_alias
-        && !exists.add_alias(alias)?
+        && !exists.state.add_alias(alias)?
     {
         error!("Alias '{alias}' already exists and references a different record.");
     }

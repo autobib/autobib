@@ -135,21 +135,8 @@ where
     V: FnOnce(Record<RawEntryData>, &State<'_, IsEntry>) -> Option<T>,
 {
     match record_db.state_from_record_id(id, &config.alias_transform)? {
-        RecordIdState::Entry(
-            key,
-            RecordRow::<RawEntryData> {
-                data, canonical, ..
-            },
-            state,
-        ) => {
-            let entry = validate(
-                Record {
-                    key,
-                    data,
-                    canonical,
-                },
-                &state,
-            );
+        RecordIdState::Entry(key, row, state) => {
+            let entry = validate(Record { key, row }, &state);
             state.commit()?;
             Ok(entry)
         }
@@ -216,7 +203,7 @@ where
         RecordRowResponse::Deleted(deleted_row_data, deleted) => {
             if !ignore_null {
                 error!("Deleted record: '{}'", deleted_row_data.key);
-                if let Some(repl) = deleted_row_data.data {
+                if let Some(repl) = deleted_row_data.row.data {
                     suggest!("Perhaps use the replacement key: '{repl}'");
                 }
             }
@@ -247,8 +234,9 @@ where
 pub fn try_data_to_entry(
     Record {
         key,
-        data,
-        canonical,
+        row: RecordRow {
+            data, canonical, ..
+        },
     }: Record<RawEntryData>,
     row: &State<'_, IsEntry>,
 ) -> Option<(Entry<RawEntryData>, RemoteId)> {

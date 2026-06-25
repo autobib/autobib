@@ -37,7 +37,7 @@ use crate::{
     db::{
         DeleteAliasResult, RecordDatabase, RenameAliasResult,
         state::{
-            DisambiguatedRecordRow, ExistsOrUnknown, RecordIdState, RecordRowDisplay,
+            DisambiguatedRecordRow, ExistsOrUnknown, RecordIdState, RecordRow, RecordRowDisplay,
             RecordRowMoveResult, SetActiveError,
         },
         user_version,
@@ -197,7 +197,8 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             let (record, row) = get_record_row(&mut record_db, identifier, client, &cfg)?
                 .exists_or_commit_null("Cannot attach file for")?;
             row.commit()?;
-            let mut target = get_attachment_dir(&data_dir, cli.attachments_dir, &record.canonical)?;
+            let mut target =
+                get_attachment_dir(&data_dir, cli.attachments_dir, &record.row.canonical)?;
 
             let mut opts = OpenOptions::new();
             opts.write(true);
@@ -317,9 +318,14 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             let no_non_interactive_cmd = nl.is_identity() && edit_cmd.is_identity();
 
             for key in identifiers {
-                let (Record { key, data, .. }, row) =
-                    get_record_row(&mut record_db, key, client, &cfg)?
-                        .exists_or_commit_null("Cannot edit")?;
+                let (
+                    Record {
+                        key,
+                        row: RecordRow { data, .. },
+                    },
+                    row,
+                ) = get_record_row(&mut record_db, key, client, &cfg)?
+                    .exists_or_commit_null("Cannot edit")?;
 
                 match (cli.no_interactive, no_non_interactive_cmd) {
                     (true, true) => {
@@ -334,6 +340,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
 
                         if changed {
                             row.modify(&RawEntryData::from_entry_data(&editable_data))?
+                                .state
                                 .commit()?;
                         } else {
                             row.commit()?;
@@ -351,8 +358,9 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         if let Some(Entry { key, record_data }) =
                             Editor::new_bibtex().edit(&entry)?
                         {
-                            let new_row =
-                                row.modify(&RawEntryData::from_entry_data(&record_data))?;
+                            let new_row = row
+                                .modify(&RawEntryData::from_entry_data(&record_data))?
+                                .state;
                             if key.as_ref() != entry.key.as_ref() && !key.is_placeholder() {
                                 create_alias_if_valid(key.as_ref(), &new_row)?;
                             }

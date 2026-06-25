@@ -9,7 +9,7 @@ use crate::{
     logger::{debug, info},
 };
 
-use super::{IsMissing, State, Tx, version::RevisionId};
+use super::{IsMissing, State, Tx, Updated, version::RevisionId};
 
 /// Any state which represents a row in the 'Records' table.
 pub trait InRecordsTable {
@@ -577,7 +577,10 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
     }
 
     /// Insert a new row with data, adding the previous row as the parent.
-    fn replace_impl<R: AsRecordRowData>(&self, data: &R) -> Result<i64, rusqlite::Error> {
+    fn replace_impl<R: AsRecordRowData>(
+        &self,
+        data: &R,
+    ) -> Result<(i64, DateTime<Local>), rusqlite::Error> {
         let existing = self.get_complete_data()?;
 
         // insert a new row into Records containing:
@@ -589,12 +592,13 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
         // - the key of the row being replaced, in parent_key
         //
         // the remaining fields use their default values
+        let dt = Local::now();
         let new_key: i64 = self.prepare("INSERT INTO Records (record_id, data, modified, variant, parent_key) VALUES (?1, ?2, ?3, ?4, ?5) RETURNING key")?
-            .query_row((existing.row.canonical.name(), data.data_blob(), Local::now(), data.variant(), self.row_id()), |row| row.get(0))?;
+            .query_row((existing.row.canonical.name(), data.data_blob(), &dt, data.variant(), self.row_id()), |row| row.get(0))?;
 
         self.update_identifier_lookup(new_key)?;
 
-        Ok(new_key)
+        Ok((new_key, dt))
     }
 
     /// Perform a redo operation from an arbitrary state.
@@ -805,7 +809,7 @@ impl<'conn> State<'conn, IsEntry> {
                         .query_row([row_id], |row| row.get("record_id"))?;
                     let remote_id = RemoteId::from_string_unchecked(repl);
                     info!("Replacing row with new canonical id '{remote_id}'");
-                    let deleted = self.delete_soft(Some(&remote_id), update_aliases)?;
+                    let deleted = self.delete_soft(Some(&remote_id), update_aliases)?.state;
                     Ok(RecordRowMoveResult::Updated(deleted))
                 }
             }
@@ -865,9 +869,9 @@ impl_row_from!(RawEntryData, Option<RemoteId>, ());
 
 impl<'conn> State<'conn, IsEntry> {
     /// Insert new data, preserving the old row as the parent row.
-    pub fn modify(self, data: &RawEntryData) -> Result<Self, rusqlite::Error> {
-        let new_key = self.replace_impl(data)?;
-        Ok(Self::init(self.tx, IsEntry(new_key)))
+    pub fn modify(self, data: &RawEntryData) -> Result<Updated<'conn, IsEntry>, rusqlite::Error> {
+        let (new_key, modified) = self.replace_impl(data)?;
+        Ok(Self::init(self.tx, IsEntry(new_key)).with_timestamp(modified))
     }
 
     /// Create a new row which is a copy of the current row but with an updated modification time.
@@ -897,8 +901,8 @@ RETURNING key",
         self,
         replacement: Option<&RemoteId>,
         update_aliases: bool,
-    ) -> Result<State<'conn, IsDeleted>, rusqlite::Error> {
-        let new_key = self.replace_impl(&replacement)?;
+    ) -> Result<Updated<'conn, IsDeleted>, rusqlite::Error> {
+        let (new_key, modified) = self.replace_impl(&replacement)?;
         if update_aliases {
             match replacement {
                 Some(canonical) => {
@@ -918,7 +922,8 @@ RETURNING key",
         Ok(State {
             tx: self.tx,
             id: IsDeleted(new_key),
-        })
+        }
+        .with_timestamp(modified))
     }
 
     /// Add a new alias for this row.
@@ -968,9 +973,9 @@ RETURNING key",
 
 impl<'conn, I: NotEntry> State<'conn, I> {
     /// Insert data for the void row, creating a new child row.
-    pub fn reinsert(self, data: &RawEntryData) -> rusqlite::Result<State<'conn, IsEntry>> {
-        let new_key = self.replace_impl(data)?;
-        Ok(State::init(self.tx, IsEntry(new_key)))
+    pub fn reinsert(self, data: &RawEntryData) -> rusqlite::Result<Updated<'conn, IsEntry>> {
+        let (new_key, modified) = self.replace_impl(data)?;
+        Ok(State::init(self.tx, IsEntry(new_key)).with_timestamp(modified))
     }
 }
 
