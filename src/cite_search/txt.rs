@@ -16,6 +16,12 @@ pub fn get_citekeys<T: Extend<RecordId>>(buffer: &[u8], container: &mut T) {
         start = end + 1;
         res
     }));
+    if let Ok(s) = from_utf8(&buffer[start..]) {
+        let s = s.trim();
+        if !s.is_empty() {
+            container.extend([RecordId::from(s)]);
+        }
+    }
 }
 
 #[cfg(test)]

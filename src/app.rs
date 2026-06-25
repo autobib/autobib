@@ -2,6 +2,7 @@ mod cli;
 mod delete;
 mod edit;
 mod find;
+mod get;
 mod hist;
 mod import;
 mod info;
@@ -29,6 +30,7 @@ use crate::{
     app::{
         cli::{HistCommand, IdTarget, PruneCommand},
         log::print_log,
+        retrieve::{sync_entries, sync_entries_read_only},
     },
     cite_search::{SourceFileType, get_citekeys},
     config,
@@ -60,7 +62,7 @@ use self::{
     import::ImportConfig,
     path::{data_from_key, data_from_path, data_from_rev, get_attachment_dir, get_attachment_root},
     picker::{choose_attachment, choose_attachment_path, choose_canonical_id},
-    retrieve::{retrieve_and_validate_entries, retrieve_entries_read_only},
+    retrieve::{retrieve_entries, retrieve_entries_read_only},
     update::update,
     write::{init_outfile, output_entries, output_keys},
 };
@@ -433,87 +435,72 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 }
             }
         }
-        Command::Format {
-            template,
-            identifiers,
-            matching,
-            strict,
-            sep,
-            prefix,
-            suffix,
-        } => {
-            let mut lock = stdout_lock_wrap();
-            let mut fmt_w = crate::format::FormatWriter::new(
-                strict, template, &mut lock, &prefix, &sep, &suffix,
-            );
-
-            // explicit arguments
-            if !identifiers.is_empty() {
-                let cfg = config::load(&config_path, missing_ok)?;
-                for record_id in identifiers {
-                    let (record, row) = get_record_row(&mut record_db, record_id, client, &cfg)?
-                        .exists_or_commit_null("Cannot format")?;
-                    row.commit()?;
-                    fmt_w.write_item(&record)?;
-                }
-            }
-
-            // then stdin
-            // TODO!
-
-            // then matching
-            if let Some(pat) = matching {
-                record_db
-                    .map_matching_active_records(&pat, |row_data| fmt_w.write_item(&row_data))?;
-            }
-
-            fmt_w.finish()?;
-        }
         Command::Get {
             identifiers,
-            out,
-            append,
             retrieve_only,
             ignore_null,
+            template,
+            strict,
+            sep,
         } => {
-            let mut outfile = init_outfile(out, append)?;
-
-            // Initialize the skipped keys to contain keys already present in the outfile (if
-            // appending)
-            let mut skipped_ids: HashSet<RecordId> = HashSet::new();
-            if let Some(file) = outfile.as_mut()
-                && append
-            {
-                let mut scratch = Vec::new();
-                file.read_to_end(&mut scratch)?;
-                get_citekeys(SourceFileType::Bib, &scratch, &mut skipped_ids);
-            }
-
-            // Collect all entries which are not null, excluding those which should be skipped
             let cfg = config::load(&config_path, missing_ok)?;
-            let not_skipped_ids = identifiers.into_iter().filter(|k| !skipped_ids.contains(k));
+            let mut lock = stdout_lock_wrap();
 
-            let valid_entries = if cli.read_only {
-                retrieve_entries_read_only(
-                    not_skipped_ids,
-                    &mut record_db,
-                    retrieve_only,
-                    ignore_null,
-                    &cfg,
-                )
+            if cli.read_only {
+                if let Some(template) = template {
+                    get::retrieve_all_read_only(
+                        get::TemplateOutput::new(strict, template, &mut lock, &sep),
+                        &cfg,
+                        &mut record_db,
+                        identifiers,
+                        ignore_null,
+                    )?;
+                } else if retrieve_only {
+                    get::retrieve_all_read_only(
+                        get::NoOutput,
+                        &cfg,
+                        &mut record_db,
+                        identifiers,
+                        ignore_null,
+                    )?;
+                } else {
+                    get::retrieve_all_read_only(
+                        get::BibtexOutput::new(&mut lock),
+                        &cfg,
+                        &mut record_db,
+                        identifiers,
+                        ignore_null,
+                    )?;
+                }
             } else {
-                retrieve_and_validate_entries(
-                    not_skipped_ids,
-                    &mut record_db,
-                    client,
-                    retrieve_only,
-                    ignore_null,
-                    &cfg,
-                )
-            };
-
-            if !retrieve_only {
-                output_entries(outfile, append, valid_entries)?;
+                if let Some(template) = template {
+                    get::retrieve_all(
+                        get::TemplateOutput::new(strict, template, &mut lock, &sep),
+                        &cfg,
+                        client,
+                        &mut record_db,
+                        identifiers,
+                        ignore_null,
+                    )?;
+                } else if retrieve_only {
+                    get::retrieve_all(
+                        get::NoOutput,
+                        &cfg,
+                        client,
+                        &mut record_db,
+                        identifiers,
+                        ignore_null,
+                    )?;
+                } else {
+                    get::retrieve_all(
+                        get::BibtexOutput::new(&mut lock),
+                        &cfg,
+                        client,
+                        &mut record_db,
+                        identifiers,
+                        ignore_null,
+                    )?;
+                }
             }
         }
         Command::Hist { hist_command } => match hist_command {
@@ -1125,27 +1112,19 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
 
                 // retrieve all of the entries
                 let cfg = config::load(&config_path, missing_ok)?;
-                let keys = all_citekeys;
-                let valid_entries = if cli.read_only {
-                    retrieve_entries_read_only(
-                        keys,
-                        &mut record_db,
-                        retrieve_only,
-                        ignore_null,
-                        &cfg,
-                    )
+                if retrieve_only {
+                    if cli.read_only {
+                        sync_entries_read_only(all_citekeys, &mut record_db, ignore_null, &cfg);
+                    } else {
+                        sync_entries(all_citekeys, &mut record_db, client, ignore_null, &cfg);
+                    }
                 } else {
-                    retrieve_and_validate_entries(
-                        keys,
-                        &mut record_db,
-                        client,
-                        retrieve_only,
-                        ignore_null,
-                        &cfg,
-                    )
-                };
+                    let valid_entries = if cli.read_only {
+                        retrieve_entries_read_only(all_citekeys, &mut record_db, ignore_null, &cfg)
+                    } else {
+                        retrieve_entries(all_citekeys, &mut record_db, client, ignore_null, &cfg)
+                    };
 
-                if !retrieve_only {
                     output_entries(outfile, append, valid_entries)?;
                 }
             }

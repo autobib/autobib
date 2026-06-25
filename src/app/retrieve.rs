@@ -1,6 +1,9 @@
-use std::collections::{
-    BTreeMap,
-    btree_map::Entry::{Occupied, Vacant},
+use std::{
+    collections::{
+        BTreeMap,
+        btree_map::Entry::{Occupied, Vacant},
+    },
+    convert::Infallible,
 };
 
 use nonempty::NonEmpty;
@@ -19,27 +22,8 @@ use crate::{
     record::{Record, RecordId, RecordRowResponse, RemoteId, get_record_row},
 };
 
-/// Group valid entries by their canonical id in order to catch duplicate entries.
-fn group_valid_entries_by_canonical<T>(
-    valid_entries: T,
-) -> BTreeMap<RemoteId, NonEmpty<Entry<RawEntryData>>>
-where
-    T: IntoIterator<Item = (Entry<RawEntryData>, RemoteId)>,
-{
-    let mut grouped_entries: BTreeMap<RemoteId, NonEmpty<Entry<RawEntryData>>> = BTreeMap::new();
-    for (bibtex_entry, canonical) in valid_entries {
-        match grouped_entries.entry(canonical) {
-            Occupied(e) => e.into_mut().push(bibtex_entry),
-            Vacant(e) => {
-                e.insert(NonEmpty::singleton(bibtex_entry));
-            }
-        }
-    }
-    grouped_entries
-}
-
-/// Retrieve and validate BibTeX entries.
-pub fn retrieve_and_validate_entries<
+/// Retrieve identifiers as BibTeX entries.
+pub fn retrieve_entries<
     T: IntoIterator<Item = RecordId>,
     F: FnOnce() -> Vec<(regex::Regex, String)>,
     C: Client,
@@ -47,18 +31,17 @@ pub fn retrieve_and_validate_entries<
     ids: T,
     record_db: &mut RecordDatabase,
     client: &C,
-    retrieve_only: bool,
     ignore_null: bool,
     config: &Config<F>,
 ) -> BTreeMap<RemoteId, NonEmpty<Entry<RawEntryData>>> {
     let valid_entries = ids.into_iter().filter_map(|id| {
-        retrieve_and_validate_single_entry(
+        retrieve_single_entry(
             record_db,
             id,
             client,
-            retrieve_only,
             ignore_null,
             config,
+            try_data_to_entry,
         )
         .unwrap_or_else(|error| {
             reraise(&error);
@@ -68,34 +51,89 @@ pub fn retrieve_and_validate_entries<
     group_valid_entries_by_canonical(valid_entries)
 }
 
+/// Synchronize entries with remote.
+pub fn sync_entries<
+    T: IntoIterator<Item = RecordId>,
+    F: FnOnce() -> Vec<(regex::Regex, String)>,
+    C: Client,
+>(
+    ids: T,
+    record_db: &mut RecordDatabase,
+    client: &C,
+    ignore_null: bool,
+    config: &Config<F>,
+) {
+    for id in ids {
+        retrieve_single_entry(record_db, id, client, ignore_null, config, |_, _| {
+            Option::<Infallible>::None
+        })
+        .unwrap_or_else(|error| {
+            reraise(&error);
+            None
+        });
+    }
+}
+
+/// Retrieve identifiers as BibTeX entries without writing to the database or making remote
+/// requests.
 pub fn retrieve_entries_read_only<
     T: IntoIterator<Item = RecordId>,
     F: FnOnce() -> Vec<(regex::Regex, String)>,
 >(
     ids: T,
     record_db: &mut RecordDatabase,
-    retrieve_only: bool,
     ignore_null: bool,
     config: &Config<F>,
 ) -> BTreeMap<RemoteId, NonEmpty<Entry<RawEntryData>>> {
     let valid_entries = ids.into_iter().filter_map(|record_id| {
-        retrieve_single_entry_read_only(record_db, record_id, retrieve_only, ignore_null, config)
-            .unwrap_or_else(|error| {
-                error!("{error}");
-                None
-            })
+        retrieve_single_entry_read_only(
+            record_db,
+            record_id,
+            ignore_null,
+            config,
+            try_data_to_entry,
+        )
+        .unwrap_or_else(|error| {
+            error!("{error}");
+            None
+        })
     });
     group_valid_entries_by_canonical(valid_entries)
 }
 
-/// Retrieve a single BibTeX entry if it exists in the database, returning if it does not `Ok(None)` otherwise.
-fn retrieve_single_entry_read_only<F: FnOnce() -> Vec<(regex::Regex, String)>>(
+/// Synchronize entries with remote.
+pub fn sync_entries_read_only<
+    T: IntoIterator<Item = RecordId>,
+    F: FnOnce() -> Vec<(regex::Regex, String)>,
+>(
+    ids: T,
     record_db: &mut RecordDatabase,
-    id: RecordId,
-    retrieve_only: bool,
     ignore_null: bool,
     config: &Config<F>,
-) -> Result<Option<(Entry<RawEntryData>, RemoteId)>, Error> {
+) {
+    for id in ids {
+        retrieve_single_entry_read_only(record_db, id, ignore_null, config, |_, _| {
+            Option::<Infallible>::None
+        })
+        .unwrap_or_else(|error| {
+            reraise(&error);
+            None
+        });
+    }
+}
+
+/// Retrieve a single entry and apply a closure to the resulting data.
+pub fn retrieve_single_entry_read_only<F, V, T>(
+    record_db: &mut RecordDatabase,
+    id: RecordId,
+    ignore_null: bool,
+    config: &Config<F>,
+    validate: V,
+) -> Result<Option<T>, Error>
+where
+    F: FnOnce() -> Vec<(regex::Regex, String)>,
+    V: FnOnce(Record<RawEntryData>, &State<'_, IsEntry>) -> Option<T>,
+{
     match record_db.state_from_record_id(id, &config.alias_transform)? {
         RecordIdState::Entry(
             key,
@@ -104,15 +142,16 @@ fn retrieve_single_entry_read_only<F: FnOnce() -> Vec<(regex::Regex, String)>>(
             },
             state,
         ) => {
-            if retrieve_only {
-                state.commit()?;
-                Ok(None)
-            } else {
-                let entry =
-                    validate_bibtex_key(key, &state).map(|key| (Entry::new(key, data), canonical));
-                state.commit()?;
-                Ok(entry)
-            }
+            let entry = validate(
+                Record {
+                    key,
+                    data,
+                    canonical,
+                },
+                &state,
+            );
+            state.commit()?;
+            Ok(entry)
         }
         RecordIdState::Deleted(key, deleted_row_data, state) => {
             if !ignore_null {
@@ -154,35 +193,25 @@ fn retrieve_single_entry_read_only<F: FnOnce() -> Vec<(regex::Regex, String)>>(
     }
 }
 
-/// Retrieve and validate a single BibTeX entry.
-fn retrieve_and_validate_single_entry<F, C>(
+/// Retrieve and apply a validation function to a single record
+pub fn retrieve_single_entry<F, C, V, T>(
     record_db: &mut RecordDatabase,
     id: RecordId,
     client: &C,
-    retrieve_only: bool,
     ignore_null: bool,
     config: &Config<F>,
-) -> Result<Option<(Entry<RawEntryData>, RemoteId)>, Error>
+    validate: V,
+) -> Result<Option<T>, Error>
 where
     F: FnOnce() -> Vec<(regex::Regex, String)>,
     C: Client,
+    V: FnOnce(Record<RawEntryData>, &State<'_, IsEntry>) -> Option<T>,
 {
     match get_record_row(record_db, id, client, config)? {
         RecordRowResponse::Exists(record_data, row) => {
-            if retrieve_only {
-                row.commit()?;
-                Ok(None)
-            } else {
-                let Record {
-                    key,
-                    data,
-                    canonical,
-                } = record_data;
-                let entry =
-                    validate_bibtex_key(key, &row).map(|key| (Entry::new(key, data), canonical));
-                row.commit()?;
-                Ok(entry)
-            }
+            let entry = validate(record_data, &row);
+            row.commit()?;
+            Ok(entry)
         }
         RecordRowResponse::Deleted(deleted_row_data, deleted) => {
             if !ignore_null {
@@ -214,6 +243,18 @@ where
     }
 }
 
+/// Helper function for converting data to an entry with validation.
+pub fn try_data_to_entry(
+    Record {
+        key,
+        data,
+        canonical,
+    }: Record<RawEntryData>,
+    row: &State<'_, IsEntry>,
+) -> Option<(Entry<RawEntryData>, RemoteId)> {
+    validate_bibtex_key(key, row).map(|key| (Entry::new(key, data), canonical))
+}
+
 /// Validate a BibTeX key, logging errors and suggesting fixes.
 fn validate_bibtex_key(key: String, row: &State<IsEntry>) -> Option<EntryKey<String>> {
     match EntryKey::try_new(key) {
@@ -242,4 +283,23 @@ fn validate_bibtex_key(key: String, row: &State<IsEntry>) -> Option<EntryKey<Str
             None
         }
     }
+}
+
+/// Group valid entries by their canonical id in order to catch duplicate entries.
+fn group_valid_entries_by_canonical<T>(
+    valid_entries: T,
+) -> BTreeMap<RemoteId, NonEmpty<Entry<RawEntryData>>>
+where
+    T: IntoIterator<Item = (Entry<RawEntryData>, RemoteId)>,
+{
+    let mut grouped_entries: BTreeMap<RemoteId, NonEmpty<Entry<RawEntryData>>> = BTreeMap::new();
+    for (bibtex_entry, canonical) in valid_entries {
+        match grouped_entries.entry(canonical) {
+            Occupied(e) => e.into_mut().push(bibtex_entry),
+            Vacant(e) => {
+                e.insert(NonEmpty::singleton(bibtex_entry));
+            }
+        }
+    }
+    grouped_entries
 }

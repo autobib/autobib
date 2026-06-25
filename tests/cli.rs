@@ -1,11 +1,11 @@
-use assert_cmd::assert::OutputAssertExt;
+use assert_cmd::cmd::Command;
 use assert_fs::{
     assert::PathAssert,
     fixture::{ChildPath, FileWriteStr, NamedTempFile, PathChild, TempDir},
 };
 use predicates::{Predicate, boolean::PredicateBooleanExt, prelude::predicate, str::contains};
 
-use std::{fs, path::Path, process::Command};
+use std::{fs, path::Path};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -215,12 +215,27 @@ fn get() -> Result<()> {
     cmd.args(["--read-only", "get", "arxiv:1212.1873"]);
     cmd.assert().success();
 
+    let mut cmd = s.cmd()?;
+    cmd.args([
+        "get",
+        "zbl:1285.28011",
+        "-t",
+        r#"{author}{year}{%full_id}"#,
+        "--sep",
+        "$$",
+    ])
+    .write_stdin("arxiv:1212.1873\nmr:3224722");
+    cmd.assert()
+        .success()
+        .stdout("Falconer, Kenneth2014zbmath:06245248$$Hochman, Michael2014arxiv:1212.1873$$Hochman, Michael2014mr:3224722\n")
+        .stderr(predicate::str::is_empty());
+
     s.close()
 }
 
-/// Check that `autobib get --append` returns what is expected.
+/// Check that `autobib source --append` returns what is expected.
 #[test]
-fn get_append() -> Result<()> {
+fn source_append() -> Result<()> {
     let s = TestState::init()?;
 
     let output = NamedTempFile::new("out.bib")?;
@@ -229,13 +244,14 @@ fn get_append() -> Result<()> {
     let mut cmd = s.cmd()?;
 
     cmd.args([
-        "get",
-        "zbl:1337.28015",
-        "arxiv:1212.1873",
+        "source",
+        "--stdin",
+        "txt",
         "--out",
         &output.to_string_lossy(),
         "--append",
-    ]);
+    ])
+    .write_stdin("zbl:1337.28015\narxiv:1212.1873");
 
     cmd.assert().success().stderr(predicate::str::is_empty());
 
@@ -274,7 +290,7 @@ fn source() -> Result<()> {
 
     let mut cmd = s.cmd()?;
     cmd.args(["source", "--stdin", "tex"])
-        .stdin(fs::File::open("tests/resources/source/main.tex")?);
+        .pipe_stdin("tests/resources/source/main.tex")?;
     cmd.assert()
         .success()
         .stdout(predicate_file)
@@ -704,32 +720,6 @@ fn list() -> Result<()> {
     cmd.assert().success();
 
     let mut cmd = s.cmd()?;
-    cmd.args(["format", "--matching", "*", "{%full_id}: {title}"]);
-    cmd.assert()
-        .success()
-        .stdout(contains("local:first: My favourite book").and(contains(
-            "zbmath:06346461: On self-similar sets with overlaps and inverse theorems for entropy",
-        )).and(contains("\n")));
-
-    let mut cmd = s.cmd()?;
-    cmd.args(["--read-only", "format", "--matching", "*", "{%full_id}"]);
-    cmd.assert().success().stdout(contains("zbmath:06346461"));
-
-    let mut cmd = s.cmd()?;
-    cmd.args([
-        "format",
-        "--strict",
-        "--matching",
-        "*",
-        "{journal}: {title}",
-    ]);
-    cmd.assert().success().stdout(
-        contains("My favourite book")
-            .not()
-            .and(contains("Ann. Math.")),
-    );
-
-    let mut cmd = s.cmd()?;
     cmd.args(["util", "print-identifiers"]);
     cmd.assert()
         .success()
@@ -1038,13 +1028,14 @@ fn consistency() -> Result<()> {
     s.close()
 }
 
-/// Check that `autobib get` warns if there are multiple references to the same key
+/// Check that `autobib source` warns if there are multiple references to the same key
 #[test]
 fn repeat() -> Result<()> {
     let s = TestState::init()?;
 
     let mut cmd = s.cmd()?;
-    cmd.args(["get", "zbmath:06346461", "zbl:1337.28015"]);
+    cmd.args(["source", "--stdin", "txt"])
+        .write_stdin("zbmath:06346461\nzbl:1337.28015");
     cmd.assert()
         .success()
         .stderr(contains("Multiple keys for "));
@@ -1054,13 +1045,8 @@ fn repeat() -> Result<()> {
     cmd.assert().success();
 
     let mut cmd = s.cmd()?;
-    cmd.args(["get", "zbmath:06346461", "a"]);
-    cmd.assert()
-        .success()
-        .stderr(contains("Multiple keys for "));
-
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "a", "a"]);
+    cmd.args(["source", "--stdin", "txt"])
+        .write_stdin("zbmath:06346461\na");
     cmd.assert()
         .success()
         .stderr(contains("Multiple keys for "));

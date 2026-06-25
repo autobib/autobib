@@ -1,0 +1,217 @@
+use std::{
+    convert::Infallible,
+    io::{self, BufRead},
+};
+
+use regex::Regex;
+
+use crate::{
+    app::retrieve::{retrieve_single_entry, retrieve_single_entry_read_only},
+    config::Config,
+    db::{
+        RecordDatabase,
+        state::{IsEntry, State},
+    },
+    entry::{Entry, RawEntryData},
+    format::Template,
+    http::Client,
+    record::{Record, RecordId, RemoteId},
+};
+
+pub trait Output {
+    type Data;
+
+    fn write_item(&mut self, item: Self::Data) -> Result<(), io::Error>;
+
+    fn filter_map(record: Record<RawEntryData>, row: &State<'_, IsEntry>) -> Option<Self::Data>;
+
+    fn finish(&mut self) -> Result<(), io::Error>;
+}
+
+pub struct NoOutput;
+
+impl Output for NoOutput {
+    type Data = Infallible;
+
+    fn filter_map(_: Record<RawEntryData>, _: &State<'_, IsEntry>) -> Option<Self::Data> {
+        None
+    }
+
+    fn write_item(&mut self, data: Self::Data) -> Result<(), io::Error> {
+        match data {}
+    }
+
+    fn finish(&mut self) -> Result<(), io::Error> {
+        Ok(())
+    }
+}
+
+pub struct BibtexOutput<'r, W: ?Sized> {
+    first: bool,
+    writer: &'r mut W,
+}
+
+impl<'r, W: io::Write + ?Sized> BibtexOutput<'r, W> {
+    pub fn new(writer: &'r mut W) -> Self {
+        Self {
+            first: true,
+            writer,
+        }
+    }
+}
+
+impl<'r, W: io::Write + ?Sized> Output for BibtexOutput<'r, W> {
+    type Data = (Entry<RawEntryData>, RemoteId);
+
+    fn write_item(&mut self, (entry, _): Self::Data) -> Result<(), io::Error> {
+        if self.first {
+            self.first = false;
+        } else {
+            write!(self.writer, "\n\n")?;
+        }
+
+        entry.write_io(&mut self.writer)
+    }
+
+    fn filter_map(record: Record<RawEntryData>, row: &State<'_, IsEntry>) -> Option<Self::Data> {
+        crate::app::retrieve::try_data_to_entry(record, row)
+    }
+
+    fn finish(&mut self) -> Result<(), io::Error> {
+        if self.first {
+            Ok(())
+        } else {
+            writeln!(self.writer)
+        }
+    }
+}
+
+pub struct TemplateOutput<'r, W: ?Sized> {
+    first: bool,
+    strict: bool,
+    template: Template,
+    writer: &'r mut W,
+    sep: &'r str,
+}
+
+impl<'r, W: io::Write + ?Sized> TemplateOutput<'r, W> {
+    pub fn new(strict: bool, template: Template, writer: &'r mut W, sep: &'r str) -> Self {
+        Self {
+            first: true,
+            strict,
+            template,
+            writer,
+            sep,
+        }
+    }
+}
+
+impl<'r, W: io::Write + ?Sized> Output for TemplateOutput<'r, W> {
+    type Data = Record<RawEntryData>;
+
+    fn write_item(&mut self, item: Self::Data) -> Result<(), io::Error> {
+        if self.strict && !self.template.has_keys_contained_in(&item) {
+            return Ok(());
+        }
+        if self.first {
+            self.first = false;
+        } else {
+            write!(self.writer, "{}", self.sep)?;
+        }
+        self.template.render_io(&mut self.writer, &item)
+    }
+
+    fn filter_map(record: Record<RawEntryData>, _: &State<'_, IsEntry>) -> Option<Self::Data> {
+        Some(record)
+    }
+
+    fn finish(&mut self) -> Result<(), io::Error> {
+        if self.first {
+            Ok(())
+        } else {
+            writeln!(self.writer)
+        }
+    }
+}
+
+pub fn retrieve_all<W, F, C>(
+    mut writer: W,
+    cfg: &Config<F>,
+    client: &C,
+    record_db: &mut RecordDatabase,
+    identifiers: Vec<RecordId>,
+    ignore_null: bool,
+) -> anyhow::Result<()>
+where
+    W: Output,
+    F: FnOnce() -> Vec<(Regex, String)>,
+    C: Client,
+{
+    // matching
+    // if let Some(pat) = matching {
+    //     record_db.map_matching_active_records(&pat, |row_data| writer.write_item(&row_data))?;
+    // }
+
+    // then explicit arguments
+    if !identifiers.is_empty() {
+        for id in identifiers {
+            if let Some(item) =
+                retrieve_single_entry(record_db, id, client, ignore_null, cfg, W::filter_map)?
+            {
+                writer.write_item(item)?;
+            }
+        }
+    }
+
+    // then standard input
+    for line in io::stdin().lock().lines() {
+        let id = RecordId::from(line?);
+        if let Some(item) =
+            retrieve_single_entry(record_db, id, client, ignore_null, cfg, W::filter_map)?
+        {
+            writer.write_item(item)?;
+        }
+    }
+    writer.finish()?;
+    Ok(())
+}
+
+pub fn retrieve_all_read_only<W, F>(
+    mut writer: W,
+    cfg: &Config<F>,
+    record_db: &mut RecordDatabase,
+    identifiers: Vec<RecordId>,
+    ignore_null: bool,
+) -> anyhow::Result<()>
+where
+    W: Output,
+    F: FnOnce() -> Vec<(Regex, String)>,
+{
+    // matching
+    // if let Some(pat) = matching {
+    //     record_db.map_matching_active_records(&pat, |row_data| writer.write_item(&row_data))?;
+    // }
+
+    // explicit arguments
+    if !identifiers.is_empty() {
+        for id in identifiers {
+            if let Some(item) =
+                retrieve_single_entry_read_only(record_db, id, ignore_null, cfg, W::filter_map)?
+            {
+                writer.write_item(item)?;
+            }
+        }
+    }
+
+    // then standard input
+    for line in io::stdin().lock().lines() {
+        let id = RecordId::from(line?);
+        if let Some(item) =
+            retrieve_single_entry_read_only(record_db, id, ignore_null, cfg, W::filter_map)?
+        {
+            writer.write_item(item)?;
+        }
+    }
+    writer.finish()?;
+    Ok(())
+}
