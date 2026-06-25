@@ -17,7 +17,7 @@ impl std::fmt::Display for KeyParseError {
 #[derive(Error, Debug)]
 pub enum KeyParseErrorKind {
     #[error(
-        "Meta '%{0}' is invalid. Accepted values:\n     %entry_type %provider %sub_id %full_id %bibtex %json"
+        "Meta '%{0}' is invalid. Accepted values:\n     %entry_type %provider %sub_id %full_id %json"
     )]
     InvalidMeta(String),
     #[error("String started with '\"' is unclosed.")]
