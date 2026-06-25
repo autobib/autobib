@@ -8,11 +8,10 @@ use nucleo_picker::Render;
 use self::parse::{Kind, Lexer, Token};
 
 use crate::{
-    RemoteId,
     db::{Identifier, state::RecordRow},
     entry::{EntryData, FieldKey, MutableEntryData, RawEntryData, RawRecordFieldsIter},
     error::{ClapTemplateError, KeyParseError, KeyParseErrorKind},
-    record::Record,
+    record::{Record, RemoteId},
 };
 
 /// A `{%meta}` token.
@@ -523,6 +522,16 @@ pub trait FormatData {
     }
 }
 
+impl FormatData for Infallible {
+    fn data(&self) -> &RawEntryData {
+        match *self {}
+    }
+
+    fn canonical(&self) -> &RemoteId {
+        match *self {}
+    }
+}
+
 impl FormatData for RecordRow<RawEntryData> {
     fn data(&self) -> &RawEntryData {
         &self.data
@@ -567,58 +576,6 @@ impl<T: FormatData> Render<T> for Template {
                 let Ok(s) = self.template.render(&ManifestLarge(item));
                 s
             }
-        }
-    }
-}
-
-pub struct FormatWriter<'r, W: ?Sized> {
-    first: bool,
-    strict: bool,
-    template: Template,
-    writer: &'r mut W,
-    prefix: &'r str,
-    sep: &'r str,
-    suffix: &'r str,
-}
-
-impl<'r, W: io::Write + ?Sized> FormatWriter<'r, W> {
-    pub fn new(
-        strict: bool,
-        template: Template,
-        writer: &'r mut W,
-        prefix: &'r str,
-        sep: &'r str,
-        suffix: &'r str,
-    ) -> Self {
-        Self {
-            first: true,
-            strict,
-            template,
-            writer,
-            prefix,
-            sep,
-            suffix,
-        }
-    }
-
-    pub fn write_item<T: FormatData>(&mut self, item: &T) -> Result<(), io::Error> {
-        if self.strict && !self.template.has_keys_contained_in(item) {
-            return Ok(());
-        }
-        if self.first {
-            self.first = false;
-            write!(self.writer, "{}", self.prefix)?;
-        } else {
-            write!(self.writer, "{}", self.sep)?;
-        }
-        self.template.render_io(&mut self.writer, item)
-    }
-
-    pub fn finish(self) -> Result<(), io::Error> {
-        if self.first {
-            Ok(())
-        } else {
-            write!(self.writer, "{}", self.suffix)
         }
     }
 }

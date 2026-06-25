@@ -257,7 +257,7 @@ impl RecordDatabase {
         // is that SQL commands will result in an error or garbage data
         if read_only {
             warn!(
-                "Opening database (read-only) with version {}; application has version {}. This may result some commands to fail unexpectedly.",
+                "Opening database (read-only) with version {}; application has version {}. Some commands may fail unexpectedly.",
                 db_user_version,
                 user_version()
             );

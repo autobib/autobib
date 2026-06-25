@@ -149,6 +149,19 @@ impl From<&str> for RecordId {
     }
 }
 
+/// Convert a `String` to a [`RecordId`]. The input is not whitespace-trimmed.
+/// The implementation is very cheap and does no validation.
+impl From<String> for RecordId {
+    fn from(full_id: String) -> Self {
+        // let full_id: String = s.trim().into();
+        let provider_len = full_id.find(':');
+        Self {
+            full_id,
+            provider_len,
+        }
+    }
+}
+
 /// Either an [`Alias`] or a [`RemoteId`].
 #[derive(Debug)]
 pub enum AliasOrRemoteId {
