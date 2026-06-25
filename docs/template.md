@@ -74,6 +74,7 @@ These are all prefixed by the `%` character:
 - `%full_id`: expands to the full canonical id, e.g. `zbmath:06346461`.
 - `%provider`: expands to the provider of the canonical id: e.g. `zbmath`
 - `%sub_id`: expands to the sub-id of the canonical id: e.g. `06346461`
+- `%key`: expands to the citation key associated with the record
 - `%json`: expands to a JSON dictionary containing the entry type and fields
 
 Finally, it is possible to input a *string*, i.e. a [JSON string](https://www.json.org/json-en.html), by quoting text.
@@ -106,7 +107,6 @@ When used, this flag only formats if all of the field keys which would be render
 The precise behaviour depends on the command:
 
 - `autobib find`: Any record missing a key is omitted from the search interface.
-- `autobib list`: Any record missing a key is omitted from the output.
 
 Strict mode prevents rendering if rendering the template would require expanding a field key which does not exist in the provided data.
 For example:
