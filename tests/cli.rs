@@ -730,28 +730,40 @@ fn list() -> Result<()> {
     cmd.assert().success();
 
     let mut cmd = s.cmd()?;
-    cmd.args(["util", "print-identifiers"]);
+    cmd.args(["list"]);
     cmd.assert()
         .success()
         .stdout(contains("zbmath:06346461").and(contains("my_alias")));
 
     let mut cmd = s.cmd()?;
-    cmd.args(["--read-only", "util", "print-identifiers"]);
+    cmd.args(["--read-only", "list"]);
     cmd.assert()
         .success()
         .stdout(contains("zbmath:06346461").and(contains("my_alias")));
 
     let mut cmd = s.cmd()?;
-    cmd.args(["util", "print-identifiers", "--canonical"]);
+    cmd.args(["list", "--canonical"]);
     cmd.assert()
         .success()
         .stdout(contains("my_alias").not().and(contains("local:first")));
 
     let mut cmd = s.cmd()?;
-    cmd.args(["util", "list", "--canonical"]);
+    cmd.args(["list", "local:*", "-t", "{title}"]);
+    cmd.assert().success().stdout("My favourite book\n");
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["delete", "my_alias"]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["list", "--deleted"]);
     cmd.assert()
         .success()
-        .stdout(contains("my_alias").not().and(contains("local:first")));
+        .stdout(contains("my_alias").and(contains("local:first")));
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["list", "--deleted", "--template", "{%full_id}"]);
+    cmd.assert().failure();
 
     s.close()
 }
@@ -1475,11 +1487,9 @@ fn read_only() -> Result<()> {
         .failure()
         .stderr(contains("Database does not contain key"));
 
-    for arg in ["check", "list"] {
-        let mut cmd = s.cmd()?;
-        cmd.args(["--read-only", "util", arg]);
-        cmd.assert().success();
-    }
+    let mut cmd = s.cmd()?;
+    cmd.args(["--read-only", "util", "check"]);
+    cmd.assert().success();
 
     let mut cmd = s.cmd()?;
     cmd.args(["--read-only", "info", "zbl:1337.28015"]);
