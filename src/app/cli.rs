@@ -433,6 +433,9 @@ pub enum Command {
         /// Append new entries to the output.
         #[arg(short, long, requires = "out")]
         append: bool,
+        /// Output record data as JSON.
+        #[arg(short, long, group = "output")]
+        json: bool,
         /// Retrieve records but do not output BibTeX or check the validity of identifiers.
         #[arg(long, group = "output")]
         retrieve_only: bool,

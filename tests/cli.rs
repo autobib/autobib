@@ -296,6 +296,16 @@ fn source() -> Result<()> {
         .stdout(predicate_file)
         .stderr(predicate::str::is_empty());
 
+    let predicate_file = predicate::path::eq_file(Path::new("tests/resources/source/stdout.json"))
+        .utf8()
+        .unwrap();
+    let mut cmd = s.cmd()?;
+    cmd.args(["source", "tests/resources/source/main.tex", "--json"]);
+    cmd.assert()
+        .success()
+        .stdout(predicate_file)
+        .stderr(predicate::str::is_empty());
+
     s.close()
 }
 

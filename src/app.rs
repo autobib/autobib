@@ -64,7 +64,7 @@ use self::{
     picker::{choose_attachment, choose_attachment_path, choose_canonical_id},
     retrieve::{retrieve_entries, retrieve_entries_read_only},
     update::update,
-    write::{init_outfile, output_entries, output_keys},
+    write::{init_outfile, output_entries_bibtex, output_entries_json, output_keys},
 };
 
 pub use self::cli::{Cli, Command};
@@ -1027,6 +1027,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             skip,
             skip_from,
             skip_file_type,
+            json,
             retrieve_only,
             ignore_null,
             print_keys,
@@ -1133,7 +1134,11 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         retrieve_entries(all_citekeys, &mut record_db, client, ignore_null, &cfg)
                     };
 
-                    output_entries(outfile, append, valid_entries)?;
+                    if json {
+                        output_entries_json(&valid_entries)?;
+                    } else {
+                        output_entries_bibtex(outfile, append, &valid_entries)?;
+                    }
                 }
             }
         }
