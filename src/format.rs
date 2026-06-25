@@ -522,16 +522,6 @@ pub trait FormatData {
     }
 }
 
-impl FormatData for Infallible {
-    fn data(&self) -> &RawEntryData {
-        match *self {}
-    }
-
-    fn canonical(&self) -> &RemoteId {
-        match *self {}
-    }
-}
-
 impl FormatData for RecordRow<RawEntryData> {
     fn data(&self) -> &RawEntryData {
         &self.data
