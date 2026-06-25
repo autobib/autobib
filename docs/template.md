@@ -108,6 +108,7 @@ The precise behaviour depends on the command:
 
 - `autobib find`: Any record missing a key is omitted from the search interface.
 - `autobib get`: Any record missing a key excluded from the output
+- `autobib list`: Any record missing a key excluded from the output
 
 Strict mode prevents rendering if rendering the template would require expanding a field key which does not exist in the provided data.
 For example:
