@@ -14,14 +14,15 @@ Changes since `v0.6.1`.
 - `autobib find --mode canonical-id` has been renamed to `autobib find --mode records`.
   The CLI still accepts the old name as an alias, but this will be removed in the future.
 - `autobib get` has been reworked.
-   Output is no longer sorted and deduplicated: instead, one record is printed for each identifier.
-   This also means that the `--out` and `--append` options have been removed.
-   This behaviour is now included in `autobib source`.
-   There are also new features:
-   - Added `--template` option, to format records with an arbitrary template instead of as bibtex.
-   - Added the ability to read from stdin.
+  Output is no longer sorted and deduplicated: instead, one record is printed for each identifier.
+  This also means that the `--out` and `--append` options have been removed.
+  This behaviour is now included in `autobib source`.
+  There are also new features:
+  - Added `--template` option, to format records with an arbitrary template instead of as bibtex.
+  - Added the ability to read from stdin.
 - `autobib util list` has been renamed to `autobib list`.
-  `autobib list` also accepts an optional glob pattern against which the identifiers are filtered.
+  - Added optional glob pattern argument to filter identifiers.
+  - Added `--template` flag to format output instead of printing identifiers.
 
 ## New features
 

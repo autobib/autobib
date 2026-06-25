@@ -862,18 +862,37 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             matching,
             canonical,
             deleted,
+            template,
+            strict,
+            sep,
         } => {
             let mut lock = stdout_lock_wrap();
-            let snapshot = record_db.snapshot()?;
-            if canonical {
-                snapshot.map_canonical_identifiers(deleted, &matching, |key_str| {
-                    writeln!(lock, "{key_str}")
-                })?;
+            if let Some(template) = template {
+                use get::Output as _;
+                let mut writer = get::TemplateOutput::new(strict, template, &mut lock, &sep);
+                if canonical {
+                    record_db.map_matching_canonical_active_records(&matching, |row_data| {
+                        writer.write_item(row_data)
+                    })?;
+                } else {
+                    record_db.map_matching_active_records(&matching, |row_data| {
+                        writer.write_item(row_data)
+                    })?;
+                }
+                writer.finish()?;
             } else {
-                snapshot
-                    .map_identifiers(deleted, &matching, |key_str| writeln!(lock, "{key_str}"))?;
+                let snapshot = record_db.snapshot()?;
+                if canonical {
+                    snapshot.map_canonical_identifiers(deleted, &matching, |key_str| {
+                        writeln!(lock, "{key_str}")
+                    })?;
+                } else {
+                    snapshot.map_identifiers(deleted, &matching, |key_str| {
+                        writeln!(lock, "{key_str}")
+                    })?;
+                }
+                snapshot.commit()?;
             }
-            snapshot.commit()?;
         }
         Command::Local {
             id,
