@@ -289,7 +289,7 @@ impl Template {
 
     /// Returns whether this template can be rendered by the provided row data without having
     /// any non-optional undefined keys.
-    pub fn has_keys_contained_in<T: Renderable>(&self, row: &T) -> bool {
+    pub fn has_keys_contained_in<T: FormatData>(&self, row: &T) -> bool {
         match self.strategy {
             Strategy::Sorted => self.contained_impl(
                 || BibtexFields::new(row),
@@ -325,7 +325,7 @@ pub struct BibtexFields<'a> {
 }
 
 impl<'a> BibtexFields<'a> {
-    pub fn new<T: Renderable>(row: &'a T) -> Self {
+    pub fn new<T: FormatData>(row: &'a T) -> Self {
         Self {
             inner: row.data().raw_fields().peekable(),
         }
@@ -414,7 +414,7 @@ impl<'row, 'ast, 'state> DisplayedRow<'row, 'ast, 'state> {
     fn from_data<F, T>(row_data: &'row T, ast: &'ast Expression, mut f: F) -> Self
     where
         F: FnMut(&str) -> Option<&'state str>,
-        T: Renderable,
+        T: FormatData,
     {
         let token = match ast {
             Expression::IfDefined(field_key, token) => {
@@ -454,7 +454,7 @@ impl<'row, 'ast, 'state> DisplayedRow<'row, 'ast, 'state> {
 
 pub struct ManifestSorted<'r, T>(&'r T);
 
-impl<'r, T: Renderable> ManifestMut<Expression> for ManifestSorted<'r, T> {
+impl<'r, T: FormatData> ManifestMut<Expression> for ManifestSorted<'r, T> {
     type Error = Infallible;
 
     type State<'a> = BibtexFields<'a>;
@@ -476,7 +476,7 @@ impl<'r, T: Renderable> ManifestMut<Expression> for ManifestSorted<'r, T> {
 
 pub struct ManifestSmall<'r, T>(&'r T);
 
-impl<'r, T: Renderable> Manifest<Expression> for ManifestSmall<'r, T> {
+impl<'r, T: FormatData> Manifest<Expression> for ManifestSmall<'r, T> {
     type Error = Infallible;
 
     fn manifest(&self, ast: &Expression) -> Result<impl fmt::Display, Self::Error> {
@@ -488,7 +488,7 @@ impl<'r, T: Renderable> Manifest<Expression> for ManifestSmall<'r, T> {
 
 pub struct ManifestLarge<'r, T>(&'r T);
 
-impl<'r, T: Renderable> ManifestMut<Expression> for ManifestLarge<'r, T> {
+impl<'r, T: FormatData> ManifestMut<Expression> for ManifestLarge<'r, T> {
     type Error = Infallible;
 
     type State<'s> = MutableEntryData<&'s str>;
@@ -508,7 +508,7 @@ impl<'r, T: Renderable> ManifestMut<Expression> for ManifestLarge<'r, T> {
 
 impl Template {
     /// Render the template into a writer using the provided record data.
-    pub fn render_io<W: io::Write, T: Renderable>(
+    pub fn render_io<W: io::Write, T: FormatData>(
         &self,
         writer: W,
         item: &T,
@@ -522,12 +522,20 @@ impl Template {
 }
 
 /// Types which can be rendered by a [`Template`].
-pub trait Renderable {
+pub trait FormatData {
+    /// The associated record data.
     fn data(&self) -> &RawEntryData;
+
+    /// The associated remote id.
     fn canonical(&self) -> &RemoteId;
+
+    /// The associated citation key, defaulting to the canonical ID.
+    fn key(&self) -> &str {
+        self.canonical().name()
+    }
 }
 
-impl Renderable for RecordRow<RawEntryData> {
+impl FormatData for RecordRow<RawEntryData> {
     fn data(&self) -> &RawEntryData {
         &self.data
     }
@@ -537,7 +545,7 @@ impl Renderable for RecordRow<RawEntryData> {
     }
 }
 
-impl Renderable for Record<RawEntryData> {
+impl FormatData for Record<RawEntryData> {
     fn data(&self) -> &RawEntryData {
         &self.data
     }
@@ -545,9 +553,13 @@ impl Renderable for Record<RawEntryData> {
     fn canonical(&self) -> &RemoteId {
         &self.canonical
     }
+
+    fn key(&self) -> &str {
+        &self.key
+    }
 }
 
-impl<T: Renderable> Render<T> for Template {
+impl<T: FormatData> Render<T> for Template {
     type Str<'a>
         = String
     where
@@ -601,7 +613,7 @@ impl<'r, W: io::Write + ?Sized> FormatWriter<'r, W> {
         }
     }
 
-    pub fn write_item<T: Renderable>(&mut self, item: &T) -> Result<(), io::Error> {
+    pub fn write_item<T: FormatData>(&mut self, item: &T) -> Result<(), io::Error> {
         if self.strict && !self.template.has_keys_contained_in(item) {
             return Ok(());
         }

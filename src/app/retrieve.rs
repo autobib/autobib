@@ -223,14 +223,13 @@ fn validate_bibtex_key(key: String, row: &State<IsEntry>) -> Option<EntryKey<Str
                 Ok(mut alternative_keys) => {
                     alternative_keys.retain(|k| is_entry_key(k));
 
+                    reraise(&parse_result);
                     if !alternative_keys.is_empty() {
-                        reraise(&parse_result);
                         suggest!(
                             "Use one of the following equivalent keys: {}",
                             alternative_keys.join(", ")
                         );
                     } else {
-                        reraise(&parse_result);
                         suggest!(
                             "Create an alias which does not contain whitespace or disallowed characters: {{}}(),=\\#%\""
                         );
