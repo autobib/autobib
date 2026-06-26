@@ -12,10 +12,10 @@ If you just want a list of the keys which were found, you can also use `--print-
 By default, Autobib tries to guess the format of your file based on the file name.
 The following filetypes are supported:
 
-- `.tex`, `.sty`: identifiers contained in `\cite`{...}` commands, and relatives
+- `.tex`, `.sty`: identifiers contained in `\cite{...}` commands, and relatives
 - `.txt`: a single identifier per line
 - `.aux`: the aux format `\abx@aux@cite{0}{...}`
-- `.bib`: the bibtex identifiers
+- `.bib`: BibTeX identifiers
 - `.typ`: explicit citations in the form `#cite(<key>)` or `#cite(label("key"))`
 
 You can force the filetype behaviour with the `--file-type` flag.
@@ -34,7 +34,7 @@ You can also pass a file with `--skip-from`, which is equivalent to calling `--s
 
 ## Appending to an existing file
 
-If you have an existing bibtex file, you can use the `--append` flag to only write entries to the file which do not yet exist in a provided bibtex file.
+If you have an existing BibTeX file, you can use the `--append` flag to only write entries to the file which do not yet exist in a provided BibTeX file.
 This requires the `--out` argument to be specified, since that is the file to which the new keys will be added.
 This is similar to running
 ```sh

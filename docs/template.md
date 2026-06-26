@@ -32,23 +32,23 @@ Hello {world}
 consists of text `Hello ` followed by an expression `world`.
 
 In order to include braces in text, duplicate the bracket, like `{{`.
-In order to include braces inside expressions, use *extended delimiters*:  an opening bracket `{` can be followed by any number of `#` keys, and then it can only be closed by the same number of `#` keys, followed by `}`.
+In order to include braces inside expressions, use *extended delimiters*: an opening bracket `{` can be followed by any number of `#` keys, and then it can only be closed by the same number of `#` keys, followed by `}`.
 For example,
 ```txt
 Hello {# "Brace {" #}
 ```
-contains of text `Hello ` followed by an expression `"Brace {"`.
+consists of text `Hello ` followed by an expression `"Brace {"`.
 
 ### Expression syntax
 
-*Field keys* refer directly to the field values in the Bibtex data.
+*Field keys* refer directly to the field values in the BibTeX data.
 These are expressions like `author` or `title`, which expand into the corresponding keys:
 ```txt
 '{author}: {title}' => 'Hochman, Michael: On self-similar sets with overlaps and inverse theorems for entropy'
 ```
 
 The only permitted characters in a field key are ASCII letters and numbers, plus the underscore `_` character.
-If your Bibtex entries contain other characters, you must manually escape them using brackets `()`.
+If your BibTeX entries contain other characters, you must manually escape them using brackets `()`.
 For example, given data
 ```bib
 @book{k,
@@ -57,7 +57,7 @@ For example, given data
 ```
 we have the expansion
 ```txt
-'{(docs.and.qmark?)}' => 'Val'
+'{(dots.and.qmark?)}' => 'Val'
 ```
 
 If a field key does not exist, the empty string is printed instead.
@@ -91,24 +91,24 @@ In order to handle potentially missing keys, an expression can be prefixed by a 
 A conditional `{=key v}` will only render `v` if `key` exists in the data, and `{!key v}` will only render `v` if `key` *does not* exist in the data.
 For example:
 ```txt
-'{author}{=subtitle ". "}{subtitle} => 'Hochman, Michael'
+'{author}{=subtitle ". "}{subtitle}' => 'Hochman, Michael'
 ```
 since the `subtitle` key is not defined.
 On the other hand, since the `journal` key is defined and `issue` is not,
 ```txt
-'{author}{=journal ". "}{journal}{!issue " No issue number} => 'Hochman, Michael. Ann. Math. No issue number'
+'{author}{=journal ". "}{journal}{!issue " No issue number"}' => 'Hochman, Michael. Ann. Math. No issue number'
 ```
 
 ### Handling missed keys
 
 Autobib commands which accept templates also accept a `-s/--strict` flag.
-When used, this flag only formats if all of the field keys which would be rendered actually exist in the Bibtex data.
+When used, this flag only formats if all of the field keys which would be rendered actually exist in the BibTeX data.
 
 The precise behaviour depends on the command:
 
 - `autobib find`: Any record missing a key is omitted from the search interface.
-- `autobib get`: Any record missing a key excluded from the output
-- `autobib list`: Any record missing a key excluded from the output
+- `autobib get`: Any record missing a key is excluded from the output
+- `autobib list`: Any record missing a key is excluded from the output
 
 Strict mode prevents rendering if rendering the template would require expanding a field key which does not exist in the provided data.
 For example:

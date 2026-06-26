@@ -11,7 +11,7 @@ The Autobib command-line tool stores data locally in a [SQLite](https://sqlite.o
 - as set by the `$AUTOBIB_DATABASE_PATH` environment variable
 - by default at `$XDG_CONFIG_HOME/autobib/records.db`
 
-The goal is this section is to give a full, detailed description of the database format in order to read data from the database without using the Autobib program.
+The goal of this section is to give a full, detailed description of the database format in order to read data from the database without using the Autobib program.
 
 ### Application identifier and database version
 
@@ -64,7 +64,7 @@ This table has schema
 ```sql
 CREATE TABLE Identifiers (
     name TEXT NOT NULL PRIMARY KEY,
-    record_key INTEGER NOT NULL References Records(key)
+    record_key INTEGER NOT NULL REFERENCES Records(key)
         ON UPDATE RESTRICT
         ON DELETE CASCADE
 ) STRICT, WITHOUT ROWID;
@@ -80,7 +80,7 @@ CREATE TABLE NullRecords (
     attempted TEXT NOT NULL
 ) STRICT;
 ```
-This is a cache table for failed lookup if a provided record is invalid.
+This is a cache table for failed lookups if a provided record is invalid.
 
 ### Database invariants
 
@@ -96,7 +96,7 @@ The following invariants must be upheld at all times.
 
 ## Internal binary data format
 
-We use a custom internal binary format to represent the data associated with each bibTex entry.
+We use a custom internal binary format to represent the data associated with each BibTeX entry.
 
 The data is stored as
 ```txt
