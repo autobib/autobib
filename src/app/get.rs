@@ -1,5 +1,6 @@
 use std::{
     convert::Infallible,
+    io::IsTerminal,
     io::{self, BufRead},
 };
 
@@ -157,14 +158,18 @@ where
     }
 
     // then standard input
-    for line in io::stdin().lock().lines() {
-        let id = RecordId::from(line?);
-        if let Some(item) =
-            retrieve_single_entry(record_db, id, client, ignore_null, cfg, W::filter_map)?
-        {
-            writer.write_item(item)?;
+    let stdin = io::stdin().lock();
+    if !stdin.is_terminal() {
+        for line in stdin.lines() {
+            let id = RecordId::from(line?);
+            if let Some(item) =
+                retrieve_single_entry(record_db, id, client, ignore_null, cfg, W::filter_map)?
+            {
+                writer.write_item(item)?;
+            }
         }
     }
+
     writer.finish()?;
     Ok(())
 }
@@ -189,13 +194,15 @@ where
         }
     }
 
-    // then standard input
-    for line in io::stdin().lock().lines() {
-        let id = RecordId::from(line?);
-        if let Some(item) =
-            retrieve_single_entry_read_only(record_db, id, ignore_null, cfg, W::filter_map)?
-        {
-            writer.write_item(item)?;
+    let stdin = io::stdin().lock();
+    if !stdin.is_terminal() {
+        for line in stdin.lines() {
+            let id = RecordId::from(line?);
+            if let Some(item) =
+                retrieve_single_entry_read_only(record_db, id, ignore_null, cfg, W::filter_map)?
+            {
+                writer.write_item(item)?;
+            }
         }
     }
     writer.finish()?;
