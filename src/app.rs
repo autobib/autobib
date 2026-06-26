@@ -289,9 +289,6 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
         } => {
             let cfg = config::load(&config_path, missing_ok)?;
             if hard {
-                if delete_aliases {
-                    warn!("Redundant flag `--delete-aliases` is implied by `--hard`");
-                }
                 for key in identifiers {
                     hard_delete(key, &mut record_db, &cfg)?;
                 }

@@ -7,10 +7,11 @@ use crate::{
         state::{DisambiguatedRecordRow, IsEntry, RecordIdState, State, replace_hard_unchecked},
     },
     entry::{MutableEntryData, RawEntryData},
-    logger::warn,
     record::{Record, RecordId},
 };
 
+/// The closure `data_cb` is a function which accepts a transaction and the entry data for the
+/// record to be replaced and returns a record corresponding to its replacement.
 pub fn replace<'conn, F, G>(
     identifier: RecordId,
     tx: Tx<'conn>,
@@ -51,8 +52,7 @@ where
             None => return Ok(()),
         };
 
-    // next, get the target data. maybe it doesn't exist in the database yet, so it
-    // has to be retrieved
+    // next, get the target data using the callback
     let (replacement_record, replacement_row) = data_cb(tx, &original_record.data)?;
 
     // make sure they aren't the same row
@@ -78,10 +78,6 @@ where
 
     // FIXME: find a way to hold 'joint state' in some reasonable way
     if hard {
-        if update_aliases {
-            warn!("Redundant flag `--update-aliases` is implied by `--hard`");
-        }
-
         replace_hard_unchecked(
             tx,
             original_row_id,
@@ -95,6 +91,8 @@ where
             .delete_soft(Some(&replacement_record.row.canonical), update_aliases)?
             .commit()?;
     }
+
+    // try to migrate attachments, or warn on orphaned
 
     Ok(())
 }
