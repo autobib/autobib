@@ -411,7 +411,7 @@ pub enum Command {
         hard: bool,
         /// How to resolve conflicting field values.
         ///
-        /// Note that 'incoming' refers to the identifier to replace, and 'current' refers to the
+        /// 'incoming' refers to the identifier to replace, and 'current' refers to the
         /// replacement.
         #[arg(
             short = 'n',
@@ -425,6 +425,9 @@ pub enum Command {
         /// Update aliases to point to the new identifier.
         #[arg(long)]
         update_aliases: bool,
+        /// Do not migrate attachment directories.
+        #[arg(long)]
+        skip_attachments: bool,
     },
     /// Generate records by searching for identifiers inside files.
     ///
