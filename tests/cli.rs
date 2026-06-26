@@ -687,9 +687,15 @@ fn delete() -> Result<()> {
     cmd.args(["get", "mr:3224722"]);
     cmd.assert().success();
 
+    let attachment_dir = attachment_path(&s, "mr:3224722")?;
+    fs::create_dir_all(&attachment_dir)?;
+    fs::write(attachment_dir.join("attachment.txt"), "attachment contents")?;
+
     let mut cmd = s.cmd()?;
     cmd.args(["delete", "mr:3224722"]);
-    cmd.assert().success();
+    cmd.assert()
+        .success()
+        .stderr(contains("Deleted record has attachment directory"));
 
     let mut cmd = s.cmd()?;
     cmd.args(["delete", "mr:3224722"]);

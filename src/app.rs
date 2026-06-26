@@ -284,14 +284,40 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             hard,
             delete_aliases,
         } => {
+            fn warn_orphaned_attachment_dir(
+                attachment_root: Option<&AttachmentRoot>,
+                canonical: &RemoteId,
+            ) -> Result<()> {
+                let Some(attachment_root) = attachment_root else {
+                    return Ok(());
+                };
+
+                if attachment_root.exists(canonical)? {
+                    warn!(
+                        "Deleted record has attachment directory: {}",
+                        attachment_root.attachment_dir(canonical).display()
+                    );
+                }
+
+                Ok(())
+            }
+
             let cfg = config::load(&config_path, missing_ok)?;
+            let attachment_root =
+                get_existing_attachment_root(&data_dir, cli.attachments_dir, true)?;
             if hard {
                 for key in identifiers {
-                    hard_delete(key, &mut record_db, &cfg)?;
+                    if let Some(canonical) = hard_delete(key, &mut record_db, &cfg)? {
+                        warn_orphaned_attachment_dir(attachment_root.as_ref(), &canonical)?;
+                    }
                 }
             } else {
                 for key in identifiers {
-                    soft_delete(key, &None, &mut record_db, &cfg, delete_aliases)?;
+                    if let Some(canonical) =
+                        soft_delete(key, &None, &mut record_db, &cfg, delete_aliases)?
+                    {
+                        warn_orphaned_attachment_dir(attachment_root.as_ref(), &canonical)?;
+                    }
                 }
             }
         }
