@@ -35,3 +35,4 @@ Changes since `v0.6.1`.
   - The number of selections can be limited with the `--limit` option.
   - Single-selection mode can be re-enabled with `-1/--one`
 - Added `autobib info -r preferred` to print the preferred identifier associated with a record.
+- Added `autobib source --json`, which outputs a JSON dictionary mapping citation keys to record data.
