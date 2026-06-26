@@ -20,7 +20,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use data_encoding::BASE32;
+use data_encoding::{BASE32, BASE32_NOPAD, Encoding};
 use rapidhash::{v1::rapidhash_v1, v3::rapidhash_v3};
 
 use crate::RemoteId;
@@ -28,11 +28,11 @@ use crate::RemoteId;
 /// Attachment directory format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AttachmentFormat {
-    /// 0-padded zbmath identifiers and [`rapidhash::v1`]
+    /// 0-padded zbmath identifiers, [`rapidhash::v1`], and padded base-32 encoding
     V0,
     /// Migrating from [`Self::V0`] to [`Self::V1`]
     V1Migrating,
-    /// [`rapidhash::v3`]
+    /// [`rapidhash::v3`] and unpadded base-32 encoding
     V1,
 }
 
@@ -268,12 +268,15 @@ fn extend_hashed_path<H: for<'a> FnOnce(&'a [u8]) -> u64>(
     provider: &str,
     sub_id_bytes: &[u8],
     hash_fn: H,
+    encoding: Encoding,
 ) {
     let sub_id_hash: [u8; 8] = hash_fn(sub_id_bytes).to_le_bytes();
 
     let mut buffer = [0; 8];
-    let res = BASE32.encode_mut_str(&sub_id_hash[..4], &mut buffer);
-    let sub_id_encoded: String = BASE32.encode(sub_id_bytes);
+    let input = &sub_id_hash[..4];
+    let output = &mut buffer[0..encoding.encode_len(input.len())];
+    let res = encoding.encode_mut_str(input, output);
+    let sub_id_encoded: String = encoding.encode(sub_id_bytes);
     path_buf.extend([
         provider,
         &res[0..2],
@@ -291,13 +294,14 @@ impl<S: AsRef<str>> PathHash for RemoteIdAttachmentPathV0<'_, S> {
             let sub_id = id.sub_id().as_bytes();
             padded_sub_id[8 - sub_id.len()..].copy_from_slice(sub_id);
 
-            extend_hashed_path(path_buf, "zbmath", &padded_sub_id, rapidhash_v1);
+            extend_hashed_path(path_buf, "zbmath", &padded_sub_id, rapidhash_v1, BASE32);
         } else {
             extend_hashed_path(
                 path_buf,
                 id.provider(),
                 id.sub_id().as_bytes(),
                 rapidhash_v1,
+                BASE32,
             );
         }
     }
@@ -311,6 +315,7 @@ impl<S: AsRef<str>> PathHash for RemoteIdAttachmentPathV1<'_, S> {
             id.provider(),
             id.sub_id().as_bytes(),
             rapidhash_v3,
+            BASE32_NOPAD,
         );
     }
 }
