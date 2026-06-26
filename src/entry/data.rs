@@ -433,17 +433,6 @@ impl MutableEntryData {
         self.insert(FieldKey::try_new(k)?, FieldValue::try_new(v)?);
         Ok(())
     }
-
-    pub fn check_and_insert_if_non_null(
-        &mut self,
-        k: &str,
-        v: Option<String>,
-    ) -> Result<(), crate::error::RecordDataError> {
-        if let Some(s) = v {
-            self.insert(FieldKey::try_new(k.into())?, FieldValue::try_new(s)?);
-        }
-        Ok(())
-    }
 }
 
 impl<S: AsRef<str> + Ord> MutableEntryData<S> {
