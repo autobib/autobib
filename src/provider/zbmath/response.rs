@@ -1,6 +1,59 @@
 use serde::{Deserialize, de::Visitor};
 
-use super::super::{EntryType, MutableEntryData, RecordDataError};
+use super::super::{EntryType, MutableEntryData, RecordDataError, warn};
+
+fn has_license_issue(v: &str) -> bool {
+    v.contains("zbMATH Open Web Interface contents unavailable due to conflicting licenses")
+}
+
+/// A wrapper around entry data which checks for conflicting license issues, and emits a warning at
+/// the end if so.
+struct Checked {
+    data: MutableEntryData,
+    sink: Vec<String>,
+}
+
+impl Checked {
+    fn new(et: EntryType) -> Self {
+        Self {
+            data: MutableEntryData::new(et),
+            sink: Vec::new(),
+        }
+    }
+
+    fn finish(self, id: u32) -> MutableEntryData {
+        if !self.sink.is_empty() {
+            let msg = self.sink.join(", ");
+            warn!("zbmath:{id} fields skipped because of conflicting license issues: {msg}");
+        }
+        self.data
+    }
+
+    fn check_and_insert(
+        &mut self,
+        key: impl Into<String>,
+        value: String,
+    ) -> Result<(), RecordDataError> {
+        if has_license_issue(&value) {
+            self.sink.push(key.into());
+            Ok(())
+        } else {
+            self.data.check_and_insert(key.into(), value)
+        }
+    }
+
+    fn check_and_insert_if_some(
+        &mut self,
+        key: impl Into<String>,
+        value: Option<String>,
+    ) -> Result<(), RecordDataError> {
+        if let Some(v) = value {
+            self.check_and_insert(key, v)
+        } else {
+            Ok(())
+        }
+    }
+}
 
 impl TryFrom<Entry> for MutableEntryData {
     type Error = RecordDataError;
@@ -21,7 +74,7 @@ impl TryFrom<Entry> for MutableEntryData {
         } = value;
 
         let entry_type = document_type.code.entry_type();
-        let mut record_data = Self::new(entry_type);
+        let mut record_data = Checked::new(entry_type);
 
         // authors
         let mut author_buf = String::new();
@@ -34,7 +87,7 @@ impl TryFrom<Entry> for MutableEntryData {
             }
         }
         if !author_buf.is_empty() {
-            record_data.check_and_insert("author".into(), author_buf)?;
+            record_data.check_and_insert("author", author_buf)?;
         }
 
         // editors
@@ -48,7 +101,7 @@ impl TryFrom<Entry> for MutableEntryData {
             }
         }
         if !editor_buf.is_empty() {
-            record_data.check_and_insert("editor".into(), editor_buf)?;
+            record_data.check_and_insert("editor", editor_buf)?;
         }
 
         // language
@@ -62,27 +115,27 @@ impl TryFrom<Entry> for MutableEntryData {
             }
         }
         if !lang_buf.is_empty() {
-            record_data.check_and_insert("language".into(), lang_buf)?;
+            record_data.check_and_insert("language", lang_buf)?;
         }
 
         // zbmath, zbl, jfm keys
-        record_data.check_and_insert("zbmath".into(), id.to_string())?;
+        record_data.check_and_insert("zbmath", id.to_string())?;
         if let Some(s) = identifier {
-            record_data.check_and_insert(database.as_bibtex().into(), s)?;
+            record_data.check_and_insert(database.as_bibtex(), s)?;
         }
 
         // links, like 'arxiv' and 'doi'
         for link in links {
             if let Some(ty) = link.link_type.as_bibtex() {
-                record_data.check_and_insert(ty.into(), link.identifier)?;
+                record_data.check_and_insert(ty, link.identifier)?;
             }
         }
 
         // title parts
-        record_data.check_and_insert_if_non_null("titleaddon", title.addition)?;
-        record_data.check_and_insert_if_non_null("subtitle", title.subtitle)?;
-        record_data.check_and_insert_if_non_null("origtitle", title.original)?;
-        record_data.check_and_insert_if_non_null("title", title.title)?;
+        record_data.check_and_insert_if_some("titleaddon", title.addition)?;
+        record_data.check_and_insert_if_some("subtitle", title.subtitle)?;
+        record_data.check_and_insert_if_some("origtitle", title.original)?;
+        record_data.check_and_insert_if_some("title", title.title)?;
 
         // publication details, prioritizing 'series' data more
         if let Some(p) = source.pages {
@@ -91,31 +144,31 @@ impl TryFrom<Entry> for MutableEntryData {
                     _frontmatter: _,
                     total,
                 } => {
-                    record_data.check_and_insert("pagetotal".into(), total.to_string())?;
+                    record_data.check_and_insert("pagetotal", total.to_string())?;
                 }
                 Pages::Range { start, end } => {
-                    record_data.check_and_insert("pages".into(), format!("{start}--{end}"))?;
+                    record_data.check_and_insert("pages", format!("{start}--{end}"))?;
                 }
                 Pages::Other(s) => {
-                    record_data.check_and_insert("pages".into(), s)?;
+                    record_data.check_and_insert("pages", s)?;
                 }
             }
         }
 
         for book in source.book {
-            record_data.check_and_insert_if_non_null("publisher", book.publisher)?;
-            record_data.check_and_insert_if_non_null("year", book.year)?;
+            record_data.check_and_insert_if_some("publisher", book.publisher)?;
+            record_data.check_and_insert_if_some("year", book.year)?;
         }
         for ser in source.series {
-            record_data.check_and_insert_if_non_null("issue", ser.issue)?;
-            record_data.check_and_insert_if_non_null("publisher", ser.publisher)?;
-            record_data.check_and_insert_if_non_null("journal", ser.short_title)?;
-            record_data.check_and_insert_if_non_null("volume", ser.volume)?;
-            record_data.check_and_insert_if_non_null("year", ser.year)?;
+            record_data.check_and_insert_if_some("issue", ser.issue)?;
+            record_data.check_and_insert_if_some("publisher", ser.publisher)?;
+            record_data.check_and_insert_if_some("journal", ser.short_title)?;
+            record_data.check_and_insert_if_some("volume", ser.volume)?;
+            record_data.check_and_insert_if_some("year", ser.year)?;
         }
-        record_data.check_and_insert_if_non_null("year", year)?;
+        record_data.check_and_insert_if_some("year", year)?;
 
-        Ok(record_data)
+        Ok(record_data.finish(id))
     }
 }
 

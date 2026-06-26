@@ -22,6 +22,7 @@ use crate::{
     entry::{EntryData, EntryFields, EntryType, MutableEntryData},
     error::{ProviderError, RecordDataError},
     http::{BodyBytes, Client},
+    logger::warn,
 };
 
 struct Ctx<'a, C> {
@@ -316,16 +317,16 @@ pub fn get_remote_response<C: Client>(
     remote_id: &RemoteId,
 ) -> Result<RemoteResponse, ProviderError> {
     let ctx = Ctx::new(client);
-    match lookup_provider(remote_id.provider()) {
+    Ok(match lookup_provider(remote_id.provider()) {
         Provider::Resolver(resolver) => match resolver(remote_id.sub_id(), ctx)? {
-            Some(data) => Ok(RemoteResponse::Data(data)),
-            None => Ok(RemoteResponse::Null),
+            Some(data) => RemoteResponse::Data(data),
+            None => RemoteResponse::Null,
         },
         Provider::Referrer(referrer) => match referrer(remote_id.sub_id(), ctx)? {
-            Some(new_remote_id) => Ok(RemoteResponse::Reference(new_remote_id)),
-            None => Ok(RemoteResponse::Null),
+            Some(new_remote_id) => RemoteResponse::Reference(new_remote_id),
+            None => RemoteResponse::Null,
         },
-    }
+    })
 }
 
 /// A receiving struct type useful for deserializing BibTeX from a provider.
