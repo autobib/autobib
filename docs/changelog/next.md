@@ -18,7 +18,7 @@ Changes since `v0.6.1`.
   This also means that the `--out` and `--append` options have been removed.
   This behaviour is now included in `autobib source`.
   There are also new features:
-  - Added `--template` option, to format records with an arbitrary template instead of as bibtex.
+  - Added `--template` option, to format records with an arbitrary template instead of as BibTeX.
   - Added the ability to read from stdin.
 - `autobib util list` has been renamed to `autobib list`.
   - Added optional glob pattern argument to filter identifiers.

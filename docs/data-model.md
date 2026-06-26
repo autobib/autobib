@@ -3,14 +3,14 @@
 ## Identifiers
 
 Any way to refer to record data stored in your database is called an **identifier**.
-There are four ways to refer to record data:
+There are three ways to refer to record data:
 
 - By [**provenance**](#provenance): the source that the record data originated from.
-  The corresponding identifiers called *canonical id*s.
+  The corresponding identifiers are called *canonical id*s.
 - By [**reference**](#references-to-provenance): a standardized way of referring to a specific provenance.
-  The corresponding identifiers called *ref id*s.
+  The corresponding identifiers are called *ref id*s.
 - By [**alias**](#aliases): an alternative name for provenance
-  The corresponding identifiers called *alias*es.
+  The corresponding identifiers are called *alias*es.
 
 ### Provenance
 
@@ -23,7 +23,7 @@ This uses *canonical id*s of the form `local:xyz`.
 
 Provenance is important since it can be used to retrieve data even when the data might not yet exist in your database.
 If you make a request like `autobib get arxiv:2002.04575`, Autobib first checks if the data is present in your database.
-If does not exist, the data will be retrieved first using the [arXiv API](https://info.arxiv.org/help/api/index.html), stored in your database, and then returned.
+If it does not exist, the data will be retrieved first using the [arXiv API](https://info.arxiv.org/help/api/index.html), stored in your database, and then returned.
 
 ### References to provenance
 
@@ -33,7 +33,7 @@ The internal zbMATH identifier is a 7 or 8 digit numeric code, like `01234567`, 
 However, zbMATH also supports two other identifier types: JFM *ref id*s, like `jfm:57.0055.01`, and Zbl *ref id*s, like `zbl:0003.04901`.
 
 These are also valid identifiers, but are internally converted directly to the provenance to which they refer.
-One can think of references as a automatically assigned alternative names for provenance.
+One can think of references as automatically assigned alternative names for provenance.
 
 The current table is as follows:
 
@@ -50,10 +50,10 @@ The current table is as follows:
 ### Aliases
 
 The standard way to refer to data in Autobib is by provenance or by reference.
-This means using the key `doi:1234/abcd` directly in your in your files, etc.
+This means using the key `doi:1234/abcd` directly in your files, etc.
 
 However, since the provenance tends to be machine-readable instead of human-readable, Autobib also supports **aliases**.
-These are keys of the form `xyz`, not containing a semicolon to distinguish from provenance, and not beginning with the reserved `#` character (for reasons that will become clear in the next section).
+These are keys of the form `xyz`, not containing a colon to distinguish from provenance, and not beginning with the reserved `#` character (for reasons that will become clear in the next section).
 An alias is just *an alternative name for the provenance*.
 If `xyz` is an alias for `doi:1234/abcd`, then writing `xyz` is equivalent to writing `doi:1234/abcd`.
 The alias is also used as the citation key in the BibTeX output.
