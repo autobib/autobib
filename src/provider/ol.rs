@@ -6,7 +6,8 @@ use serde::Deserialize;
 use crate::logger::info;
 
 use super::{
-    BodyBytes, Client, EntryType, MutableEntryData, ProviderError, StatusCode, ValidationOutcome,
+    BodyBytes, Client, Ctx, EntryType, MutableEntryData, ProviderError, StatusCode,
+    ValidationOutcome,
 };
 
 static OL_IDENTIFIER_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[0-9]{7,8}M$").unwrap());
@@ -46,9 +47,11 @@ struct OpenLibraryRecord {
 
 pub fn get_record<C: Client>(
     id: &str,
-    client: &C,
+    ctx: Ctx<C>,
 ) -> Result<Option<MutableEntryData>, ProviderError> {
-    let response = client.get(format!("https://openlibrary.org/books/OL{id}.json"))?;
+    let response = ctx
+        .client()
+        .get(format!("https://openlibrary.org/books/OL{id}.json"))?;
 
     let mut body = match response.status() {
         StatusCode::OK => response.into_body().bytes()?,
@@ -84,7 +87,9 @@ pub fn get_record<C: Client>(
 
                 for AuthorID { key } in authors {
                     info!("Making remote request for OpenLibrary author at {key}");
-                    let response = client.get(format!("https://openlibrary.org{key}.json"))?;
+                    let response = ctx
+                        .client()
+                        .get(format!("https://openlibrary.org{key}.json"))?;
 
                     let body = match response.status() {
                         StatusCode::OK => response.into_body().bytes()?,

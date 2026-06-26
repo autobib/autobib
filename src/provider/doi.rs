@@ -4,7 +4,7 @@ use regex::Regex;
 use serde_bibtex::de::Deserializer;
 
 use super::{
-    BodyBytes, Client, MutableEntryData, ProviderBibtex, ProviderError, StatusCode,
+    BodyBytes, Client, Ctx, MutableEntryData, ProviderBibtex, ProviderError, StatusCode,
     ValidationOutcome,
 };
 
@@ -17,9 +17,9 @@ pub fn is_valid_id(id: &str) -> ValidationOutcome {
 
 pub fn get_record<C: Client>(
     id: &str,
-    client: &C,
+    ctx: Ctx<C>,
 ) -> Result<Option<MutableEntryData>, ProviderError> {
-    let response = client.get(format!(
+    let response = ctx.client().get(format!(
         "https://api.crossref.org/works/{id}/transform/application/x-bibtex"
     ))?;
 
