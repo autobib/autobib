@@ -16,7 +16,7 @@
 // 4. Else: the attachment format is unknown to the current binary, resulting in an error
 
 use std::{
-    fs,
+    fs, io,
     path::{Path, PathBuf},
 };
 
@@ -103,7 +103,7 @@ impl AttachmentRootLock {
 
     pub(crate) fn cleanup(root: &Path) -> Result<(), anyhow::Error> {
         fs::remove_dir(root.join(Self::lockdir())).map_err(|err| {
-            if err.kind() == std::io::ErrorKind::NotFound {
+            if err.kind() == io::ErrorKind::NotFound {
                 anyhow::anyhow!("No lock directory to cleanup")
             } else {
                 err.into()
@@ -158,7 +158,37 @@ pub struct AttachmentRoot {
     format: AttachmentFormat,
 }
 
+#[expect(unused)]
+pub enum AttachmentRenameOutcome {
+    /// The source attachment directory was missing.
+    FromMissing(PathBuf, PathBuf),
+    /// The target attachment directory already exists and is non-empty.
+    ToExists(PathBuf, PathBuf),
+    /// The directory was renamed successfully.
+    Ok,
+}
+
 impl AttachmentRoot {
+    /// Open an existing attachment root.
+    pub fn open(root: PathBuf, read_only: bool) -> Result<Option<Self>, anyhow::Error> {
+        Ok(if root.is_dir() {
+            Some(Self::open_or_create(root, read_only)?)
+        } else {
+            None
+        })
+    }
+
+    /// Acquire a lock (if necessary) and resolve the attachment format.
+    pub fn open_or_create(root: PathBuf, read_only: bool) -> Result<Self, anyhow::Error> {
+        let at_root = Self::resolve_unchecked(root, read_only)?;
+        if at_root.format() == AttachmentFormat::V1Migrating {
+            anyhow::bail!(
+                "Attachment directory is currently being migrated. Resume with `autobib util migrate-attachments` in order to read and write to the directory."
+            );
+        }
+        Ok(at_root)
+    }
+
     /// Acquire a lock (if necessary) and resolve the attachment format, without checking if we are
     /// in a `migrating` state.
     pub fn resolve_unchecked(root: PathBuf, read_only: bool) -> Result<Self, anyhow::Error> {
@@ -176,17 +206,6 @@ impl AttachmentRoot {
             }
         };
         Ok(Self { lock, format })
-    }
-
-    /// Acquire a lock (if necessary) and resolve the attachment format.
-    pub fn resolve(root: PathBuf, read_only: bool) -> Result<Self, anyhow::Error> {
-        let at_root = Self::resolve_unchecked(root, read_only)?;
-        if at_root.format() == AttachmentFormat::V1Migrating {
-            anyhow::bail!(
-                "Attachment directory is currently being migrated. Resume with `autobib util migrate-attachments` in order to read and write to the directory."
-            );
-        }
-        Ok(at_root)
     }
 
     /// The format of the attachment directory on creation.
@@ -228,6 +247,39 @@ impl AttachmentRoot {
             AttachmentFormat::V1Migrating | AttachmentFormat::V1 => {
                 RemoteIdAttachmentPathV1(id).extend_attachments_path(path);
             }
+        }
+    }
+
+    /// Try to rename the attachment directory at `from` to `to`.
+    ///
+    /// This will not overwrite the target directory.
+    pub fn rename(
+        &self,
+        from: &RemoteId,
+        to: &RemoteId,
+    ) -> Result<AttachmentRenameOutcome, io::Error> {
+        assert!(
+            !self.lock.read_only,
+            "Cannot rename file in read-only mode."
+        );
+        let source = self.attachment_dir(from);
+        let target = self.attachment_dir(to);
+        fs::create_dir_all(&target)?;
+
+        match fs::rename(&source, &target) {
+            Ok(()) => Ok(AttachmentRenameOutcome::Ok),
+            Err(err) if err.kind() == io::ErrorKind::NotFound => {
+                Ok(AttachmentRenameOutcome::FromMissing(source, target))
+            }
+            Err(err)
+                if matches!(
+                    err.kind(),
+                    io::ErrorKind::AlreadyExists | io::ErrorKind::DirectoryNotEmpty
+                ) =>
+            {
+                Ok(AttachmentRenameOutcome::ToExists(source, target))
+            }
+            Err(err) => Err(err),
         }
     }
 }

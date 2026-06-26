@@ -2,24 +2,29 @@ use anyhow::bail;
 
 use crate::{
     app::cli::OnConflict,
+    config::Config,
     db::{
         Tx,
         state::{DisambiguatedRecordRow, IsEntry, RecordIdState, State, replace_hard_unchecked},
     },
     entry::{MutableEntryData, RawEntryData},
+    logger::{suggest, warn},
+    path_hash::{AttachmentRenameOutcome, AttachmentRoot},
     record::{Record, RecordId},
 };
 
 /// The closure `data_cb` is a function which accepts a transaction and the entry data for the
 /// record to be replaced and returns a record corresponding to its replacement.
+#[expect(clippy::too_many_arguments)]
 pub fn replace<'conn, F, G>(
     identifier: RecordId,
     tx: Tx<'conn>,
-    cfg: &crate::config::Config<F>,
+    cfg: &Config<F>,
     data_cb: G,
     hard: bool,
     update_aliases: bool,
     on_conflict: OnConflict,
+    root: Option<AttachmentRoot>,
 ) -> Result<(), anyhow::Error>
 where
     F: FnOnce() -> Vec<(regex::Regex, String)>,
@@ -93,6 +98,25 @@ where
     }
 
     // try to migrate attachments, or warn on orphaned
+    let Some(root) = root else {
+        return Ok(());
+    };
 
-    Ok(())
+    match root.rename(
+        &original_record.canonical,
+        &replacement_record.row.canonical,
+    )? {
+        AttachmentRenameOutcome::ToExists(source, target) => {
+            warn!(
+                "Could not merge attachment directories:\n  original: {}\n  replacement: {}",
+                source.display(),
+                target.display()
+            );
+            suggest!(
+                "Move attachment files from the original directory to the replacement directory"
+            );
+            Ok(())
+        }
+        AttachmentRenameOutcome::FromMissing(_, _) | AttachmentRenameOutcome::Ok => Ok(()),
+    }
 }

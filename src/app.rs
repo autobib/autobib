@@ -58,7 +58,8 @@ use crate::{
 
 use self::{
     attach::{
-        get_attachment_dir, get_attachment_root, get_attachment_root_path, migrate_attachments,
+        get_attachment_root, get_attachment_root_path, get_existing_attachment_root,
+        migrate_attachments,
     },
     cli::{AliasCommand, FindMode, InfoReportType, OnConflict, UtilCommand},
     delete::{hard_delete, soft_delete},
@@ -201,12 +202,8 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             let (record, row) = get_record_row(&mut record_db, identifier, client, &cfg)?
                 .exists_or_commit_null("Cannot attach file for")?;
             row.commit()?;
-            let mut target = get_attachment_dir(
-                &data_dir,
-                cli.attachments_dir,
-                cli.read_only,
-                &record.row.canonical,
-            )?;
+            let root = get_attachment_root(&data_dir, cli.attachments_dir, cli.read_only)?;
+            let mut target = root.attachment_dir(&record.row.canonical);
 
             let mut opts = OpenOptions::new();
             opts.write(true);
@@ -999,8 +996,8 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 None => return Ok(()),
             };
 
-            let mut target =
-                get_attachment_dir(&data_dir, cli.attachments_dir, !mkdir, &canonical)?;
+            let root = get_attachment_root(&data_dir, cli.attachments_dir, !mkdir)?;
+            let mut target = root.attachment_dir(&canonical);
             if mkdir {
                 create_dir_all(&target)?;
             }
@@ -1018,11 +1015,17 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             hard,
             on_conflict,
             update_aliases,
+            skip_attachments,
         } => {
             let cfg = config::load(&config_path, missing_ok)?;
 
             if let Some(target) = with {
                 let tx = record_db.transaction()?;
+                let at_root = if skip_attachments {
+                    None
+                } else {
+                    get_existing_attachment_root(&data_dir, cli.attachments_dir, cli.read_only)?
+                };
                 replace::replace(
                     identifier,
                     tx,
@@ -1034,9 +1037,15 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     hard,
                     update_aliases,
                     on_conflict,
+                    at_root,
                 )?;
             } else if auto {
                 let tx = record_db.transaction()?;
+                let at_root = if skip_attachments {
+                    None
+                } else {
+                    get_existing_attachment_root(&data_dir, cli.attachments_dir, cli.read_only)?
+                };
                 replace::replace(
                     identifier,
                     tx,
@@ -1058,6 +1067,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     hard,
                     update_aliases,
                     on_conflict,
+                    at_root,
                 )?;
             } else {
                 bail!("Missing replacement target: either use `--with <replacement>` or `--auto`");
@@ -1274,7 +1284,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         AttachmentRootLock::cleanup(&root_path)?;
                     }
                     if empty {
-                        let mut at_root = AttachmentRoot::resolve(root_path, false)?;
+                        let mut at_root = AttachmentRoot::open_or_create(root_path, false)?;
                         cleanup_empty_attachment_dirs(&mut at_root)?;
                     }
                 }

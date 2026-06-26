@@ -3,7 +3,7 @@ mod migrate;
 
 use std::path::{Path, PathBuf};
 
-use crate::{logger::info, path_hash::AttachmentRoot, record::RemoteId};
+use crate::{logger::info, path_hash::AttachmentRoot};
 pub use {cleanup::cleanup_empty_attachment_dirs, migrate::migrate_attachments};
 
 /// Get the attachment root, either as a default from the data directory or using the
@@ -14,7 +14,17 @@ pub fn get_attachment_root(
     read_only: bool,
 ) -> Result<AttachmentRoot, anyhow::Error> {
     let root = get_attachment_root_path(data_dir, default_attachments_dir);
-    AttachmentRoot::resolve(root, read_only)
+    AttachmentRoot::open_or_create(root, read_only)
+}
+
+/// Get the attachment root only if it already exists.
+pub fn get_existing_attachment_root(
+    data_dir: &Path,
+    default_attachments_dir: Option<PathBuf>,
+    read_only: bool,
+) -> Result<Option<AttachmentRoot>, anyhow::Error> {
+    let root = get_attachment_root_path(data_dir, default_attachments_dir);
+    AttachmentRoot::open(root, read_only)
 }
 
 /// Get the attachment root directory path, either as a default from the data directory or using the
@@ -41,15 +51,4 @@ pub fn get_attachment_root_path(
 
         default_attachments_path
     }
-}
-
-/// Get the attachment directory corresponding to the provided identifier.
-pub fn get_attachment_dir(
-    data_dir: &Path,
-    default_attachments_dir: Option<PathBuf>,
-    read_only: bool,
-    canonical: &RemoteId,
-) -> Result<PathBuf, anyhow::Error> {
-    let attachments_root = get_attachment_root(data_dir, default_attachments_dir, read_only)?;
-    Ok(attachments_root.attachment_dir(canonical))
 }

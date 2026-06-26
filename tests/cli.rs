@@ -118,7 +118,13 @@ impl TestState {
         cmd.assert().success();
 
         let mut cmd = self.cmd()?;
-        cmd.args(["replace", "local:first", "--with", "local:second"]);
+        cmd.args([
+            "replace",
+            "local:first",
+            "--with",
+            "local:second",
+            "--skip-attachments",
+        ]);
         cmd.assert().success();
 
         let mut cmd = self.cmd()?;
@@ -1849,6 +1855,113 @@ fn replace_auto() -> Result<()> {
     let mut cmd = s.cmd()?;
     cmd.args(["get", "zbmath:6346461"]);
     cmd.assert().success().stdout(contains("@article{"));
+
+    s.close()
+}
+
+fn create_replace_records(s: &TestState) -> Result<()> {
+    let mut cmd = s.cmd()?;
+    cmd.args([
+        "local",
+        "first",
+        "--with-entry-type",
+        "book",
+        "--with-field",
+        "title = {First}",
+    ]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args([
+        "local",
+        "second",
+        "--with-entry-type",
+        "book",
+        "--with-field",
+        "title = {Second}",
+    ]);
+    cmd.assert().success();
+
+    Ok(())
+}
+
+fn attachment_path(s: &TestState, id: &str) -> Result<PathBuf> {
+    let mut cmd = s.cmd()?;
+    cmd.args(["path", id]);
+    let output = cmd.assert().success().get_output().stdout.clone();
+    Ok(PathBuf::from(String::from_utf8(output)?.trim()))
+}
+
+#[test]
+fn replace_migrates_attachments() -> Result<()> {
+    let s = TestState::init()?;
+    create_replace_records(&s)?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["replace", "local:first", "--with", "local:second"]);
+    cmd.assert().success().stderr(predicate::str::is_empty());
+    s.close()?;
+
+    let s = TestState::init()?;
+    create_replace_records(&s)?;
+    let source = attachment_path(&s, "local:first")?;
+    let target = attachment_path(&s, "local:second")?;
+    fs::create_dir_all(&source)?;
+    fs::write(source.join("attachment.txt"), "source attachment")?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["replace", "local:first", "--with", "local:second"]);
+    cmd.assert().success().stderr(predicate::str::is_empty());
+    assert!(!source.exists());
+    assert_eq!(
+        fs::read_to_string(target.join("attachment.txt"))?,
+        "source attachment"
+    );
+    s.close()?;
+
+    let s = TestState::init()?;
+    create_replace_records(&s)?;
+    let source = attachment_path(&s, "local:first")?;
+    let target = attachment_path(&s, "local:second")?;
+    fs::create_dir_all(&target)?;
+    fs::write(target.join("attachment.txt"), "target attachment")?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["replace", "local:first", "--with", "local:second"]);
+    cmd.assert().success().stderr(predicate::str::is_empty());
+    assert!(!source.exists());
+    assert_eq!(
+        fs::read_to_string(target.join("attachment.txt"))?,
+        "target attachment"
+    );
+    s.close()?;
+
+    let s = TestState::init()?;
+    create_replace_records(&s)?;
+    let source = attachment_path(&s, "local:first")?;
+    let target = attachment_path(&s, "local:second")?;
+    fs::create_dir_all(&source)?;
+    fs::write(source.join("attachment.txt"), "source attachment")?;
+    fs::create_dir_all(&target)?;
+    fs::write(target.join("attachment.txt"), "target attachment")?;
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["replace", "local:first", "--with", "local:second"]);
+    cmd.assert()
+        .success()
+        .stderr(
+            contains("Could not merge attachment directories").and(contains(
+                "Move attachment files from the original directory",
+            )),
+        );
+    assert_eq!(
+        fs::read_to_string(source.join("attachment.txt"))?,
+        "source attachment"
+    );
+    assert_eq!(
+        fs::read_to_string(target.join("attachment.txt"))?,
+        "target attachment"
+    );
 
     s.close()
 }
