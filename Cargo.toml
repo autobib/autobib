@@ -70,6 +70,9 @@ inherits = "release"
 debug = true
 strip = "none"
 
+[profile.test]
+opt-level = 1
+
 [lints.clippy]
 print_stdout = "warn"
 redundant_closure_for_method_calls = "warn"
