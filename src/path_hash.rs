@@ -250,6 +250,11 @@ impl AttachmentRoot {
         }
     }
 
+    /// Check whether the attachment directory corresponding to the identifier exists.
+    pub fn exists(&self, id: &RemoteId) -> io::Result<bool> {
+        self.attachment_dir(id).try_exists()
+    }
+
     /// Try to rename the attachment directory at `from` to `to`.
     ///
     /// This will not overwrite the target directory.

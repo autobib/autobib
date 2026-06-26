@@ -17,7 +17,7 @@ pub fn soft_delete<F: FnOnce() -> Vec<(regex::Regex, String)>>(
     record_db: &mut RecordDatabase,
     config: &Config<F>,
     update_aliases: bool,
-) -> Result<(), rusqlite::Error> {
+) -> Result<Option<RemoteId>, rusqlite::Error> {
     delete_impl(
         id,
         record_db,
@@ -45,7 +45,7 @@ pub fn hard_delete<F: FnOnce() -> Vec<(regex::Regex, String)>>(
     id: RecordId,
     record_db: &mut RecordDatabase,
     config: &Config<F>,
-) -> Result<(), rusqlite::Error> {
+) -> Result<Option<RemoteId>, rusqlite::Error> {
     delete_impl(
         id,
         record_db,
@@ -64,7 +64,7 @@ fn delete_impl<F, R, D, V>(
     entry_callback: R,
     deleted_callback: D,
     voided_callback: V,
-) -> Result<(), rusqlite::Error>
+) -> Result<Option<RemoteId>, rusqlite::Error>
 where
     F: FnOnce() -> Vec<(regex::Regex, String)>,
     R: FnOnce(String, state::State<'_, state::IsEntry>) -> Result<(), rusqlite::Error>,
@@ -72,9 +72,16 @@ where
     V: FnOnce(String, state::State<'_, state::IsVoid>) -> Result<(), rusqlite::Error>,
 {
     match record_db.state_from_record_id(id, &config.alias_transform)? {
-        RecordIdState::Entry(original_name, _, state) => entry_callback(original_name, state)?,
-        RecordIdState::Deleted(original_name, _, state) => deleted_callback(original_name, state)?,
-        RecordIdState::Void(original_name, _, state) => voided_callback(original_name, state)?,
+        RecordIdState::Entry(original_name, row, state) => {
+            entry_callback(original_name, state)?;
+            return Ok(Some(row.canonical));
+        }
+        RecordIdState::Deleted(original_name, _, state) => {
+            deleted_callback(original_name, state)?;
+        }
+        RecordIdState::Void(original_name, _, state) => {
+            voided_callback(original_name, state)?;
+        }
         RecordIdState::NullRemoteId(mapped_key, state) => {
             state.commit()?;
             error!("Cannot delete null record data: {mapped_key}");
@@ -91,5 +98,5 @@ where
             reraise(&record_error);
         }
     };
-    Ok(())
+    Ok(None)
 }
