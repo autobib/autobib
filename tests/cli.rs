@@ -235,6 +235,17 @@ fn get() -> Result<()> {
     let mut cmd = s.cmd()?;
     cmd.args([
         "get",
+        "arxiv:1212.1873",
+        "zbl:1285.28011",
+        "--template",
+        "{pagetotal}",
+        "--strict",
+    ]);
+    cmd.assert().success().stdout("368\n");
+
+    let mut cmd = s.cmd()?;
+    cmd.args([
+        "get",
         "zbl:1285.28011",
         "-t",
         r#"{author}{year}{%full_id}"#,

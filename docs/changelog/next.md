@@ -40,7 +40,6 @@ Changes since `v0.6.1`.
 
 ## New features
 
-- New command `autobib format` which prints records using the template syntax.
 - New template metas:
   - `%json`, a JSON dictionary of all of the available data
   - `%modified`, the modification time of the record
