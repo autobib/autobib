@@ -1002,7 +1002,7 @@ fn attachment_format_v1_uses_normalized_zbmath_id() -> Result<()> {
 
     let value = format!(
         "{}\n",
-        native_path_dir(["zbmath", "6D", "UP", "TS", "GYZTINRUGYYQ===="])
+        native_path_dir(["zbmath", "6D", "UP", "TS", "GYZTINRUGYYQ"])
     );
 
     cmd.assert()
@@ -1062,7 +1062,7 @@ fn migrate_attachments() -> Result<()> {
     s.attachment("local/QH/OV/RX/MZUXE43U/attachment.txt")
         .assert(predicate::eq("local attachment contents"));
     zbmath_old_attachment.assert(predicate::path::missing());
-    s.attachment("zbmath/6D/UP/TS/GYZTINRUGYYQ====/attachment.txt")
+    s.attachment("zbmath/6D/UP/TS/GYZTINRUGYYQ/attachment.txt")
         .assert(predicate::eq("zbmath attachment contents"));
     s.attachment(".autobib-format/v0")
         .assert(predicate::path::missing());
@@ -1144,7 +1144,7 @@ fn migrate_attachments_conflict() -> Result<()> {
     );
 
     zbmath_old_attachment.assert(predicate::path::missing());
-    s.attachment("zbmath/6D/UP/TS/GYZTINRUGYYQ====/attachment.txt")
+    s.attachment("zbmath/6D/UP/TS/GYZTINRUGYYQ/attachment.txt")
         .assert(predicate::eq("zbmath attachment contents"));
     s.attachment(".autobib-format/v1-migrating")
         .assert(predicate::path::is_dir());
