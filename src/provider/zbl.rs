@@ -3,7 +3,7 @@ use std::sync::LazyLock;
 use regex::Regex;
 use serde::Deserialize;
 
-use super::{BodyBytes, Client, ProviderError, RemoteId, StatusCode, ValidationOutcome};
+use super::{BodyBytes, Client, Ctx, ProviderError, RemoteId, StatusCode, ValidationOutcome};
 
 #[derive(Deserialize)]
 pub struct Response {
@@ -22,8 +22,10 @@ pub fn is_valid_id(id: &str) -> ValidationOutcome {
     ZBL_IDENTIFIER_RE.is_match(id).into()
 }
 
-pub fn get_canonical<C: Client>(id: &str, client: &C) -> Result<Option<RemoteId>, ProviderError> {
-    let response = client.get(format!("https://api.zbmath.org/v1/document/{id}"))?;
+pub fn get_canonical<C: Client>(id: &str, ctx: Ctx<C>) -> Result<Option<RemoteId>, ProviderError> {
+    let response = ctx
+        .client()
+        .get(format!("https://api.zbmath.org/v1/document/{id}"))?;
 
     let mut body = match response.status() {
         StatusCode::OK => response.into_body(),

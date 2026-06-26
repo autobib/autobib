@@ -24,11 +24,25 @@ use crate::{
     http::{BodyBytes, Client},
 };
 
+struct Ctx<'a, C> {
+    client: &'a C,
+}
+
+impl<'a, C> Ctx<'a, C> {
+    pub fn new(client: &'a C) -> Self {
+        Self { client }
+    }
+
+    pub fn client(&self) -> &'a C {
+        self.client
+    }
+}
+
 /// A resolver, which converts a `sub_id` into [`MutableEntryData`].
-type Resolver<C> = fn(&str, &C) -> Result<Option<MutableEntryData>, ProviderError>;
+type Resolver<C> = fn(&str, Ctx<C>) -> Result<Option<MutableEntryData>, ProviderError>;
 
 /// A referrer, which converts a `sub_id` into [`RemoteId`].
-type Referrer<C> = fn(&str, &C) -> Result<Option<RemoteId>, ProviderError>;
+type Referrer<C> = fn(&str, Ctx<C>) -> Result<Option<RemoteId>, ProviderError>;
 
 /// A validator, which checks that a `sub_id` is valid.
 type Validator = fn(&str) -> ValidationOutcome;
@@ -301,12 +315,13 @@ pub fn get_remote_response<C: Client>(
     client: &C,
     remote_id: &RemoteId,
 ) -> Result<RemoteResponse, ProviderError> {
+    let ctx = Ctx::new(client);
     match lookup_provider(remote_id.provider()) {
-        Provider::Resolver(resolver) => match resolver(remote_id.sub_id(), client)? {
+        Provider::Resolver(resolver) => match resolver(remote_id.sub_id(), ctx)? {
             Some(data) => Ok(RemoteResponse::Data(data)),
             None => Ok(RemoteResponse::Null),
         },
-        Provider::Referrer(referrer) => match referrer(remote_id.sub_id(), client)? {
+        Provider::Referrer(referrer) => match referrer(remote_id.sub_id(), ctx)? {
             Some(new_remote_id) => Ok(RemoteResponse::Reference(new_remote_id)),
             None => Ok(RemoteResponse::Null),
         },

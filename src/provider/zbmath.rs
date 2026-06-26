@@ -1,6 +1,8 @@
 mod response;
 
-use super::{BodyBytes, Client, MutableEntryData, ProviderError, StatusCode, ValidationOutcome};
+use super::{
+    BodyBytes, Client, Ctx, MutableEntryData, ProviderError, StatusCode, ValidationOutcome,
+};
 
 use self::response::Response;
 
@@ -24,9 +26,11 @@ pub fn is_valid_id(id: &str) -> ValidationOutcome {
 
 pub fn get_record<C: Client>(
     id: &str,
-    client: &C,
+    ctx: Ctx<C>,
 ) -> Result<Option<MutableEntryData>, ProviderError> {
-    let response = client.get(format!("https://api.zbmath.org/v1/document/{id}"))?;
+    let response = ctx
+        .client()
+        .get(format!("https://api.zbmath.org/v1/document/{id}"))?;
 
     let mut body = match response.status() {
         StatusCode::OK => response.into_body(),

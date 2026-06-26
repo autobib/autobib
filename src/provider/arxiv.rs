@@ -6,8 +6,8 @@ use rsxiv::{
 use serde::Deserialize;
 
 use super::{
-    BodyBytes, Client, EntryType, MutableEntryData, ProviderError, RecordDataError, StatusCode,
-    ValidationOutcome,
+    BodyBytes, Client, Ctx, EntryType, MutableEntryData, ProviderError, RecordDataError,
+    StatusCode, ValidationOutcome,
 };
 
 pub fn is_valid_id(id: &str) -> ValidationOutcome {
@@ -94,9 +94,11 @@ impl TryFrom<Entry> for MutableEntryData {
 
 pub fn get_record<C: Client>(
     id: &str,
-    client: &C,
+    ctx: Ctx<C>,
 ) -> Result<Option<MutableEntryData>, ProviderError> {
-    let response = client.get(format!("https://export.arxiv.org/api/query?id_list={id}"))?;
+    let response = ctx
+        .client()
+        .get(format!("https://export.arxiv.org/api/query?id_list={id}"))?;
 
     let body = match response.status() {
         StatusCode::OK => response.into_body().bytes()?,
