@@ -183,7 +183,7 @@ impl AttachmentRoot {
         let at_root = Self::resolve_unchecked(root, read_only)?;
         if at_root.format() == AttachmentFormat::V1Migrating {
             anyhow::bail!(
-                "Attachment directory is currently being migrated. Resume with `autobib util migrate-attachments` in order to read and write to the directory."
+                "Attachment directory is currently being migrated. Resume with `autobib gc attachments --migrate` in order to read and write to the directory."
             );
         }
         Ok(at_root)

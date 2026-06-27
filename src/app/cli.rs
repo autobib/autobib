@@ -247,6 +247,11 @@ pub enum Command {
         #[arg(short = '1', long, conflicts_with = "limit")]
         one: bool,
     },
+    /// Utilities for maintenance and cleanup.
+    Gc {
+        #[command(subcommand)]
+        gc_command: GcCommand,
+    },
     /// Retrieve records given identifiers.
     ///
     /// There is no sorting or deduplication, and output is streamed as records are received. Any
@@ -607,10 +612,6 @@ impl UtilCommand {
             Self::Check { fix: true, .. } => Err(ReadOnlyInvalid::Argument("--fix")),
             Self::Optimize => Err(ReadOnlyInvalid::Command("util optimize")),
             Self::Evict { .. } => Err(ReadOnlyInvalid::Command("util evict")),
-            Self::MigrateAttachments => Err(ReadOnlyInvalid::Command("util migrate-attachments")),
-            Self::CleanupAttachments { .. } => {
-                Err(ReadOnlyInvalid::Command("util cleanup-attachments"))
-            }
         }
     }
 }
@@ -640,6 +641,7 @@ impl Command {
             Self::Update { .. } => "update",
             Self::Edit { .. } => "edit",
             Self::Hist { .. } => "hist",
+            Self::Gc { .. } => "gc",
             Self::Util { util_command } => return util_command.validate_read_only_compatibility(),
         };
         Err(ReadOnlyInvalid::Command(invalid_cmd))
@@ -784,6 +786,35 @@ pub enum PruneCommand {
     },
 }
 
+/// Utilities for maintenance and cleanup.
+#[derive(Debug, Subcommand)]
+pub enum GcCommand {
+    /// Run maintenance operations in the attachments directory.
+    Attachments {
+        /// Delete empty subdirectories.
+        #[arg(long)]
+        delete_empty: bool,
+        /// Delete spurious lock directory.
+        #[arg(long)]
+        unlock: bool,
+        /// Migrate attachments to the newest format.
+        #[arg(long)]
+        migrate: bool,
+    },
+    /// Run maintenance operations in the records database.
+    Database {
+        /// Compact the database to prune deleted data and reduce size.
+        #[arg(long)]
+        compact: bool,
+        /// Clear cached null records which are at least `seconds` old.
+        #[arg(long, group = "evict-target")]
+        evict: Option<u32>,
+        /// Clear all cached null records.
+        #[arg(long, group = "evict-target")]
+        evict_all: bool,
+    },
+}
+
 /// Utilities to manage database.
 #[derive(Debug, Subcommand)]
 pub enum UtilCommand {
@@ -794,6 +825,7 @@ pub enum UtilCommand {
         fix: bool,
     },
     /// List all valid identifiers.
+    #[clap(hide = true)]
     List {
         /// Only list the canonical identifiers.
         #[arg(short, long)]
@@ -803,23 +835,13 @@ pub enum UtilCommand {
         deleted: bool,
     },
     /// Optimize database to (potentially) reduce storage size.
+    #[clap(hide = true)]
     Optimize,
     /// Clear all local caches.
+    #[clap(hide = true)]
     Evict {
         /// Clear cached items which are at least `seconds` old.
         #[arg(long)]
         max_age: Option<u32>,
-    },
-    MigrateAttachments,
-    /// Run various cleanup operations in the attachment directory.
-    ///
-    /// This is a no-op without any flags.
-    CleanupAttachments {
-        /// Delete empty subdirectories.
-        #[arg(long)]
-        empty: bool,
-        /// Delete spurious lock directory.
-        #[arg(long)]
-        lockdir: bool,
     },
 }
