@@ -123,7 +123,7 @@ impl TestState {
             "local:first",
             "--with",
             "local:second",
-            "--skip-attachments",
+            "--ignore-attachments",
         ]);
         cmd.assert().success();
 

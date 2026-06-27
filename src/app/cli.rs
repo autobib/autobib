@@ -186,6 +186,9 @@ pub enum Command {
         /// Also delete aliases.
         #[arg(long)]
         delete_aliases: bool,
+        /// Do not warn on orphaned attachment directories.
+        #[arg(short = 'A', long)]
+        ignore_attachments: bool,
     },
     /// Edit existing records.
     ///
@@ -433,8 +436,8 @@ pub enum Command {
         #[arg(long)]
         update_aliases: bool,
         /// Do not migrate attachment directories.
-        #[arg(long)]
-        skip_attachments: bool,
+        #[arg(short = 'A', long)]
+        ignore_attachments: bool,
     },
     /// Generate records by searching for identifiers inside files.
     ///

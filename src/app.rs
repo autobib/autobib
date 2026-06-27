@@ -289,42 +289,44 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             identifiers,
             hard,
             delete_aliases,
+            ignore_attachments,
         } => {
-            fn warn_orphaned_attachment_dir(
-                attachment_root: Option<&AttachmentRoot>,
-                canonical: &RemoteId,
-            ) -> Result<()> {
-                let Some(attachment_root) = attachment_root else {
-                    return Ok(());
-                };
-
-                if attachment_root.exists(canonical)? {
-                    warn!(
-                        "Deleted record has attachment directory: {}",
-                        attachment_root.attachment_dir(canonical).display()
-                    );
+            fn do_delete<F>(
+                identifiers: Vec<RecordId>,
+                check_attachments: &Option<AttachmentRoot>,
+                mut delete_cb: F,
+            ) -> Result<(), anyhow::Error>
+            where
+                F: FnMut(RecordId) -> Result<Option<RemoteId>, rusqlite::Error>,
+            {
+                for key in identifiers {
+                    if let Some(canonical) = delete_cb(key)?
+                        && let Some(at_root) = check_attachments.as_ref()
+                        && at_root.exists(&canonical)? {
+                            warn!(
+                                "Deleted record has attachment directory: {}",
+                                at_root.attachment_dir(&canonical).display()
+                            );
+                        }
                 }
-
                 Ok(())
             }
 
             let cfg = config::load(&config_path, missing_ok)?;
-            let attachment_root =
-                get_existing_attachment_root(&data_dir, cli.attachments_dir, true)?;
-            if hard {
-                for key in identifiers {
-                    if let Some(canonical) = hard_delete(key, &mut record_db, &cfg)? {
-                        warn_orphaned_attachment_dir(attachment_root.as_ref(), &canonical)?;
-                    }
-                }
+            let attachment_root = if ignore_attachments {
+                None
             } else {
-                for key in identifiers {
-                    if let Some(canonical) =
-                        soft_delete(key, &None, &mut record_db, &cfg, delete_aliases)?
-                    {
-                        warn_orphaned_attachment_dir(attachment_root.as_ref(), &canonical)?;
-                    }
-                }
+                get_existing_attachment_root(&data_dir, cli.attachments_dir, true)?
+            };
+
+            if hard {
+                do_delete(identifiers, &attachment_root, |key| {
+                    hard_delete(key, &mut record_db, &cfg)
+                })?;
+            } else {
+                do_delete(identifiers, &attachment_root, |key| {
+                    soft_delete(key, &None, &mut record_db, &cfg, delete_aliases)
+                })?;
             }
         }
         Command::Edit {
@@ -1047,13 +1049,13 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             hard,
             on_conflict,
             update_aliases,
-            skip_attachments,
+            ignore_attachments,
         } => {
             let cfg = config::load(&config_path, missing_ok)?;
 
             if let Some(target) = with {
                 let tx = record_db.transaction()?;
-                let at_root = if skip_attachments {
+                let at_root = if ignore_attachments {
                     None
                 } else {
                     get_existing_attachment_root(&data_dir, cli.attachments_dir, cli.read_only)?
@@ -1073,7 +1075,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 )?;
             } else if auto {
                 let tx = record_db.transaction()?;
-                let at_root = if skip_attachments {
+                let at_root = if ignore_attachments {
                     None
                 } else {
                     get_existing_attachment_root(&data_dir, cli.attachments_dir, cli.read_only)?
