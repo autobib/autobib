@@ -291,6 +291,15 @@ impl RecordDatabase {
         self.conn.execute("VACUUM", ()).map(|_| ())
     }
 
+    /// Execute [sqlite VACUUM INTO](https://www.sqlite.org/lang_vacuum.html).
+    pub fn vacuum_into<P: AsRef<Path>>(&mut self, into: P) -> Result<(), rusqlite::Error> {
+        let Some(into_str) = into.as_ref().to_str() else {
+            return Err(rusqlite::Error::InvalidPath(into.as_ref().to_owned()));
+        };
+
+        self.conn.execute("VACUUM INTO ?1", [into_str]).map(|_| ())
+    }
+
     pub fn transaction(&mut self) -> rusqlite::Result<Tx<'_>> {
         self.conn.transaction().map(Into::into)
     }

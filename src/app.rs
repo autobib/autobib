@@ -271,6 +271,12 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 }
             }
         }
+        Command::Backup { into } => {
+            if let Some(par) = into.parent() {
+                std::fs::create_dir_all(par)?;
+            }
+            record_db.vacuum_into(&into)?;
+        }
         Command::Completions { shell: _ } => {
             unreachable!(
                 "Request for completions script should have been handled earlier and the program should have exited then."
