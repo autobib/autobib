@@ -603,7 +603,7 @@ impl UtilCommand {
     /// Check if the command is read-only compatible.
     pub fn validate_read_only_compatibility(&self) -> Result<(), ReadOnlyInvalid> {
         match self {
-            Self::Check { fix: false } => Ok(()),
+            Self::List { .. } | Self::Check { fix: false } => Ok(()),
             Self::Check { fix: true, .. } => Err(ReadOnlyInvalid::Argument("--fix")),
             Self::Optimize => Err(ReadOnlyInvalid::Command("util optimize")),
             Self::Evict { .. } => Err(ReadOnlyInvalid::Command("util evict")),
@@ -792,6 +792,15 @@ pub enum UtilCommand {
         /// Attempt to fix errors, printing any errors which could not be fixed.
         #[arg(short, long)]
         fix: bool,
+    },
+    /// List all valid identifiers.
+    List {
+        /// Only list the canonical identifiers.
+        #[arg(short, long)]
+        canonical: bool,
+        /// List deleted identifiers instead of those with data.
+        #[arg(short, long)]
+        deleted: bool,
     },
     /// Optimize database to (potentially) reduce storage size.
     Optimize,
