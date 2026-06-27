@@ -19,7 +19,7 @@ Changes since `v0.6.1`.
 - In a future version, Autobib will migrate to a new attachment folder format.
   The new folder format is not compatibile with autobib versions `< 0.7.0`.
   - This version is able to read both the legacy format and the new format.
-  - You can migrate early by running `autobib util migrate-attachments`.
+  - You can migrate early by running `autobib gc attachments --migrate`.
     Note that the attachments will no longer be readable by an old version of Autobib.
 - Aliases can no longer contain control characters.
   - Existing aliases containing control characters can still be accessed and renamed.

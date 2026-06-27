@@ -31,7 +31,7 @@ pub fn migrate_attachments(at_root: &mut AttachmentRoot) -> Result<(), anyhow::E
         Ok(())
     } else {
         anyhow::bail!(
-            "Attachment migration is incomplete. Resolve the above conflicts and re-run `autobib util migrate-attachments`"
+            "Attachment migration is incomplete. Resolve the above conflicts and re-run `autobib gc attachments --migrate`"
         );
     }
 }
@@ -181,7 +181,7 @@ fn migrate_attachment_dir(source: &Path, target: &Path) -> Result<bool, anyhow::
                 "Target directory already exists.\n\
                  source: {}\n\
                  target: {}\n\
-                 Merge, remove, or rename one of these directories, then rerun `autobib util migrate-attachments`.",
+                 Merge, remove, or rename one of these directories, then rerun `autobib gc attachemnts --migrate`.",
                 source.display(),
                 target.display()
             );

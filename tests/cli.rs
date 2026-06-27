@@ -1067,7 +1067,7 @@ fn migrate_attachments() -> Result<()> {
     zbmath_old_attachment.write_str("zbmath attachment contents")?;
 
     let mut cmd = s.cmd()?;
-    cmd.args(["util", "migrate-attachments"]);
+    cmd.args(["gc", "attachments", "--migrate"]);
     cmd.assert().success();
 
     local_old_attachment.assert(predicate::path::missing());
@@ -1095,7 +1095,7 @@ fn migrate_attachments_resume() -> Result<()> {
     old_attachment.write_str("attachment contents")?;
 
     let mut cmd = s.cmd()?;
-    cmd.args(["util", "migrate-attachments"]);
+    cmd.args(["gc", "attachments", "--migrate"]);
     cmd.assert().success();
 
     old_attachment.assert(predicate::path::missing());
@@ -1118,7 +1118,7 @@ fn migrate_replaces_empty_dir() -> Result<()> {
     fs::create_dir_all(s.attach_dir.join("local/QH/OV/RX/MZUXE43U"))?;
 
     let mut cmd = s.cmd()?;
-    cmd.args(["util", "migrate-attachments"]);
+    cmd.args(["gc", "attachments", "--migrate"]);
     cmd.assert().success();
 
     old_attachment.assert(predicate::path::missing());
@@ -1142,7 +1142,7 @@ fn migrate_attachments_conflict() -> Result<()> {
     zbmath_old_attachment.write_str("zbmath attachment contents")?;
 
     let mut cmd = s.cmd()?;
-    cmd.args(["util", "migrate-attachments"]);
+    cmd.args(["gc", "attachments", "--migrate"]);
     cmd.assert().failure().stderr(
         contains("Target directory already exists")
             .and(contains(native_path([
@@ -1152,7 +1152,7 @@ fn migrate_attachments_conflict() -> Result<()> {
                 "local", "QH", "OV", "RX", "MZUXE43U",
             ])))
             .and(contains("Attachment migration is incomplete"))
-            .and(contains("migrate-attachments")),
+            .and(contains("attachments --migrate")),
     );
 
     zbmath_old_attachment.assert(predicate::path::missing());
@@ -1183,7 +1183,7 @@ fn migrate_attachments_unrecognized() -> Result<()> {
     old_attachment.write_str("attachment contents")?;
 
     let mut cmd = s.cmd()?;
-    cmd.args(["util", "migrate-attachments"]);
+    cmd.args(["gc", "attachments", "--migrate"]);
     cmd.assert().success().stderr(
         contains("Skipping invalid attachment directory")
             .and(contains("not-base32"))
@@ -1429,13 +1429,13 @@ fn cache_evict() -> Result<()> {
     cmd.assert().failure();
 
     let mut cmd = s.cmd()?;
-    cmd.args(["-v", "util", "evict", "--max-age", "10000"]);
+    cmd.args(["-v", "gc", "database", "--evict", "10000"]);
     cmd.assert()
         .success()
         .stderr(contains("Removed 0 cached null"));
 
     let mut cmd = s.cmd()?;
-    cmd.args(["-v", "util", "evict"]);
+    cmd.args(["-v", "gc", "database", "--evict-all"]);
     cmd.assert()
         .success()
         .stderr(contains("Removed 1 cached null"));

@@ -29,7 +29,7 @@ use etcetera::{AppStrategy, AppStrategyArgs, choose_app_strategy};
 use crate::{
     app::{
         attach::cleanup_empty_attachment_dirs,
-        cli::{HistCommand, IdTarget, PruneCommand},
+        cli::{GcCommand, HistCommand, IdTarget, PruneCommand},
         log::print_log,
         retrieve::{sync_entries, sync_entries_read_only},
     },
@@ -86,6 +86,26 @@ fn handle_deprecation(cmd: Command) -> Command {
                     template: None,
                     strict: false,
                     sep: String::from("\n"),
+                }
+            }
+            UtilCommand::Optimize => {
+                warn!("`autobib util optimize` is deprecated; use `autobib gc database --compact`");
+                Command::Gc {
+                    gc_command: GcCommand::Database {
+                        compact: true,
+                        evict: None,
+                        evict_all: false,
+                    },
+                }
+            }
+            UtilCommand::Evict { max_age } => {
+                warn!("`autobib util evict` is deprecated; use `autobib gc database`");
+                Command::Gc {
+                    gc_command: GcCommand::Database {
+                        compact: false,
+                        evict: max_age,
+                        evict_all: max_age.is_none(),
+                    },
                 }
             }
             util_command => Command::Util { util_command },
@@ -324,12 +344,13 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 for key in identifiers {
                     if let Some(canonical) = delete_cb(key)?
                         && let Some(at_root) = check_attachments.as_ref()
-                        && at_root.exists(&canonical)? {
-                            warn!(
-                                "Deleted record has attachment directory: {}",
-                                at_root.attachment_dir(&canonical).display()
-                            );
-                        }
+                        && at_root.exists(&canonical)?
+                    {
+                        warn!(
+                            "Deleted record has attachment directory: {}",
+                            at_root.attachment_dir(&canonical).display()
+                        );
+                    }
                 }
                 Ok(())
             }
@@ -503,6 +524,46 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 }
             }
         }
+        Command::Gc { gc_command } => match gc_command {
+            cli::GcCommand::Attachments {
+                delete_empty: empty,
+                unlock,
+                migrate,
+            } => {
+                if unlock || empty || migrate {
+                    let root_path = get_attachment_root_path(&data_dir, cli.attachments_dir);
+                    // cleanup lockdir first, so other commands succeed
+                    if unlock {
+                        AttachmentRootLock::cleanup(&root_path)?;
+                    }
+
+                    let mut at_root = AttachmentRoot::resolve_unchecked(root_path, false)?;
+
+                    if migrate {
+                        migrate_attachments(&mut at_root)?;
+                    }
+
+                    // always cleanup after migration since the migration process may create empty
+                    // directories in some cases
+                    cleanup_empty_attachment_dirs(&mut at_root)?;
+                }
+            }
+            cli::GcCommand::Database {
+                compact,
+                evict,
+                evict_all,
+            } => {
+                if let Some(seconds) = evict {
+                    record_db.evict_cache_max_age(seconds)?;
+                } else if evict_all {
+                    record_db.evict_cache()?;
+                }
+
+                if compact {
+                    record_db.vacuum()?;
+                }
+            }
+        },
         Command::Get {
             identifiers,
             retrieve_only,
@@ -1318,35 +1379,10 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 bail!("`autobib util list` is deprecated; use `autobib list` instead");
             }
             UtilCommand::Optimize => {
-                info!("Optimizing database.");
-                record_db.vacuum()?;
+                bail!("`autobib util optimize` is deprecated; use `autobib gc database --compact`");
             }
-            UtilCommand::Evict { max_age } => match max_age {
-                Some(seconds) => {
-                    record_db.evict_cache_max_age(seconds)?;
-                }
-                None => {
-                    record_db.evict_cache()?;
-                }
-            },
-            UtilCommand::MigrateAttachments => {
-                let root_path = get_attachment_root_path(&data_dir, cli.attachments_dir);
-                let mut at_root = AttachmentRoot::resolve_unchecked(root_path, false)?;
-                migrate_attachments(&mut at_root)?;
-                cleanup_empty_attachment_dirs(&mut at_root)?;
-                drop(at_root);
-            }
-            UtilCommand::CleanupAttachments { empty, lockdir } => {
-                if lockdir || empty {
-                    let root_path = get_attachment_root_path(&data_dir, cli.attachments_dir);
-                    if lockdir {
-                        AttachmentRootLock::cleanup(&root_path)?;
-                    }
-                    if empty {
-                        let mut at_root = AttachmentRoot::open_or_create(root_path, false)?;
-                        cleanup_empty_attachment_dirs(&mut at_root)?;
-                    }
-                }
+            UtilCommand::Evict { .. } => {
+                bail!("`autobib util evict` is deprecated; use `autobib gc database`");
             }
         },
     };
