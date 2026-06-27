@@ -74,6 +74,26 @@ use self::{
 
 pub use self::cli::{Cli, Command};
 
+fn handle_deprecation(cmd: Command) -> Command {
+    match cmd {
+        Command::Util { util_command } => match util_command {
+            UtilCommand::List { canonical, deleted } => {
+                warn!("`autobib util list` is deprecated; use `autobib list` instead.");
+                Command::List {
+                    matching: String::from("*"),
+                    canonical,
+                    deleted,
+                    template: None,
+                    strict: false,
+                    sep: String::from("\n"),
+                }
+            }
+            util_command => Command::Util { util_command },
+        },
+        cmd => cmd,
+    }
+}
+
 /// Run the CLI.
 pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
     info!(
@@ -119,8 +139,10 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
     info!("Interactive: {}", !cli.no_interactive);
     info!("Read-only: {}", cli.read_only);
 
+    let command = handle_deprecation(cli.command);
+
     // Run the cli
-    match cli.command {
+    match command {
         Command::Alias { alias_command } => match alias_command {
             AliasCommand::Add { alias, target } => {
                 info!("Creating alias '{alias}' for '{target}'");
@@ -1291,6 +1313,9 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
 
                 info!("Validating configuration.");
                 config::validate(&config_path)?;
+            }
+            UtilCommand::List { .. } => {
+                bail!("`autobib util list` is deprecated; use `autobib list` instead");
             }
             UtilCommand::Optimize => {
                 info!("Optimizing database.");
