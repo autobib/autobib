@@ -21,8 +21,6 @@ Changes since `v0.6.1`.
   - This version is able to read both the legacy format and the new format.
   - You can migrate early by running `autobib util migrate-attachments`.
     Note that the attachments will no longer be readable by an old version of Autobib.
-- Renamed `autobib util list` to `autobib util print-identifiers`.
-  `autobib util list` is still usable as an alias, but this will be removed in the future.
 - Aliases can no longer contain control characters.
   - Existing aliases containing control characters can still be accessed and renamed.
 - `autobib find --mode canonical-id` has been renamed to `autobib find --mode records`.
@@ -35,6 +33,7 @@ Changes since `v0.6.1`.
   - Added `--template` option, to format records with an arbitrary template instead of as BibTeX.
   - Added the ability to read from stdin.
 - `autobib util list` has been renamed to `autobib list`.
+  - `autobib util list` is still usable as an alias, but this will be removed in the future.
   - Added optional glob pattern argument to filter identifiers.
   - Added `--template` flag to format output instead of printing identifiers.
 
@@ -49,3 +48,11 @@ Changes since `v0.6.1`.
   - Single-selection mode can be re-enabled with `-1/--one`
 - Added `autobib info -r preferred` to print the preferred identifier associated with a record.
 - Added `autobib source --json`, which outputs a JSON dictionary mapping citation keys to record data.
+- Added `autobib backup` to backup the record database to a separate file.
+
+## Changes
+
+- Better handling of attachment directories with `autobib replace` and `autobib delete`:
+  - `replace` relocates attachment directories to the new location
+  - `delete` warns on orphaned attachment directories
+  - This behaviour can be disabled with the `-A` or `--ignore-attachments` option
