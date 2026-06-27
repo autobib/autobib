@@ -60,7 +60,7 @@ pub struct Cli {
     /// This option is set by default if the standard input is not a terminal.
     #[arg(short = 'I', long, global = true, default_value_t = determine_no_interactive())]
     pub no_interactive: bool,
-    /// Open the database in read-only mode.
+    /// Open the database and attachments in read-only mode.
     #[arg(long)]
     pub read_only: bool,
     #[command(flatten)]
@@ -153,6 +153,13 @@ pub enum Command {
         /// Overwrite an existing file with the same name.
         #[arg(short, long)]
         force: bool,
+    },
+    /// Backup the record database.
+    ///
+    ///
+    Backup {
+        /// The file into which to backup the database.
+        into: PathBuf,
     },
     /// Generate a shell completions script.
     #[clap(hide = true)]
@@ -612,6 +619,7 @@ impl Command {
         let invalid_cmd = match self {
             Self::Get { .. }
             | Self::Info { .. }
+            | Self::Backup { .. }
             | Self::Source { .. }
             | Self::Completions { .. }
             | Self::DefaultConfig
