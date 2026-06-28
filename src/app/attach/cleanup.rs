@@ -42,7 +42,7 @@ pub fn remove_empty_dirs(root: &Path, max_depth: usize) -> io::Result<()> {
 ///
 /// This deletes all empty directories inside subdirectories with an ascii alphabetic filename, to a
 /// maximum depth of 4 to avoid deletion of user directories (even if empty).
-pub fn cleanup_empty_attachment_dirs(attachment_root: &mut AttachmentRoot) -> io::Result<()> {
+pub fn cleanup_empty_attachment_dirs(attachment_root: &mut AttachmentRoot<true>) -> io::Result<()> {
     for entry in fs::read_dir(attachment_root.dir())? {
         let entry = entry?;
 

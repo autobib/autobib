@@ -16,14 +16,15 @@
 // 4. Else: the attachment format is unknown to the current binary, resulting in an error
 
 use std::{
-    fs, io,
+    fs::{self, File},
+    io::{self, Seek, Write},
     path::{Path, PathBuf},
 };
 
 use data_encoding::{BASE32, BASE32_NOPAD, Encoding};
 use rapidhash::{v1::rapidhash_v1, v3::rapidhash_v3};
 
-use crate::RemoteId;
+use crate::{RemoteId, logger::info};
 
 /// Attachment directory format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,99 +38,56 @@ pub enum AttachmentFormat {
 }
 
 impl AttachmentFormat {
-    fn fmt_dir(root: &Path) -> PathBuf {
-        root.join(".autobib-format")
-    }
-
-    fn subdir_name(&self) -> &'static str {
+    pub const fn as_fmt_str(&self) -> &'static str {
         match self {
             Self::V0 => "v0",
             Self::V1Migrating => "v1-migrating",
             Self::V1 => "v1",
         }
     }
-
-    fn subdir(&self, root: &Path) -> PathBuf {
-        let mut fmt_dir = Self::fmt_dir(root);
-        fmt_dir.push(self.subdir_name());
-        fmt_dir
-    }
-
-    /// Read the attachment format, or return `None` if the attachment format subdirectory does not
-    /// exist.
-    fn read(root: &Path) -> Result<Option<Self>, anyhow::Error> {
-        let mut fmt_dir = Self::fmt_dir(root);
-
-        if !fmt_dir.try_exists()? {
-            return Ok(None);
-        }
-
-        // first matching directory sets the format
-        for variant in [Self::V0, Self::V1Migrating, Self::V1] {
-            fmt_dir.push(variant.subdir_name());
-            if fmt_dir.try_exists()? {
-                return Ok(Some(variant));
-            }
-            fmt_dir.pop();
-        }
-
-        anyhow::bail!("attachment directory exists but is not in a recognized state")
-    }
 }
 
-/// A read-only or read-write lock on the attachment folder.
-///
-/// Acquiring the lock requires writing a directory, and therefore cannot be done when Autobib is
-/// run in read-only mode.
+/// A lock on the attachment folder.
 #[derive(Debug)]
-pub struct AttachmentRootLock {
+pub struct AttachmentRootLock<const EXCLUSIVE: bool> {
     root: PathBuf,
-    read_only: bool,
+    fmt: File,
 }
 
-impl Drop for AttachmentRootLock {
-    fn drop(&mut self) {
-        if !self.read_only {
-            self.root.push(Self::lockdir());
-            let _ = fs::remove_dir(&self.root);
+impl<const EXCLUSIVE: bool> AttachmentRootLock<EXCLUSIVE> {
+    fn fmt_file() -> &'static str {
+        ".autobib-format"
+    }
+
+    fn format(&mut self) -> Result<AttachmentFormat, anyhow::Error> {
+        use std::io::Read as _;
+        let mut fmt_string = String::new();
+        self.fmt.read_to_string(&mut fmt_string)?;
+        match &fmt_string[..] {
+            "" => Ok(AttachmentFormat::V0),
+            "v1-migrating" => Ok(AttachmentFormat::V1Migrating),
+            "v1" => Ok(AttachmentFormat::V1),
+            unknown => anyhow::bail!(
+                "Attachment directory is in unknown format '{unknown}'. The attachment directory may have been modified by a future version of Autobib."
+            ),
         }
     }
-}
 
-impl AttachmentRootLock {
-    fn lockdir() -> &'static str {
-        "LOCKDIR"
-    }
-
-    pub(crate) fn cleanup(root: &Path) -> Result<(), anyhow::Error> {
-        fs::remove_dir(root.join(Self::lockdir())).map_err(|err| {
-            if err.kind() == io::ErrorKind::NotFound {
-                anyhow::anyhow!("No lock directory to cleanup")
-            } else {
-                err.into()
-            }
-        })
-    }
-
-    fn acquire(root: PathBuf, read_only: bool) -> Result<Self, anyhow::Error> {
-        let ld = root.join(Self::lockdir());
-        if read_only {
-            if ld.exists() {
-                anyhow::bail!(
-                    "Failed to acquire read lock in attachment directory.\n Retry later or clean up spurious locks with `autobib util cleanup-attachments --lockdir`"
-                )
-            } else {
-                Ok(Self { root, read_only })
-            }
+    /// Acquire a lock to read or write to the attachment directory.
+    fn acquire(root: PathBuf) -> Result<Self, io::Error> {
+        let fmt = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(root.join(Self::fmt_file()))?;
+        if EXCLUSIVE {
+            fmt.lock()?;
         } else {
-            fs::create_dir_all(&root)?;
-            match fs::create_dir(&ld) {
-                Ok(()) => Ok(Self { root, read_only }),
-                Err(_) => anyhow::bail!(
-                    "Failed to acquire read-write lock in attachment directory.\n Retry later or clean up spurious locks with `autobib util cleanup-attachments --lockdir`"
-                ),
-            }
-        }
+            fmt.lock_shared()?;
+        };
+
+        Ok(Self { root, fmt })
     }
 
     fn root(&self) -> &Path {
@@ -137,24 +95,36 @@ impl AttachmentRootLock {
     }
 }
 
+impl AttachmentRootLock<false> {
+    /// Upgrade to an exclusive lock
+    fn upgrade(self) -> Result<AttachmentRootLock<true>, io::Error> {
+        let Self { root, fmt } = self;
+        fmt.lock()?;
+        Ok(AttachmentRootLock { root, fmt })
+    }
+}
+
+impl AttachmentRootLock<true> {
+    fn set_format(&mut self, new: AttachmentFormat) -> Result<(), io::Error> {
+        info!("Setting attachment root format to '{}", new.as_fmt_str());
+        self.fmt.set_len(0)?;
+        self.fmt.rewind()?;
+        self.fmt.write_all(new.as_fmt_str().as_bytes())?;
+        Ok(())
+    }
+}
+
 /// The attachment directory root along with the format.
 ///
-/// The attachment root uses a lock directory `$LOCKDIR`, which is an empty directory
-/// `$AUTOBIB_ATTACHMENTS_DIRECTORY/LOCKDIR`. The attachment root can be initialized in read-only
-/// mode or in read-write mode.
+/// The attachment root uses [filesystem locks](std::fs::File::lock) on the attachment format file
+/// `$AUTOBIB_ATTACHMENTS_DIRECTORY/.autobib-format`. These locks are advisory, and other Autobib
+/// processes use them to coordinate.
 ///
-/// - In read-only mode, at startup the process checks for the presence of `$LOCKDIR` and aborts if
-///   it exists. However, no further checks are made, and reads may be inconsistent with the actual
-///   state of the attachments directory.
-/// - In read-write mode, at initialization this method creates `$LOCKDIR` and deletes
-///   `$LOCKDIR` when dropped.
-///
-/// Note that early versions of Autobib do not respect `$LOCKDIR`. Similarly, other non-Autobib
-/// processes may not respect `$LOCKDIR` at all. Therefore, one must still ensure that mutable
-/// operations never overwrite existing files.
+/// Note that early versions of Autobib do not respect the format file or the advisory locks.
+/// Therefore, one must still ensure that mutable operations never overwrite existing files.
 #[derive(Debug)]
-pub struct AttachmentRoot {
-    lock: AttachmentRootLock,
+pub struct AttachmentRoot<const EXCLUSIVE: bool> {
+    lock: AttachmentRootLock<EXCLUSIVE>,
     format: AttachmentFormat,
 }
 
@@ -168,46 +138,56 @@ pub enum AttachmentRenameOutcome {
     Ok,
 }
 
-impl AttachmentRoot {
+impl<const EXCLUSIVE: bool> AttachmentRoot<EXCLUSIVE> {
+    /// Acquire a lock (if necessary) and resolve the attachment format.
+    pub fn open_or_create_unchecked(root: PathBuf) -> Result<Self, anyhow::Error> {
+        let mut lock = AttachmentRootLock::acquire(root)?;
+        let format = lock.format()?;
+        Ok(Self { lock, format })
+    }
+}
+
+impl AttachmentRoot<false> {
     /// Open an existing attachment root.
-    pub fn open(root: PathBuf, read_only: bool) -> Result<Option<Self>, anyhow::Error> {
+    pub fn open(root: PathBuf) -> Result<Option<Self>, anyhow::Error> {
         Ok(if root.is_dir() {
-            Some(Self::open_or_create(root, read_only)?)
+            Some(Self::open_or_create(root)?)
         } else {
             None
         })
     }
 
     /// Acquire a lock (if necessary) and resolve the attachment format.
-    pub fn open_or_create(root: PathBuf, read_only: bool) -> Result<Self, anyhow::Error> {
-        let at_root = Self::resolve_unchecked(root, read_only)?;
-        if at_root.format() == AttachmentFormat::V1Migrating {
+    pub fn open_or_create(root: PathBuf) -> Result<Self, anyhow::Error> {
+        let at_root = Self::open_or_create_unchecked(root)?;
+        if at_root.format == AttachmentFormat::V1Migrating {
             anyhow::bail!(
                 "Attachment directory is currently being migrated. Resume with `autobib gc attachments --migrate` in order to read and write to the directory."
             );
         }
         Ok(at_root)
     }
+}
 
-    /// Acquire a lock (if necessary) and resolve the attachment format, without checking if we are
-    /// in a `migrating` state.
-    pub fn resolve_unchecked(root: PathBuf, read_only: bool) -> Result<Self, anyhow::Error> {
-        let lock = AttachmentRootLock::acquire(root, read_only)?;
-        let format = if read_only {
-            AttachmentFormat::read(lock.root())?.unwrap_or(AttachmentFormat::V0)
-        } else {
-            match AttachmentFormat::read(lock.root())? {
-                Some(f) => f,
-                None => {
-                    let v0 = AttachmentFormat::V0.subdir(lock.root());
-                    fs::create_dir_all(&v0)?;
-                    AttachmentFormat::V0
-                }
-            }
-        };
-        Ok(Self { lock, format })
+impl AttachmentRoot<false> {
+    #[expect(unused)]
+    pub fn upgrade(self) -> io::Result<AttachmentRoot<true>> {
+        let Self { lock, format } = self;
+        Ok(AttachmentRoot {
+            lock: lock.upgrade()?,
+            format,
+        })
     }
+}
 
+impl AttachmentRoot<true> {
+    /// Change the format.
+    pub fn set_format(&mut self, new: AttachmentFormat) -> Result<(), io::Error> {
+        self.lock.set_format(new)
+    }
+}
+
+impl<const EXCLUSIVE: bool> AttachmentRoot<EXCLUSIVE> {
     /// The format of the attachment directory on creation.
     pub fn format(&self) -> AttachmentFormat {
         self.format
@@ -216,17 +196,6 @@ impl AttachmentRoot {
     /// The root attachments directory.
     pub fn dir(&self) -> &Path {
         self.lock.root()
-    }
-
-    /// Change the format.
-    pub fn set_format(&mut self, new: AttachmentFormat) -> Result<(), anyhow::Error> {
-        if new != self.format {
-            let rt = self.lock.root();
-            fs::rename(self.format.subdir(rt), new.subdir(rt))?;
-            self.format = new;
-        }
-
-        Ok(())
     }
 
     /// Get the attachment directory corresponding to the identifier.
@@ -263,10 +232,6 @@ impl AttachmentRoot {
         from: &RemoteId,
         to: &RemoteId,
     ) -> Result<AttachmentRenameOutcome, io::Error> {
-        assert!(
-            !self.lock.read_only,
-            "Cannot rename file in read-only mode."
-        );
         let source = self.attachment_dir(from);
         let target = self.attachment_dir(to);
         fs::create_dir_all(&target)?;

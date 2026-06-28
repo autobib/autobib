@@ -50,7 +50,7 @@ use crate::{
     logger::{LogDisplay, debug, error, info, suggest, warn},
     normalize::{Normalization, Normalize},
     output::{owriteln, stdout_lock_wrap},
-    path_hash::{AttachmentRoot, AttachmentRootLock},
+    path_hash::AttachmentRoot,
     provider::{RemoteIdCandidate, determine_key_from_data},
     record::{Alias, Record, RecordId, RemoteId, get_record_row, get_record_row_tx},
     term::Editor,
@@ -244,7 +244,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             let (record, row) = get_record_row(&mut record_db, identifier, client, &cfg)?
                 .exists_or_commit_null("Cannot attach file for")?;
             row.commit()?;
-            let root = get_attachment_root(&data_dir, cli.attachments_dir, cli.read_only)?;
+            let root = get_attachment_root(&data_dir, cli.attachments_dir)?;
             let mut target = root.attachment_dir(&record.row.canonical);
 
             let mut opts = OpenOptions::new();
@@ -335,7 +335,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
         } => {
             fn do_delete<F>(
                 identifiers: Vec<RecordId>,
-                check_attachments: &Option<AttachmentRoot>,
+                check_attachments: &Option<AttachmentRoot<false>>,
                 mut delete_cb: F,
             ) -> Result<(), anyhow::Error>
             where
@@ -359,7 +359,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             let attachment_root = if ignore_attachments {
                 None
             } else {
-                get_existing_attachment_root(&data_dir, cli.attachments_dir, true)?
+                get_existing_attachment_root(&data_dir, cli.attachments_dir)?
             };
 
             if hard {
@@ -479,8 +479,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
 
             match find_mode {
                 FindMode::Attachments => {
-                    let attachment_root =
-                        get_attachment_root(&data_dir, cli.attachments_dir, true)?;
+                    let attachment_root = get_attachment_root(&data_dir, cli.attachments_dir)?;
                     let mut picker = choose_attachment_path(
                         record_db,
                         template,
@@ -527,17 +526,12 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
         Command::Gc { gc_command } => match gc_command {
             cli::GcCommand::Attachments {
                 delete_empty: empty,
-                unlock,
                 migrate,
             } => {
-                if unlock || empty || migrate {
+                if empty || migrate {
                     let root_path = get_attachment_root_path(&data_dir, cli.attachments_dir);
-                    // cleanup lockdir first, so other commands succeed
-                    if unlock {
-                        AttachmentRootLock::cleanup(&root_path)?;
-                    }
 
-                    let mut at_root = AttachmentRoot::resolve_unchecked(root_path, false)?;
+                    let mut at_root = AttachmentRoot::open_or_create_unchecked(root_path)?;
 
                     if migrate {
                         migrate_attachments(&mut at_root)?;
@@ -888,7 +882,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 local_fallback,
                 no_alias,
                 file_import_root: if include_files {
-                    Some(get_attachment_root(&data_dir, cli.attachments_dir, false)?)
+                    Some(get_attachment_root(&data_dir, cli.attachments_dir)?)
                 } else {
                     None
                 },
@@ -1113,7 +1107,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 None => return Ok(()),
             };
 
-            let root = get_attachment_root(&data_dir, cli.attachments_dir, !mkdir)?;
+            let root = get_attachment_root(&data_dir, cli.attachments_dir)?;
             let mut target = root.attachment_dir(&canonical);
             if mkdir {
                 create_dir_all(&target)?;
@@ -1141,7 +1135,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 let at_root = if ignore_attachments {
                     None
                 } else {
-                    get_existing_attachment_root(&data_dir, cli.attachments_dir, cli.read_only)?
+                    get_existing_attachment_root(&data_dir, cli.attachments_dir)?
                 };
                 replace::replace(
                     identifier,
@@ -1161,7 +1155,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 let at_root = if ignore_attachments {
                     None
                 } else {
-                    get_existing_attachment_root(&data_dir, cli.attachments_dir, cli.read_only)?
+                    get_existing_attachment_root(&data_dir, cli.attachments_dir)?
                 };
                 replace::replace(
                     identifier,

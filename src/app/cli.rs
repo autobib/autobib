@@ -794,9 +794,6 @@ pub enum GcCommand {
         /// Delete empty subdirectories.
         #[arg(long)]
         delete_empty: bool,
-        /// Delete spurious lock directory.
-        #[arg(long)]
-        unlock: bool,
         /// Migrate attachments to the newest format.
         #[arg(long)]
         migrate: bool,

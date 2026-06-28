@@ -33,7 +33,7 @@ pub struct ImportConfig {
     pub resolve: bool,
     pub local_fallback: bool,
     pub no_alias: bool,
-    pub file_import_root: Option<AttachmentRoot>, // if is_some(), import files to that directory
+    pub file_import_root: Option<AttachmentRoot<false>>, // if is_some(), import files to that directory
     pub file_sep: Option<String>,
 }
 
@@ -279,12 +279,12 @@ fn create_alias_and_commit(
 
 /// File import struct with scratch space to reduce re-allocation.
 struct FileImportTarget<'a> {
-    root: &'a AttachmentRoot,
+    root: &'a AttachmentRoot<false>,
     path: PathBuf,
 }
 
 impl<'a> FileImportTarget<'a> {
-    fn new(root: &'a AttachmentRoot) -> Self {
+    fn new(root: &'a AttachmentRoot<false>) -> Self {
         Self {
             root,
             path: PathBuf::new(),

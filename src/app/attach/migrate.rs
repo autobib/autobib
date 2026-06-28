@@ -15,7 +15,7 @@ use crate::{
 };
 
 /// Migrate attachment directory from v0 to v1
-pub fn migrate_attachments(at_root: &mut AttachmentRoot) -> Result<(), anyhow::Error> {
+pub fn migrate_attachments(at_root: &mut AttachmentRoot<true>) -> Result<(), anyhow::Error> {
     init_migration(at_root)?;
 
     let migrations = migration_candidates(at_root)?;
@@ -38,7 +38,7 @@ pub fn migrate_attachments(at_root: &mut AttachmentRoot) -> Result<(), anyhow::E
 
 /// Determine a list of candidate migrations to perform by walking the attachment directory.
 fn migration_candidates(
-    at_root: &AttachmentRoot,
+    at_root: &AttachmentRoot<true>,
 ) -> Result<Vec<(PathBuf, PathBuf)>, anyhow::Error> {
     let mut migrations = Vec::new();
     let attachment_root = at_root.dir();
@@ -131,7 +131,7 @@ fn decode_attachment_dir_id(provider: &str, source: &Path) -> Option<RemoteId> {
     }
 }
 
-fn init_migration(at_root: &mut AttachmentRoot) -> Result<(), anyhow::Error> {
+fn init_migration(at_root: &mut AttachmentRoot<true>) -> Result<(), anyhow::Error> {
     match at_root.format() {
         AttachmentFormat::V0 => {
             at_root.set_format(AttachmentFormat::V1Migrating)?;
@@ -193,7 +193,7 @@ fn migrate_attachment_dir(source: &Path, target: &Path) -> Result<bool, anyhow::
     Ok(true)
 }
 
-fn finish_migration(attachment_root: &mut AttachmentRoot) -> Result<(), anyhow::Error> {
+fn finish_migration(attachment_root: &mut AttachmentRoot<true>) -> Result<(), anyhow::Error> {
     attachment_root.set_format(AttachmentFormat::V1)?;
     Ok(())
 }
