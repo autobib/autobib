@@ -11,20 +11,18 @@ pub use {cleanup::cleanup_empty_attachment_dirs, migrate::migrate_attachments};
 pub fn get_attachment_root(
     data_dir: &Path,
     default_attachments_dir: Option<PathBuf>,
-    read_only: bool,
-) -> Result<AttachmentRoot, anyhow::Error> {
+) -> Result<AttachmentRoot<false>, anyhow::Error> {
     let root = get_attachment_root_path(data_dir, default_attachments_dir);
-    AttachmentRoot::open_or_create(root, read_only)
+    AttachmentRoot::open_or_create(root)
 }
 
 /// Get the attachment root only if it already exists.
 pub fn get_existing_attachment_root(
     data_dir: &Path,
     default_attachments_dir: Option<PathBuf>,
-    read_only: bool,
-) -> Result<Option<AttachmentRoot>, anyhow::Error> {
+) -> Result<Option<AttachmentRoot<false>>, anyhow::Error> {
     let root = get_attachment_root_path(data_dir, default_attachments_dir);
-    AttachmentRoot::open(root, read_only)
+    AttachmentRoot::open(root)
 }
 
 /// Get the attachment root directory path, either as a default from the data directory or using the

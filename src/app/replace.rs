@@ -24,7 +24,7 @@ pub fn replace<'conn, F, G>(
     hard: bool,
     update_aliases: bool,
     on_conflict: OnConflict,
-    root: Option<AttachmentRoot>,
+    root: Option<AttachmentRoot<false>>,
 ) -> Result<(), anyhow::Error>
 where
     F: FnOnce() -> Vec<(regex::Regex, String)>,

@@ -39,6 +39,14 @@ impl TestState {
         })
     }
 
+    fn init_attachments(&self, fmt: Option<&'static str>) -> Result<()> {
+        fs::create_dir_all(&self.attach_dir)?;
+        if let Some(s) = fmt {
+            fs::write(self.attach_dir.join(".autobib-format"), s)?;
+        }
+        Ok(())
+    }
+
     fn cmd(&self) -> Result<Command> {
         self.cmd_with_attachments_dir(self.attach_dir.as_ref())
     }
@@ -996,8 +1004,7 @@ fn attachment_format_missing_uses_v0() -> Result<()> {
         .success()
         .stdout(predicate::str::ends_with(value));
 
-    s.attachment(".autobib-format")
-        .assert(predicate::path::missing());
+    s.attachment(".autobib-format").assert(predicate::eq(""));
 
     s.close()
 }
@@ -1005,7 +1012,7 @@ fn attachment_format_missing_uses_v0() -> Result<()> {
 #[test]
 fn attachment_format_v1_uses_normalized_zbmath_id() -> Result<()> {
     let s = TestState::init()?;
-    fs::create_dir_all(s.attach_dir.join(".autobib-format/v1"))?;
+    s.init_attachments(Some("v1"))?;
 
     import_zbmath_record(&s)?;
 
@@ -1028,7 +1035,7 @@ fn attachment_format_v1_uses_normalized_zbmath_id() -> Result<()> {
 fn attachment_format_v1_migrating_errors() -> Result<()> {
     let s = TestState::init()?;
     s.create_test_db()?;
-    fs::create_dir_all(s.attach_dir.join(".autobib-format/v1-migrating"))?;
+    s.init_attachments(Some("v1-migrating"))?;
 
     let mut cmd = s.cmd()?;
     cmd.args(["path", "local:first"]);
@@ -1043,16 +1050,13 @@ fn attachment_format_v1_migrating_errors() -> Result<()> {
 fn attachment_format_unknown_errors() -> Result<()> {
     let s = TestState::init()?;
     s.create_test_db()?;
-    fs::create_dir_all(s.attach_dir.join(".autobib-format"))?;
+    s.init_attachments(Some("v2"))?;
 
     let mut cmd = s.cmd()?;
     cmd.args(["path", "local:first"]);
-    cmd.assert().failure().stderr(contains(
-        "attachment directory exists but is not in a recognized state",
-    ));
-
-    s.attachment(".autobib-format/v0")
-        .assert(predicate::path::missing());
+    cmd.assert()
+        .failure()
+        .stderr(contains("Attachment directory is in unknown format 'v2'"));
 
     s.close()
 }
@@ -1076,12 +1080,7 @@ fn migrate_attachments() -> Result<()> {
     zbmath_old_attachment.assert(predicate::path::missing());
     s.attachment("zbmath/6D/UP/TS/GYZTINRUGYYQ/attachment.txt")
         .assert(predicate::eq("zbmath attachment contents"));
-    s.attachment(".autobib-format/v0")
-        .assert(predicate::path::missing());
-    s.attachment(".autobib-format/v1-migrating")
-        .assert(predicate::path::missing());
-    s.attachment(".autobib-format/v1")
-        .assert(predicate::path::is_dir());
+    s.attachment(".autobib-format").assert(predicate::eq("v1"));
 
     s.close()
 }
@@ -1089,7 +1088,7 @@ fn migrate_attachments() -> Result<()> {
 #[test]
 fn migrate_attachments_resume() -> Result<()> {
     let s = TestState::init()?;
-    fs::create_dir_all(s.attach_dir.join(".autobib-format/v1-migrating"))?;
+    s.init_attachments(Some("v1-migrating"))?;
 
     let old_attachment = s.attachment("local/OM/KH/CW/MZUXE43U/attachment.txt");
     old_attachment.write_str("attachment contents")?;
@@ -1101,10 +1100,7 @@ fn migrate_attachments_resume() -> Result<()> {
     old_attachment.assert(predicate::path::missing());
     s.attachment("local/QH/OV/RX/MZUXE43U/attachment.txt")
         .assert(predicate::eq("attachment contents"));
-    s.attachment(".autobib-format/v1-migrating")
-        .assert(predicate::path::missing());
-    s.attachment(".autobib-format/v1")
-        .assert(predicate::path::is_dir());
+    s.attachment(".autobib-format").assert(predicate::eq("v1"));
 
     s.close()
 }
@@ -1124,8 +1120,7 @@ fn migrate_replaces_empty_dir() -> Result<()> {
     old_attachment.assert(predicate::path::missing());
     s.attachment("local/QH/OV/RX/MZUXE43U/attachment.txt")
         .assert(predicate::eq("attachment contents"));
-    s.attachment(".autobib-format/v1")
-        .assert(predicate::path::is_dir());
+    s.attachment(".autobib-format").assert(predicate::eq("v1"));
 
     s.close()
 }
@@ -1158,10 +1153,8 @@ fn migrate_attachments_conflict() -> Result<()> {
     zbmath_old_attachment.assert(predicate::path::missing());
     s.attachment("zbmath/6D/UP/TS/GYZTINRUGYYQ/attachment.txt")
         .assert(predicate::eq("zbmath attachment contents"));
-    s.attachment(".autobib-format/v1-migrating")
-        .assert(predicate::path::is_dir());
-    s.attachment(".autobib-format/v1")
-        .assert(predicate::path::missing());
+    s.attachment(".autobib-format")
+        .assert(predicate::eq("v1-migrating"));
 
     s.close()
 }
@@ -1800,15 +1793,13 @@ fn read_only() -> Result<()> {
     cmd.args(["--read-only", "path", "zbl:1337.28015"]);
     cmd.assert().success();
 
-    s.attachment(".autobib-format")
-        .assert(predicate::path::missing());
+    s.attachment(".autobib-format").assert(predicate::eq(""));
 
     let mut cmd = s.cmd()?;
     cmd.args(["path", "zbl:1337.28015"]);
     cmd.assert().success();
 
-    s.attachment(".autobib-format")
-        .assert(predicate::path::missing());
+    s.attachment(".autobib-format").assert(predicate::eq(""));
 
     Ok(())
 }

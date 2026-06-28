@@ -48,7 +48,7 @@ pub fn choose_attachment_path<F: FnMut(&Path) -> bool + Send + 'static>(
     mut record_db: RecordDatabase,
     template: Template,
     strict: bool,
-    attachment_root: AttachmentRoot,
+    attachment_root: AttachmentRoot<false>,
     ignore_hidden: bool,
     mut filter: F,
 ) -> Picker<AttachmentData, Template> {
