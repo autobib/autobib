@@ -504,7 +504,7 @@ impl RecordDatabase {
         debug!("Mapping over all active database records with canonical ID matching '{glob}'.");
         let mut retriever = self
             .conn
-            .prepare("SELECT record_id, modified, data, variant FROM Records WHERE key IN (SELECT record_key FROM Identifiers WHERE name GLOB ?1) AND variant = 0")?;
+            .prepare("SELECT Records.record_id, Records.modified, Records.data, Records.variant FROM Records INNER JOIN Identifiers ON Identifiers.record_key = Records.key WHERE Records.variant =0 AND Identifiers.name GLOB ?1")?;
 
         for res in retriever.query_map([glob], |row| Ok(RecordRow::from_row_unchecked(row)))? {
             f(res?).map_err(SnapshotMapErr::CallbackFailed)?;
