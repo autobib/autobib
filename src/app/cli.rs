@@ -125,7 +125,7 @@ pub enum FindMode {
     Attachments,
     /// Search records and print the canonical identifier.
     #[default]
-    // FIXME: alias("canonical=id") is for backwards compat and should be removed eventually
+    // FIXME: alias("canonical-id") is for backwards compat and should be removed eventually
     #[value(aliases(["r", "record", "canonical-id"]))]
     Records,
 }
@@ -340,7 +340,7 @@ pub enum Command {
         /// A glob pattern to match against.
         #[arg(default_value = "*")]
         matching: String,
-        /// Only print canonical identifiers.
+        /// Only list canonical identifiers.
         #[arg(short, long)]
         canonical: bool,
         /// Print deleted identifiers instead of those with data.
