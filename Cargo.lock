@@ -138,7 +138,6 @@ dependencies = [
  "ramify",
  "rapidhash",
  "regex",
- "regex-syntax",
  "rsxiv",
  "rusqlite",
  "serde",
