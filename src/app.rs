@@ -38,7 +38,7 @@ use crate::{
     db::{
         DeleteAliasResult, RecordDatabase, RenameAliasResult,
         state::{
-            DisambiguatedRecordState, ExistsOrUnknown, RecordIdState, RecordRow, RecordRowDisplay,
+            DisambiguatedRecordState, ExistsOrUnknown, RecordIdState, RecordRowDisplay,
             RecordRowMoveResult, SetActiveError,
         },
         user_version,
@@ -398,46 +398,48 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
 
             for key in identifiers {
                 let (
-                    Record {
-                        key,
-                        row: RecordRow { data, .. },
-                    },
-                    row,
+                    record,
+                    // Record {
+                    //     key,
+                    //     row: RecordRow { data, .. },
+                    // },
+                    state,
                 ) = get_record_row(&mut record_db, key, client, &cfg)?
                     .exists_or_commit_null("Cannot edit")?;
 
                 match (cli.no_interactive, no_non_interactive_cmd) {
                     (true, true) => {
                         warn!("Terminal is non-interactive and no edit action specified!");
-                        row.commit()?;
+                        state.commit()?;
                     }
                     (_, false) => {
                         // non-interactive command is requested, so we perform it without prompting
-                        let mut editable_data = MutableEntryData::from_entry_data(&data);
+                        let mut editable_data = MutableEntryData::from_entry_data(&record.row.data);
 
                         let changed = editable_data.normalize(&nl) || editable_data.edit(&edit_cmd);
 
                         if changed {
-                            row.modify(&RawEntryData::from_entry_data(&editable_data))?
+                            state
+                                .modify(&RawEntryData::from_entry_data(&editable_data))?
                                 .state
                                 .commit()?;
                         } else {
-                            row.commit()?;
+                            state.commit()?;
                         }
                     }
                     (false, true) => {
                         // only perform normalization
-                        let record_data = MutableEntryData::from_entry_data(&data);
+                        let record_data = MutableEntryData::from_entry_data(&record.row.data);
                         let entry = Entry {
-                            key: EntryKey::try_new(key)
-                                .unwrap_or_else(|_| EntryKey::<String>::placeholder()),
+                            key: EntryKey::try_new(record.key)
+                                .unwrap_or_else(|_| EntryKey::placeholder()),
                             record_data,
                         };
 
                         if let Some(Entry { key, record_data }) =
                             Editor::new_bibtex().edit(&entry)?
                         {
-                            let new_row = row
+                            let new_row = state
                                 .modify(&RawEntryData::from_entry_data(&record_data))?
                                 .state;
                             if key.as_ref() != entry.key.as_ref() && !key.is_placeholder() {
@@ -446,7 +448,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                             new_row.commit()?;
                         } else {
                             // we return an error here, since this was an interactive edit
-                            row.commit()?;
+                            state.commit()?;
                             error!("Record data unchanged");
                         }
                     }
@@ -919,13 +921,13 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
         Command::Info { identifier, report } => {
             let cfg = config::load(&config_path, missing_ok)?;
             match record_db.state_from_record_id(identifier, &cfg.alias_transform)? {
-                RecordIdState::Entry(key, data, state) => {
-                    info::database_report(&cfg, key, data, state, report, |_, stdout| {
+                RecordIdState::Entry(Record { key, row }, state) => {
+                    info::database_report(&cfg, key, row, state, report, |_, stdout| {
                         writeln!(stdout, "Record with data")
                     })?;
                 }
-                RecordIdState::Deleted(key, data, state) => {
-                    info::database_report(&cfg, key, data, state, report, |data, stdout| {
+                RecordIdState::Deleted(Record { key, row }, state) => {
+                    info::database_report(&cfg, key, row, state, report, |data, stdout| {
                         if let Some(repl) = data {
                             writeln!(stdout, "Deleted and replaced by reference: {repl}")
                         } else {
@@ -933,8 +935,8 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         }
                     })?;
                 }
-                RecordIdState::Void(key, data, state) => {
-                    info::database_report(&cfg, key, data, state, report, |_, stdout| {
+                RecordIdState::Void(Record { key, row }, state) => {
+                    info::database_report(&cfg, key, row, state, report, |_, stdout| {
                         writeln!(stdout, "Voided record")
                     })?;
                 }

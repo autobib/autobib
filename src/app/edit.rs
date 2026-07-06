@@ -76,7 +76,7 @@ where
         let record_data = MutableEntryData::<String>::default();
         let entry = Entry {
             key: EntryKey::try_new(remote_id.name().into())
-                .unwrap_or_else(|_| EntryKey::<String>::placeholder()),
+                .unwrap_or_else(|_| EntryKey::placeholder()),
             record_data,
         };
 

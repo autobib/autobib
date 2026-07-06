@@ -40,15 +40,6 @@ impl<D> From<Record<D>> for RecordRow<D> {
     }
 }
 
-impl<D> Record<D> {
-    fn new<K: Into<String>>(key: K, row: RecordRow<D>) -> Self {
-        Self {
-            key: key.into(),
-            row,
-        }
-    }
-}
-
 /// The response type of [`get_record_row`].
 ///
 /// If the record exists, the resulting [`State<RecordRow>`] is guaranteed to be valid for the row corresponding
@@ -157,26 +148,24 @@ where
     C: Client,
 {
     match RecordIdState::determine(tx, record_id, &config.alias_transform)? {
-        RecordIdState::Entry(key, data, row) => {
-            info!("Found existing data for key {key}");
-            Ok(RecordRowResponse::Exists(Record::new(key, data), row))
+        RecordIdState::Entry(record, state) => {
+            info!("Found existing data for key {}", record.key);
+            Ok(RecordRowResponse::Exists(record, state))
         }
-        RecordIdState::Deleted(key, data, row) => {
-            Ok(RecordRowResponse::Deleted(Record::new(key, data), row))
-        }
+        RecordIdState::Deleted(record, state) => Ok(RecordRowResponse::Deleted(record, state)),
         RecordIdState::NullRemoteId(remote_id, null_row) => {
             Ok(RecordRowResponse::NullRemoteId(remote_id.mapped, null_row))
         }
         RecordIdState::UndefinedAlias(alias) => Ok(RecordRowResponse::NullAlias(alias)),
         RecordIdState::InvalidRemoteId(err) => Ok(RecordRowResponse::InvalidRemoteId(err)),
-        RecordIdState::Void(key, data, void) => {
+        RecordIdState::Void(Record { key, row }, void) => {
             let (raw_entry_data, updated) =
-                revive_void(void, &data.canonical, client, &config.on_insert)?;
+                revive_void(void, &row.canonical, client, &config.on_insert)?;
             Ok(RecordRowResponse::Exists(
                 Record {
                     key,
                     row: RecordRow {
-                        canonical: data.canonical,
+                        canonical: row.canonical,
                         data: raw_entry_data,
                         modified: updated.modified,
                     },

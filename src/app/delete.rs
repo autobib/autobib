@@ -5,6 +5,7 @@ use crate::{
         state::{self, RecordIdState},
     },
     logger::{error, reraise, suggest},
+    record::Record,
 };
 
 /// Soft-delete the data associated with the provided identifier.
@@ -71,14 +72,19 @@ where
     V: FnOnce(String, state::State<'_, state::IsVoid>) -> Result<(), rusqlite::Error>,
 {
     match record_db.state_from_record_id(id, &config.alias_transform)? {
-        RecordIdState::Entry(original_name, row, state) => {
-            entry_callback(original_name, state)?;
-            return Ok(Some(row.canonical));
+        RecordIdState::Entry(record, state) => {
+            entry_callback(record.key, state)?;
+            return Ok(Some(record.row.canonical));
         }
-        RecordIdState::Deleted(original_name, _, state) => {
-            deleted_callback(original_name, state)?;
+        RecordIdState::Deleted(record, state) => {
+            deleted_callback(record.key, state)?;
         }
-        RecordIdState::Void(original_name, _, state) => {
+        RecordIdState::Void(
+            Record {
+                key: original_name, ..
+            },
+            state,
+        ) => {
             voided_callback(original_name, state)?;
         }
         RecordIdState::NullRemoteId(mapped_key, state) => {
