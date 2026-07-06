@@ -35,6 +35,9 @@ Changes since `v0.6.1`.
 - `autobib util list` has been renamed to `autobib list`.
   - Added optional glob pattern argument to filter identifiers.
   - Added `--template` flag to format output instead of printing identifiers.
+- The configuration value `preferred_providers` has been replaced by `preferred_keys`.
+  - `preferred_keys` is more general and can contain a list of regexes to match keys
+  - Migrate `preferred_providers` to `preferred_keys` by replacing each `provider` with the corresponding regex `^provider:.*`
 
 ## New features
 
