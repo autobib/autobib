@@ -1,7 +1,7 @@
-use std::{fmt, path::Path, str::FromStr};
+use std::{path::Path, str::FromStr};
 
 use anyhow::Error;
-use regex_syntax::ast::{Ast, GroupKind, Span, parse::Parser};
+use regex::Regex;
 
 use super::RawConfig;
 use crate::{logger::error, provider::is_valid_provider};
@@ -16,148 +16,9 @@ pub fn report_config_errors<P: AsRef<Path>>(path: P) -> Result<(), Error> {
 
     validate_find_default_template(&raw_config.find.default_template);
     validate_alias_transform_rules(raw_config.alias_transform.rules);
+    validate_preferred_keys(&raw_config.preferred_keys);
 
     Ok(())
-}
-
-/// One of the various errors that can occur in an invalid transformation.
-#[derive(Debug, PartialEq)]
-enum CapturesErrorKind {
-    /// An alternation has a variant which is missing a capture group.
-    Missing,
-    /// A concatenation has too many capture groups.
-    TooMany,
-    /// A capture group contains another capture group.
-    Nested,
-}
-
-impl fmt::Display for CapturesErrorKind {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Missing => "has variant without capture group",
-            Self::TooMany => "contains more than one capture group",
-            Self::Nested => "contains nested capture group",
-        })
-    }
-}
-
-/// The result of evaluating an [`Ast`] for the presence of capture groups.
-#[derive(Debug, PartialEq)]
-enum Outcome {
-    /// There are no capture groups.
-    NoCapture,
-    /// Every alternative contains exactly one capture group.
-    OneCapture,
-    /// Something is invalid; it occurred at the given span.
-    Invalid(CapturesErrorKind, usize, usize),
-}
-
-impl Outcome {
-    /// Construct an `Invalid` from the provided [`Span`].
-    fn invalid(kind: CapturesErrorKind, span: Span) -> Self {
-        Self::Invalid(kind, span.start.offset, span.end.offset)
-    }
-}
-
-/// Returns if the [`Ast`] does not contain a capturing group.
-///
-/// This is equivalent to `eval_ast(ast: &ast) == Outcome::NoCapture`, but with better
-/// short-circuiting.
-fn has_no_capture_group(ast: &Ast) -> bool {
-    match ast {
-        Ast::Group(group) => match group.kind {
-            GroupKind::NonCapturing(_) => has_no_capture_group(&group.ast),
-            _ => false,
-        },
-        Ast::Alternation(alternation) => alternation.asts.iter().all(has_no_capture_group),
-        Ast::Concat(concat) => concat.asts.iter().all(has_no_capture_group),
-        _ => true,
-    }
-}
-
-/// Evaluate the regex [`Ast`] and determine the outcome of evaluation.
-///
-/// Uses single-pass DFS with short-circuiting.
-fn eval_ast(ast: &Ast) -> Outcome {
-    match ast {
-        Ast::Group(group) => match group.kind {
-            // a non-capturing group is transparent
-            GroupKind::NonCapturing(_) => eval_ast(&group.ast),
-            // we just saw a capturing group, so either the child has no capturing groups, or
-            // the ast is invalid
-            _ => {
-                if has_no_capture_group(&group.ast) {
-                    Outcome::OneCapture
-                } else {
-                    Outcome::invalid(CapturesErrorKind::Nested, group.span)
-                }
-            }
-        },
-        Ast::Alternation(alternation) => {
-            // every child is NoCapture => NoCapture
-            // every child is OneCapture => OneCapture
-            // else => Invalid
-            let mut children = alternation.asts.iter();
-            match children.next() {
-                Some(ast) => match eval_ast(ast) {
-                    Outcome::NoCapture => {
-                        for ast in children {
-                            match eval_ast(ast) {
-                                Outcome::NoCapture => {}
-                                Outcome::OneCapture => {
-                                    return Outcome::invalid(
-                                        CapturesErrorKind::Missing,
-                                        alternation.span,
-                                    );
-                                }
-                                e => return e,
-                            }
-                        }
-                        Outcome::NoCapture
-                    }
-                    Outcome::OneCapture => {
-                        for ast in children {
-                            match eval_ast(ast) {
-                                Outcome::OneCapture => {}
-                                Outcome::NoCapture => {
-                                    return Outcome::invalid(
-                                        CapturesErrorKind::Missing,
-                                        alternation.span,
-                                    );
-                                }
-                                e => return e,
-                            }
-                        }
-                        Outcome::OneCapture
-                    }
-                    e => e,
-                },
-                None => Outcome::NoCapture,
-            }
-        }
-        Ast::Concat(concat) => {
-            // every child is NoCapture => NoCapture
-            // one child is OneCapture, rest NoCapture => OneCapture
-            // else => Invalid
-            let mut outcome = Outcome::NoCapture;
-            for ast in concat.asts.iter() {
-                match (&outcome, eval_ast(ast)) {
-                    (_, Outcome::NoCapture) => {}
-                    (Outcome::NoCapture, Outcome::OneCapture) => {
-                        outcome = Outcome::OneCapture;
-                    }
-                    (Outcome::OneCapture, Outcome::OneCapture) => {
-                        return Outcome::invalid(CapturesErrorKind::TooMany, concat.span);
-                    }
-                    // the pattern guarantees that e is a `Outcome::Invalid`
-                    (_, e) => return e,
-                }
-            }
-            outcome
-        }
-        // none of the other nodes are recursive
-        _ => Outcome::NoCapture,
-    }
 }
 
 fn validate_find_default_template(s: &str) {
@@ -179,21 +40,24 @@ fn validate_alias_transform_rules<S: AsRef<str>, T: AsRef<str>>(
                 "Config 'alias_transform.rules' rule [\"{re}\", \"{provider}\"]: contains invalid provider"
             );
         }
-        match Parser::new().parse(re) {
-            Ok(ast) => match eval_ast(&ast) {
-                Outcome::NoCapture => {
+        match Regex::new(re) {
+            Ok(regex) => match regex.static_captures_len() {
+                Some(1) => {
                     error!(
                         "Config 'alias_transform.rules' rule [\"{re}\", \"{provider}\"]: regex does not contain any capture groups"
                     );
                 }
-                Outcome::Invalid(kind, start, end) => {
+                Some(2) => {}
+                Some(_) => {
                     error!(
-                        "Config 'alias_transform.rules' rule [\"{re}\", \"{provider}\"]: regex component '{}' {}",
-                        &re[start..end],
-                        kind,
+                        "Config 'alias_transform.rules' rule [\"{re}\", \"{provider}\"]: regex contains too many capture groups"
                     );
                 }
-                _ => {}
+                None => {
+                    error!(
+                        "Config 'alias_transform.rules' rule [\"{re}\", \"{provider}\"]: some alternatives are either missing or have too many capture groups"
+                    );
+                }
             },
             Err(e) => {
                 error!("Config 'alias_transform.rules' rule [\"{re}\", \"{provider}\"]: {e}");
@@ -202,49 +66,10 @@ fn validate_alias_transform_rules<S: AsRef<str>, T: AsRef<str>>(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_validate_capture_groups() {
-        fn assert_caps(re: &str, expected: Outcome) {
-            println!("{re}");
-            let ast = Parser::new().parse(re).unwrap();
-            println!("{ast:?}");
-            assert_eq!(eval_ast(&ast), expected);
+fn validate_preferred_keys(pats: &[String]) {
+    for pat in pats {
+        if let Err(err) = Regex::new(pat) {
+            error!("Config 'preferred_keys' regex \"{pat}\": {err}");
         }
-
-        assert_caps("a(b)", Outcome::OneCapture);
-        assert_caps("(b)", Outcome::OneCapture);
-        assert_caps("(a)|(b)", Outcome::OneCapture);
-        assert_caps("(a)|(b|c)", Outcome::OneCapture);
-        assert_caps("(a)|(?:(b)|c(d))", Outcome::OneCapture);
-        assert_caps("a(?:(b)|c(d))", Outcome::OneCapture);
-        assert_caps("(?i)a+((?-i)b+)", Outcome::OneCapture);
-        assert_caps("((?i)a+(?-i)b+)", Outcome::OneCapture);
-
-        assert_caps("a", Outcome::NoCapture);
-        assert_caps("a(?:b|c|d)", Outcome::NoCapture);
-        assert_caps("a", Outcome::NoCapture);
-
-        assert_caps(
-            "(a)(b(?:c))",
-            Outcome::Invalid(CapturesErrorKind::TooMany, 0, 11),
-        );
-        assert_caps("(a)(b)", Outcome::Invalid(CapturesErrorKind::TooMany, 0, 6));
-        assert_caps(
-            "(a)(b(c))",
-            Outcome::Invalid(CapturesErrorKind::Nested, 3, 9),
-        );
-        assert_caps(
-            "(a)|(?:b|c(d))",
-            Outcome::Invalid(CapturesErrorKind::Missing, 7, 13),
-        );
-
-        assert_caps(
-            "a(?:b|c(d))",
-            Outcome::Invalid(CapturesErrorKind::Missing, 4, 10),
-        );
     }
 }
