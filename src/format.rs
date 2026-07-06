@@ -249,7 +249,7 @@ impl Template {
 
         let strategy = if TemplateFieldKeys::new(&template).is_sorted() {
             Strategy::Sorted
-        } else if TemplateFieldKeys::new(&template).count() <= 4 {
+        } else if TemplateFieldKeys::new(&template).count() <= 6 {
             Strategy::Small
         } else {
             Strategy::Large
@@ -658,7 +658,7 @@ mod tests {
         );
 
         check(
-            "{=b %sub_id}{=a %provider}{c}{d}{e}{a}",
+            "{=b %sub_id}{=a %provider}{c}{d}{e}{a}{f}",
             [("a", "A")],
             "local",
             "12345",
