@@ -13,8 +13,7 @@ use crate::{
     http::Client,
     logger::{error, suggest},
     normalize::{Normalization, Normalize},
-    record::{RecordId, RemoteId},
-    record::{RecursiveRemoteResponse, get_remote_response_recursive},
+    record::{Record, RecordId, RecursiveRemoteResponse, RemoteId, get_remote_response_recursive},
 };
 
 /// Update the record id corresponding to the [`RecordIdState`] using data returned by
@@ -37,9 +36,11 @@ where
 {
     match record_id_state {
         RecordIdState::Entry(
-            id,
-            RecordRow {
-                data, canonical, ..
+            Record {
+                key,
+                row: RecordRow {
+                    data, canonical, ..
+                },
             },
             state,
         ) => {
@@ -62,19 +63,19 @@ where
                 new_raw_data.normalize(normalization);
 
                 let mut existing_record = MutableEntryData::from_entry_data(&data);
-                merge_record_data(on_conflict, &mut existing_record, once(&new_raw_data), &id)?;
+                merge_record_data(on_conflict, &mut existing_record, once(&new_raw_data), &key)?;
 
                 state
                     .modify(&RawEntryData::from_entry_data(&existing_record))?
                     .commit()?;
             }
         }
-        RecordIdState::Deleted(id, data, state) => {
+        RecordIdState::Deleted(Record { key, row }, state) => {
             if revive {
                 let mut raw_data = if let Some(data) = provided_data {
                     data
                 } else {
-                    match produce_data(data.canonical) {
+                    match produce_data(row.canonical) {
                         Ok(data) => data,
                         Err(e) => {
                             state.commit()?;
@@ -89,14 +90,14 @@ where
                     .commit()?;
             } else {
                 state.commit()?;
-                error!("Cannot update soft-deleted row '{id}'.");
+                error!("Cannot update soft-deleted row '{key}'.");
                 suggest!("Undo first, or use `autobib update --revive` to insert new data.");
             }
         }
-        RecordIdState::Void(key, data, void) => {
+        RecordIdState::Void(Record { key, row }, void) => {
             void.commit()?;
             error!("Record exists but has been voided: {key}");
-            if data.canonical.is_local() {
+            if row.canonical.is_local() {
                 suggest!(
                     "Use `autobib local` to insert new data, or find an existing version using `autobib log --all`."
                 );
@@ -144,15 +145,15 @@ pub fn data_from_key<'conn>(
     cfg: &Config,
 ) -> Result<(MutableEntryData, Tx<'conn>), anyhow::Error> {
     match RecordIdState::determine(tx, record_id, &cfg.alias_transform)? {
-        RecordIdState::Entry(_, entry_row_data, state) => Ok((
-            MutableEntryData::from_entry_data(&entry_row_data.data),
+        RecordIdState::Entry(Record { row, .. }, state) => Ok((
+            MutableEntryData::from_entry_data(&row.data),
             state.into_tx(),
         )),
-        RecordIdState::Deleted(_, _, state) => {
+        RecordIdState::Deleted(_, state) => {
             state.commit()?;
             bail!("Cannot read update data from deleted row");
         }
-        RecordIdState::Void(_, _, state) => {
+        RecordIdState::Void(_, state) => {
             state.commit()?;
             bail!("Cannot read update data from voided row");
         }

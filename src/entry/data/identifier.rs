@@ -28,19 +28,14 @@ impl<S: AsRef<str>> EntryKey<S> {
     }
 }
 
-impl EntryKey<&'static str> {
+impl<T: From<&'static str>> EntryKey<T> {
     /// A placeholder value used for displaying keys which are not valid bibtex.
     pub fn placeholder() -> Self {
-        Self("::")
+        Self("::".into())
     }
 }
 
 impl EntryKey {
-    /// A placeholder value used for displaying keys which are not valid bibtex.
-    pub fn placeholder() -> Self {
-        Self("::".to_owned())
-    }
-
     /// Substitute a character with a different entry key.
     #[inline]
     pub fn substitute<S: AsRef<str>>(&self, from: char, to: &EntryKey<S>) -> Option<Self> {

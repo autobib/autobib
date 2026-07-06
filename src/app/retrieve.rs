@@ -120,12 +120,18 @@ where
     V: FnOnce(Record<RawEntryData>, &State<'_, IsEntry>) -> Option<T>,
 {
     match record_db.state_from_record_id(id, &config.alias_transform)? {
-        RecordIdState::Entry(key, row, state) => {
-            let entry = validate(Record { key, row }, &state);
+        RecordIdState::Entry(record, state) => {
+            let entry = validate(record, &state);
             state.commit()?;
             Ok(entry)
         }
-        RecordIdState::Deleted(key, deleted_row_data, state) => {
+        RecordIdState::Deleted(
+            Record {
+                key,
+                row: deleted_row_data,
+            },
+            state,
+        ) => {
             if !ignore_null {
                 error!("Deleted record: '{key}'");
                 if let Some(repl) = deleted_row_data.data {
@@ -135,7 +141,7 @@ where
             state.commit()?;
             Ok(None)
         }
-        RecordIdState::Void(key, _, void) => {
+        RecordIdState::Void(Record { key, .. }, void) => {
             void.commit()?;
             error!("Record exists but has been voided: {key}");
             Ok(None)

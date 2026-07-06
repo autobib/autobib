@@ -44,6 +44,7 @@ use crate::{
     entry::RawEntryData,
     error::RecordError,
     logger::{debug, error, reraise},
+    record::Record,
 };
 
 /// An updated state, along with the timestamp at which it was updated.
@@ -144,11 +145,11 @@ impl Unknown<'_> {
 #[derive(Debug)]
 pub enum RecordIdState<'conn> {
     /// The `Records` row exists.
-    Entry(String, RecordRow<RawEntryData>, State<'conn, IsEntry>),
+    Entry(Record<RawEntryData>, State<'conn, IsEntry>),
     /// The `Records` row was deleted.
-    Deleted(String, RecordRow<Option<RemoteId>>, State<'conn, IsDeleted>),
+    Deleted(Record<Option<RemoteId>>, State<'conn, IsDeleted>),
     /// The void `Records` row.
-    Void(String, RecordRow<()>, State<'conn, IsVoid>),
+    Void(Record<()>, State<'conn, IsVoid>),
     /// The `Records` row does not exist and the `NullRecords` row exists.
     NullRemoteId(MappedKey, State<'conn, IsNull>),
     /// The `Records` and `NullRecords` rows do not exist.
@@ -190,17 +191,17 @@ impl<'conn> RecordIdState<'conn> {
     ) -> Result<Self, rusqlite::Error> {
         debug!("Beginning new transaction for row '{row_id}' in the `Records` table.");
         match State::init(tx, IsArbitrary(row_id)).disambiguate()? {
-            DisambiguatedRecordState::Entry(data, state) => {
+            DisambiguatedRecordState::Entry(row, state) => {
                 let key = produce_key_entry(&state, key)?;
-                Ok(Self::Entry(key, data, state))
+                Ok(Self::Entry(Record { key, row }, state))
             }
-            DisambiguatedRecordState::Deleted(data, state) => {
+            DisambiguatedRecordState::Deleted(row, state) => {
                 let key = produce_key_deleted(&state, key)?;
-                Ok(Self::Deleted(key, data, state))
+                Ok(Self::Deleted(Record { key, row }, state))
             }
-            DisambiguatedRecordState::Void(data, state) => {
+            DisambiguatedRecordState::Void(row, state) => {
                 let key = produce_key_void(&state, key)?;
-                Ok(Self::Void(key, data, state))
+                Ok(Self::Void(Record { key, row }, state))
             }
         }
     }
@@ -306,11 +307,15 @@ impl<'conn> RecordIdState<'conn> {
         self,
     ) -> rusqlite::Result<Option<(String, DisambiguatedRecordState<'conn>)>> {
         Ok(match self {
-            Self::Entry(s, data, state) => Some((s, DisambiguatedRecordState::Entry(data, state))),
-            Self::Deleted(s, data, state) => {
-                Some((s, DisambiguatedRecordState::Deleted(data, state)))
+            Self::Entry(Record { key, row }, state) => {
+                Some((key, DisambiguatedRecordState::Entry(row, state)))
             }
-            Self::Void(s, data, state) => Some((s, DisambiguatedRecordState::Void(data, state))),
+            Self::Deleted(Record { key, row }, state) => {
+                Some((key, DisambiguatedRecordState::Deleted(row, state)))
+            }
+            Self::Void(Record { key, row }, state) => {
+                Some((key, DisambiguatedRecordState::Void(row, state)))
+            }
             Self::NullRemoteId(mapped_key, state) => {
                 state.commit()?;
                 error!("Null remote id: {mapped_key}");
