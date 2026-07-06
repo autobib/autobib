@@ -29,31 +29,15 @@ pub use raw::{RawEntryData, RawRecordFieldsIter};
 
 use crate::normalize::{Normalize, normalize_whitespace_str};
 
-/// This trait represents types which encapsulate the data content of a single BibTeX entry.
-///
-/// In addition to the methods provided by [`EntryData`], this field also allows obtaining the
-/// field value by borrowing against an alternative lifetime 'r
-pub trait BorrowedEntryData<'r>: EntryData {
-    /// Iterate over `(key, value)` pairs in order.
-    fn fields_borrowed(&self) -> impl Iterator<Item = (&'r str, &'r str)>;
-
-    /// Get the value of the field, borrowing from an underlying data buffer.
-    fn get_field_borrowed(&self, field_name: &str) -> Option<&'r str> {
-        for (key, val) in self.fields_borrowed() {
-            if field_name > key {
-                return None;
-            }
-
-            if field_name == key {
-                return Some(val);
-            }
-        }
-        None
-    }
+/// Types which can be cheaply converted into an [`EntryData`] implementation.
+pub trait AsEntryData {
+    fn as_entry_data<'r>(&'r self) -> impl EntryData<'r>;
 }
 
-pub trait EntryFields<'r> {
-    fn pairs(&self) -> impl Iterator<Item = (&'r str, &'r str)>;
+impl<T: AsEntryData> AsEntryData for &T {
+    fn as_entry_data<'r>(&'r self) -> impl EntryData<'r> {
+        (*self).as_entry_data()
+    }
 }
 
 /// This trait represents types which encapsulate the data content of a single BibTeX entry.
@@ -66,17 +50,22 @@ pub trait EntryFields<'r> {
 /// 2. Each `(key, value)` pair returned by `fields` satisfies the requirements detailed in
 ///    [`FieldKey`] and [`FieldValue`] respectively.
 /// 3. The `(key, value)` pairs are sorted by key and no key is repeated.
-pub unsafe trait EntryData: PartialEq {
+pub unsafe trait EntryData<'r>: PartialEq {
     /// Iterate over `(key, value)` pairs in order.
-    fn fields(&self) -> impl EntryFields<'_>;
+    fn fields(&self) -> impl IntoIterator<Item = (&'r str, &'r str)> + Clone;
 
     /// Get the `entry_type` as a string slice.
-    fn entry_type(&self) -> &str;
+    fn entry_type(&self) -> &'r str;
 
     /// Get the fields and entry type at the same time.
     ///
     /// The default implementation calls the `fields` and `entry_type` functions separately.
-    fn entry_type_and_fields(&self) -> (&str, impl EntryFields<'_>) {
+    fn entry_type_and_fields(
+        &self,
+    ) -> (
+        &'r str,
+        impl IntoIterator<Item = (&'r str, &'r str)> + Clone,
+    ) {
         (self.entry_type(), self.fields())
     }
 
@@ -88,7 +77,7 @@ pub unsafe trait EntryData: PartialEq {
             + (1 + self.entry_type().len()) // the entry type, plus the 1-byte header
             + self // the key value pairs, plus the 3-byte header
                 .fields()
-                .pairs()
+                .into_iter()
                 .map(|(k, v)| 3 + k.len() + v.len())
                 .sum::<usize>()
     }
@@ -96,8 +85,8 @@ pub unsafe trait EntryData: PartialEq {
     /// Get the value of the field.
     ///
     /// The default implementation iterates over all fields and returns the first match.
-    fn get_field<'r>(&'r self, field_name: &str) -> Option<&'r str> {
-        for (key, val) in self.fields().pairs() {
+    fn get_field(&self, field_name: &str) -> Option<&'r str> {
+        for (key, val) in self.fields() {
             if field_name < key {
                 return None;
             }
@@ -125,7 +114,7 @@ pub unsafe trait EntryData: PartialEq {
             data: &'r D,
         }
 
-        impl<D: EntryData> Serialize for EntryDataSer<'_, D> {
+        impl<'r, D: EntryData<'r>> Serialize for EntryDataSer<'_, D> {
             fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
             where
                 S: Serializer,
@@ -134,14 +123,14 @@ pub unsafe trait EntryData: PartialEq {
 
                 impl<'a, F> Serialize for FieldsWrapper<F>
                 where
-                    F: EntryFields<'a>,
+                    F: IntoIterator<Item = (&'a str, &'a str)> + Clone,
                 {
                     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
                     where
                         S: Serializer,
                     {
                         let mut state = serializer.serialize_map(None)?;
-                        for (key, value) in self.0.pairs() {
+                        for (key, value) in self.0.clone() {
                             state.serialize_entry(&key, &value)?;
                         }
                         state.end()
@@ -234,9 +223,9 @@ pub enum ConflictResolved<T = FieldValue> {
 }
 
 impl<'r> MutableEntryData<&'r str> {
-    pub fn borrow_entry_data<D: EntryData>(data: &'r D) -> Self {
+    pub fn borrow_entry_data<D: EntryData<'r>>(data: D) -> Self {
         let mut new = Self::new(EntryType(data.entry_type()));
-        for (key, value) in data.fields().pairs() {
+        for (key, value) in data.fields() {
             new.fields.insert(FieldKey(key), FieldValue(value));
         }
         new
@@ -244,9 +233,9 @@ impl<'r> MutableEntryData<&'r str> {
 }
 
 impl MutableEntryData {
-    pub fn from_entry_data<D: EntryData>(data: &D) -> Self {
-        let mut new = Self::new(EntryType(data.entry_type().to_owned()));
-        for (key, value) in data.fields().pairs() {
+    pub fn from_entry_data<D: AsEntryData>(cont: D) -> Self {
+        let mut new = Self::new(EntryType(cont.as_entry_data().entry_type().to_owned()));
+        for (key, value) in cont.as_entry_data().fields() {
             new.fields
                 .insert(FieldKey(key.to_owned()), FieldValue(value.to_owned()));
         }
@@ -326,11 +315,11 @@ impl MutableEntryData {
     /// This method is very similar to `merge_or_overwrite`, but also updates the entry type and is
     /// slightly more optimized since it blindly overwrites existing entries, instead of checking
     /// that they are different.
-    pub fn update_from<D: EntryData>(&mut self, data: &D) {
+    pub fn update_from<'r, D: EntryData<'r>>(&mut self, data: &D) {
         self.entry_type.0.clear();
         self.entry_type.0.push_str(data.entry_type());
 
-        for (key, value) in data.fields().pairs() {
+        for (key, value) in data.fields() {
             match self.fields.get_mut(key) {
                 Some(existing) => {
                     existing.0.clear();
@@ -349,15 +338,16 @@ impl MutableEntryData {
     /// The callback `resolve_conflict` takes three arguments in the following order:
     /// the key, the existing value in `self` corresponding to the key, and the new value.
     pub fn merge_with_callback<
-        D: EntryData,
+        D: AsEntryData,
         T: FnOnce(EntryType<&str>, EntryType<&str>) -> ConflictResolved<EntryType>,
         F: FnMut(FieldKey<&str>, FieldValue<&str>, FieldValue<&str>) -> ConflictResolved,
     >(
         &mut self,
-        other: &D,
+        other: D,
         resolve_entry_type_conflict: T,
         mut resolve_field_conflict: F,
     ) {
+        let other = other.as_entry_data();
         let other_entry_type = other.entry_type();
         if self.entry_type.as_ref() != other_entry_type {
             match resolve_entry_type_conflict(
@@ -374,7 +364,7 @@ impl MutableEntryData {
             }
         }
 
-        for (key, value) in other.fields().pairs() {
+        for (key, value) in other.fields() {
             match self.fields.get_mut(key) {
                 Some(current_value) if current_value != value => {
                     match resolve_field_conflict(
@@ -403,7 +393,7 @@ impl MutableEntryData {
 
     /// Merge data from `other`, ignoring fields that already exist in `self`.
     #[inline]
-    pub fn merge_or_skip<D: EntryData>(&mut self, other: &D) {
+    pub fn merge_or_skip<D: AsEntryData>(&mut self, other: D) {
         self.merge_with_callback(
             other,
             |_, _| ConflictResolved::Current,
@@ -413,7 +403,7 @@ impl MutableEntryData {
 
     /// Merge data from `other`, overwriting fields that already exist in `self`.
     #[inline]
-    pub fn merge_or_overwrite<D: EntryData>(&mut self, other: &D) {
+    pub fn merge_or_overwrite<D: AsEntryData>(&mut self, other: D) {
         self.merge_with_callback(
             other,
             |_, _| ConflictResolved::Incoming,
@@ -474,23 +464,23 @@ impl<S: AsRef<str> + Ord> MutableEntryData<S> {
     }
 }
 
-impl<'r, S: AsRef<str>> EntryFields<'r> for &'r BTreeMap<identifier::FieldKey<S>, FieldValue<S>> {
-    fn pairs(&self) -> impl Iterator<Item = (&'r str, &'r str)> {
-        self.iter().map(|(k, v)| (k.as_ref(), v.as_ref()))
-    }
-}
-
-unsafe impl<S: AsRef<str> + Ord> EntryData for MutableEntryData<S> {
-    fn fields(&self) -> impl EntryFields<'_> {
-        &self.fields
+unsafe impl<'r, S: AsRef<str> + Ord> EntryData<'r> for &'r MutableEntryData<S> {
+    fn fields(&self) -> impl IntoIterator<Item = (&'r str, &'r str)> + Clone {
+        self.fields.iter().map(|(k, v)| (k.as_ref(), v.as_ref()))
     }
 
-    fn entry_type(&self) -> &str {
+    fn entry_type(&self) -> &'r str {
         self.entry_type.as_ref()
     }
 
-    fn get_field(&self, field_name: &str) -> Option<&str> {
+    fn get_field(&self, field_name: &str) -> Option<&'r str> {
         self.get(field_name).map(|v| v.0.as_ref())
+    }
+}
+
+impl<S: AsRef<str> + Ord> AsEntryData for MutableEntryData<S> {
+    fn as_entry_data<'r>(&'r self) -> impl EntryData<'r> {
+        self
     }
 }
 

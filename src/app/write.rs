@@ -11,7 +11,7 @@ use serde::{Serialize, ser::SerializeMap};
 
 use crate::{
     Identifier,
-    entry::{Entry, EntryData, entries_to_bibtex},
+    entry::{AsEntryData, Entry, EntryData, entries_to_bibtex},
     logger::warn,
     output::stdout_lock_wrap,
     record::RemoteId,
@@ -53,19 +53,22 @@ pub fn output_keys<'a>(keys: impl Iterator<Item = &'a crate::RecordId>) -> Resul
     Ok(())
 }
 
-pub fn output_entries_json<D: EntryData>(
+pub fn output_entries_json<D: AsEntryData>(
     grouped_entries: &BTreeMap<RemoteId, NonEmpty<Entry<D>>>,
 ) -> Result<(), anyhow::Error> {
     struct Wrapper<'a, D>(&'a BTreeMap<RemoteId, NonEmpty<Entry<D>>>);
 
-    impl<'a, D: EntryData> Serialize for Wrapper<'a, D> {
+    impl<'a, D: AsEntryData> Serialize for Wrapper<'a, D> {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
             S: serde::Serializer,
         {
             let mut state = serializer.serialize_map(None)?;
             for entry in flatten_and_warn(self.0) {
-                state.serialize_entry(entry.key.as_ref(), &entry.record_data.serialize())?;
+                state.serialize_entry(
+                    entry.key.as_ref(),
+                    &entry.record_data.as_entry_data().serialize(),
+                )?;
             }
             state.end()
         }
@@ -78,7 +81,7 @@ pub fn output_entries_json<D: EntryData>(
 }
 
 /// Either write records to stdout, or to a provided file.
-pub fn output_entries_bibtex<D: EntryData>(
+pub fn output_entries_bibtex<D: AsEntryData>(
     out: Option<std::fs::File>,
     append: bool,
     grouped_entries: &BTreeMap<RemoteId, NonEmpty<Entry<D>>>,
@@ -109,7 +112,7 @@ pub fn output_entries_bibtex<D: EntryData>(
     Ok(())
 }
 
-fn flatten_and_warn<D: EntryData>(
+fn flatten_and_warn<D>(
     grouped_entries: &BTreeMap<RemoteId, NonEmpty<Entry<D>>>,
 ) -> impl Iterator<Item = &Entry<D>> {
     grouped_entries.iter().flat_map(|(canonical, entry_group)| {

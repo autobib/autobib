@@ -11,7 +11,9 @@ use self::parse::{Kind, Lexer, Token};
 
 use crate::{
     db::{Identifier, state::RecordRow},
-    entry::{EntryData, FieldKey, MutableEntryData, RawEntryData, RawRecordFieldsIter},
+    entry::{
+        AsEntryData, EntryData, FieldKey, MutableEntryData, RawEntryData, RawRecordFieldsIter,
+    },
     error::{ClapTemplateError, KeyParseError, KeyParseErrorKind},
 };
 
@@ -293,10 +295,12 @@ impl Template {
                 || BibtexFields::new(row),
                 |k, fields| fields.get_field_ordered(k).is_some(),
             ),
-            Strategy::Small => self.contained_impl(|| (), |k, ()| row.data.contains_field(k)),
+            Strategy::Small => {
+                self.contained_impl(|| (), |k, ()| row.data.as_entry_data().contains_field(k))
+            }
             Strategy::Large => self.contained_impl(
-                || MutableEntryData::borrow_entry_data(&row.data),
-                |k, data| data.contains_field(k),
+                || MutableEntryData::borrow_entry_data(row.data.as_entry_data()),
+                |k, container| container.as_entry_data().contains_field(k),
             ),
         }
     }
@@ -402,7 +406,7 @@ impl<'row, 'ast, 'state> DisplayedRow<'row, 'ast, 'state> {
             },
             Atom::String(s) => DisplayedRow::Ast(s),
             Atom::Meta(meta) => match meta {
-                Meta::EntryType => DisplayedRow::Row(row_data.data.entry_type()),
+                Meta::EntryType => DisplayedRow::Row(row_data.data.as_entry_data().entry_type()),
                 Meta::Provider => DisplayedRow::Row(row_data.canonical.provider()),
                 Meta::SubId => DisplayedRow::Row(row_data.canonical.sub_id()),
                 Meta::FullId => DisplayedRow::Row(row_data.canonical.name()),
@@ -442,7 +446,7 @@ impl<'r> Manifest<Expression> for ManifestSmall<'r, RecordRow<RawEntryData>> {
 
     fn manifest(&self, ast: &Expression) -> Result<impl fmt::Display, Self::Error> {
         Ok(DisplayedRow::from_data(self.0, ast, |k| {
-            self.0.data.get_field(k)
+            self.0.data.as_entry_data().get_field(k)
         }))
     }
 }
@@ -455,7 +459,7 @@ impl<'r> ManifestMut<Expression> for ManifestLarge<'r> {
     type State<'s> = MutableEntryData<&'s str>;
 
     fn init_state(&self) -> Self::State<'_> {
-        MutableEntryData::borrow_entry_data(&self.0.data)
+        MutableEntryData::borrow_entry_data(self.0.data.as_entry_data())
     }
 
     fn manifest_mut(
@@ -463,7 +467,9 @@ impl<'r> ManifestMut<Expression> for ManifestLarge<'r> {
         ast: &Expression,
         state: &mut Self::State<'_>,
     ) -> Result<impl fmt::Display, Self::Error> {
-        Ok(DisplayedRow::from_data(self.0, ast, |k| state.get_field(k)))
+        Ok(DisplayedRow::from_data(self.0, ast, |k| {
+            state.as_entry_data().get_field(k)
+        }))
     }
 }
 
@@ -503,13 +509,13 @@ impl Render<RecordRow<RawEntryData>> for Template {
     }
 }
 
-impl<D: EntryData, T: AsRef<str>> Serialize for RecordRow<D, T> {
+impl<D: AsEntryData, T: AsRef<str>> Serialize for RecordRow<D, T> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
         let mut state = serializer.serialize_struct("RecordRow", 3)?;
-        state.serialize_field("data", &self.data.serialize())?;
+        state.serialize_field("data", &self.data.as_entry_data().serialize())?;
         state.serialize_field("canonical", self.canonical.name())?;
         state.serialize_field("modified", &self.modified)?;
         state.end()
@@ -608,7 +614,7 @@ mod tests {
                 modified: Local::now(),
             };
 
-            println!("{:?}", row_data.data.get_field("b"));
+            println!("{:?}", row_data.data.as_entry_data().get_field("b"));
             println!("{:?}", MutableEntryData::from_entry_data(&row_data.data));
 
             assert_eq!(template.strategy, strategy);

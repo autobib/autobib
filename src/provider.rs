@@ -20,7 +20,7 @@ use ureq::http::StatusCode;
 use crate::{
     MappedKey, RemoteId,
     db::Identifier,
-    entry::{EntryData, EntryFields, EntryType, MutableEntryData},
+    entry::{AsEntryData, EntryData, EntryType, MutableEntryData},
     error::{ProviderError, RecordDataError},
     http::{BodyBytes, Client},
     logger::warn,
@@ -129,8 +129,8 @@ pub enum RemoteIdCandidate {
     None,
 }
 
-pub fn determine_key_from_data<D: EntryData>(
-    data: &D,
+pub fn determine_key_from_data<D: AsEntryData>(
+    data: D,
     config: &crate::config::Config,
 ) -> RemoteIdCandidate {
     determine_remote_id_candidates(data, |id| config.score_key(id.name()), None, None)
@@ -142,8 +142,8 @@ pub fn determine_key_from_data<D: EntryData>(
 ///
 /// - If a canonical identifier could be found and it received the highest score, it is returned alone.
 /// - If a reference identifier had the highest score, the canonical identifier with the highest score (if any) is returned as well.
-pub fn determine_remote_id_candidates<K: Ord, D: EntryData, F: FnMut(&RemoteId) -> K>(
-    data: &D,
+pub fn determine_remote_id_candidates<K: Ord, D: AsEntryData, F: FnMut(&RemoteId) -> K>(
+    container: D,
     mut score: F,
     candidate_canonical: Option<MappedKey>,
     candidate_reference: Option<MappedKey>,
@@ -201,8 +201,11 @@ pub fn determine_remote_id_candidates<K: Ord, D: EntryData, F: FnMut(&RemoteId) 
         let s = score(&c.mapped);
         (c, s)
     });
+
+    let data = container.as_entry_data();
+
     // first determine candidates using provider-specific fields
-    for (name, value) in data.fields().pairs() {
+    for (name, value) in data.fields() {
         if let Some(provider) = field_name_to_provider(name) {
             update_in_place(provider, value, &mut score, &mut bc, &mut br);
         }

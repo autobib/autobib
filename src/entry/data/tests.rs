@@ -129,9 +129,10 @@ fn test_data_round_trip() {
 
     let raw_data = RawEntryData::from_entry_data(&record_data);
 
-    let mut record_data_clone = MutableEntryData::try_new(raw_data.entry_type().into()).unwrap();
+    let mut record_data_clone =
+        MutableEntryData::try_new(raw_data.as_entry_data().entry_type().into()).unwrap();
 
-    for (key, value) in raw_data.fields().pairs() {
+    for (key, value) in raw_data.as_entry_data().fields() {
         record_data_clone
             .check_and_insert(key.into(), value.into())
             .unwrap();
@@ -177,18 +178,27 @@ fn test_round_trip() {
         for (k, v) in keys {
             data.check_and_insert((*k).into(), (*v).into()).unwrap();
         }
-        assert_eq!(data.fields().pairs().count(), keys.len());
+        assert_eq!(
+            data.as_entry_data().fields().into_iter().count(),
+            keys.len()
+        );
 
         let raw_data = RawEntryData::from_entry_data(&data);
-        assert_eq!(raw_data.fields().pairs().count(), keys.len());
+        assert_eq!(
+            raw_data.as_entry_data().fields().into_iter().count(),
+            keys.len()
+        );
 
         let new_data = MutableEntryData::from_entry_data(&raw_data);
-        assert_eq!(new_data.fields().pairs().count(), keys.len());
+        assert_eq!(
+            new_data.as_entry_data().fields().into_iter().count(),
+            keys.len()
+        );
 
         for (k, v) in keys {
-            assert_eq!(raw_data.get_field(k), Some(*v));
-            assert_eq!(data.get_field(k), Some(*v));
-            assert_eq!(new_data.get_field(k), Some(*v));
+            assert_eq!(raw_data.as_entry_data().get_field(k), Some(*v));
+            assert_eq!(data.as_entry_data().get_field(k), Some(*v));
+            assert_eq!(new_data.as_entry_data().get_field(k), Some(*v));
         }
     }
     check(&[("a", "A"), ("b", "B")]);
