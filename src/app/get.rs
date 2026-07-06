@@ -4,8 +4,6 @@ use std::{
     io::{self, BufRead},
 };
 
-use regex::Regex;
-
 use crate::{
     app::retrieve::{retrieve_single_entry, retrieve_single_entry_read_only},
     config::Config,
@@ -135,9 +133,9 @@ impl<'r, W: io::Write + ?Sized> Output for TemplateOutput<'r, W> {
     }
 }
 
-pub fn retrieve_all<W, F, C>(
+pub fn retrieve_all<W, C>(
     mut writer: W,
-    cfg: &Config<F>,
+    cfg: &Config,
     client: &C,
     record_db: &mut RecordDatabase,
     identifiers: Vec<RecordId>,
@@ -145,7 +143,6 @@ pub fn retrieve_all<W, F, C>(
 ) -> anyhow::Result<()>
 where
     W: Output,
-    F: FnOnce() -> Vec<(Regex, String)>,
     C: Client,
 {
     // then explicit arguments
@@ -174,16 +171,15 @@ where
     Ok(())
 }
 
-pub fn retrieve_all_read_only<W, F>(
+pub fn retrieve_all_read_only<W>(
     mut writer: W,
-    cfg: &Config<F>,
+    cfg: &Config,
     record_db: &mut RecordDatabase,
     identifiers: Vec<RecordId>,
     ignore_null: bool,
 ) -> anyhow::Result<()>
 where
     W: Output,
-    F: FnOnce() -> Vec<(Regex, String)>,
 {
     // explicit arguments
     for id in identifiers {

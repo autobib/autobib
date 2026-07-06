@@ -11,11 +11,11 @@ use crate::{
 ///
 /// If record data exists for the provided key, the data is replaced with a 'deletion' marker, but not
 /// removed from the database.
-pub fn soft_delete<F: FnOnce() -> Vec<(regex::Regex, String)>>(
+pub fn soft_delete(
     id: RecordId,
     replace: &Option<RemoteId>,
     record_db: &mut RecordDatabase,
-    config: &Config<F>,
+    config: &Config,
     update_aliases: bool,
 ) -> Result<Option<RemoteId>, rusqlite::Error> {
     delete_impl(
@@ -41,10 +41,10 @@ pub fn soft_delete<F: FnOnce() -> Vec<(regex::Regex, String)>>(
 /// Hard-delete the data associated with the provided identifier.
 ///
 /// This deletes all data (including past data) as well as all identifiers in the `Identifiers` table.
-pub fn hard_delete<F: FnOnce() -> Vec<(regex::Regex, String)>>(
+pub fn hard_delete(
     id: RecordId,
     record_db: &mut RecordDatabase,
-    config: &Config<F>,
+    config: &Config,
 ) -> Result<Option<RemoteId>, rusqlite::Error> {
     delete_impl(
         id,
@@ -57,16 +57,15 @@ pub fn hard_delete<F: FnOnce() -> Vec<(regex::Regex, String)>>(
 }
 
 /// Handle the cases where the key is not in the database and defer deletion to the callback.
-fn delete_impl<F, R, D, V>(
+fn delete_impl<R, D, V>(
     id: RecordId,
     record_db: &mut RecordDatabase,
-    config: &Config<F>,
+    config: &Config,
     entry_callback: R,
     deleted_callback: D,
     voided_callback: V,
 ) -> Result<Option<RemoteId>, rusqlite::Error>
 where
-    F: FnOnce() -> Vec<(regex::Regex, String)>,
     R: FnOnce(String, state::State<'_, state::IsEntry>) -> Result<(), rusqlite::Error>,
     D: FnOnce(String, state::State<'_, state::IsDeleted>) -> Result<(), rusqlite::Error>,
     V: FnOnce(String, state::State<'_, state::IsVoid>) -> Result<(), rusqlite::Error>,

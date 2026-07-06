@@ -237,8 +237,8 @@ See the [data model documentation](docs/data-model.md) for more information.
 You can import existing records from BibTeX files using `autobib import`.
 
 Autobib automatically determines identifiers from the import data.
-To pick an identifier, Autobib first uses the `preferred_providers` section in your configuration, or falls back to whatever identifier it can find.
-Usually this is what you want: for example, if your data contains a `doi = {...}` field and `preferred_providers = ["doi"]` this will always be used as the identifier.
+To pick an identifier, Autobib first uses the `preferred_keys` array in your configuration, or falls back to whatever identifier it can find.
+Usually this is what you want: for example, if your data contains a `doi = {...}` field and `preferred_keys = ["^doi:.*"]` this will always be used as the identifier.
 Note that the `[alias_transform]` section of the [configuration](src/config/default_config.toml) also applies.
 This can be used to define a custom import pattern to map the citation keys to identifiers, if your citation keys are in a special format.
 

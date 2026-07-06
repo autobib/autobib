@@ -190,15 +190,15 @@ impl<'conn> RecordIdState<'conn> {
     ) -> Result<Self, rusqlite::Error> {
         debug!("Beginning new transaction for row '{row_id}' in the `Records` table.");
         match State::init(tx, IsArbitrary(row_id)).disambiguate()? {
-            DisambiguatedRecordRow::Entry(data, state) => {
+            DisambiguatedRecordState::Entry(data, state) => {
                 let key = produce_key_entry(&state, key)?;
                 Ok(Self::Entry(key, data, state))
             }
-            DisambiguatedRecordRow::Deleted(data, state) => {
+            DisambiguatedRecordState::Deleted(data, state) => {
                 let key = produce_key_deleted(&state, key)?;
                 Ok(Self::Deleted(key, data, state))
             }
-            DisambiguatedRecordRow::Void(data, state) => {
+            DisambiguatedRecordState::Void(data, state) => {
                 let key = produce_key_void(&state, key)?;
                 Ok(Self::Void(key, data, state))
             }
@@ -304,13 +304,13 @@ impl<'conn> RecordIdState<'conn> {
     /// Require that the state corresponds to a row in the 'Records' table, raising an error and returning [`None`] if it is not.
     pub fn require_record(
         self,
-    ) -> rusqlite::Result<Option<(String, DisambiguatedRecordRow<'conn>)>> {
+    ) -> rusqlite::Result<Option<(String, DisambiguatedRecordState<'conn>)>> {
         Ok(match self {
-            Self::Entry(s, data, state) => Some((s, DisambiguatedRecordRow::Entry(data, state))),
+            Self::Entry(s, data, state) => Some((s, DisambiguatedRecordState::Entry(data, state))),
             Self::Deleted(s, data, state) => {
-                Some((s, DisambiguatedRecordRow::Deleted(data, state)))
+                Some((s, DisambiguatedRecordState::Deleted(data, state)))
             }
-            Self::Void(s, data, state) => Some((s, DisambiguatedRecordRow::Void(data, state))),
+            Self::Void(s, data, state) => Some((s, DisambiguatedRecordState::Void(data, state))),
             Self::NullRemoteId(mapped_key, state) => {
                 state.commit()?;
                 error!("Null remote id: {mapped_key}");
@@ -381,13 +381,13 @@ impl<'conn> RemoteIdState<'conn> {
             Some(row_id) => {
                 debug!("Beginning new transaction for row '{row_id}' in the `Records` table.");
                 match State::init(tx, IsArbitrary(row_id)).disambiguate()? {
-                    DisambiguatedRecordRow::Entry(entry_row_data, state) => {
+                    DisambiguatedRecordState::Entry(entry_row_data, state) => {
                         RemoteIdState::Entry(entry_row_data, state)
                     }
-                    DisambiguatedRecordRow::Deleted(deleted_row_data, state) => {
+                    DisambiguatedRecordState::Deleted(deleted_row_data, state) => {
                         RemoteIdState::Deleted(deleted_row_data, state)
                     }
-                    DisambiguatedRecordRow::Void(data, state) => RemoteIdState::Void(data, state),
+                    DisambiguatedRecordState::Void(data, state) => RemoteIdState::Void(data, state),
                 }
             }
             None => match get_null_row_id(&tx, remote_id)? {

@@ -138,10 +138,10 @@ pub fn data_from_remote<C: Client>(
     }
 }
 
-pub fn data_from_key<'conn, F: FnOnce() -> Vec<(regex::Regex, String)>>(
+pub fn data_from_key<'conn>(
     tx: Tx<'conn>,
     record_id: RecordId,
-    cfg: &Config<F>,
+    cfg: &Config,
 ) -> Result<(MutableEntryData, Tx<'conn>), anyhow::Error> {
     match RecordIdState::determine(tx, record_id, &cfg.alias_transform)? {
         RecordIdState::Entry(_, entry_row_data, state) => Ok((

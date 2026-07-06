@@ -361,40 +361,7 @@ impl<'r, 'ast, 'state> fmt::Display for DisplayedRow<'r, 'ast, 'state> {
             Self::Row(s) => f.write_str(s),
             Self::Ast(s) => f.write_str(s),
             Self::State(s) => f.write_str(s),
-            Self::Json(data) => {
-                // an adapter to use io writing methods with fmt
-                struct FormatterAdapter<'a, 'b>(&'a mut fmt::Formatter<'b>);
-
-                impl io::Write for FormatterAdapter<'_, '_> {
-                    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-                        let s = unsafe {
-                            // serde_json does not emit invalid UTF-8
-                            std::str::from_utf8_unchecked(buf)
-                        };
-
-                        match self.0.write_str(s) {
-                            Ok(()) => Ok(s.len()),
-                            Err(fmt::Error) => Err(io::ErrorKind::Other.into()),
-                        }
-                    }
-
-                    fn flush(&mut self) -> io::Result<()> {
-                        Ok(())
-                    }
-                }
-
-                let adapter = FormatterAdapter(f);
-                match serde_json::to_writer(adapter, &data) {
-                    Ok(()) => Ok(()),
-                    Err(err) => {
-                        if err.is_io() {
-                            Err(fmt::Error)
-                        } else {
-                            panic!("JSON serialization should not fail")
-                        }
-                    }
-                }
-            }
+            Self::Json(data) => data.write_fmt(f),
             Self::Timestamp(modified) => modified.fmt(f),
             Self::Skip => Ok(()),
         }

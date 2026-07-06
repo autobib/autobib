@@ -5,7 +5,7 @@ use crate::{
     config::Config,
     db::{
         Tx,
-        state::{DisambiguatedRecordRow, IsEntry, RecordIdState, State, replace_hard_unchecked},
+        state::{DisambiguatedRecordState, IsEntry, RecordIdState, State, replace_hard_unchecked},
     },
     entry::{MutableEntryData, RawEntryData},
     logger::{suggest, warn},
@@ -16,10 +16,10 @@ use crate::{
 /// The closure `data_cb` is a function which accepts a transaction and the entry data for the
 /// record to be replaced and returns a record corresponding to its replacement.
 #[expect(clippy::too_many_arguments)]
-pub fn replace<'conn, F, G>(
+pub fn replace<'conn, G>(
     identifier: RecordId,
     tx: Tx<'conn>,
-    cfg: &Config<F>,
+    cfg: &Config,
     data_cb: G,
     hard: bool,
     update_aliases: bool,
@@ -27,7 +27,6 @@ pub fn replace<'conn, F, G>(
     root: Option<AttachmentRoot<false>>,
 ) -> Result<(), anyhow::Error>
 where
-    F: FnOnce() -> Vec<(regex::Regex, String)>,
     G: FnOnce(
         Tx<'conn>,
         &RawEntryData,
@@ -36,17 +35,17 @@ where
     // first, get the data for the identifier that will be replaced
     let (original_record, (tx, original_row_id)) =
         match RecordIdState::determine(tx, identifier, &cfg.alias_transform)?.require_record()? {
-            Some((_, DisambiguatedRecordRow::Entry(record_row, state))) => {
+            Some((_, DisambiguatedRecordState::Entry(record_row, state))) => {
                 (record_row, state.into_parts())
             }
-            Some((_, DisambiguatedRecordRow::Deleted(record_row, state))) => {
+            Some((_, DisambiguatedRecordState::Deleted(record_row, state))) => {
                 state.commit()?;
                 bail!(
                     "Cannot replace deleted record with canonical id '{}'",
                     record_row.canonical
                 );
             }
-            Some((_, DisambiguatedRecordRow::Void(record_row, state))) => {
+            Some((_, DisambiguatedRecordState::Void(record_row, state))) => {
                 state.commit()?;
                 bail!(
                     "Cannot replace voided record with canonical id '{}'",

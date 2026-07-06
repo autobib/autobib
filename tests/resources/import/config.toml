@@ -1,4 +1,4 @@
-preferred_providers = ["zbl", "zbmath"]
+preferred_keys = ["^zbl:.*", "^zbmath:.*"]
 
 [alias_transform]
 rules = [

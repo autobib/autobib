@@ -40,17 +40,16 @@ pub struct ImportConfig {
 /// Import records from the provided buffer.
 #[allow(clippy::too_many_arguments)]
 #[inline]
-pub fn from_buffer<F, C, W>(
+pub fn from_buffer<C, W>(
     scratch: &[u8],
     import_config: &ImportConfig,
     record_db: &mut RecordDatabase,
     client: &C,
-    config: &Config<F>,
+    config: &Config,
     bibfile: impl std::fmt::Display,
     failed: &mut W,
 ) -> Result<(), anyhow::Error>
 where
-    F: FnOnce() -> Vec<(regex::Regex, String)>,
     C: Client,
     W: io::Write + ?Sized,
 {
@@ -96,16 +95,15 @@ enum ImportOutcome {
 
 /// Import a single entry into the record database.
 #[inline]
-fn import_entry<F, C>(
+fn import_entry<C>(
     entry: Entry<MutableEntryData>,
     import_config: &ImportConfig,
     record_db: &mut RecordDatabase,
     client: &C,
-    config: &Config<F>,
+    config: &Config,
     file_import_target: Option<&mut FileImportTarget<'_>>,
 ) -> Result<ImportOutcome, anyhow::Error>
 where
-    F: FnOnce() -> Vec<(regex::Regex, String)>,
     C: Client,
 {
     import_entry_impl(
@@ -115,7 +113,7 @@ where
         &config.on_insert,
         file_import_target,
         |entry, record_db| {
-            let determined = determine_key::<F>(entry, config);
+            let determined = determine_key(entry, config);
 
             // it is more convenient to do this first since we want to perform
             // the database lookup using the canonical id if possible
@@ -470,13 +468,8 @@ impl DeterminedKey {
 }
 
 /// Determine the key associated with the provided entry.
-pub fn determine_key<F>(entry: &Entry<MutableEntryData>, config: &Config<F>) -> DeterminedKey
-where
-    F: FnOnce() -> Vec<(regex::Regex, String)>,
-{
-    let score_fn = |id: &RemoteId| config.score_id(id);
-
-    // let from_data = determine_remote_id_candidates(entry.data(), score_fn);
+pub fn determine_key(entry: &Entry<MutableEntryData>, config: &Config) -> DeterminedKey {
+    let score_fn = |id: &RemoteId| config.score_key(id.name());
 
     let resolved = RecordId::from(entry.key.as_ref())
         .resolve(&config.alias_transform)

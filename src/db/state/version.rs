@@ -20,6 +20,20 @@ pub struct Version<'tx, 'conn> {
 #[derive(Debug, Clone, Copy)]
 pub struct RevisionId(pub(in crate::db) i64);
 
+struct RevIdPretty<'a>(&'a RevisionId);
+
+impl fmt::Display for RevIdPretty<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "rev {}", self.0)
+    }
+}
+
+impl RevisionId {
+    pub fn fmt_pretty(&self) -> impl fmt::Display {
+        RevIdPretty(self)
+    }
+}
+
 impl FromSql for RevisionId {
     fn column_result(value: ValueRef<'_>) -> Result<Self, FromSqlError> {
         if let ValueRef::Integer(row_id) = value {
@@ -32,7 +46,7 @@ impl FromSql for RevisionId {
 
 impl fmt::Display for RevisionId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "rev {:0>4x}", self.0)
+        write!(f, "{:0>4x}", self.0)
     }
 }
 

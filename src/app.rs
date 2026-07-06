@@ -38,7 +38,7 @@ use crate::{
     db::{
         DeleteAliasResult, RecordDatabase, RenameAliasResult,
         state::{
-            DisambiguatedRecordRow, ExistsOrUnknown, RecordIdState, RecordRow, RecordRowDisplay,
+            DisambiguatedRecordState, ExistsOrUnknown, RecordIdState, RecordRow, RecordRowDisplay,
             RecordRowMoveResult, SetActiveError,
         },
         user_version,
@@ -650,7 +650,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     .state_from_record_id(identifier, &cfg.alias_transform)?
                     .require_record()?
                 {
-                    Some((_, DisambiguatedRecordRow::Entry(_, state))) => {
+                    Some((_, DisambiguatedRecordState::Entry(_, state))) => {
                         if revive {
                             error!(
                                 "Attempted to redo from a deleted state, but the record currently exists"
@@ -659,7 +659,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                             hist::handle_redo_result(state.redo(index)?)?;
                         }
                     }
-                    Some((_, DisambiguatedRecordRow::Deleted(_, state))) => {
+                    Some((_, DisambiguatedRecordState::Deleted(_, state))) => {
                         if revive {
                             hist::handle_redo_result(state.redo_deletion(index)?)?;
                         } else if state.current()?.has_children()? {
@@ -675,7 +675,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                             state.commit()?;
                         }
                     }
-                    Some((_, DisambiguatedRecordRow::Void(_, state))) => {
+                    Some((_, DisambiguatedRecordState::Void(_, state))) => {
                         if revive {
                             hist::handle_redo_result(state.redo_deletion(index)?)?;
                         } else if state.current()?.has_children()? {
@@ -739,11 +739,11 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     .state_from_record_id(identifier, &cfg.alias_transform)?
                     .require_record()?
                 {
-                    Some((_, DisambiguatedRecordRow::Entry(_, state))) => {
+                    Some((_, DisambiguatedRecordState::Entry(_, state))) => {
                         state.commit()?;
                         bail!("Record already exists!")
                     }
-                    Some((_, DisambiguatedRecordRow::Deleted(data, state))) => {
+                    Some((_, DisambiguatedRecordState::Deleted(data, state))) => {
                         insert(
                             state,
                             from_bibtex,
@@ -754,7 +754,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                             None,
                         )?;
                     }
-                    Some((_, DisambiguatedRecordRow::Void(data, state))) => {
+                    Some((_, DisambiguatedRecordState::Void(data, state))) => {
                         insert(
                             state,
                             from_bibtex,
@@ -827,21 +827,21 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     .state_from_record_id(identifier, &cfg.alias_transform)?
                     .require_record()?
                 {
-                    Some((_, DisambiguatedRecordRow::Entry(_, state))) => {
+                    Some((_, DisambiguatedRecordState::Entry(_, state))) => {
                         if delete {
                             hist::handle_undo_result(state.undo_delete()?)?;
                         } else {
                             hist::handle_undo_result(state.undo()?)?;
                         };
                     }
-                    Some((_, DisambiguatedRecordRow::Deleted(_, state))) => {
+                    Some((_, DisambiguatedRecordState::Deleted(_, state))) => {
                         if delete {
                             hist::handle_undo_result(state.undo_delete()?)?;
                         } else {
                             hist::handle_undo_result(state.undo()?)?;
                         };
                     }
-                    Some((_, DisambiguatedRecordRow::Void(_, _))) => {
+                    Some((_, DisambiguatedRecordState::Void(_, _))) => {
                         error!("Nothing to undo!");
                     }
                     None => {}
@@ -853,13 +853,13 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     .state_from_record_id(identifier, &cfg.alias_transform)?
                     .require_record()?
                 {
-                    Some((_, DisambiguatedRecordRow::Entry(_, state))) => {
+                    Some((_, DisambiguatedRecordState::Entry(_, state))) => {
                         state.void()?.commit()?;
                     }
-                    Some((_, DisambiguatedRecordRow::Deleted(_, state))) => {
+                    Some((_, DisambiguatedRecordState::Deleted(_, state))) => {
                         state.void()?.commit()?;
                     }
-                    Some((_, DisambiguatedRecordRow::Void(_, state))) => {
+                    Some((_, DisambiguatedRecordState::Void(_, state))) => {
                         state.commit()?;
                         error!("Record is already void");
                     }
@@ -1101,9 +1101,9 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 .state_from_record_id(identifier, &cfg.alias_transform)?
                 .require_record()?
             {
-                Some((_, DisambiguatedRecordRow::Entry(record_row, _))) => record_row.canonical,
-                Some((_, DisambiguatedRecordRow::Deleted(record_row, _))) => record_row.canonical,
-                Some((_, DisambiguatedRecordRow::Void(record_row, _))) => record_row.canonical,
+                Some((_, DisambiguatedRecordState::Entry(record_row, _))) => record_row.canonical,
+                Some((_, DisambiguatedRecordState::Deleted(record_row, _))) => record_row.canonical,
+                Some((_, DisambiguatedRecordState::Void(record_row, _))) => record_row.canonical,
                 None => return Ok(()),
             };
 

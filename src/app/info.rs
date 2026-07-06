@@ -1,7 +1,6 @@
-use std::io::Write;
+use std::{cmp::Ordering, io::Write};
 
 use itertools::Itertools;
-use regex::Regex;
 use serde_bibtex::token::is_entry_key;
 
 use crate::{
@@ -12,27 +11,46 @@ use crate::{
     output::{StdoutWriter, owriteln, stdout_lock_wrap},
 };
 
-/// Get the preferred identifier associated with a record in the Records table.
-fn get_preferred_id<'conn, D, I: InRecordsTable>(
+/// Get the preferred identifier associated with a record in the Records table, or `None` if no
+/// identifier matches.
+fn get_preferred_id<'conn, I: InRecordsTable>(
     state: &State<'conn, I>,
-    data: RecordRow<D>,
-    preferred_providers: &[String],
-) -> anyhow::Result<crate::RemoteId> {
-    if !preferred_providers.is_empty() {
-        let mut referencing_ids = state.referencing_remote_ids()?;
-        referencing_ids.sort_unstable_by(|l, r| l.provider().cmp(r.provider()));
-        for provider in preferred_providers {
-            if let Ok(idx) = referencing_ids.binary_search_by(|id| id.provider().cmp(provider)) {
-                return Ok(referencing_ids.swap_remove(idx));
+    config: &Config,
+) -> anyhow::Result<Option<String>> {
+    if config.has_preferred_keys() {
+        let mut best: Option<(String, usize)> = None;
+        state.map_referencing_keys(|new| {
+            if let Some(new_score) = config.preferred_key_matching_idx(new) {
+                if let Some((best_s, best_score)) = best.as_mut() {
+                    match new_score.cmp(best_score) {
+                        Ordering::Less => {
+                            // new score is better
+                            best_s.clear();
+                            best_s.push_str(new);
+                            *best_score = new_score;
+                        }
+                        Ordering::Equal => {
+                            // break ties lexicographically
+                            if *new < **best_s {
+                                best_s.clear();
+                                best_s.push_str(new);
+                            }
+                        }
+                        Ordering::Greater => {},
+                    }
+                } else {
+                    best = Some((new.to_owned(), new_score));
+                }
             }
-        }
+        })?;
+        return Ok(best.map(|(s, _)| s));
     }
 
-    Ok(data.canonical)
+    Ok(None)
 }
 
-pub fn database_report<'conn, D, I, F>(
-    config: &Config<F>,
+pub fn database_report<'conn, D, I>(
+    config: &Config,
     record_id: String,
     data: RecordRow<D>,
     state: State<'conn, I>,
@@ -41,7 +59,6 @@ pub fn database_report<'conn, D, I, F>(
 ) -> anyhow::Result<()>
 where
     I: InRecordsTable,
-    F: FnOnce() -> Vec<(Regex, String)>,
 {
     match report {
         InfoReportType::All => {
@@ -78,10 +95,11 @@ where
             owriteln!("{}", state.rev())?;
         }
         InfoReportType::Preferred => {
-            owriteln!(
-                "{}",
-                get_preferred_id(&state, data, &config.preferred_providers)?
-            )?;
+            if let Some(s) = get_preferred_id(&state, config)? {
+                owriteln!("{s}")?;
+            } else {
+                owriteln!("{}", data.canonical)?;
+            }
         }
         InfoReportType::Equivalent => {
             let mut lock = stdout_lock_wrap();

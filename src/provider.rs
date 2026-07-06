@@ -19,6 +19,7 @@ use ureq::http::StatusCode;
 // re-imports exposed to provider implementations
 use crate::{
     MappedKey, RemoteId,
+    db::Identifier,
     entry::{EntryData, EntryFields, EntryType, MutableEntryData},
     error::{ProviderError, RecordDataError},
     http::{BodyBytes, Client},
@@ -128,14 +129,11 @@ pub enum RemoteIdCandidate {
     None,
 }
 
-pub fn determine_key_from_data<F, D: EntryData>(
+pub fn determine_key_from_data<D: EntryData>(
     data: &D,
-    config: &crate::config::Config<F>,
-) -> RemoteIdCandidate
-where
-    F: FnOnce() -> Vec<(regex::Regex, String)>,
-{
-    determine_remote_id_candidates(data, |id| config.score_id(id), None, None)
+    config: &crate::config::Config,
+) -> RemoteIdCandidate {
+    determine_remote_id_candidates(data, |id| config.score_key(id.name()), None, None)
 }
 
 /// Determine candidates for valid remote identifiers from the provided bibtex data.
