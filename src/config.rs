@@ -1,6 +1,6 @@
 mod validate;
 
-use std::{fs::read_to_string, io, path::Path, sync::LazyLock};
+use std::{cmp::Reverse, fs::read_to_string, io, path::Path, sync::OnceLock};
 
 use anyhow::{Error, anyhow};
 use regex::Regex;
@@ -10,7 +10,7 @@ use toml::from_str;
 use crate::{
     Alias, Identifier,
     format::DEFAULT_FIND_TEMPLATE,
-    logger::{debug, info, warn},
+    logger::{debug, info, suggest, warn},
     normalize::Normalization,
 };
 pub use validate::report_config_errors as validate;
@@ -24,6 +24,8 @@ struct RawConfig {
     pub find: RawFindConfig,
     #[serde(default)]
     pub preferred_providers: Vec<String>,
+    #[serde(default)]
+    pub preferred_keys: Vec<String>,
     #[serde(default)]
     pub alias_transform: RawAutoAlias,
     #[serde(default)]
@@ -93,30 +95,93 @@ impl RawConfig {
 }
 
 #[derive(Debug)]
-pub struct Config<F> {
+pub struct PreferredKeys {
+    raw_keys: Vec<String>,
+    compiled: OnceLock<Vec<Regex>>,
+}
+
+impl PreferredKeys {
+    fn compiled_patterns(&self) -> &[Regex] {
+        self.compiled.get_or_init(|| {
+            self.raw_keys
+                .iter()
+             .filter_map(|re| {
+                Regex::new(re)
+                    .inspect_err(|err| warn!("Invalid config: failed to compile 'preferred_keys' regex '{re}': {err}"))
+                    .ok()
+            })
+            .collect()
+        })
+    }
+
+    fn is_empty(&self) -> bool {
+        self.raw_keys.is_empty()
+    }
+
+    fn len(&self) -> usize {
+        self.raw_keys.len()
+    }
+}
+
+#[derive(Debug)]
+pub struct Config {
     pub find: RawFindConfig,
-    pub preferred_providers: Vec<String>,
-    pub alias_transform: LazyAliasTransform<F>,
+    pub preferred_keys: PreferredKeys,
+    pub alias_transform: LazyAliasTransform,
     pub on_insert: Normalization,
 }
 
-impl<F> Config<F> {
-    /// Obtain a score for an identifier, in terms of preferences defined inside
-    /// this configuration. Higher scores are better.
-    pub fn score_id<'a>(&'a self, id: &crate::record::RemoteId) -> impl Ord + use<'a, F> {
-        std::cmp::Reverse(
-            self.preferred_providers
-                .iter()
-                .position(|pref| pref == id.provider())
-                .unwrap_or(self.preferred_providers.len()),
+impl Config {
+    pub fn has_preferred_keys(&self) -> bool {
+        !self.preferred_keys.is_empty()
+    }
+
+    /// Obtain a score for a key, in terms of preferences defined by the value of
+    /// `preferred_keys` in this configuration. If there is no matching prefix,
+    /// this returns `None`.
+    pub fn preferred_key_matching_idx(&self, id: &str) -> Option<usize> {
+        self.preferred_keys
+            .compiled_patterns()
+            .iter()
+            .position(|re| re.is_match(id))
+    }
+
+    /// Obtain a score for a key, in terms of preferences defined by the value of
+    /// `preferred_keys` in this configuration. Higher scores are better.
+    pub fn score_key<'a>(&'a self, id: &str) -> impl Ord + use<'a> {
+        Reverse(
+            self.preferred_key_matching_idx(id)
+                .unwrap_or(self.preferred_keys.len()),
         )
     }
 }
 
 #[derive(Debug)]
-pub struct LazyAliasTransform<F> {
-    rules: LazyLock<Vec<(Regex, String)>, F>,
+pub struct LazyAliasTransform {
+    compiled: OnceLock<Vec<Regex>>,
+    rules: Vec<(String, String)>,
     create_alias: bool,
+}
+
+impl LazyAliasTransform {
+    fn compiled_rules(&self) -> &[Regex] {
+        self.compiled.get_or_init(|| {
+            self.rules
+                .iter()
+             .filter_map(|(re, s)| {
+                Regex::new(re)
+                    .inspect_err(|err| warn!("Invalid config: failed to compile 'alias_transform.rules' transformation\nrule with provider '{s}': {err}"))
+                    .ok()
+            })
+            .collect()
+        })
+    }
+
+    fn rule_pairs(&self) -> impl Iterator<Item = (&Regex, &str)> {
+        self.compiled_rules()
+            .iter()
+            .zip(self.rules.iter().map(|(_, provider)| provider.as_ref()))
+    }
 }
 
 #[cold]
@@ -129,13 +194,11 @@ pub fn write_default<W: io::Write>(mut writer: W) -> Result<(), io::Error> {
 /// Attempt to load the configuration file from the provided path.
 ///
 /// If `missing_ok` is true and the file is not found, this returns the default configuration.
-pub fn load<P: AsRef<Path>>(
-    path: P,
-    missing_ok: bool,
-) -> Result<Config<impl FnOnce() -> Vec<(Regex, String)>>, Error> {
+pub fn load<P: AsRef<Path>>(path: P, missing_ok: bool) -> Result<Config, Error> {
     let RawConfig {
         find,
         preferred_providers,
+        mut preferred_keys,
         alias_transform: RawAutoAlias {
             rules,
             create_alias,
@@ -143,26 +206,40 @@ pub fn load<P: AsRef<Path>>(
         on_insert,
     } = RawConfig::load(path, missing_ok)?;
 
-    let rules = LazyLock::new(move || {
-        rules
-            .into_iter()
-            .filter_map(|(re, s)| {
-                Regex::new(&re)
-                    .inspect_err(|err| warn!("Invalid config: failed to compile 'alias_transform.rules' transformation\nrule with provider '{s}': {err}"))
-                    .ok()
-                    .map(|compiled| (compiled, s))
-            })
-            .collect()
-    });
+    if !preferred_providers.is_empty() {
+        if preferred_keys.is_empty() {
+            warn!(
+                "Configuration key `preferred_providers` has been deprecated; it is replaced by `preferred_keys`."
+            );
+            suggest!(
+                "In your configuration file, rename `preferred_providers` to `preferred_keys` and replace each `provider` with the regex `^provider:.*`"
+            );
+            preferred_keys = preferred_providers;
+            for k in preferred_keys.iter_mut() {
+                k.insert(0, '^');
+                k.push_str(":.*");
+            }
+        } else {
+            anyhow::bail!(
+                "Configuration defines both `preferred_providers` and `preferred_keys`. `preferred_providers` has been deprecated;"
+            )
+        }
+    }
 
     let alias_transform = LazyAliasTransform {
+        compiled: OnceLock::new(),
         rules,
         create_alias,
     };
 
+    let preferred_keys = PreferredKeys {
+        raw_keys: preferred_keys,
+        compiled: OnceLock::new(),
+    };
+
     Ok(Config {
         find,
-        preferred_providers,
+        preferred_keys,
         alias_transform,
         on_insert,
     })
@@ -183,13 +260,11 @@ pub trait AliasTransform {
 
 impl AliasTransform for () {}
 
-impl<F: FnOnce() -> Vec<(Regex, String)>> AliasTransform for LazyAliasTransform<F> {
+impl AliasTransform for LazyAliasTransform {
     fn map_alias<'a>(&'a self, alias: &'a Alias) -> Option<(&'a str, &'a str)> {
-        for (re, provider) in self.rules.iter() {
-            if let Some(cap) = re.captures(alias.name())
-                && let Some(res) = cap.get(1)
-            {
-                return Some((provider, res.as_str()));
+        for (re, provider) in self.rule_pairs() {
+            if let Some((_, [res])) = re.captures(alias.name()).map(|caps| caps.extract()) {
+                return Some((provider, res));
             }
         }
 

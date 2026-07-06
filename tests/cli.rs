@@ -977,7 +977,7 @@ fn path_platform_consistency() -> Result<()> {
 }
 
 fn import_zbmath_record(s: &TestState) -> Result<()> {
-    fs::write(s.config.as_ref(), "preferred_providers = [\"zbmath\"]\n")?;
+    fs::write(s.config.as_ref(), "preferred_keys = [\"^zbmath:.*\"]\n")?;
 
     let mut cmd = s.cmd()?;
     cmd.args(["import", "tests/resources/import/file.bib"]);

@@ -68,7 +68,7 @@ impl<'a> fmt::Display for RecordRowDisplay<'a> {
             ContentStyle::default()
         };
 
-        let hex = StyledContent::new(style, self.rev_id);
+        let hex = StyledContent::new(style, self.rev_id.fmt_pretty());
 
         let style = if self.styled {
             ContentStyle::default().italic().grey()

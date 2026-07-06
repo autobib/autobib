@@ -290,7 +290,7 @@ pub enum Command {
     /// Import records from BibTeX files.
     ///
     /// The implementation automatically determines a remote identifier from the data using
-    /// your `preferred_providers` config setting, or with any other remote identifier that can
+    /// your `preferred_jeys` config setting, or with any other remote identifier that can
     /// be found in the data. Use `--local-fallback` to import as `local:` identifiers if no
     /// canonical identifier could be found.
     ///

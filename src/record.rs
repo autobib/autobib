@@ -1,5 +1,4 @@
 mod key;
-mod mapped;
 
 use anyhow::bail;
 use nonempty::NonEmpty;
@@ -148,14 +147,13 @@ impl<'conn> RecordRowResponse<'conn> {
     }
 }
 
-pub fn get_record_row_tx<'conn, F, C>(
+pub fn get_record_row_tx<'conn, C>(
     tx: Tx<'conn>,
     record_id: RecordId,
     client: &C,
-    config: &Config<F>,
+    config: &Config,
 ) -> Result<RecordRowResponse<'conn>, Error>
 where
-    F: FnOnce() -> Vec<(regex::Regex, String)>,
     C: Client,
 {
     match RecordIdState::determine(tx, record_id, &config.alias_transform)? {
@@ -221,14 +219,13 @@ where
 ///
 /// The database state is passed back to the caller and must be commited for the record to be
 /// recorded in the database.
-pub fn get_record_row<'conn, F, C>(
+pub fn get_record_row<'conn, C>(
     db: &'conn mut RecordDatabase,
     record_id: RecordId,
     client: &C,
-    config: &Config<F>,
+    config: &Config,
 ) -> Result<RecordRowResponse<'conn>, Error>
 where
-    F: FnOnce() -> Vec<(regex::Regex, String)>,
     C: Client,
 {
     get_record_row_tx(db.transaction()?, record_id, client, config)

@@ -23,16 +23,12 @@ use crate::{
 };
 
 /// Retrieve identifiers as BibTeX entries.
-pub fn retrieve_entries<
-    T: IntoIterator<Item = RecordId>,
-    F: FnOnce() -> Vec<(regex::Regex, String)>,
-    C: Client,
->(
+pub fn retrieve_entries<T: IntoIterator<Item = RecordId>, C: Client>(
     ids: T,
     record_db: &mut RecordDatabase,
     client: &C,
     ignore_null: bool,
-    config: &Config<F>,
+    config: &Config,
 ) -> BTreeMap<RemoteId, NonEmpty<Entry<RawEntryData>>> {
     let valid_entries = ids.into_iter().filter_map(|id| {
         retrieve_single_entry(
@@ -52,16 +48,12 @@ pub fn retrieve_entries<
 }
 
 /// Synchronize entries with remote.
-pub fn sync_entries<
-    T: IntoIterator<Item = RecordId>,
-    F: FnOnce() -> Vec<(regex::Regex, String)>,
-    C: Client,
->(
+pub fn sync_entries<T: IntoIterator<Item = RecordId>, C: Client>(
     ids: T,
     record_db: &mut RecordDatabase,
     client: &C,
     ignore_null: bool,
-    config: &Config<F>,
+    config: &Config,
 ) {
     for id in ids {
         retrieve_single_entry(record_db, id, client, ignore_null, config, |_, _| {
@@ -76,14 +68,11 @@ pub fn sync_entries<
 
 /// Retrieve identifiers as BibTeX entries without writing to the database or making remote
 /// requests.
-pub fn retrieve_entries_read_only<
-    T: IntoIterator<Item = RecordId>,
-    F: FnOnce() -> Vec<(regex::Regex, String)>,
->(
+pub fn retrieve_entries_read_only<T: IntoIterator<Item = RecordId>>(
     ids: T,
     record_db: &mut RecordDatabase,
     ignore_null: bool,
-    config: &Config<F>,
+    config: &Config,
 ) -> BTreeMap<RemoteId, NonEmpty<Entry<RawEntryData>>> {
     let valid_entries = ids.into_iter().filter_map(|record_id| {
         retrieve_single_entry_read_only(
@@ -102,14 +91,11 @@ pub fn retrieve_entries_read_only<
 }
 
 /// Synchronize entries with remote.
-pub fn sync_entries_read_only<
-    T: IntoIterator<Item = RecordId>,
-    F: FnOnce() -> Vec<(regex::Regex, String)>,
->(
+pub fn sync_entries_read_only<T: IntoIterator<Item = RecordId>>(
     ids: T,
     record_db: &mut RecordDatabase,
     ignore_null: bool,
-    config: &Config<F>,
+    config: &Config,
 ) {
     for id in ids {
         retrieve_single_entry_read_only(record_db, id, ignore_null, config, |_, _| {
@@ -123,15 +109,14 @@ pub fn sync_entries_read_only<
 }
 
 /// Retrieve a single entry and apply a closure to the resulting data.
-pub fn retrieve_single_entry_read_only<F, V, T>(
+pub fn retrieve_single_entry_read_only<V, T>(
     record_db: &mut RecordDatabase,
     id: RecordId,
     ignore_null: bool,
-    config: &Config<F>,
+    config: &Config,
     validate: V,
 ) -> Result<Option<T>, Error>
 where
-    F: FnOnce() -> Vec<(regex::Regex, String)>,
     V: FnOnce(Record<RawEntryData>, &State<'_, IsEntry>) -> Option<T>,
 {
     match record_db.state_from_record_id(id, &config.alias_transform)? {
@@ -181,16 +166,15 @@ where
 }
 
 /// Retrieve and apply a validation function to a single record
-pub fn retrieve_single_entry<F, C, V, T>(
+pub fn retrieve_single_entry<C, V, T>(
     record_db: &mut RecordDatabase,
     id: RecordId,
     client: &C,
     ignore_null: bool,
-    config: &Config<F>,
+    config: &Config,
     validate: V,
 ) -> Result<Option<T>, Error>
 where
-    F: FnOnce() -> Vec<(regex::Regex, String)>,
     C: Client,
     V: FnOnce(Record<RawEntryData>, &State<'_, IsEntry>) -> Option<T>,
 {

@@ -1,4 +1,4 @@
-use std::cmp::Reverse;
+use std::{cmp::Reverse, fmt, io};
 
 use chrono::{DateTime, Local};
 use rusqlite::{OptionalExtension, Row};
@@ -67,6 +67,47 @@ impl<D: FromBytesAndVariant> RecordRow<D> {
     pub(super) fn load_unchecked(tx: &Tx<'_>, row_id: i64) -> rusqlite::Result<Self> {
         tx.prepare_cached("SELECT record_id, modified, data, variant FROM Records WHERE key = ?1")?
             .query_row((row_id,), |row| Ok(Self::from_row_unchecked(row)))
+    }
+}
+
+impl RecordRow<RawEntryData> {
+    pub fn write_io<W: io::Write>(&self, writer: W) -> Result<(), io::Error> {
+        Ok(serde_json::to_writer(writer, &self)?)
+    }
+
+    pub fn write_fmt<W: fmt::Write>(&self, writer: W) -> Result<(), fmt::Error> {
+        // an adapter to use io writing methods with fmt
+        struct FormatterAdapter<W: fmt::Write>(W);
+
+        impl<W: fmt::Write> io::Write for FormatterAdapter<W> {
+            fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+                let s = unsafe {
+                    // serde_json does not emit invalid UTF-8
+                    std::str::from_utf8_unchecked(buf)
+                };
+
+                match self.0.write_str(s) {
+                    Ok(()) => Ok(s.len()),
+                    Err(fmt::Error) => Err(io::ErrorKind::Other.into()),
+                }
+            }
+
+            fn flush(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+
+        let adapter = FormatterAdapter(writer);
+        match serde_json::to_writer(adapter, &self) {
+            Ok(()) => Ok(()),
+            Err(err) => {
+                if err.is_io() {
+                    Err(fmt::Error)
+                } else {
+                    panic!("JSON serialization should not fail")
+                }
+            }
+        }
     }
 }
 
@@ -250,18 +291,33 @@ impl NotEntry for IsVoid {}
 impl_record_key!(IsVoid, ());
 
 /// A row in the 'Records' table, disambiguated based on what type of row it is.
-pub enum DisambiguatedRecordRow<'conn> {
+pub enum DisambiguatedRecordState<'conn> {
     Entry(RecordRow<RawEntryData>, State<'conn, IsEntry>),
     Deleted(RecordRow<Option<RemoteId>>, State<'conn, IsDeleted>),
     Void(RecordRow<()>, State<'conn, IsVoid>),
 }
 
-impl<'conn> DisambiguatedRecordRow<'conn> {
+/// A row in the 'Records' table, disambiguated based on what type of row it is.
+pub enum DisambiguatedRecordRow {
+    Entry(RecordRow<RawEntryData>),
+    Deleted(RecordRow<Option<RemoteId>>),
+    Void(RecordRow<()>),
+}
+
+impl<'conn> DisambiguatedRecordState<'conn> {
     pub fn forget(self) -> (RecordRow<ArbitraryData>, State<'conn, IsArbitrary>) {
         match self {
             Self::Entry(data, state) => (data.into(), state.forget()),
             Self::Deleted(data, state) => (data.into(), state.forget()),
             Self::Void(data, state) => (data.into(), state.forget()),
+        }
+    }
+
+    pub fn forget_state(self) -> (DisambiguatedRecordRow, State<'conn, IsArbitrary>) {
+        match self {
+            Self::Entry(data, state) => (DisambiguatedRecordRow::Entry(data), state.forget()),
+            Self::Deleted(data, state) => (DisambiguatedRecordRow::Deleted(data), state.forget()),
+            Self::Void(data, state) => (DisambiguatedRecordRow::Void(data), state.forget()),
         }
     }
 }
@@ -432,8 +488,8 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
     }
 
     /// Get the hexadecimal revision of the active row.
-    pub fn rev(&self) -> String {
-        format!("{:0>4x}", self.row_id())
+    pub fn rev(&self) -> RevisionId {
+        RevisionId(self.row_id())
     }
 
     /// Get last modified time.
@@ -505,29 +561,41 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
 
     /// Get every key in the `Identifiers` table which references this row.
     pub fn referencing_keys(&self) -> Result<Vec<String>, rusqlite::Error> {
-        self.referencing_keys_impl(Some)
+        self.referencing_keys_impl(|k| Some(k.to_owned()))
+    }
+
+    /// Apply a mutable closure to every key in the `Identifiers` table which references this row.
+    pub fn map_referencing_keys(&self, mut f: impl FnMut(&str)) -> Result<(), rusqlite::Error> {
+        debug!("Getting referencing keys for '{}'.", self.row_id());
+        let mut selector = self.prepare("SELECT name FROM Identifiers WHERE record_key = ?1")?;
+        let mut rows = selector.query((self.row_id(),))?;
+        while let Some(row) = rows.next()? {
+            if let rusqlite::types::ValueRef::Text(bytes) = row.get_ref_unwrap(0) {
+                f(std::str::from_utf8(bytes).unwrap());
+            } else {
+                panic!("'Identifiers' table has unexpected schema: column 'name' is not a TEXT!");
+            }
+        }
+        Ok(())
     }
 
     /// Get every remote id in the `Identifiers` table which references this row.
     pub fn referencing_remote_ids(&self) -> Result<Vec<RemoteId>, rusqlite::Error> {
-        self.referencing_keys_impl(RemoteId::from_alias_or_remote_id_unchecked)
+        self.referencing_keys_impl(|k| RemoteId::from_alias_or_remote_id_unchecked(k.to_owned()))
     }
 
     /// Get a transformed version of every key in the `Identifiers` table which references
     /// the current row for which the provided `filter_map` does not return `None`.
-    fn referencing_keys_impl<T, F: FnMut(String) -> Option<T>>(
+    fn referencing_keys_impl<T, F: FnMut(&str) -> Option<T>>(
         &self,
         mut filter_map: F,
     ) -> Result<Vec<T>, rusqlite::Error> {
-        debug!("Getting referencing keys for '{}'.", self.row_id());
-        let mut selector = self.prepare("SELECT name FROM Identifiers WHERE record_key = ?1")?;
-        let rows = selector.query_map((self.row_id(),), |row| row.get(0))?;
         let mut referencing = Vec::with_capacity(1);
-        for name_res in rows {
-            if let Some(mapped) = filter_map(name_res?) {
+        self.map_referencing_keys(|k| {
+            if let Some(mapped) = filter_map(k) {
                 referencing.push(mapped);
             }
-        }
+        })?;
         Ok(referencing)
     }
 
@@ -981,7 +1049,7 @@ impl<'conn, I: NotEntry> State<'conn, I> {
 
 impl<'conn> State<'conn, IsArbitrary> {
     /// Disambiguate the arbitrary state, returning the data as well as the resulting type.
-    pub fn disambiguate(self) -> Result<DisambiguatedRecordRow<'conn>, rusqlite::Error> {
+    pub fn disambiguate(self) -> Result<DisambiguatedRecordState<'conn>, rusqlite::Error> {
         let RecordRow {
             data,
             modified,
@@ -991,7 +1059,7 @@ impl<'conn> State<'conn, IsArbitrary> {
         let row_id = self.row_id();
 
         Ok(match data {
-            ArbitraryData::Entry(data) => DisambiguatedRecordRow::Entry(
+            ArbitraryData::Entry(data) => DisambiguatedRecordState::Entry(
                 RecordRow {
                     data,
                     modified,
@@ -999,7 +1067,7 @@ impl<'conn> State<'conn, IsArbitrary> {
                 },
                 State::init(self.tx, IsEntry(row_id)),
             ),
-            ArbitraryData::Deleted(data) => DisambiguatedRecordRow::Deleted(
+            ArbitraryData::Deleted(data) => DisambiguatedRecordState::Deleted(
                 RecordRow {
                     data,
                     modified,
@@ -1007,7 +1075,7 @@ impl<'conn> State<'conn, IsArbitrary> {
                 },
                 State::init(self.tx, IsDeleted(row_id)),
             ),
-            ArbitraryData::Void => DisambiguatedRecordRow::Void(
+            ArbitraryData::Void => DisambiguatedRecordState::Void(
                 RecordRow {
                     data: (),
                     modified,
