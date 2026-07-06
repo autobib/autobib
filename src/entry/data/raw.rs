@@ -58,7 +58,7 @@ use std::str::from_utf8;
 
 use serde_bibtex::token::is_balanced;
 
-use super::{BorrowedEntryData, EntryData, EntryFields, validate_ascii_identifier};
+use super::{AsEntryData, EntryData, validate_ascii_identifier};
 use crate::error::InvalidBytesError;
 
 /// The size (in bytes) of the version header.
@@ -84,7 +84,7 @@ pub struct RawEntryData<T = Vec<u8>> {
 
 impl RawEntryData {
     /// Initialize from any [`EntryData`] implementation.
-    pub fn from_entry_data<D: EntryData>(entry_data: &D) -> Self {
+    pub fn from_entry_data<'r, D: EntryData<'r>>(entry_data: D) -> Self {
         let mut data = Vec::with_capacity(entry_data.raw_len());
 
         data.push(0);
@@ -94,7 +94,7 @@ impl RawEntryData {
         data.push(entry_type_len);
         data.extend(entry_type.as_bytes());
 
-        for (key, value) in entry_data.fields().pairs() {
+        for (key, value) in entry_data.fields() {
             let key_len = KeyHeader::try_from(key.len()).unwrap();
             let value_len = ValueHeader::try_from(value.len()).unwrap().to_le_bytes();
 
@@ -264,7 +264,7 @@ impl<'r> RawEntryData<&'r [u8]> {
 
 /// The iterator type for the fields of a [`RawEntryData`]. This cannot be constructed directly;
 /// it is constructed implicitly by the [`EntryData::fields`] implementation of [`RawEntryData`].
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RawRecordFieldsIter<'a> {
     remaining: &'a [u8],
 }
@@ -303,65 +303,39 @@ impl RawEntryData {
     }
 }
 
-impl<'r> BorrowedEntryData<'r> for RawEntryData<&'r [u8]> {
-    fn fields_borrowed(&self) -> impl Iterator<Item = (&'r str, &'r str)> {
-        let (_, data_blocks) = self.split_blocks_borrowed();
-        RawRecordFieldsIter {
-            remaining: data_blocks,
-        }
-    }
-}
-
-struct RawFields<'r> {
-    data: &'r [u8],
-}
-
-impl<'r> EntryFields<'r> for RawFields<'r> {
-    fn pairs(&self) -> impl Iterator<Item = (&'r str, &'r str)> {
-        RawRecordFieldsIter {
-            remaining: self.data,
-        }
-    }
-}
-
-unsafe impl<T: AsRef<[u8]>> EntryData for RawEntryData<T> {
-    fn fields(&self) -> impl EntryFields<'_> {
-        let (_, data) = self.split_blocks();
-        RawFields { data }
+unsafe impl<'r> EntryData<'r> for RawEntryData<&'r [u8]> {
+    fn fields(&self) -> impl IntoIterator<Item = (&'r str, &'r str)> + Clone {
+        let (_, data) = self.split_blocks_borrowed();
+        RawRecordFieldsIter { remaining: data }
     }
 
-    fn entry_type(&self) -> &str {
-        let (type_block, _) = self.split_blocks();
+    fn entry_type(&self) -> &'r str {
+        let (type_block, _) = self.split_blocks_borrowed();
         from_utf8(&type_block[1..]).unwrap()
     }
 
-    fn entry_type_and_fields(&self) -> (&str, impl EntryFields<'_>) {
-        let (type_block, data) = self.split_blocks();
-        (from_utf8(&type_block[1..]).unwrap(), RawFields { data })
+    fn entry_type_and_fields(
+        &self,
+    ) -> (
+        &'r str,
+        impl IntoIterator<Item = (&'r str, &'r str)> + Clone,
+    ) {
+        let (type_block, data) = self.split_blocks_borrowed();
+        (
+            from_utf8(&type_block[1..]).unwrap(),
+            RawRecordFieldsIter { remaining: data },
+        )
     }
 
     fn raw_len(&self) -> usize {
-        self.data.as_ref().len()
+        self.data.len()
     }
 }
 
-unsafe impl<T: AsRef<[u8]>> EntryData for &RawEntryData<T> {
-    fn fields(&self) -> impl EntryFields<'_> {
-        let (_, data) = self.split_blocks();
-        RawFields { data }
-    }
-
-    fn entry_type(&self) -> &str {
-        let (type_block, _) = self.split_blocks();
-        from_utf8(&type_block[1..]).unwrap()
-    }
-
-    fn entry_type_and_fields(&self) -> (&str, impl EntryFields<'_>) {
-        let (type_block, data) = self.split_blocks();
-        (from_utf8(&type_block[1..]).unwrap(), RawFields { data })
-    }
-
-    fn raw_len(&self) -> usize {
-        self.data.as_ref().len()
+impl<T: AsRef<[u8]>> AsEntryData for RawEntryData<T> {
+    fn as_entry_data<'r>(&'r self) -> impl EntryData<'r> {
+        RawEntryData {
+            data: self.data.as_ref(),
+        }
     }
 }

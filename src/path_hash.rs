@@ -285,10 +285,10 @@ pub(crate) fn extend_attachment_path_v1<S: AsRef<str>>(id: &RemoteId<S>, path_bu
 ///
 /// The header `xx/xx/xx` ensures that each directory does not have more than 1024 immediate
 /// sub-directories.
-fn extend_hashed_path<H: for<'a> FnOnce(&'a [u8]) -> u64>(
+fn extend_hashed_path<'a, H: FnOnce(&'a [u8]) -> u64>(
     path_buf: &mut PathBuf,
     provider: &str,
-    sub_id_bytes: &[u8],
+    sub_id_bytes: &'a [u8],
     hash_fn: H,
     encoding: Encoding,
 ) {

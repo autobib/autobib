@@ -95,7 +95,7 @@ fn add_contains_field_function(conn: &Connection) -> Result<(), rusqlite::Error>
 
 /// Register `get_field` callback.
 fn add_get_field_function(conn: &Connection) -> Result<(), rusqlite::Error> {
-    use crate::entry::{BorrowedEntryData, RawEntryData};
+    use crate::entry::{EntryData, RawEntryData};
 
     conn.create_scalar_function(
         AppFunction::GetField.name(),
@@ -114,7 +114,7 @@ fn add_get_field_function(conn: &Connection) -> Result<(), rusqlite::Error> {
                     .as_blob()
                     .map_err(|e| rusqlite::Error::UserFunctionError(e.into()))?;
 
-                RawEntryData::from_byte_repr_unchecked(data).get_field_borrowed(field_name)
+                RawEntryData::from_byte_repr_unchecked(data).get_field(field_name)
             };
 
             // this has to be 'static

@@ -6,6 +6,7 @@ use rusqlite::{OptionalExtension, Row};
 use crate::{
     Alias, RawEntryData, RemoteId,
     db::{Constraint, Identifier, flatten_constraint_violation, get_row_id},
+    entry::AsEntryData,
     logger::{debug, info},
 };
 
@@ -70,7 +71,7 @@ impl<D: FromBytesAndVariant> RecordRow<D> {
     }
 }
 
-impl RecordRow<RawEntryData> {
+impl<D: AsEntryData> RecordRow<D> {
     pub fn write_io<W: io::Write>(&self, writer: W) -> Result<(), io::Error> {
         Ok(serde_json::to_writer(writer, &self)?)
     }

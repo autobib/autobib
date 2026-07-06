@@ -11,7 +11,7 @@ use crate::{
         state::{IsEntry, RecordsInsert, State},
     },
     entry::{
-        ConflictResolved, Entry, EntryData, EntryEditCommand, EntryKey, MutableEntryData,
+        AsEntryData, ConflictResolved, Entry, EntryEditCommand, EntryKey, MutableEntryData,
         RawEntryData,
     },
     error::{MergeError, ShortError},
@@ -105,25 +105,25 @@ where
     Ok(())
 }
 
-/// Merge an iterator of [`EntryData`] into existing data, using the merge rules as specified
+/// Merge an iterator of [`AsEntryData`] into existing data, using the merge rules as specified
 /// by the passed [`OnConflict`].
-pub fn merge_record_data<'a, D: EntryData + 'a>(
+pub fn merge_record_data<D: AsEntryData>(
     on_conflict: OnConflict,
     existing_record: &mut MutableEntryData,
-    new_raw_data: impl IntoIterator<Item = &'a D>,
+    new_raw_data: impl IntoIterator<Item = D>,
     id_display: impl std::fmt::Display,
 ) -> Result<(), MergeError> {
     match on_conflict {
         OnConflict::PreferCurrent => {
             info!("Updating {id_display} with new data, skipping existing fields");
             for data in new_raw_data {
-                existing_record.merge_or_skip(data);
+                existing_record.merge_or_skip(&data);
             }
         }
         OnConflict::PreferIncoming => {
             info!("Updating {id_display} with new data, overwriting existing fields");
             for data in new_raw_data {
-                existing_record.merge_or_overwrite(data);
+                existing_record.merge_or_overwrite(&data);
             }
         }
         OnConflict::Prompt => {
@@ -132,7 +132,7 @@ pub fn merge_record_data<'a, D: EntryData + 'a>(
                 // FIXME: don't copy-paste here, but it is annoying to avoid this because
                 // it needs some new trait bounds for operations like `to_owned()` etc.
                 existing_record.merge_with_callback(
-                    data,
+                    &data,
                     |current, incoming| {
                         eprintln!("Conflict for the entry type:");
                         eprintln!("   Current value: {current}");

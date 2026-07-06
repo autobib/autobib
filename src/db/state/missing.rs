@@ -85,9 +85,9 @@ impl<'conn> State<'conn, IsMissing> {
 
     /// A convenience wrapper around [`insert`](Self::insert) which first converts any type which
     /// implements [`EntryData`] into a [`RawEntryData`].
-    pub fn insert_entry_data<D: EntryData>(
+    pub fn insert_entry_data<'r, D: EntryData<'r>>(
         self,
-        data: &D,
+        data: D,
         canonical: &RemoteId,
     ) -> Result<Updated<'conn, IsEntry>, rusqlite::Error> {
         let raw_record_data = RawEntryData::from_entry_data(data);

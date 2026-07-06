@@ -1,15 +1,12 @@
 mod data;
 mod deserialize;
 
+use serde_bibtex::{MacroDictionary, de::Deserializer};
 use std::{fmt, io, str::FromStr};
 
-use delegate::delegate;
-use serde_bibtex::{MacroDictionary, de::Deserializer};
-
 pub use self::data::{
-    BorrowedEntryData, ConflictResolved, EntryData, EntryEditCommand, EntryFields, EntryKey,
-    EntryType, FieldKey, FieldValue, MutableEntryData, RawEntryData, RawRecordFieldsIter,
-    SetFieldCommand,
+    AsEntryData, ConflictResolved, EntryData, EntryEditCommand, EntryKey, EntryType, FieldKey,
+    FieldValue, MutableEntryData, RawEntryData, RawRecordFieldsIter, SetFieldCommand,
 };
 pub(crate) use self::data::{EntryTypeHeader, KeyHeader, ValueHeader};
 
@@ -22,7 +19,7 @@ pub struct Entry<D, S = String> {
     pub record_data: D,
 }
 
-impl<D: EntryData, S> Entry<D, S> {
+impl<D, S> Entry<D, S> {
     /// Create a new entry with the provided key and record data.
     pub fn new(key: EntryKey<S>, record_data: D) -> Self {
         Self { key, record_data }
@@ -34,14 +31,6 @@ impl<D: EntryData, S> Entry<D, S> {
 
     pub fn data(&self) -> &D {
         &self.record_data
-    }
-
-    delegate! {
-        to self.record_data {
-            pub fn fields(&self) -> impl EntryFields<'_>;
-            pub fn entry_type(&self) -> &str;
-            pub fn entry_type_and_fields(&self) -> (&str, impl EntryFields<'_>);
-        }
     }
 }
 
@@ -79,11 +68,12 @@ impl<W: fmt::Write> EntryWrite for FmtWriteWrap<W> {
     }
 }
 
-impl<D: EntryData, S: AsRef<str>> Entry<D, S> {
+impl<D: AsEntryData, S: AsRef<str>> Entry<D, S> {
     fn write_generic<W: EntryWrite>(&self, mut writer: W) -> Result<(), W::Error> {
-        let (entry_type, fields) = self.entry_type_and_fields();
+        let tmp = self.record_data.as_entry_data();
+        let (entry_type, fields) = tmp.entry_type_and_fields();
         writeln!(writer, "@{}{{{},", entry_type, self.key.as_ref())?;
-        for (key, value) in fields.pairs() {
+        for (key, value) in fields {
             writeln!(writer, "  {key} = {{{value}}},")?;
         }
         write!(writer, "}}")
@@ -97,18 +87,18 @@ impl<D: EntryData, S: AsRef<str>> Entry<D, S> {
         self.write_generic(FmtWriteWrap(writer))
     }
 }
-impl<D: EntryData, S: AsRef<str>> fmt::Display for Entry<D, S> {
+impl<D: AsEntryData, S: AsRef<str>> fmt::Display for Entry<D, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.write_fmt(f)
     }
 }
 
-pub fn entries_to_bibtex<'r, W, E, D, S>(mut writer: W, entries: E) -> Result<(), io::Error>
+pub fn entries_to_bibtex<'a, W, E, D, S>(mut writer: W, entries: E) -> Result<(), io::Error>
 where
     W: io::Write,
-    D: EntryData + 'r,
-    S: AsRef<str> + 'r,
-    E: IntoIterator<Item = &'r Entry<D, S>>,
+    D: AsEntryData + 'a,
+    S: AsRef<str> + 'a,
+    E: IntoIterator<Item = &'a Entry<D, S>>,
 {
     let mut first = true;
     for entry in entries {

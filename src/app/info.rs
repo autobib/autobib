@@ -36,7 +36,7 @@ fn get_preferred_id<'conn, I: InRecordsTable>(
                                 best_s.push_str(new);
                             }
                         }
-                        Ordering::Greater => {},
+                        Ordering::Greater => {}
                     }
                 } else {
                     best = Some((new.to_owned(), new_score));
