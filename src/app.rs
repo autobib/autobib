@@ -987,17 +987,19 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             let mut lock = stdout_lock_wrap();
             if let Some(template) = template {
                 use get::Output as _;
-                let mut writer = get::TemplateOutput::new(strict, template, &mut lock, &sep);
                 if canonical {
+                    let mut writer = get::TemplateRowOutput::new(strict, template, &mut lock, &sep);
                     record_db.map_matching_canonical_active_records(&matching, |row_data| {
                         writer.write_item(row_data)
                     })?;
+                    writer.finish()?;
                 } else {
+                    let mut writer = get::TemplateOutput::new(strict, template, &mut lock, &sep);
                     record_db.map_matching_active_records(&matching, |row_data| {
                         writer.write_item(row_data)
                     })?;
+                    writer.finish()?;
                 }
-                writer.finish()?;
             } else {
                 let snapshot = record_db.snapshot()?;
                 if canonical {

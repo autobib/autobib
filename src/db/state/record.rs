@@ -2,11 +2,12 @@ use std::{cmp::Reverse, fmt, io};
 
 use chrono::{DateTime, Local};
 use rusqlite::{OptionalExtension, Row};
+use serde::{Serialize, ser::SerializeStruct};
 
 use crate::{
     Alias, RawEntryData, RemoteId,
     db::{Constraint, Identifier, flatten_constraint_violation, get_row_id},
-    entry::AsEntryData,
+    entry::{AsEntryData, EntryData},
     logger::{debug, info},
 };
 
@@ -117,6 +118,19 @@ impl RecordRow<ArbitraryData> {
     /// the 'Records' table.
     pub fn load(tx: &Tx<'_>, rev: RevisionId) -> rusqlite::Result<Option<Self>> {
         Self::load_unchecked(tx, rev.0).optional()
+    }
+}
+
+impl<D: AsEntryData, T: AsRef<str>> Serialize for RecordRow<D, T> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut state = serializer.serialize_struct("RecordRow", 3)?;
+        state.serialize_field("data", &self.data.as_entry_data().serialize())?;
+        state.serialize_field("canonical", self.canonical.name())?;
+        state.serialize_field("modified", &self.modified)?;
+        state.end()
     }
 }
 

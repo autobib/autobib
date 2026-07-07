@@ -5,14 +5,14 @@ use std::{
 };
 
 use crate::{
-    app::retrieve::{retrieve_single_entry, retrieve_single_entry_read_only},
+    app::retrieve::{self, retrieve_single_entry, retrieve_single_entry_read_only},
     config::Config,
     db::{
         RecordDatabase,
         state::{IsEntry, RecordRow, State},
     },
     entry::{Entry, RawEntryData},
-    format::Template,
+    format::{Template, TemplateData},
     http::Client,
     record::{Record, RecordId, RemoteId},
 };
@@ -73,7 +73,7 @@ impl<'r, W: io::Write + ?Sized> Output for BibtexOutput<'r, W> {
     }
 
     fn filter_map(record: Record<RawEntryData>, row: &State<'_, IsEntry>) -> Option<Self::Data> {
-        crate::app::retrieve::try_data_to_entry(record, row)
+        retrieve::try_data_to_entry(record, row)
     }
 
     fn finish(&mut self) -> Result<(), io::Error> {
@@ -85,7 +85,7 @@ impl<'r, W: io::Write + ?Sized> Output for BibtexOutput<'r, W> {
     }
 }
 
-pub struct TemplateOutput<'r, W: ?Sized> {
+struct TemplateOutputInner<'r, W: ?Sized> {
     first: bool,
     strict: bool,
     template: Template,
@@ -93,8 +93,8 @@ pub struct TemplateOutput<'r, W: ?Sized> {
     sep: &'r str,
 }
 
-impl<'r, W: io::Write + ?Sized> TemplateOutput<'r, W> {
-    pub fn new(strict: bool, template: Template, writer: &'r mut W, sep: &'r str) -> Self {
+impl<'r, W: io::Write + ?Sized> TemplateOutputInner<'r, W> {
+    fn new(strict: bool, template: Template, writer: &'r mut W, sep: &'r str) -> Self {
         Self {
             first: true,
             strict,
@@ -103,12 +103,8 @@ impl<'r, W: io::Write + ?Sized> TemplateOutput<'r, W> {
             sep,
         }
     }
-}
 
-impl<'r, W: io::Write + ?Sized> Output for TemplateOutput<'r, W> {
-    type Data = RecordRow<RawEntryData>;
-
-    fn write_item(&mut self, row: Self::Data) -> Result<(), io::Error> {
+    fn write_item<T: TemplateData>(&mut self, row: T) -> Result<(), io::Error> {
         if self.strict && !self.template.has_keys_contained_in(&row) {
             return Ok(());
         }
@@ -120,16 +116,60 @@ impl<'r, W: io::Write + ?Sized> Output for TemplateOutput<'r, W> {
         self.template.render_io(&mut self.writer, &row)
     }
 
-    fn filter_map(record: Record<RawEntryData>, _: &State<'_, IsEntry>) -> Option<Self::Data> {
-        Some(record.row)
-    }
-
     fn finish(&mut self) -> Result<(), io::Error> {
         if self.first {
             Ok(())
         } else {
             writeln!(self.writer)
         }
+    }
+}
+
+pub struct TemplateOutput<'r, W: ?Sized>(TemplateOutputInner<'r, W>);
+
+impl<'r, W: io::Write + ?Sized> TemplateOutput<'r, W> {
+    pub fn new(strict: bool, template: Template, writer: &'r mut W, sep: &'r str) -> Self {
+        Self(TemplateOutputInner::new(strict, template, writer, sep))
+    }
+}
+
+impl<'r, W: io::Write + ?Sized> Output for TemplateOutput<'r, W> {
+    type Data = Record<RawEntryData>;
+
+    fn write_item(&mut self, row: Self::Data) -> Result<(), io::Error> {
+        self.0.write_item(row)
+    }
+
+    fn filter_map(record: Record<RawEntryData>, _: &State<'_, IsEntry>) -> Option<Self::Data> {
+        Some(record)
+    }
+
+    fn finish(&mut self) -> Result<(), io::Error> {
+        self.0.finish()
+    }
+}
+
+pub struct TemplateRowOutput<'r, W: ?Sized>(TemplateOutputInner<'r, W>);
+
+impl<'r, W: io::Write + ?Sized> TemplateRowOutput<'r, W> {
+    pub fn new(strict: bool, template: Template, writer: &'r mut W, sep: &'r str) -> Self {
+        Self(TemplateOutputInner::new(strict, template, writer, sep))
+    }
+}
+
+impl<'r, W: io::Write + ?Sized> Output for TemplateRowOutput<'r, W> {
+    type Data = RecordRow<RawEntryData>;
+
+    fn write_item(&mut self, row: Self::Data) -> Result<(), io::Error> {
+        self.0.write_item(row)
+    }
+
+    fn filter_map(record: Record<RawEntryData>, _: &State<'_, IsEntry>) -> Option<Self::Data> {
+        Some(record.row)
+    }
+
+    fn finish(&mut self) -> Result<(), io::Error> {
+        self.0.finish()
     }
 }
 
