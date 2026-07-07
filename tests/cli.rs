@@ -272,6 +272,24 @@ fn get() -> Result<()> {
         .stdout("Falconer, Kenneth2014zbmath:6245248$$Hochman, Michael2014arxiv:1212.1873$$Hochman, Michael2014mr:3224722\n")
         .stderr(predicate::str::is_empty());
 
+    let mut cmd = s.cmd()?;
+    cmd.args(["alias", "add", "my_alias", "zbmath:6245248"]);
+    cmd.assert().success();
+
+    let mut cmd = s.cmd()?;
+    cmd.args([
+        "get",
+        "my_alias",
+        "zbl:1285.28011",
+        "zbmath:06245248",
+        "-t",
+        "{%key}",
+    ]);
+    cmd.assert()
+        .success()
+        .stdout("my_alias\nzbl:1285.28011\nzbmath:06245248\n")
+        .stderr(predicate::str::is_empty());
+
     s.close()
 }
 
@@ -798,6 +816,18 @@ fn list() -> Result<()> {
     let mut cmd = s.cmd()?;
     cmd.args(["list", "local:*", "-t", "{title}"]);
     cmd.assert().success().stdout("My favourite book\n");
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["list", "--canonical", "-t", "{title}{%key}"]);
+    cmd.assert().success().stdout("My favourite booklocal:first\nOn self-similar sets with overlaps and inverse theorems for entropyzbmath:6346461\n");
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["list", "*_alias", "-t", "{%key}"]);
+    cmd.assert().success().stdout("my_alias\n");
+
+    let mut cmd = s.cmd()?;
+    cmd.args(["list", "--canonical", "*_alias", "-t", "{%key}"]);
+    cmd.assert().success().stdout("");
 
     let mut cmd = s.cmd()?;
     cmd.args(["delete", "my_alias"]);

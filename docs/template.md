@@ -70,12 +70,20 @@ It is possible to [handle missed keys](#handling-missed-keys) to customize this 
 There are also a number of *meta* expressions, which refer to metadata of the entry.
 These are all prefixed by the `%` character:
 
-- `%entry_type`: expands to the entry type, e.g. `article`.
-- `%full_id`: expands to the full canonical id, e.g. `zbmath:06346461`.
-- `%provider`: expands to the provider of the canonical id: e.g. `zbmath`
-- `%sub_id`: expands to the sub-id of the canonical id: e.g. `06346461`
-- `%json`: expands to a JSON dictionary containing all of the record data
-- `%modified`: expands to the timestamp when the record was last modified (ISO 8601 format, `YYYY-MM-DD HH:MM:SS.SSSSSS +HH:MM`)
+- `%entry_type`: the entry type, e.g. `article`.
+- `%full_id`: the full canonical id, e.g. `zbmath:06346461`.
+- `%provider`: the provider of the canonical id: e.g. `zbmath`
+- `%sub_id`: the sub-id of the canonical id: e.g. `06346461`
+- `%key`: the citation key from the original request, e.g. `my_alias` in `autobib get my_alias`
+- `%json`: a JSON dictionary containing all of the record data
+- `%modified`: the timestamp when the record was last modified (ISO 8601 format, `YYYY-MM-DD HH:MM:SS.SSSSSS +HH:MM`)
+
+The value of `%key` is context dependent.
+
+- With `autobib get`, this is the key passed as an argument or to standard input
+- With `autobib list`, this is the matching citation key
+- With `autobib list --canonical`, this is the canonical id (same as `%full_id`)
+- With `autobib find`, this is the canonical id (same as `%full_id`)
 
 Finally, it is possible to input a *string*, i.e. a [JSON string](https://www.json.org/json-en.html), by quoting text.
 This allows manually inputting invisible characters or specifying Unicode values using escapes by including the value in quotes:
