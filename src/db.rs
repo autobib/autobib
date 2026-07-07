@@ -37,7 +37,7 @@ use crate::{
     entry::RawEntryData,
     error::DatabaseError,
     logger::{debug, error, info, warn},
-    record::LegacyAlias,
+    record::{LegacyAlias, Record},
 };
 pub use snapshot::{Snapshot, SnapshotMapErr};
 
@@ -499,14 +499,18 @@ impl RecordDatabase {
         mut f: F,
     ) -> Result<(), SnapshotMapErr<E>>
     where
-        F: FnMut(RecordRow<RawEntryData>) -> Result<(), E>,
+        F: FnMut(Record<RawEntryData>) -> Result<(), E>,
     {
         debug!("Mapping over all active database records with canonical ID matching '{glob}'.");
         let mut retriever = self
             .conn
-            .prepare("SELECT Records.record_id, Records.modified, Records.data, Records.variant FROM Records INNER JOIN Identifiers ON Identifiers.record_key = Records.key WHERE Records.variant =0 AND Identifiers.name GLOB ?1")?;
+            .prepare("SELECT name, record_id, modified, data, variant FROM Records INNER JOIN Identifiers ON Identifiers.record_key = Records.key WHERE Records.variant =0 AND Identifiers.name GLOB ?1")?;
 
-        for res in retriever.query_map([glob], |row| Ok(RecordRow::from_row_unchecked(row)))? {
+        for res in retriever.query_map([glob], |row| {
+            let key = row.get_unwrap("name");
+            let row = RecordRow::from_row_unchecked(row);
+            Ok(Record { key, row })
+        })? {
             f(res?).map_err(SnapshotMapErr::CallbackFailed)?;
         }
 

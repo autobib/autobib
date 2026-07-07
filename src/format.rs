@@ -5,7 +5,6 @@ use std::{convert::Infallible, fmt, io, iter::Peekable, str::FromStr};
 use chrono::{DateTime, Local};
 use mufmt::{Ast, Manifest, ManifestMut, Span, SyntaxError};
 use nucleo_picker::Render;
-use serde::{Serialize, ser::SerializeStruct};
 
 use self::parse::{Kind, Lexer, Token};
 
@@ -15,6 +14,7 @@ use crate::{
         AsEntryData, EntryData, FieldKey, MutableEntryData, RawEntryData, RawRecordFieldsIter,
     },
     error::{ClapTemplateError, KeyParseError, KeyParseErrorKind},
+    record::Record,
 };
 
 /// A `{%meta}` token.
@@ -289,17 +289,18 @@ impl Template {
 
     /// Returns whether this template can be rendered by the provided row data without having
     /// any non-optional undefined keys.
-    pub fn has_keys_contained_in(&self, row: &RecordRow<RawEntryData>) -> bool {
+    pub fn has_keys_contained_in<T: TemplateData>(&self, row: &T) -> bool {
         match self.strategy {
             Strategy::Sorted => self.contained_impl(
-                || BibtexFields::new(row),
+                || BibtexFields::new(row.row()),
                 |k, fields| fields.get_field_ordered(k).is_some(),
             ),
-            Strategy::Small => {
-                self.contained_impl(|| (), |k, ()| row.data.as_entry_data().contains_field(k))
-            }
+            Strategy::Small => self.contained_impl(
+                || (),
+                |k, ()| row.row().data.as_entry_data().contains_field(k),
+            ),
             Strategy::Large => self.contained_impl(
-                || MutableEntryData::borrow_entry_data(row.data.as_entry_data()),
+                || MutableEntryData::borrow_entry_data(row.row().data.as_entry_data()),
                 |k, container| container.as_entry_data().contains_field(k),
             ),
         }
@@ -373,11 +374,7 @@ impl<'r, 'ast, 'state> fmt::Display for DisplayedRow<'r, 'ast, 'state> {
 }
 
 impl<'row, 'ast, 'state> DisplayedRow<'row, 'ast, 'state> {
-    fn from_data<F>(
-        row_data: &'row RecordRow<RawEntryData>,
-        ast: &'ast Expression,
-        mut f: F,
-    ) -> Self
+    fn from_data<F, T: TemplateData>(row_data: &'row T, ast: &'ast Expression, mut f: F) -> Self
     where
         F: FnMut(&str) -> Option<&'state str>,
     {
@@ -406,26 +403,28 @@ impl<'row, 'ast, 'state> DisplayedRow<'row, 'ast, 'state> {
             },
             Atom::String(s) => DisplayedRow::Ast(s),
             Atom::Meta(meta) => match meta {
-                Meta::EntryType => DisplayedRow::Row(row_data.data.as_entry_data().entry_type()),
-                Meta::Provider => DisplayedRow::Row(row_data.canonical.provider()),
-                Meta::SubId => DisplayedRow::Row(row_data.canonical.sub_id()),
-                Meta::FullId => DisplayedRow::Row(row_data.canonical.name()),
-                Meta::Modified => DisplayedRow::Timestamp(&row_data.modified),
-                Meta::Json => DisplayedRow::Json(row_data),
+                Meta::EntryType => {
+                    DisplayedRow::Row(row_data.row().data.as_entry_data().entry_type())
+                }
+                Meta::Provider => DisplayedRow::Row(row_data.row().canonical.provider()),
+                Meta::SubId => DisplayedRow::Row(row_data.row().canonical.sub_id()),
+                Meta::FullId => DisplayedRow::Row(row_data.row().canonical.name()),
+                Meta::Modified => DisplayedRow::Timestamp(&row_data.row().modified),
+                Meta::Json => DisplayedRow::Json(row_data.row()),
             },
         }
     }
 }
 
-pub struct ManifestSorted<'r>(&'r RecordRow<RawEntryData>);
+pub struct ManifestSorted<'r, T>(&'r T);
 
-impl<'r> ManifestMut<Expression> for ManifestSorted<'r> {
+impl<'r, T: TemplateData> ManifestMut<Expression> for ManifestSorted<'r, T> {
     type Error = Infallible;
 
     type State<'a> = BibtexFields<'a>;
 
     fn init_state(&self) -> Self::State<'_> {
-        BibtexFields::new(self.0)
+        BibtexFields::new(self.0.row())
     }
 
     fn manifest_mut(
@@ -441,25 +440,25 @@ impl<'r> ManifestMut<Expression> for ManifestSorted<'r> {
 
 pub struct ManifestSmall<'r, T>(&'r T);
 
-impl<'r> Manifest<Expression> for ManifestSmall<'r, RecordRow<RawEntryData>> {
+impl<'r, T: TemplateData> Manifest<Expression> for ManifestSmall<'r, T> {
     type Error = Infallible;
 
     fn manifest(&self, ast: &Expression) -> Result<impl fmt::Display, Self::Error> {
         Ok(DisplayedRow::from_data(self.0, ast, |k| {
-            self.0.data.as_entry_data().get_field(k)
+            self.0.row().data.as_entry_data().get_field(k)
         }))
     }
 }
 
-pub struct ManifestLarge<'r>(&'r RecordRow<RawEntryData>);
+pub struct ManifestLarge<'r, T>(&'r T);
 
-impl<'r> ManifestMut<Expression> for ManifestLarge<'r> {
+impl<'r, T: TemplateData> ManifestMut<Expression> for ManifestLarge<'r, T> {
     type Error = Infallible;
 
     type State<'s> = MutableEntryData<&'s str>;
 
     fn init_state(&self) -> Self::State<'_> {
-        MutableEntryData::borrow_entry_data(self.0.data.as_entry_data())
+        MutableEntryData::borrow_entry_data(self.0.row().data.as_entry_data())
     }
 
     fn manifest_mut(
@@ -475,10 +474,10 @@ impl<'r> ManifestMut<Expression> for ManifestLarge<'r> {
 
 impl Template {
     /// Render the template into a writer using the provided record data.
-    pub fn render_io<W: io::Write>(
+    pub fn render_io<W: io::Write, T: TemplateData>(
         &self,
         writer: W,
-        item: &RecordRow<RawEntryData>,
+        item: &T,
     ) -> Result<(), io::Error> {
         Ok(match self.strategy {
             Strategy::Sorted => self.template.render_io(&ManifestSorted(item), writer),
@@ -488,10 +487,13 @@ impl Template {
     }
 }
 
-impl Render<RecordRow<RawEntryData>> for Template {
-    type Str<'a> = String;
+impl<T: TemplateData> Render<T> for Template {
+    type Str<'a>
+        = String
+    where
+        T: 'a;
 
-    fn render<'a>(&self, item: &'a RecordRow<RawEntryData>) -> Self::Str<'a> {
+    fn render<'a>(&self, item: &'a T) -> Self::Str<'a> {
         match self.strategy {
             Strategy::Sorted => {
                 let Ok(s) = self.template.render(&ManifestSorted(item));
@@ -509,16 +511,29 @@ impl Render<RecordRow<RawEntryData>> for Template {
     }
 }
 
-impl<D: AsEntryData, T: AsRef<str>> Serialize for RecordRow<D, T> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let mut state = serializer.serialize_struct("RecordRow", 3)?;
-        state.serialize_field("data", &self.data.as_entry_data().serialize())?;
-        state.serialize_field("canonical", self.canonical.name())?;
-        state.serialize_field("modified", &self.modified)?;
-        state.end()
+pub trait TemplateData {
+    fn row(&self) -> &RecordRow<RawEntryData>;
+
+    fn key(&self) -> &str;
+}
+
+impl TemplateData for RecordRow<RawEntryData> {
+    fn row(&self) -> &RecordRow<RawEntryData> {
+        self
+    }
+
+    fn key(&self) -> &str {
+        self.canonical.name()
+    }
+}
+
+impl TemplateData for Record<RawEntryData> {
+    fn row(&self) -> &RecordRow<RawEntryData> {
+        &self.row
+    }
+
+    fn key(&self) -> &str {
+        &self.key
     }
 }
 
