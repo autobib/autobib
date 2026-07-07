@@ -44,6 +44,7 @@ Changes since `v0.6.1`.
 - New template metas:
   - `%json`, a JSON dictionary of all of the available data
   - `%modified`, the modification time of the record
+  - `%key`, the original citation key from the request
 - Added basic support for sourcing from [Typst](https://typst.app) files (using `autobib source file.typ`)
 - Added support for multiple selections in `autobib find` by default.
   - The number of selections can be limited with the `--limit` option.

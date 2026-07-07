@@ -28,6 +28,8 @@ pub enum Meta {
     SubId,
     /// `{%full_id}`
     FullId,
+    /// `{%key}`
+    Key,
     /// `{%modified}`
     Modified,
     /// `{%json}`
@@ -43,6 +45,7 @@ impl FromStr for Meta {
             "provider" => Ok(Self::Provider),
             "sub_id" => Ok(Self::SubId),
             "full_id" => Ok(Self::FullId),
+            "key" => Ok(Self::Key),
             "modified" => Ok(Self::Modified),
             "json" => Ok(Self::Json),
             _ => Err(KeyParseErrorKind::InvalidMeta(s.into())),
@@ -409,6 +412,7 @@ impl<'row, 'ast, 'state> DisplayedRow<'row, 'ast, 'state> {
                 Meta::Provider => DisplayedRow::Row(row_data.row().canonical.provider()),
                 Meta::SubId => DisplayedRow::Row(row_data.row().canonical.sub_id()),
                 Meta::FullId => DisplayedRow::Row(row_data.row().canonical.name()),
+                Meta::Key => DisplayedRow::Row(row_data.key()),
                 Meta::Modified => DisplayedRow::Timestamp(&row_data.row().modified),
                 Meta::Json => DisplayedRow::Json(row_data.row()),
             },
