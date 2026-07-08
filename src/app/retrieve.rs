@@ -16,7 +16,7 @@ use crate::{
         state::{IsEntry, RecordIdState, RecordRow, State},
     },
     entry::{Entry, EntryKey, RawEntryData},
-    error::Error,
+    error::{DatabaseError, Error},
     http::Client,
     logger::{error, reraise, suggest},
     record::{Record, RecordId, RecordRowResponse, RemoteId, get_record_row},
@@ -31,14 +31,9 @@ pub fn retrieve_entries<T: IntoIterator<Item = RecordId>, C: Client>(
     config: &Config,
 ) -> BTreeMap<RemoteId, NonEmpty<Entry<RawEntryData>>> {
     let valid_entries = ids.into_iter().filter_map(|id| {
-        retrieve_single_entry(
-            record_db,
-            id,
-            client,
-            ignore_null,
-            config,
-            try_data_to_entry,
-        )
+        retrieve_single_entry(record_db, id, client, ignore_null, config, |r, s| {
+            Ok(try_data_to_entry(r, s))
+        })
         .unwrap_or_else(|error| {
             reraise(&error);
             None
@@ -57,7 +52,7 @@ pub fn sync_entries<T: IntoIterator<Item = RecordId>, C: Client>(
 ) {
     for id in ids {
         retrieve_single_entry(record_db, id, client, ignore_null, config, |_, _| {
-            Option::<Infallible>::None
+            Ok(Option::<Infallible>::None)
         })
         .unwrap_or_else(|error| {
             reraise(&error);
@@ -75,13 +70,9 @@ pub fn retrieve_entries_read_only<T: IntoIterator<Item = RecordId>>(
     config: &Config,
 ) -> BTreeMap<RemoteId, NonEmpty<Entry<RawEntryData>>> {
     let valid_entries = ids.into_iter().filter_map(|record_id| {
-        retrieve_single_entry_read_only(
-            record_db,
-            record_id,
-            ignore_null,
-            config,
-            try_data_to_entry,
-        )
+        retrieve_single_entry_read_only(record_db, record_id, ignore_null, config, |r, s| {
+            Ok(try_data_to_entry(r, s))
+        })
         .unwrap_or_else(|error| {
             error!("{error}");
             None
@@ -99,7 +90,7 @@ pub fn sync_entries_read_only<T: IntoIterator<Item = RecordId>>(
 ) {
     for id in ids {
         retrieve_single_entry_read_only(record_db, id, ignore_null, config, |_, _| {
-            Option::<Infallible>::None
+            Ok(Option::<Infallible>::None)
         })
         .unwrap_or_else(|error| {
             reraise(&error);
@@ -117,11 +108,11 @@ pub fn retrieve_single_entry_read_only<V, T>(
     validate: V,
 ) -> Result<Option<T>, Error>
 where
-    V: FnOnce(Record<RawEntryData>, &State<'_, IsEntry>) -> Option<T>,
+    V: FnOnce(Record<RawEntryData>, &State<'_, IsEntry>) -> Result<Option<T>, DatabaseError>,
 {
     match record_db.state_from_record_id(id, &config.alias_transform)? {
         RecordIdState::Entry(record, state) => {
-            let entry = validate(record, &state);
+            let entry = validate(record, &state)?;
             state.commit()?;
             Ok(entry)
         }
@@ -182,11 +173,11 @@ pub fn retrieve_single_entry<C, V, T>(
 ) -> Result<Option<T>, Error>
 where
     C: Client,
-    V: FnOnce(Record<RawEntryData>, &State<'_, IsEntry>) -> Option<T>,
+    V: FnOnce(Record<RawEntryData>, &State<'_, IsEntry>) -> Result<Option<T>, DatabaseError>,
 {
     match get_record_row(record_db, id, client, config)? {
         RecordRowResponse::Exists(record_data, row) => {
-            let entry = validate(record_data, &row);
+            let entry = validate(record_data, &row)?;
             row.commit()?;
             Ok(entry)
         }

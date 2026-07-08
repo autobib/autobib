@@ -12,6 +12,7 @@ use crate::{
         state::{IsEntry, RecordRow, State},
     },
     entry::{Entry, RawEntryData},
+    error::DatabaseError,
     format::{Template, TemplateData},
     http::Client,
     record::{Record, RecordId, RemoteId},
@@ -22,7 +23,10 @@ pub trait Output {
 
     fn write_item(&mut self, item: Self::Data) -> Result<(), io::Error>;
 
-    fn filter_map(record: Record<RawEntryData>, row: &State<'_, IsEntry>) -> Option<Self::Data>;
+    fn filter_map(
+        record: Record<RawEntryData>,
+        row: &State<'_, IsEntry>,
+    ) -> Result<Option<Self::Data>, DatabaseError>;
 
     fn finish(&mut self) -> Result<(), io::Error>;
 }
@@ -32,8 +36,11 @@ pub struct NoOutput;
 impl Output for NoOutput {
     type Data = Infallible;
 
-    fn filter_map(_: Record<RawEntryData>, _: &State<'_, IsEntry>) -> Option<Self::Data> {
-        None
+    fn filter_map(
+        _: Record<RawEntryData>,
+        _: &State<'_, IsEntry>,
+    ) -> Result<Option<Self::Data>, DatabaseError> {
+        Ok(None)
     }
 
     fn write_item(&mut self, data: Self::Data) -> Result<(), io::Error> {
@@ -72,8 +79,11 @@ impl<'r, W: io::Write + ?Sized> Output for BibtexOutput<'r, W> {
         entry.write_io(&mut self.writer)
     }
 
-    fn filter_map(record: Record<RawEntryData>, row: &State<'_, IsEntry>) -> Option<Self::Data> {
-        retrieve::try_data_to_entry(record, row)
+    fn filter_map(
+        record: Record<RawEntryData>,
+        row: &State<'_, IsEntry>,
+    ) -> Result<Option<Self::Data>, DatabaseError> {
+        Ok(retrieve::try_data_to_entry(record, row))
     }
 
     fn finish(&mut self) -> Result<(), io::Error> {
@@ -140,8 +150,11 @@ impl<'r, W: io::Write + ?Sized> Output for TemplateOutput<'r, W> {
         self.0.write_item(row)
     }
 
-    fn filter_map(record: Record<RawEntryData>, _: &State<'_, IsEntry>) -> Option<Self::Data> {
-        Some(record)
+    fn filter_map(
+        record: Record<RawEntryData>,
+        _: &State<'_, IsEntry>,
+    ) -> Result<Option<Self::Data>, DatabaseError> {
+        Ok(Some(record))
     }
 
     fn finish(&mut self) -> Result<(), io::Error> {
@@ -164,8 +177,11 @@ impl<'r, W: io::Write + ?Sized> Output for TemplateRowOutput<'r, W> {
         self.0.write_item(row)
     }
 
-    fn filter_map(record: Record<RawEntryData>, _: &State<'_, IsEntry>) -> Option<Self::Data> {
-        Some(record.row)
+    fn filter_map(
+        record: Record<RawEntryData>,
+        _: &State<'_, IsEntry>,
+    ) -> Result<Option<Self::Data>, DatabaseError> {
+        Ok(Some(record.row))
     }
 
     fn finish(&mut self) -> Result<(), io::Error> {
