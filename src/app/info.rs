@@ -1,19 +1,52 @@
-use std::{cmp::Ordering, io::Write};
+use std::cmp::Ordering;
 
-use itertools::Itertools;
+use serde::Serialize;
 use serde_bibtex::token::is_entry_key;
 
 use crate::{
-    app::cli::InfoReportType,
     config::Config,
-    db::state::{InRecordsTable, RecordRow, State},
-    logger::error,
-    output::{StdoutWriter, owriteln, stdout_lock_wrap},
+    db::state::{ArbitraryData, InRecordsTable, RecordRow, RevisionId, State},
 };
+
+#[derive(Serialize)]
+pub struct KeyInfo {
+    original: String,
+    is_valid_bibtex: bool,
+    preferred: Option<String>,
+    equivalent: Vec<String>,
+}
+
+#[derive(Serialize)]
+pub struct RecordInfo {
+    pub key: KeyInfo,
+    pub id: RevisionId,
+    pub record: RecordRow<ArbitraryData>,
+}
+
+impl RecordInfo {
+    pub fn from_data<'conn, I: InRecordsTable>(
+        original: String,
+        record: RecordRow<ArbitraryData>,
+        state: &State<'conn, I>,
+        config: &Config,
+    ) -> anyhow::Result<Self> {
+        let is_valid_bibtex = is_entry_key(&original);
+        let preferred = get_preferred_id(state, config)?;
+        let equivalent = state.referencing_keys()?;
+        let key = KeyInfo {
+            original,
+            is_valid_bibtex,
+            preferred,
+            equivalent,
+        };
+        let id = state.rev();
+        Ok(Self { key, id, record })
+    }
+}
 
 /// Get the preferred identifier associated with a record in the Records table, or `None` if no
 /// identifier matches.
-fn get_preferred_id<'conn, I: InRecordsTable>(
+pub fn get_preferred_id<'conn, I: InRecordsTable>(
     state: &State<'conn, I>,
     config: &Config,
 ) -> anyhow::Result<Option<String>> {
@@ -47,70 +80,4 @@ fn get_preferred_id<'conn, I: InRecordsTable>(
     }
 
     Ok(None)
-}
-
-pub fn database_report<'conn, D, I>(
-    config: &Config,
-    record_id: String,
-    data: RecordRow<D>,
-    state: State<'conn, I>,
-    report: InfoReportType,
-    header: impl FnOnce(D, &mut StdoutWriter) -> std::io::Result<()>,
-) -> anyhow::Result<()>
-where
-    I: InRecordsTable,
-{
-    match report {
-        InfoReportType::All => {
-            let mut lock = stdout_lock_wrap();
-            header(data.data, &mut lock)?;
-            writeln!(lock, "Canonical: {}", data.canonical)?;
-            writeln!(lock, "Revision: {}", state.rev())?;
-            writeln!(
-                lock,
-                "Equivalent references: {}",
-                state.referencing_keys()?.iter().join(", ")
-            )?;
-            writeln!(
-                lock,
-                "Valid BibTeX? {}",
-                if is_entry_key(&record_id) {
-                    "yes"
-                } else {
-                    "no"
-                }
-            )?;
-            writeln!(lock, "Data last modified: {}", data.modified)?;
-        }
-        InfoReportType::Canonical => {
-            owriteln!("{}", state.canonical()?)?;
-        }
-
-        InfoReportType::Valid => {
-            if !is_entry_key(&record_id) {
-                error!("Invalid BibTeX: {record_id}");
-            }
-        }
-        InfoReportType::Revision => {
-            owriteln!("{}", state.rev())?;
-        }
-        InfoReportType::Preferred => {
-            if let Some(s) = get_preferred_id(&state, config)? {
-                owriteln!("{s}")?;
-            } else {
-                owriteln!("{}", data.canonical)?;
-            }
-        }
-        InfoReportType::Equivalent => {
-            let mut lock = stdout_lock_wrap();
-            for re in state.referencing_keys()? {
-                writeln!(lock, "{re}")?;
-            }
-        }
-        InfoReportType::Modified => {
-            owriteln!("{}", state.last_modified()?)?;
-        }
-    };
-    state.commit()?;
-    Ok(())
 }

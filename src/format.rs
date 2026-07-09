@@ -369,7 +369,7 @@ impl<'r, 'ast, 'state> fmt::Display for DisplayedRow<'r, 'ast, 'state> {
             Self::Row(s) => f.write_str(s),
             Self::Ast(s) => f.write_str(s),
             Self::State(s) => f.write_str(s),
-            Self::Json(data) => data.write_fmt(f),
+            Self::Json(data) => data.write_json_fmt(f),
             Self::Timestamp(modified) => modified.fmt(f),
             Self::Skip => Ok(()),
         }

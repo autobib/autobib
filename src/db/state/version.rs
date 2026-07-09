@@ -1,6 +1,7 @@
 use std::{fmt, str::FromStr};
 
 use rusqlite::types::{FromSql, FromSqlError, ValueRef};
+use serde::Serialize;
 
 use super::{
     ArbitraryData, CompleteRecordRow, InRecordsTable, RecordRow, RecordRowDisplay, State, Tx,
@@ -19,6 +20,15 @@ pub struct Version<'tx, 'conn> {
 
 #[derive(Debug, Clone, Copy)]
 pub struct RevisionId(pub(in crate::db) i64);
+
+impl Serialize for RevisionId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.collect_str(&self)
+    }
+}
 
 struct RevIdPretty<'a>(&'a RevisionId);
 

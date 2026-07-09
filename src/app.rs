@@ -47,12 +47,12 @@ use crate::{
     error::AliasErrorKind,
     format::Template,
     http::{BodyBytes, Client},
-    logger::{LogDisplay, debug, error, info, suggest, warn},
+    logger::{LogDisplay, debug, error, info, set_failed, suggest, warn},
     normalize::{Normalization, Normalize},
     output::{owriteln, stdout_lock_wrap},
     path_hash::AttachmentRoot,
     provider::{RemoteIdCandidate, determine_key_from_data},
-    record::{Alias, Record, RecordId, RemoteId, get_record_row, get_record_row_tx},
+    record::{Alias, RecordId, RemoteId, get_record_row, get_record_row_tx},
     term::Editor,
 };
 
@@ -921,60 +921,46 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
         }
         Command::Info { identifier, report } => {
             let cfg = config::load(&config_path, missing_ok)?;
-            match record_db.state_from_record_id(identifier, &cfg.alias_transform)? {
-                RecordIdState::Entry(Record { key, row }, state) => {
-                    info::database_report(&cfg, key, row, state, report, |_, stdout| {
-                        writeln!(stdout, "Record with data")
-                    })?;
-                }
-                RecordIdState::Deleted(Record { key, row }, state) => {
-                    info::database_report(&cfg, key, row, state, report, |data, stdout| {
-                        if let Some(repl) = data {
-                            writeln!(stdout, "Deleted and replaced by reference: {repl}")
-                        } else {
-                            writeln!(stdout, "Deleted record")
-                        }
-                    })?;
-                }
-                RecordIdState::Void(Record { key, row }, state) => {
-                    info::database_report(&cfg, key, row, state, report, |_, stdout| {
-                        writeln!(stdout, "Voided record")
-                    })?;
-                }
-                RecordIdState::NullRemoteId(remote_id, null_row) => match report {
+            if let Some((key, disambiguated)) = record_db
+                .state_from_record_id(identifier, &cfg.alias_transform)?
+                .require_record()?
+            {
+                let (record, state) = disambiguated.forget();
+                let mut writer = stdout_lock_wrap();
+                match report {
                     InfoReportType::All => {
-                        owriteln!("Null record: {remote_id}")?;
-                        let null_row_data = null_row.get_data()?;
-                        owriteln!("Last attempted: {}", null_row_data.attempted)?;
+                        let record_info = info::RecordInfo::from_data(key, record, &state, &cfg)?;
+                        serde_json::to_writer(&mut writer, &record_info)?;
                     }
                     InfoReportType::Canonical => {
-                        bail!("No canonical id for null record '{remote_id}'");
+                        writeln!(writer, "{}", record.canonical)?;
                     }
                     InfoReportType::Valid => {
-                        bail!("Null record '{remote_id}' is automatically invalid");
-                    }
-                    InfoReportType::Preferred => {
-                        bail!("No preferred keys for null record '{remote_id}'");
+                        if !serde_bibtex::token::is_entry_key(&key) {
+                            set_failed();
+                            eprintln!("{key}");
+                        } else {
+                            writeln!(writer, "{key}")?;
+                        }
                     }
                     InfoReportType::Equivalent => {
-                        bail!("No equivalent keys for null record '{remote_id}'");
+                        for k in state.referencing_keys()? {
+                            writeln!(writer, "{k}")?;
+                        }
                     }
-                    InfoReportType::Revision => {
-                        bail!("No revision for null record '{remote_id}'");
+                    InfoReportType::Preferred => {
+                        let preferred = info::get_preferred_id(&state, &cfg)?
+                            .unwrap_or(record.canonical.into());
+                        writeln!(writer, "{preferred}")?;
                     }
                     InfoReportType::Modified => {
-                        owriteln!("{}", null_row.get_null_attempted()?)?;
+                        writeln!(writer, "{}", record.modified)?;
                     }
-                },
-                RecordIdState::Unknown(unknown) => {
-                    let maybe_normalized = unknown.combine_and_commit()?;
-                    bail!("Cannot obtain report for record not in database: {maybe_normalized}");
+                    InfoReportType::Revision => {
+                        writeln!(writer, "{}", state.rev())?;
+                    }
                 }
-                RecordIdState::UndefinedAlias(alias) => {
-                    bail!("Cannot obtain report for undefined alias: '{alias}'");
-                }
-
-                RecordIdState::InvalidRemoteId(err) => bail!("{err}"),
+                state.commit()?;
             }
         }
         Command::List {

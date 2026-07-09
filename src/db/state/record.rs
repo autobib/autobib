@@ -72,12 +72,12 @@ impl<D: FromBytesAndVariant> RecordRow<D> {
     }
 }
 
-impl<D: AsEntryData> RecordRow<D> {
-    pub fn write_io<W: io::Write>(&self, writer: W) -> Result<(), io::Error> {
+impl<D: AsRecordRowData> RecordRow<D> {
+    pub fn write_json_io<W: io::Write>(&self, writer: W) -> Result<(), io::Error> {
         Ok(serde_json::to_writer(writer, &self)?)
     }
 
-    pub fn write_fmt<W: fmt::Write>(&self, writer: W) -> Result<(), fmt::Error> {
+    pub fn write_json_fmt<W: fmt::Write>(&self, writer: W) -> Result<(), fmt::Error> {
         // an adapter to use io writing methods with fmt
         struct FormatterAdapter<W: fmt::Write>(W);
 
@@ -121,13 +121,15 @@ impl RecordRow<ArbitraryData> {
     }
 }
 
-impl<D: AsEntryData, T: AsRef<str>> Serialize for RecordRow<D, T> {
+impl<D: AsRecordRowData, T: AsRef<str>> Serialize for RecordRow<D, T> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
-        let mut state = serializer.serialize_struct("RecordRow", 3)?;
-        state.serialize_field("data", &self.data.as_entry_data().serialize())?;
+        let field_count = if self.data.serializable() { 2 } else { 3 };
+
+        let mut state = serializer.serialize_struct("RecordRow", field_count)?;
+        self.data.serialize_in(&mut state)?;
         state.serialize_field("canonical", self.canonical.name())?;
         state.serialize_field("modified", &self.modified)?;
         state.end()
@@ -312,27 +314,12 @@ pub enum DisambiguatedRecordState<'conn> {
     Void(RecordRow<()>, State<'conn, IsVoid>),
 }
 
-/// A row in the 'Records' table, disambiguated based on what type of row it is.
-pub enum DisambiguatedRecordRow {
-    Entry(RecordRow<RawEntryData>),
-    Deleted(RecordRow<Option<RemoteId>>),
-    Void(RecordRow<()>),
-}
-
 impl<'conn> DisambiguatedRecordState<'conn> {
     pub fn forget(self) -> (RecordRow<ArbitraryData>, State<'conn, IsArbitrary>) {
         match self {
             Self::Entry(data, state) => (data.into(), state.forget()),
             Self::Deleted(data, state) => (data.into(), state.forget()),
             Self::Void(data, state) => (data.into(), state.forget()),
-        }
-    }
-
-    pub fn forget_state(self) -> (DisambiguatedRecordRow, State<'conn, IsArbitrary>) {
-        match self {
-            Self::Entry(data, state) => (DisambiguatedRecordRow::Entry(data), state.forget()),
-            Self::Deleted(data, state) => (DisambiguatedRecordRow::Deleted(data), state.forget()),
-            Self::Void(data, state) => (DisambiguatedRecordRow::Void(data), state.forget()),
         }
     }
 }
@@ -342,6 +329,10 @@ pub trait AsRecordRowData: Sized {
     fn data_blob(&self) -> &[u8];
 
     fn variant(&self) -> i64;
+
+    fn serializable(&self) -> bool;
+
+    fn serialize_in<S: SerializeStruct>(&self, ser_struct: &mut S) -> Result<(), S::Error>;
 }
 
 impl AsRecordRowData for RawEntryData {
@@ -351,6 +342,14 @@ impl AsRecordRowData for RawEntryData {
 
     fn variant(&self) -> i64 {
         0
+    }
+
+    fn serializable(&self) -> bool {
+        true
+    }
+
+    fn serialize_in<S: SerializeStruct>(&self, ser_struct: &mut S) -> Result<(), S::Error> {
+        ser_struct.serialize_field("data", &self.as_entry_data().serialize())
     }
 }
 
@@ -362,6 +361,14 @@ impl AsRecordRowData for Option<&RemoteId> {
     fn variant(&self) -> i64 {
         1
     }
+
+    fn serializable(&self) -> bool {
+        true
+    }
+
+    fn serialize_in<S: SerializeStruct>(&self, ser_struct: &mut S) -> Result<(), S::Error> {
+        ser_struct.serialize_field("replacement", &self.as_ref().map(|i| i.name()))
+    }
 }
 
 impl AsRecordRowData for Option<RemoteId> {
@@ -371,6 +378,32 @@ impl AsRecordRowData for Option<RemoteId> {
 
     fn variant(&self) -> i64 {
         1
+    }
+
+    fn serializable(&self) -> bool {
+        self.as_ref().serializable()
+    }
+
+    fn serialize_in<S: SerializeStruct>(&self, ser_struct: &mut S) -> Result<(), S::Error> {
+        self.as_ref().serialize_in(ser_struct)
+    }
+}
+
+impl AsRecordRowData for () {
+    fn data_blob(&self) -> &[u8] {
+        &[]
+    }
+
+    fn variant(&self) -> i64 {
+        2
+    }
+
+    fn serializable(&self) -> bool {
+        false
+    }
+
+    fn serialize_in<S: SerializeStruct>(&self, _: &mut S) -> Result<(), S::Error> {
+        Ok(())
     }
 }
 
@@ -386,6 +419,20 @@ impl AsRecordRowData for EntryOrDeletedData {
         match self {
             Self::Entry(raw_entry_data) => raw_entry_data.variant(),
             Self::Deleted(remote_id) => remote_id.variant(),
+        }
+    }
+
+    fn serializable(&self) -> bool {
+        match self {
+            Self::Entry(raw_entry_data) => raw_entry_data.serializable(),
+            Self::Deleted(remote_id) => remote_id.serializable(),
+        }
+    }
+
+    fn serialize_in<S: SerializeStruct>(&self, ser_struct: &mut S) -> Result<(), S::Error> {
+        match self {
+            Self::Entry(raw_entry_data) => raw_entry_data.serialize_in(ser_struct),
+            Self::Deleted(remote_id) => remote_id.serialize_in(ser_struct),
         }
     }
 }
@@ -406,15 +453,21 @@ impl AsRecordRowData for ArbitraryData {
             Self::Void => ().variant(),
         }
     }
-}
 
-impl AsRecordRowData for () {
-    fn data_blob(&self) -> &[u8] {
-        &[]
+    fn serializable(&self) -> bool {
+        match self {
+            Self::Entry(raw_entry_data) => raw_entry_data.serializable(),
+            Self::Deleted(remote_id) => remote_id.serializable(),
+            Self::Void => ().serializable(),
+        }
     }
 
-    fn variant(&self) -> i64 {
-        2
+    fn serialize_in<S: SerializeStruct>(&self, ser_struct: &mut S) -> Result<(), S::Error> {
+        match self {
+            Self::Entry(raw_entry_data) => raw_entry_data.serialize_in(ser_struct),
+            Self::Deleted(remote_id) => remote_id.serialize_in(ser_struct),
+            Self::Void => ().serialize_in(ser_struct),
+        }
     }
 }
 
