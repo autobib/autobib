@@ -28,6 +28,9 @@ Changes since `v0.6.1`.
 - The configuration value `preferred_providers` has been replaced by `preferred_keys`.
   - `preferred_keys` is more general and can contain a list of regexes to match keys
   - Migrate `preferred_providers` to `preferred_keys` by replacing each `provider` with the corresponding regex `^provider:.*`
+- `autobib info` has been refactored to print JSON with `--report all`
+- Aliases can no longer contain control characters (such as tab `\t` or newline `\n`).
+  - Existing aliases containing control characters can still be accessed and renamed.
 
 ## Deprecations and future breaking changes
 

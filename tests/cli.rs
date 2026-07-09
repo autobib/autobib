@@ -856,7 +856,7 @@ fn info() -> Result<()> {
     cmd.args(["info", "zbl:1337.28015", "-r", "canonical"]);
     cmd.assert()
         .failure()
-        .stderr(contains("Cannot obtain report for record not in database"));
+        .stderr(contains("Record not in database"));
 
     let mut cmd = s.cmd()?;
     cmd.args(["get", "zbl:1337.28015"]);
@@ -890,15 +890,17 @@ fn info() -> Result<()> {
 
     let mut cmd = s.cmd()?;
     cmd.args(["info", "%", "-r", "valid"]);
-    cmd.assert().failure().stderr(contains("Invalid BibTeX"));
+    cmd.assert().failure().stderr("%\n");
 
     let mut cmd = s.cmd()?;
     cmd.args(["info", "%"]);
     cmd.assert().success().stdout(
-        contains("Data last modified:")
-            .and(contains("Equivalent references:"))
-            .and(contains("Canonical: zbmath:6346461\n"))
-            .and(contains("Valid BibTeX? no")),
+        contains("modified")
+            .and(contains("\"canonical\":\"zbmath:6346461\""))
+            .and(contains("\"is_valid_bibtex\":false"))
+            .and(contains("author"))
+            .and(contains("title"))
+            .and(contains("\"preferred\":null")),
     );
 
     s.close()
@@ -1823,7 +1825,7 @@ fn read_only() -> Result<()> {
     cmd.args(["--read-only", "info", "arxiv:1212.1873"]);
     cmd.assert()
         .failure()
-        .stderr(contains("Cannot obtain report for record not in database"));
+        .stderr(contains("Record not in database"));
 
     s.attachment(AUTOBIB_LOCKFILE)
         .assert(predicate::path::missing());
