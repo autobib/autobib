@@ -3,7 +3,8 @@ use std::{collections::BTreeMap, fmt};
 use serde::de::{self, Deserializer, Error, SeqAccess, Unexpected, Visitor};
 
 use super::{
-    Entry, EntryKey, EntryType, EntryTypeHeader, FieldKey, FieldValue, KeyHeader, MutableEntryData,
+    BibtexEntry, EntryKey, EntryType, EntryTypeHeader, FieldKey, FieldValue, KeyHeader,
+    MutableEntryData,
 };
 
 impl<'de> de::Deserialize<'de> for EntryType {
@@ -89,7 +90,7 @@ impl<'de> de::Deserialize<'de> for FieldValue {
     }
 }
 
-impl<'de> de::Deserialize<'de> for Entry<MutableEntryData> {
+impl<'de> de::Deserialize<'de> for BibtexEntry<MutableEntryData> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -97,7 +98,7 @@ impl<'de> de::Deserialize<'de> for Entry<MutableEntryData> {
         struct EntryVisitor;
 
         impl<'de> Visitor<'de> for EntryVisitor {
-            type Value = Entry<MutableEntryData>;
+            type Value = BibtexEntry<MutableEntryData>;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
                 formatter.write_str("struct OwnedEntry")
@@ -116,7 +117,7 @@ impl<'de> de::Deserialize<'de> for Entry<MutableEntryData> {
                 let fields: BTreeMap<FieldKey<String>, FieldValue<String>> = seq
                     .next_element()?
                     .ok_or_else(|| de::Error::invalid_length(2, &self))?;
-                Ok(Entry {
+                Ok(BibtexEntry {
                     key: EntryKey(entry_key), // SAFETY: serde_bibtex only returns keys satisfying
                     // the requiremens
                     record_data: MutableEntryData { entry_type, fields },

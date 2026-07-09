@@ -5,12 +5,14 @@ use crate::{
     config::Config,
     db::{
         Tx,
-        state::{DisambiguatedRecordState, IsEntry, RecordIdState, State, replace_hard_unchecked},
+        state::{
+            DatabaseResponse, DisambiguatedRecordState, IsEntry, State, replace_hard_unchecked,
+        },
     },
     entry::{MutableEntryData, RawEntryData},
     logger::{suggest, warn},
     path_hash::{AttachmentRenameOutcome, AttachmentRoot},
-    record::{Record, RecordId},
+    record::{KeyedRecord, RecordId},
 };
 
 /// The closure `data_cb` is a function which accepts a transaction and the entry data for the
@@ -30,45 +32,50 @@ where
     G: FnOnce(
         Tx<'conn>,
         &RawEntryData,
-    ) -> anyhow::Result<(Record<RawEntryData>, State<'conn, IsEntry>)>,
+    ) -> anyhow::Result<(KeyedRecord<RawEntryData>, State<'conn, IsEntry>)>,
 {
     // first, get the data for the identifier that will be replaced
-    let (original_record, (tx, original_row_id)) =
-        match RecordIdState::determine(tx, identifier, &cfg.alias_transform)?.require_record()? {
-            Some((_, DisambiguatedRecordState::Entry(record_row, state))) => {
-                (record_row, state.into_parts())
-            }
-            Some((_, DisambiguatedRecordState::Deleted(record_row, state))) => {
-                state.commit()?;
-                bail!(
-                    "Cannot replace deleted record with canonical id '{}'",
-                    record_row.canonical
-                );
-            }
-            Some((_, DisambiguatedRecordState::Void(record_row, state))) => {
-                state.commit()?;
-                bail!(
-                    "Cannot replace voided record with canonical id '{}'",
-                    record_row.canonical
-                );
-            }
-            // `set_failed` was already called here
-            None => return Ok(()),
-        };
+    let (original_record, (tx, original_row_id)) = match DatabaseResponse::determine(
+        tx,
+        identifier,
+        &cfg.alias_transform,
+    )?
+    .require_record()?
+    {
+        Some((_, DisambiguatedRecordState::Entry(record_row, state))) => {
+            (record_row, state.into_parts())
+        }
+        Some((_, DisambiguatedRecordState::Deleted(record_row, state))) => {
+            state.commit()?;
+            bail!(
+                "Cannot replace deleted record with canonical id '{}'",
+                record_row.canonical
+            );
+        }
+        Some((_, DisambiguatedRecordState::Void(record_row, state))) => {
+            state.commit()?;
+            bail!(
+                "Cannot replace voided record with canonical id '{}'",
+                record_row.canonical
+            );
+        }
+        // `set_failed` was already called here
+        None => return Ok(()),
+    };
 
     // next, get the target data using the callback
     let (replacement_record, replacement_row) = data_cb(tx, &original_record.data)?;
 
     // make sure they aren't the same row
-    if replacement_record.row.canonical == original_record.canonical {
+    if replacement_record.record.canonical == original_record.canonical {
         bail!(
             "replacement identifier '{}' is equivalent to the current identifier",
-            replacement_record.row.canonical
+            replacement_record.record.canonical
         );
     }
 
     // update the target row data
-    let mut incoming_record = MutableEntryData::from_entry_data(&replacement_record.row.data);
+    let mut incoming_record = MutableEntryData::from_entry_data(&replacement_record.record.data);
     crate::app::edit::merge_record_data(
         on_conflict,
         &mut incoming_record,
@@ -92,7 +99,7 @@ where
     } else {
         let original_row = State::init_unchecked(tx, original_row_id);
         original_row
-            .delete_soft(Some(&replacement_record.row.canonical), update_aliases)?
+            .delete_soft(Some(&replacement_record.record.canonical), update_aliases)?
             .commit()?;
     }
 
@@ -103,7 +110,7 @@ where
 
     match root.rename(
         &original_record.canonical,
-        &replacement_record.row.canonical,
+        &replacement_record.record.canonical,
     )? {
         AttachmentRenameOutcome::ToExists(source, target) => {
             warn!(

@@ -5,8 +5,16 @@ use serde_bibtex::token::is_entry_key;
 
 use crate::{
     config::Config,
-    db::state::{ArbitraryData, InRecordsTable, RecordRow, RevisionId, State},
+    db::state::{ArbitraryData, InRecordsTable, Record, RevisionId, State},
 };
+
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RecordDataType {
+    Entry,
+    Deleted,
+    Void,
+}
 
 #[derive(Serialize)]
 pub struct KeyInfo {
@@ -19,14 +27,15 @@ pub struct KeyInfo {
 #[derive(Serialize)]
 pub struct RecordInfo {
     pub key: KeyInfo,
-    pub id: RevisionId,
-    pub record: RecordRow<ArbitraryData>,
+    pub revision: RevisionId,
+    pub record: Record<ArbitraryData>,
+    pub record_type: RecordDataType,
 }
 
 impl RecordInfo {
     pub fn from_data<'conn, I: InRecordsTable>(
         original: String,
-        record: RecordRow<ArbitraryData>,
+        record: Record<ArbitraryData>,
         state: &State<'conn, I>,
         config: &Config,
     ) -> anyhow::Result<Self> {
@@ -39,8 +48,18 @@ impl RecordInfo {
             preferred,
             equivalent,
         };
-        let id = state.rev();
-        Ok(Self { key, id, record })
+        let revision = state.rev();
+        let record_type = match &record.data {
+            ArbitraryData::Entry(_) => RecordDataType::Entry,
+            ArbitraryData::Deleted(_) => RecordDataType::Deleted,
+            ArbitraryData::Void => RecordDataType::Void,
+        };
+        Ok(Self {
+            key,
+            revision,
+            record,
+            record_type,
+        })
     }
 }
 

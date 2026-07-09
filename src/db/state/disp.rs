@@ -7,7 +7,7 @@ use std::fmt;
 use chrono::{DateTime, Local};
 use crossterm::style::{ContentStyle, StyledContent, Stylize};
 
-use super::{ArbitraryDataRef, InRecordsTable, RecordRow, RevisionId, State, Version};
+use super::{ArbitraryDataRef, InRecordsTable, Record, RevisionId, State, Version};
 use crate::{entry::EntryData, logger::LogDisplay, record::RemoteId};
 
 impl<'conn, I: InRecordsTable> LogDisplay for State<'conn, I> {
@@ -42,7 +42,7 @@ impl<'a> RecordRowDisplay<'a> {
 
     /// Construct this display adapter by borrowing data the components of a row.
     pub fn from_borrowed_row(
-        record_row: RecordRow<ArbitraryDataRef<'a>, &'a str>,
+        record_row: Record<ArbitraryDataRef<'a>, &'a str>,
         rev_id: RevisionId,
         styled: bool,
     ) -> Self {

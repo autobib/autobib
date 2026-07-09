@@ -38,12 +38,12 @@ use crate::{
     db::{
         DeleteAliasResult, RecordDatabase, RenameAliasResult,
         state::{
-            DisambiguatedRecordState, ExistsOrUnknown, RecordIdState, RecordRowDisplay,
+            DatabaseResponse, DisambiguatedRecordState, ExistsOrUnknown, RecordRowDisplay,
             RecordRowMoveResult, SetActiveError,
         },
         user_version,
     },
-    entry::{Entry, EntryEditCommand, EntryKey, MutableEntryData, RawEntryData},
+    entry::{BibtexEntry, EntryEditCommand, EntryKey, MutableEntryData, RawEntryData},
     error::AliasErrorKind,
     format::Template,
     http::{BodyBytes, Client},
@@ -52,7 +52,7 @@ use crate::{
     output::{owriteln, stdout_lock_wrap},
     path_hash::AttachmentRoot,
     provider::{RemoteIdCandidate, determine_key_from_data},
-    record::{Alias, RecordId, RemoteId, get_record_row, get_record_row_tx},
+    record::{Alias, RecordId, RemoteId, get_record, get_record_tx},
     term::Editor,
 };
 
@@ -169,7 +169,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             AliasCommand::Add { alias, target } => {
                 info!("Creating alias '{alias}' for '{target}'");
                 let cfg = config::load(&config_path, missing_ok)?;
-                let (_, row) = get_record_row(&mut record_db, target, client, &cfg)?
+                let (_, row) = get_record(&mut record_db, target, client, &cfg)?
                     .exists_or_commit_null("Cannot create alias for")?;
                 if !row.add_alias(&alias)? {
                     error!("Alias already exists: '{alias}'");
@@ -197,7 +197,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             AliasCommand::Reassign { alias, target } => {
                 info!("Updating alias '{alias}' to point to '{target}'");
                 let cfg = config::load(&config_path, missing_ok)?;
-                let (_, row) = get_record_row(&mut record_db, target, client, &cfg)?
+                let (_, row) = get_record(&mut record_db, target, client, &cfg)?
                     .exists_or_commit_null("Cannot create alias for")?;
                 if !row.update_alias(&alias)? {
                     error!("Alias does not exist!");
@@ -243,11 +243,11 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
 
             // Extend with the filename.
             let cfg = config::load(&config_path, missing_ok)?;
-            let (record, row) = get_record_row(&mut record_db, identifier, client, &cfg)?
+            let (record, row) = get_record(&mut record_db, identifier, client, &cfg)?
                 .exists_or_commit_null("Cannot attach file for")?;
             row.commit()?;
             let root = get_attachment_root::<false>(&data_dir, cli.attachments_dir, cli.read_only)?;
-            let mut target = root.attachment_dir(&record.row.canonical);
+            let mut target = root.attachment_dir(&record.record.canonical);
 
             let mut opts = OpenOptions::new();
             opts.write(true);
@@ -399,7 +399,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             let no_non_interactive_cmd = nl.is_identity() && edit_cmd.is_identity();
 
             for key in identifiers {
-                let (record, state) = get_record_row(&mut record_db, key, client, &cfg)?
+                let (record, state) = get_record(&mut record_db, key, client, &cfg)?
                     .exists_or_commit_null("Cannot edit")?;
 
                 match (cli.no_interactive, no_non_interactive_cmd) {
@@ -409,7 +409,8 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     }
                     (_, false) => {
                         // non-interactive command is requested, so we perform it without prompting
-                        let mut editable_data = MutableEntryData::from_entry_data(&record.row.data);
+                        let mut editable_data =
+                            MutableEntryData::from_entry_data(&record.record.data);
 
                         let changed = editable_data.normalize(&nl) || editable_data.edit(&edit_cmd);
 
@@ -424,14 +425,14 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     }
                     (false, true) => {
                         // only perform normalization
-                        let record_data = MutableEntryData::from_entry_data(&record.row.data);
-                        let entry = Entry {
+                        let record_data = MutableEntryData::from_entry_data(&record.record.data);
+                        let entry = BibtexEntry {
                             key: EntryKey::try_new(record.key)
                                 .unwrap_or_else(|_| EntryKey::placeholder()),
                             record_data,
                         };
 
-                        if let Some(Entry { key, record_data }) =
+                        if let Some(BibtexEntry { key, record_data }) =
                             Editor::new_bibtex().edit(&entry)?
                         {
                             let new_row = state
@@ -811,7 +812,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 } else if let Some(record_id) = id {
                     let modified = chrono::Local::now();
                     let cfg = config::load(&config_path, missing_ok)?;
-                    let (_, row) = get_record_row(&mut record_db, record_id, client, &cfg)?
+                    let (_, row) = get_record(&mut record_db, record_id, client, &cfg)?
                         .exists_or_commit_null("Cannot edit")?;
                     row.touch_with_timestamp(&modified)?.commit()?;
                     modified
@@ -1132,7 +1133,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     tx,
                     &cfg,
                     |tx, _| {
-                        get_record_row_tx(tx, target, client, &cfg)?
+                        get_record_tx(tx, target, client, &cfg)?
                             .exists_or_commit_null("Cannot replace with")
                     },
                     hard,
@@ -1158,7 +1159,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                                 "Automatically determined identifier '{}' is",
                                 mapped_key.mapped
                             );
-                            get_record_row_tx(tx, mapped_key.mapped.forget(), client, &cfg)?
+                            get_record_tx(tx, mapped_key.mapped.forget(), client, &cfg)?
                                 .exists_or_commit_null(&msg)
                         }
                         RemoteIdCandidate::None => {
@@ -1328,7 +1329,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
 
             update(
                 on_conflict,
-                RecordIdState::determine(tx, identifier, &cfg.alias_transform)?,
+                DatabaseResponse::determine(tx, identifier, &cfg.alias_transform)?,
                 provided_data,
                 &cfg.on_insert,
                 revive,

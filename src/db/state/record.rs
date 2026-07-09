@@ -16,7 +16,7 @@ use super::{IsMissing, State, Tx, Updated, version::RevisionId};
 /// Any state which represents a row in the 'Records' table.
 pub trait InRecordsTable {
     /// The data associated with the row.
-    type Data: AsRecordRowData + FromBytesAndVariant;
+    type Data: AsRecordData + FromBytesAndVariant;
 
     /// Convert to a row id.
     fn row_id(&self) -> i64;
@@ -36,7 +36,7 @@ pub trait FromBytesAndVariant: Sized {
 
 /// The data for a row in the 'Records' table, not including information about the parents.
 #[derive(Debug)]
-pub struct RecordRow<D, S = String> {
+pub struct Record<D, S = String> {
     /// The associated data.
     pub data: D,
     /// The canonical identifier.
@@ -45,8 +45,8 @@ pub struct RecordRow<D, S = String> {
     pub modified: DateTime<Local>,
 }
 
-impl<D: FromBytesAndVariant> RecordRow<D> {
-    /// Load from a row in the 'Records' table. The query which produced the row must contain the following keyds:
+impl<D: FromBytesAndVariant> Record<D> {
+    /// Load from a row in the 'Records' table. The query which produced the row must contain the following columns:
     ///
     /// - `record_id`,
     /// - `modified`
@@ -72,7 +72,7 @@ impl<D: FromBytesAndVariant> RecordRow<D> {
     }
 }
 
-impl<D: AsRecordRowData> RecordRow<D> {
+impl<D: AsRecordData> Record<D> {
     pub fn write_json_io<W: io::Write>(&self, writer: W) -> Result<(), io::Error> {
         Ok(serde_json::to_writer(writer, &self)?)
     }
@@ -113,7 +113,7 @@ impl<D: AsRecordRowData> RecordRow<D> {
     }
 }
 
-impl RecordRow<ArbitraryData> {
+impl Record<ArbitraryData> {
     /// Load data from a revision id, returning `None` if the ID does not correspond to a row in
     /// the 'Records' table.
     pub fn load(tx: &Tx<'_>, rev: RevisionId) -> rusqlite::Result<Option<Self>> {
@@ -121,14 +121,14 @@ impl RecordRow<ArbitraryData> {
     }
 }
 
-impl<D: AsRecordRowData, T: AsRef<str>> Serialize for RecordRow<D, T> {
+impl<D: AsRecordData, T: AsRef<str>> Serialize for Record<D, T> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
         let field_count = if self.data.serializable() { 2 } else { 3 };
 
-        let mut state = serializer.serialize_struct("RecordRow", field_count)?;
+        let mut state = serializer.serialize_struct("Record", field_count)?;
         self.data.serialize_in(&mut state)?;
         state.serialize_field("canonical", self.canonical.name())?;
         state.serialize_field("modified", &self.modified)?;
@@ -137,17 +137,17 @@ impl<D: AsRecordRowData, T: AsRef<str>> Serialize for RecordRow<D, T> {
 }
 
 /// The data for a row in the 'Records' table, also including information about the parents.
-pub struct CompleteRecordRow<D> {
-    pub row: RecordRow<D>,
+pub struct HistRecord<D> {
+    pub record: Record<D>,
     pub(super) parent: Option<i64>,
 }
 
-impl<D: FromBytesAndVariant> CompleteRecordRow<D> {
+impl<D: FromBytesAndVariant> HistRecord<D> {
     pub(super) fn from_row_unchecked(row: &Row<'_>) -> Self {
         let parent = row.get_unwrap("parent_key");
-        let row = RecordRow::from_row_unchecked(row);
+        let record = Record::from_row_unchecked(row);
 
-        Self { row, parent }
+        Self { record, parent }
     }
 
     pub(super) fn load_unchecked(tx: &Tx<'_>, row_id: i64) -> rusqlite::Result<Self> {
@@ -309,13 +309,13 @@ impl_record_key!(IsVoid, ());
 
 /// A row in the 'Records' table, disambiguated based on what type of row it is.
 pub enum DisambiguatedRecordState<'conn> {
-    Entry(RecordRow<RawEntryData>, State<'conn, IsEntry>),
-    Deleted(RecordRow<Option<RemoteId>>, State<'conn, IsDeleted>),
-    Void(RecordRow<()>, State<'conn, IsVoid>),
+    Entry(Record<RawEntryData>, State<'conn, IsEntry>),
+    Deleted(Record<Option<RemoteId>>, State<'conn, IsDeleted>),
+    Void(Record<()>, State<'conn, IsVoid>),
 }
 
 impl<'conn> DisambiguatedRecordState<'conn> {
-    pub fn forget(self) -> (RecordRow<ArbitraryData>, State<'conn, IsArbitrary>) {
+    pub fn forget(self) -> (Record<ArbitraryData>, State<'conn, IsArbitrary>) {
         match self {
             Self::Entry(data, state) => (data.into(), state.forget()),
             Self::Deleted(data, state) => (data.into(), state.forget()),
@@ -325,7 +325,7 @@ impl<'conn> DisambiguatedRecordState<'conn> {
 }
 
 /// Types which can be written as the 'data' and 'variant' column in the 'Records' table.
-pub trait AsRecordRowData: Sized {
+pub trait AsRecordData: Sized {
     fn data_blob(&self) -> &[u8];
 
     fn variant(&self) -> i64;
@@ -335,7 +335,7 @@ pub trait AsRecordRowData: Sized {
     fn serialize_in<S: SerializeStruct>(&self, ser_struct: &mut S) -> Result<(), S::Error>;
 }
 
-impl AsRecordRowData for RawEntryData {
+impl AsRecordData for RawEntryData {
     fn data_blob(&self) -> &[u8] {
         self.to_byte_repr()
     }
@@ -353,7 +353,7 @@ impl AsRecordRowData for RawEntryData {
     }
 }
 
-impl AsRecordRowData for Option<&RemoteId> {
+impl AsRecordData for Option<&RemoteId> {
     fn data_blob(&self) -> &[u8] {
         self.map_or(b"", |r| r.name().as_bytes())
     }
@@ -371,7 +371,7 @@ impl AsRecordRowData for Option<&RemoteId> {
     }
 }
 
-impl AsRecordRowData for Option<RemoteId> {
+impl AsRecordData for Option<RemoteId> {
     fn data_blob(&self) -> &[u8] {
         self.as_ref().map_or(b"", |r| r.name().as_bytes())
     }
@@ -389,7 +389,7 @@ impl AsRecordRowData for Option<RemoteId> {
     }
 }
 
-impl AsRecordRowData for () {
+impl AsRecordData for () {
     fn data_blob(&self) -> &[u8] {
         &[]
     }
@@ -407,7 +407,7 @@ impl AsRecordRowData for () {
     }
 }
 
-impl AsRecordRowData for EntryOrDeletedData {
+impl AsRecordData for EntryOrDeletedData {
     fn data_blob(&self) -> &[u8] {
         match self {
             Self::Entry(raw_entry_data) => raw_entry_data.data_blob(),
@@ -437,7 +437,7 @@ impl AsRecordRowData for EntryOrDeletedData {
     }
 }
 
-impl AsRecordRowData for ArbitraryData {
+impl AsRecordData for ArbitraryData {
     fn data_blob(&self) -> &[u8] {
         match self {
             Self::Entry(raw_entry_data) => raw_entry_data.data_blob(),
@@ -540,12 +540,12 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
     }
 
     /// Obtain the data for this row.
-    pub fn get_data(&self) -> rusqlite::Result<RecordRow<I::Data>> {
+    pub fn get_data(&self) -> rusqlite::Result<Record<I::Data>> {
         debug!(
             "Retrieving 'Records' data associated with row '{}'",
             self.row_id()
         );
-        RecordRow::load_unchecked(&self.tx, self.row_id())
+        Record::load_unchecked(&self.tx, self.row_id())
     }
 
     /// Get the canonical [`RemoteId`].
@@ -568,12 +568,12 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
     }
 
     /// Obtain the complete data for this row.
-    pub fn get_complete_data(&self) -> rusqlite::Result<CompleteRecordRow<I::Data>> {
+    pub fn get_complete_data(&self) -> rusqlite::Result<HistRecord<I::Data>> {
         debug!(
             "Retrieving 'Records' data associated with row '{}'",
             self.row_id()
         );
-        CompleteRecordRow::load_unchecked(&self.tx, self.row_id())
+        HistRecord::load_unchecked(&self.tx, self.row_id())
     }
 
     /// Forget the specific type of row that this is.
@@ -713,7 +713,7 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
     }
 
     /// Insert a new row with data, adding the previous row as the parent.
-    fn replace_impl<R: AsRecordRowData>(
+    fn replace_impl<R: AsRecordData>(
         &self,
         data: &R,
     ) -> Result<(i64, DateTime<Local>), rusqlite::Error> {
@@ -730,7 +730,7 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
         // the remaining fields use their default values
         let dt = Local::now();
         let new_key: i64 = self.prepare("INSERT INTO Records (record_id, data, modified, variant, parent_key) VALUES (?1, ?2, ?3, ?4, ?5) RETURNING key")?
-            .query_row((existing.row.canonical.name(), data.data_blob(), &dt, data.variant(), self.row_id()), |row| row.get(0))?;
+            .query_row((existing.record.canonical.name(), data.data_blob(), &dt, data.variant(), self.row_id()), |row| row.get(0))?;
 
         self.update_identifier_lookup(new_key)?;
 
@@ -745,7 +745,7 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
         let version = self.current()?;
         let mut children = Vec::new();
         version.map_children(|data, row_id| {
-            children.push((data.row.modified, row_id));
+            children.push((data.record.modified, row_id));
             Ok(())
         })?;
 
@@ -953,14 +953,14 @@ impl<'conn> State<'conn, IsEntry> {
     }
 }
 
-impl<D> RecordRow<D> {
+impl<D> Record<D> {
     /// Convert between record row types when the data types can be converted to each other.
     pub fn convert<A: Into<D>>(
-        RecordRow {
+        Record {
             data,
             canonical,
             modified,
-        }: RecordRow<A>,
+        }: Record<A>,
     ) -> Self {
         Self {
             data: data.into(),
@@ -992,8 +992,8 @@ impl From<()> for ArbitraryData {
 macro_rules! impl_row_from {
     ($($name:ty),*) => {
         $(
-            impl From<RecordRow<$name>> for RecordRow<ArbitraryData> {
-                fn from(row: RecordRow<$name>) -> Self {
+            impl From<Record<$name>> for Record<ArbitraryData> {
+                fn from(row: Record<$name>) -> Self {
                     Self::convert(row)
                 }
             }
@@ -1118,7 +1118,7 @@ impl<'conn, I: NotEntry> State<'conn, I> {
 impl<'conn> State<'conn, IsArbitrary> {
     /// Disambiguate the arbitrary state, returning the data as well as the resulting type.
     pub fn disambiguate(self) -> Result<DisambiguatedRecordState<'conn>, rusqlite::Error> {
-        let RecordRow {
+        let Record {
             data,
             modified,
             canonical,
@@ -1128,7 +1128,7 @@ impl<'conn> State<'conn, IsArbitrary> {
 
         Ok(match data {
             ArbitraryData::Entry(data) => DisambiguatedRecordState::Entry(
-                RecordRow {
+                Record {
                     data,
                     modified,
                     canonical,
@@ -1136,7 +1136,7 @@ impl<'conn> State<'conn, IsArbitrary> {
                 State::init(self.tx, IsEntry(row_id)),
             ),
             ArbitraryData::Deleted(data) => DisambiguatedRecordState::Deleted(
-                RecordRow {
+                Record {
                     data,
                     modified,
                     canonical,
@@ -1144,7 +1144,7 @@ impl<'conn> State<'conn, IsArbitrary> {
                 State::init(self.tx, IsDeleted(row_id)),
             ),
             ArbitraryData::Void => DisambiguatedRecordState::Void(
-                RecordRow {
+                Record {
                     data: (),
                     modified,
                     canonical,

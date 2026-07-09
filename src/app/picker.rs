@@ -9,7 +9,7 @@ use nucleo_picker::{Picker, PickerOptions, Render};
 use walkdir::{DirEntry, WalkDir};
 
 use crate::{
-    db::{RecordDatabase, state::RecordRow},
+    db::{RecordDatabase, state::Record},
     entry::RawEntryData,
     format::Template,
     path_hash::AttachmentRoot,
@@ -111,7 +111,7 @@ pub fn choose_canonical_id(
     strict: bool,
     max_selection_count: Option<NonZero<u32>>,
 ) -> (
-    Picker<RecordRow<RawEntryData>, Template>,
+    Picker<Record<RawEntryData>, Template>,
     thread::JoinHandle<Result<RecordDatabase, rusqlite::Error>>,
 ) {
     let picker = PickerOptions::new()
@@ -138,10 +138,10 @@ pub fn choose_canonical_id(
     (picker, handle)
 }
 
-/// A wrapper around a [`RecordRow`] which also contains a list of attachments associated with the
+/// A wrapper around a [`Record`] which also contains a list of attachments associated with the
 /// record.
 pub struct AttachmentData {
-    pub row_data: RecordRow<RawEntryData>,
+    pub row_data: Record<RawEntryData>,
     pub attachments: NonEmpty<DirEntry>,
     pub attachment_root: PathBuf,
 }

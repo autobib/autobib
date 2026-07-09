@@ -3,29 +3,29 @@ use std::io::Write;
 use anyhow::Result;
 use nucleo_picker::Selection;
 
-use crate::{db::state::RecordRow, entry::RawEntryData, logger::error, output::stdout_lock_wrap};
+use crate::{db::state::Record, entry::RawEntryData, logger::error, output::stdout_lock_wrap};
 
 pub trait FindSelection<'a> {
     fn is_empty(&self) -> bool;
-    fn iter(&'a self) -> impl Iterator<Item = &'a RecordRow<RawEntryData>>;
+    fn iter(&'a self) -> impl Iterator<Item = &'a Record<RawEntryData>>;
 }
 
-impl<'a> FindSelection<'a> for Option<&'a RecordRow<RawEntryData>> {
+impl<'a> FindSelection<'a> for Option<&'a Record<RawEntryData>> {
     fn is_empty(&self) -> bool {
         self.is_none()
     }
 
-    fn iter(&'a self) -> impl Iterator<Item = &'a RecordRow<RawEntryData>> {
+    fn iter(&'a self) -> impl Iterator<Item = &'a Record<RawEntryData>> {
         (*self).into_iter()
     }
 }
 
-impl<'a> FindSelection<'a> for Selection<'a, RecordRow<RawEntryData>> {
+impl<'a> FindSelection<'a> for Selection<'a, Record<RawEntryData>> {
     fn is_empty(&self) -> bool {
         Selection::is_empty(self)
     }
 
-    fn iter(&'a self) -> impl Iterator<Item = &'a RecordRow<RawEntryData>> {
+    fn iter(&'a self) -> impl Iterator<Item = &'a Record<RawEntryData>> {
         Selection::iter(self)
     }
 }

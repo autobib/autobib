@@ -44,7 +44,7 @@ use crate::{
     entry::RawEntryData,
     error::RecordError,
     logger::{debug, error, reraise},
-    record::Record,
+    record::KeyedRecord,
 };
 
 /// An updated state, along with the timestamp at which it was updated.
@@ -143,13 +143,13 @@ impl Unknown<'_> {
 
 /// A representation of the database state beginning with an arbitrary [`RecordId`].
 #[derive(Debug)]
-pub enum RecordIdState<'conn> {
+pub enum DatabaseResponse<'conn> {
     /// The `Records` row exists.
-    Entry(Record<RawEntryData>, State<'conn, IsEntry>),
+    Entry(KeyedRecord<RawEntryData>, State<'conn, IsEntry>),
     /// The `Records` row was deleted.
-    Deleted(Record<Option<RemoteId>>, State<'conn, IsDeleted>),
+    Deleted(KeyedRecord<Option<RemoteId>>, State<'conn, IsDeleted>),
     /// The void `Records` row.
-    Void(Record<()>, State<'conn, IsVoid>),
+    Void(KeyedRecord<()>, State<'conn, IsVoid>),
     /// The `Records` row does not exist and the `NullRecords` row exists.
     NullRemoteId(MappedKey, State<'conn, IsNull>),
     /// The `Records` and `NullRecords` rows do not exist.
@@ -160,7 +160,7 @@ pub enum RecordIdState<'conn> {
     InvalidRemoteId(RecordError),
 }
 
-impl<'conn> RecordIdState<'conn> {
+impl<'conn> DatabaseResponse<'conn> {
     /// Create a new `Existent` variant from the provided [`Tx`] and [`RowId`], using the
     /// provided key as the original key for the request.
     fn existent(
@@ -191,17 +191,17 @@ impl<'conn> RecordIdState<'conn> {
     ) -> Result<Self, rusqlite::Error> {
         debug!("Beginning new transaction for row '{row_id}' in the `Records` table.");
         match State::init(tx, IsArbitrary(row_id)).disambiguate()? {
-            DisambiguatedRecordState::Entry(row, state) => {
+            DisambiguatedRecordState::Entry(record, state) => {
                 let key = produce_key_entry(&state, key)?;
-                Ok(Self::Entry(Record { key, row }, state))
+                Ok(Self::Entry(KeyedRecord { key, record }, state))
             }
-            DisambiguatedRecordState::Deleted(row, state) => {
+            DisambiguatedRecordState::Deleted(record, state) => {
                 let key = produce_key_deleted(&state, key)?;
-                Ok(Self::Deleted(Record { key, row }, state))
+                Ok(Self::Deleted(KeyedRecord { key, record }, state))
             }
-            DisambiguatedRecordState::Void(row, state) => {
+            DisambiguatedRecordState::Void(record, state) => {
                 let key = produce_key_void(&state, key)?;
-                Ok(Self::Void(Record { key, row }, state))
+                Ok(Self::Void(KeyedRecord { key, record }, state))
             }
         }
     }
@@ -307,14 +307,14 @@ impl<'conn> RecordIdState<'conn> {
         self,
     ) -> rusqlite::Result<Option<(String, DisambiguatedRecordState<'conn>)>> {
         Ok(match self {
-            Self::Entry(Record { key, row }, state) => {
-                Some((key, DisambiguatedRecordState::Entry(row, state)))
+            Self::Entry(KeyedRecord { key, record }, state) => {
+                Some((key, DisambiguatedRecordState::Entry(record, state)))
             }
-            Self::Deleted(Record { key, row }, state) => {
-                Some((key, DisambiguatedRecordState::Deleted(row, state)))
+            Self::Deleted(KeyedRecord { key, record }, state) => {
+                Some((key, DisambiguatedRecordState::Deleted(record, state)))
             }
-            Self::Void(Record { key, row }, state) => {
-                Some((key, DisambiguatedRecordState::Void(row, state)))
+            Self::Void(KeyedRecord { key, record }, state) => {
+                Some((key, DisambiguatedRecordState::Void(record, state)))
             }
             Self::NullRemoteId(mapped_key, state) => {
                 state.commit()?;
@@ -340,13 +340,13 @@ impl<'conn> RecordIdState<'conn> {
 
 /// A representation of the database state beginning with an arbitrary [`RemoteId`].
 #[derive(Debug)]
-pub enum RemoteIdState<'conn> {
+pub enum DatabaseRemoteIdResponse<'conn> {
     /// The `Records` row exists.
-    Entry(RecordRow<RawEntryData>, State<'conn, IsEntry>),
+    Entry(Record<RawEntryData>, State<'conn, IsEntry>),
     /// The `Records` row was deleted.
-    Deleted(RecordRow<Option<RemoteId>>, State<'conn, IsDeleted>),
+    Deleted(Record<Option<RemoteId>>, State<'conn, IsDeleted>),
     /// The `Records` row is void.
-    Void(RecordRow<()>, State<'conn, IsVoid>),
+    Void(Record<()>, State<'conn, IsVoid>),
     /// The `Records` row does not exist and the `NullRecords` row exists.
     Null(State<'conn, IsNull>),
     /// The `Records` and `NullRecords` rows do not exist.
@@ -357,24 +357,24 @@ pub enum RemoteIdState<'conn> {
 #[derive(Debug)]
 pub enum ExistsOrUnknown<'conn> {
     /// The `Records` row exists.
-    Entry(RecordRow<RawEntryData>, State<'conn, IsEntry>),
+    Entry(Record<RawEntryData>, State<'conn, IsEntry>),
     /// The `Records` row was deleted.
-    Deleted(RecordRow<Option<RemoteId>>, State<'conn, IsDeleted>),
+    Deleted(Record<Option<RemoteId>>, State<'conn, IsDeleted>),
     /// The `Records` row is void.
-    Void(RecordRow<()>, State<'conn, IsVoid>),
+    Void(Record<()>, State<'conn, IsVoid>),
     /// The `Records` and `NullRecords` rows do not exist.
     Unknown(State<'conn, IsMissing>),
 }
 
-impl<'conn> RemoteIdState<'conn> {
+impl<'conn> DatabaseRemoteIdResponse<'conn> {
     #[inline]
     pub fn delete_null(self) -> Result<ExistsOrUnknown<'conn>, rusqlite::Error> {
         Ok(match self {
-            RemoteIdState::Entry(data, state) => ExistsOrUnknown::Entry(data, state),
-            RemoteIdState::Deleted(data, state) => ExistsOrUnknown::Deleted(data, state),
-            RemoteIdState::Void(data, state) => ExistsOrUnknown::Void(data, state),
-            RemoteIdState::Null(state) => ExistsOrUnknown::Unknown(state.delete()?),
-            RemoteIdState::Unknown(state) => ExistsOrUnknown::Unknown(state),
+            DatabaseRemoteIdResponse::Entry(data, state) => ExistsOrUnknown::Entry(data, state),
+            DatabaseRemoteIdResponse::Deleted(data, state) => ExistsOrUnknown::Deleted(data, state),
+            DatabaseRemoteIdResponse::Void(data, state) => ExistsOrUnknown::Void(data, state),
+            DatabaseRemoteIdResponse::Null(state) => ExistsOrUnknown::Unknown(state.delete()?),
+            DatabaseRemoteIdResponse::Unknown(state) => ExistsOrUnknown::Unknown(state),
         })
     }
 
@@ -387,12 +387,14 @@ impl<'conn> RemoteIdState<'conn> {
                 debug!("Beginning new transaction for row '{row_id}' in the `Records` table.");
                 match State::init(tx, IsArbitrary(row_id)).disambiguate()? {
                     DisambiguatedRecordState::Entry(entry_row_data, state) => {
-                        RemoteIdState::Entry(entry_row_data, state)
+                        DatabaseRemoteIdResponse::Entry(entry_row_data, state)
                     }
                     DisambiguatedRecordState::Deleted(deleted_row_data, state) => {
-                        RemoteIdState::Deleted(deleted_row_data, state)
+                        DatabaseRemoteIdResponse::Deleted(deleted_row_data, state)
                     }
-                    DisambiguatedRecordState::Void(data, state) => RemoteIdState::Void(data, state),
+                    DisambiguatedRecordState::Void(data, state) => {
+                        DatabaseRemoteIdResponse::Void(data, state)
+                    }
                 }
             }
             None => match get_null_row_id(&tx, remote_id)? {

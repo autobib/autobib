@@ -11,7 +11,7 @@ use crate::{
         state::{IsEntry, RecordsInsert, State},
     },
     entry::{
-        AsEntryData, ConflictResolved, Entry, EntryEditCommand, EntryKey, MutableEntryData,
+        AsEntryData, BibtexEntry, ConflictResolved, EntryEditCommand, EntryKey, MutableEntryData,
         RawEntryData,
     },
     error::{MergeError, ShortError},
@@ -74,13 +74,13 @@ where
         missing.insert(&RawEntryData::from_entry_data(&data), remote_id)?
     } else {
         let record_data = MutableEntryData::<String>::default();
-        let entry = Entry {
+        let entry = BibtexEntry {
             key: EntryKey::try_new(remote_id.name().into())
                 .unwrap_or_else(|_| EntryKey::placeholder()),
             record_data,
         };
 
-        if let Some(Entry { key, record_data }) = Editor::new_bibtex().edit(&entry)? {
+        if let Some(BibtexEntry { key, record_data }) = Editor::new_bibtex().edit(&entry)? {
             let row = missing
                 .insert(&RawEntryData::from_entry_data(&record_data), remote_id)?
                 .state;

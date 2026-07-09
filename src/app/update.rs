@@ -7,16 +7,18 @@ use crate::{
     app::{cli::OnConflict, merge_record_data},
     db::{
         Tx,
-        state::{ArbitraryData, RecordIdState, RecordRow},
+        state::{ArbitraryData, DatabaseResponse, Record},
     },
-    entry::{Entry, MutableEntryData, RawEntryData},
+    entry::{BibtexEntry, MutableEntryData, RawEntryData},
     http::Client,
     logger::{error, suggest},
     normalize::{Normalization, Normalize},
-    record::{Record, RecordId, RecursiveRemoteResponse, RemoteId, get_remote_response_recursive},
+    record::{
+        KeyedRecord, RecordId, RecursiveRemoteResponse, RemoteId, get_remote_response_recursive,
+    },
 };
 
-/// Update the record id corresponding to the [`RecordIdState`] using data returned by
+/// Update the record id corresponding to the [`DatabaseResponse`] using data returned by
 /// `data_callback`.
 ///
 /// If the record exists, update it either with the provided data, or remote data if none.
@@ -25,7 +27,7 @@ use crate::{
 /// new data to retrieve from remote.
 pub fn update<F>(
     on_conflict: OnConflict,
-    record_id_state: RecordIdState,
+    record_id_state: DatabaseResponse,
     provided_data: Option<MutableEntryData>,
     normalization: &Normalization,
     revive: bool,
@@ -35,10 +37,10 @@ where
     F: FnOnce(RemoteId) -> Result<MutableEntryData, anyhow::Error>,
 {
     match record_id_state {
-        RecordIdState::Entry(
-            Record {
+        DatabaseResponse::Entry(
+            KeyedRecord {
                 key,
-                row: RecordRow {
+                record: Record {
                     data, canonical, ..
                 },
             },
@@ -70,12 +72,12 @@ where
                     .commit()?;
             }
         }
-        RecordIdState::Deleted(Record { key, row }, state) => {
+        DatabaseResponse::Deleted(KeyedRecord { key, record }, state) => {
             if revive {
                 let mut raw_data = if let Some(data) = provided_data {
                     data
                 } else {
-                    match produce_data(row.canonical) {
+                    match produce_data(record.canonical) {
                         Ok(data) => data,
                         Err(e) => {
                             state.commit()?;
@@ -94,10 +96,10 @@ where
                 suggest!("Undo first, or use `autobib update --revive` to insert new data.");
             }
         }
-        RecordIdState::Void(Record { key, row }, void) => {
+        DatabaseResponse::Void(KeyedRecord { key, record }, void) => {
             void.commit()?;
             error!("Record exists but has been voided: {key}");
-            if row.canonical.is_local() {
+            if record.canonical.is_local() {
                 suggest!(
                     "Use `autobib local` to insert new data, or find an existing version using `autobib log --all`."
                 );
@@ -108,21 +110,21 @@ where
                 suggest!("Use `autobib hist revive` to insert new data.");
             }
         }
-        RecordIdState::NullRemoteId(mapped_remote_id, null_row) => {
+        DatabaseResponse::NullRemoteId(mapped_remote_id, null_row) => {
             null_row.commit()?;
             bail!("Cannot update null record with identifier: {mapped_remote_id}");
         }
-        RecordIdState::Unknown(unknown) => {
+        DatabaseResponse::Unknown(unknown) => {
             let maybe_normalized = unknown.combine_and_commit()?;
             error!("Record does not exist in database: {maybe_normalized}");
             if !maybe_normalized.mapped.is_local() {
                 suggest!("Use `autobib get` to retrieve record");
             }
         }
-        RecordIdState::UndefinedAlias(alias) => {
+        DatabaseResponse::UndefinedAlias(alias) => {
             bail!("Undefined alias: '{alias}'");
         }
-        RecordIdState::InvalidRemoteId(err) => bail!("{err}"),
+        DatabaseResponse::InvalidRemoteId(err) => bail!("{err}"),
     };
     Ok(())
 }
@@ -144,31 +146,31 @@ pub fn data_from_key<'conn>(
     record_id: RecordId,
     cfg: &Config,
 ) -> Result<(MutableEntryData, Tx<'conn>), anyhow::Error> {
-    match RecordIdState::determine(tx, record_id, &cfg.alias_transform)? {
-        RecordIdState::Entry(Record { row, .. }, state) => Ok((
-            MutableEntryData::from_entry_data(&row.data),
+    match DatabaseResponse::determine(tx, record_id, &cfg.alias_transform)? {
+        DatabaseResponse::Entry(KeyedRecord { record, .. }, state) => Ok((
+            MutableEntryData::from_entry_data(&record.data),
             state.into_tx(),
         )),
-        RecordIdState::Deleted(_, state) => {
+        DatabaseResponse::Deleted(_, state) => {
             state.commit()?;
             bail!("Cannot read update data from deleted row");
         }
-        RecordIdState::Void(_, state) => {
+        DatabaseResponse::Void(_, state) => {
             state.commit()?;
             bail!("Cannot read update data from voided row");
         }
-        RecordIdState::NullRemoteId(_, state) => {
+        DatabaseResponse::NullRemoteId(_, state) => {
             state.commit()?;
             bail!("Cannot read update data from null record");
         }
-        RecordIdState::Unknown(unknown) => {
+        DatabaseResponse::Unknown(unknown) => {
             unknown.combine_and_commit()?;
             bail!("Cannot read update data from record not present in database");
         }
-        RecordIdState::UndefinedAlias(_) => {
+        DatabaseResponse::UndefinedAlias(_) => {
             bail!("Cannot read update data from undefined alias");
         }
-        RecordIdState::InvalidRemoteId(record_error) => {
+        DatabaseResponse::InvalidRemoteId(record_error) => {
             bail!("Cannot read update data: {record_error}");
         }
     }
@@ -178,7 +180,7 @@ pub fn data_from_rev(
     tx: &Tx<'_>,
     rev: crate::db::state::RevisionId,
 ) -> Result<MutableEntryData, anyhow::Error> {
-    let Some(row) = RecordRow::load(tx, rev)? else {
+    let Some(row) = Record::load(tx, rev)? else {
         bail!("Revision '{rev}' does not exist in the database!");
     };
 
@@ -194,6 +196,6 @@ pub fn data_from_rev(
 /// Obtain data from a bibtex record at a provided path.
 pub fn data_from_path<P: AsRef<Path>>(path: P) -> Result<MutableEntryData, anyhow::Error> {
     let bibtex = read_to_string(path)?;
-    let entry = Entry::<MutableEntryData>::from_str(&bibtex)?;
+    let entry = BibtexEntry::<MutableEntryData>::from_str(&bibtex)?;
     Ok(entry.record_data)
 }

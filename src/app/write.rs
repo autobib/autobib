@@ -11,7 +11,7 @@ use serde::{Serialize, ser::SerializeMap};
 
 use crate::{
     Identifier,
-    entry::{AsEntryData, Entry, EntryData, entries_to_bibtex},
+    entry::{AsEntryData, BibtexEntry, EntryData, entries_to_bibtex},
     logger::warn,
     output::stdout_lock_wrap,
     record::RemoteId,
@@ -54,9 +54,9 @@ pub fn output_keys<'a>(keys: impl Iterator<Item = &'a crate::RecordId>) -> Resul
 }
 
 pub fn output_entries_json<D: AsEntryData>(
-    grouped_entries: &BTreeMap<RemoteId, NonEmpty<Entry<D>>>,
+    grouped_entries: &BTreeMap<RemoteId, NonEmpty<BibtexEntry<D>>>,
 ) -> Result<(), anyhow::Error> {
-    struct Wrapper<'a, D>(&'a BTreeMap<RemoteId, NonEmpty<Entry<D>>>);
+    struct Wrapper<'a, D>(&'a BTreeMap<RemoteId, NonEmpty<BibtexEntry<D>>>);
 
     impl<'a, D: AsEntryData> Serialize for Wrapper<'a, D> {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -84,7 +84,7 @@ pub fn output_entries_json<D: AsEntryData>(
 pub fn output_entries_bibtex<D: AsEntryData>(
     out: Option<std::fs::File>,
     append: bool,
-    grouped_entries: &BTreeMap<RemoteId, NonEmpty<Entry<D>>>,
+    grouped_entries: &BTreeMap<RemoteId, NonEmpty<BibtexEntry<D>>>,
 ) -> Result<(), serde_bibtex::Error> {
     match out {
         Some(file) => {
@@ -113,8 +113,8 @@ pub fn output_entries_bibtex<D: AsEntryData>(
 }
 
 fn flatten_and_warn<D>(
-    grouped_entries: &BTreeMap<RemoteId, NonEmpty<Entry<D>>>,
-) -> impl Iterator<Item = &Entry<D>> {
+    grouped_entries: &BTreeMap<RemoteId, NonEmpty<BibtexEntry<D>>>,
+) -> impl Iterator<Item = &BibtexEntry<D>> {
     grouped_entries.iter().flat_map(|(canonical, entry_group)| {
         if entry_group.len() > 1 {
             warn!(

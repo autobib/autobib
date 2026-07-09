@@ -13,13 +13,13 @@ use crate::{
     config::Config,
     db::{
         RecordDatabase,
-        state::{IsEntry, RecordIdState, RecordRow, State},
+        state::{DatabaseResponse, IsEntry, Record, State},
     },
-    entry::{Entry, EntryKey, RawEntryData},
+    entry::{BibtexEntry, EntryKey, RawEntryData},
     error::{DatabaseError, Error},
     http::Client,
     logger::{error, reraise, suggest},
-    record::{Record, RecordId, RecordRowResponse, RemoteId, get_record_row},
+    record::{KeyedRecord, RecordId, RecordResponse, RemoteId, get_record},
 };
 
 /// Retrieve identifiers as BibTeX entries.
@@ -29,7 +29,7 @@ pub fn retrieve_entries<T: IntoIterator<Item = RecordId>, C: Client>(
     client: &C,
     ignore_null: bool,
     config: &Config,
-) -> BTreeMap<RemoteId, NonEmpty<Entry<RawEntryData>>> {
+) -> BTreeMap<RemoteId, NonEmpty<BibtexEntry<RawEntryData>>> {
     let valid_entries = ids.into_iter().filter_map(|id| {
         retrieve_single_entry(record_db, id, client, ignore_null, config, |r, s| {
             Ok(try_data_to_entry(r, s))
@@ -68,7 +68,7 @@ pub fn retrieve_entries_read_only<T: IntoIterator<Item = RecordId>>(
     record_db: &mut RecordDatabase,
     ignore_null: bool,
     config: &Config,
-) -> BTreeMap<RemoteId, NonEmpty<Entry<RawEntryData>>> {
+) -> BTreeMap<RemoteId, NonEmpty<BibtexEntry<RawEntryData>>> {
     let valid_entries = ids.into_iter().filter_map(|record_id| {
         retrieve_single_entry_read_only(record_db, record_id, ignore_null, config, |r, s| {
             Ok(try_data_to_entry(r, s))
@@ -108,18 +108,18 @@ pub fn retrieve_single_entry_read_only<V, T>(
     validate: V,
 ) -> Result<Option<T>, Error>
 where
-    V: FnOnce(Record<RawEntryData>, &State<'_, IsEntry>) -> Result<Option<T>, DatabaseError>,
+    V: FnOnce(KeyedRecord<RawEntryData>, &State<'_, IsEntry>) -> Result<Option<T>, DatabaseError>,
 {
     match record_db.state_from_record_id(id, &config.alias_transform)? {
-        RecordIdState::Entry(record, state) => {
+        DatabaseResponse::Entry(record, state) => {
             let entry = validate(record, &state)?;
             state.commit()?;
             Ok(entry)
         }
-        RecordIdState::Deleted(
-            Record {
+        DatabaseResponse::Deleted(
+            KeyedRecord {
                 key,
-                row: deleted_row_data,
+                record: deleted_row_data,
             },
             state,
         ) => {
@@ -132,29 +132,29 @@ where
             state.commit()?;
             Ok(None)
         }
-        RecordIdState::Void(Record { key, .. }, void) => {
+        DatabaseResponse::Void(KeyedRecord { key, .. }, void) => {
             void.commit()?;
             error!("Record exists but has been voided: {key}");
             Ok(None)
         }
-        RecordIdState::NullRemoteId(remote_id, missing) => {
+        DatabaseResponse::NullRemoteId(remote_id, missing) => {
             if !ignore_null {
                 error!("Null record: '{remote_id}'");
             }
             missing.commit()?;
             Ok(None)
         }
-        RecordIdState::UndefinedAlias(alias) => {
+        DatabaseResponse::UndefinedAlias(alias) => {
             if !ignore_null {
                 error!("Undefined alias: '{alias}'");
             }
             Ok(None)
         }
-        RecordIdState::InvalidRemoteId(err) => {
+        DatabaseResponse::InvalidRemoteId(err) => {
             reraise(&err);
             Ok(None)
         }
-        RecordIdState::Unknown(unknown) => {
+        DatabaseResponse::Unknown(unknown) => {
             let mapped = unknown.combine_and_commit()?;
             error!("Database does not contain key: {mapped}");
             Ok(None)
@@ -173,38 +173,38 @@ pub fn retrieve_single_entry<C, V, T>(
 ) -> Result<Option<T>, Error>
 where
     C: Client,
-    V: FnOnce(Record<RawEntryData>, &State<'_, IsEntry>) -> Result<Option<T>, DatabaseError>,
+    V: FnOnce(KeyedRecord<RawEntryData>, &State<'_, IsEntry>) -> Result<Option<T>, DatabaseError>,
 {
-    match get_record_row(record_db, id, client, config)? {
-        RecordRowResponse::Exists(record_data, row) => {
+    match get_record(record_db, id, client, config)? {
+        RecordResponse::Exists(record_data, row) => {
             let entry = validate(record_data, &row)?;
             row.commit()?;
             Ok(entry)
         }
-        RecordRowResponse::Deleted(deleted_row_data, deleted) => {
+        RecordResponse::Deleted(deleted_row_data, deleted) => {
             if !ignore_null {
                 error!("Deleted record: '{}'", deleted_row_data.key);
-                if let Some(repl) = deleted_row_data.row.data {
+                if let Some(repl) = deleted_row_data.record.data {
                     suggest!("Perhaps use the replacement key: '{repl}'");
                 }
             }
             deleted.commit()?;
             Ok(None)
         }
-        RecordRowResponse::NullRemoteId(remote_id, missing) => {
+        RecordResponse::NullRemoteId(remote_id, missing) => {
             if !ignore_null {
                 error!("Null record: '{remote_id}'");
             }
             missing.commit()?;
             Ok(None)
         }
-        RecordRowResponse::NullAlias(alias) => {
+        RecordResponse::NullAlias(alias) => {
             if !ignore_null {
                 error!("Undefined alias: '{alias}'");
             }
             Ok(None)
         }
-        RecordRowResponse::InvalidRemoteId(err) => {
+        RecordResponse::InvalidRemoteId(err) => {
             reraise(&err);
             Ok(None)
         }
@@ -213,15 +213,15 @@ where
 
 /// Helper function for converting data to an entry with validation.
 pub fn try_data_to_entry(
-    Record {
+    KeyedRecord {
         key,
-        row: RecordRow {
+        record: Record {
             data, canonical, ..
         },
-    }: Record<RawEntryData>,
+    }: KeyedRecord<RawEntryData>,
     row: &State<'_, IsEntry>,
-) -> Option<(Entry<RawEntryData>, RemoteId)> {
-    validate_bibtex_key(key, row).map(|key| (Entry::new(key, data), canonical))
+) -> Option<(BibtexEntry<RawEntryData>, RemoteId)> {
+    validate_bibtex_key(key, row).map(|key| (BibtexEntry::new(key, data), canonical))
 }
 
 /// Validate a BibTeX key, logging errors and suggesting fixes.
@@ -257,11 +257,12 @@ fn validate_bibtex_key(key: String, row: &State<IsEntry>) -> Option<EntryKey<Str
 /// Group valid entries by their canonical id in order to catch duplicate entries.
 fn group_valid_entries_by_canonical<T>(
     valid_entries: T,
-) -> BTreeMap<RemoteId, NonEmpty<Entry<RawEntryData>>>
+) -> BTreeMap<RemoteId, NonEmpty<BibtexEntry<RawEntryData>>>
 where
-    T: IntoIterator<Item = (Entry<RawEntryData>, RemoteId)>,
+    T: IntoIterator<Item = (BibtexEntry<RawEntryData>, RemoteId)>,
 {
-    let mut grouped_entries: BTreeMap<RemoteId, NonEmpty<Entry<RawEntryData>>> = BTreeMap::new();
+    let mut grouped_entries: BTreeMap<RemoteId, NonEmpty<BibtexEntry<RawEntryData>>> =
+        BTreeMap::new();
     for (bibtex_entry, canonical) in valid_entries {
         match grouped_entries.entry(canonical) {
             Occupied(e) => e.into_mut().push(bibtex_entry),
