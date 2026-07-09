@@ -46,7 +46,8 @@ fn main() {
             "An unexpected error occured while running the program:
   1. Your database file could be malformed or has been edited by another program.
      Run `autobib util check` to see if this is the case.
-  2. If you have ruled out 1., this is a bug in autobib. Please report it at
+  2. If you have ruled out 1. or believe that the database has become malformed
+     through normal usage, this is a bug in Autobib. Please report it at
      > https://github.com/autobib/autobib/issues
      including the error message below and any other information you can provide
      about the context in which it occured.
