@@ -31,9 +31,9 @@ use self::{
 
 pub use self::{
     config::Config,
-    entry::Entry,
+    entry::BibtexEntry,
     normalize::{Normalization, Normalize},
-    record::{Alias, AliasOrRemoteId, MappedKey, RecordId, RemoteId, get_record_row},
+    record::{Alias, AliasOrRemoteId, MappedKey, RecordId, RemoteId, get_record},
     term::{Confirm, Editor, EditorConfig},
 };
 

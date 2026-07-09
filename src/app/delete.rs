@@ -2,10 +2,10 @@ use crate::{
     Config, RecordId, RemoteId,
     db::{
         RecordDatabase,
-        state::{self, RecordIdState},
+        state::{self, DatabaseResponse},
     },
     logger::{error, reraise, suggest},
-    record::Record,
+    record::KeyedRecord,
 };
 
 /// Soft-delete the data associated with the provided identifier.
@@ -72,35 +72,35 @@ where
     V: FnOnce(String, state::State<'_, state::IsVoid>) -> Result<(), rusqlite::Error>,
 {
     match record_db.state_from_record_id(id, &config.alias_transform)? {
-        RecordIdState::Entry(record, state) => {
+        DatabaseResponse::Entry(record, state) => {
             entry_callback(record.key, state)?;
-            return Ok(Some(record.row.canonical));
+            return Ok(Some(record.record.canonical));
         }
-        RecordIdState::Deleted(record, state) => {
+        DatabaseResponse::Deleted(record, state) => {
             deleted_callback(record.key, state)?;
-            return Ok(Some(record.row.canonical));
+            return Ok(Some(record.record.canonical));
         }
-        RecordIdState::Void(
-            Record {
+        DatabaseResponse::Void(
+            KeyedRecord {
                 key: original_name, ..
             },
             state,
         ) => {
             voided_callback(original_name, state)?;
         }
-        RecordIdState::NullRemoteId(mapped_key, state) => {
+        DatabaseResponse::NullRemoteId(mapped_key, state) => {
             state.commit()?;
             error!("Cannot delete null record data: {mapped_key}");
             suggest!("Delete null records using `autobib clean database --evict`.");
         }
-        RecordIdState::Unknown(unknown) => {
+        DatabaseResponse::Unknown(unknown) => {
             let maybe_normalized = unknown.combine_and_commit()?;
             error!("Cannot delete key not in database: {maybe_normalized}");
         }
-        RecordIdState::UndefinedAlias(alias) => {
+        DatabaseResponse::UndefinedAlias(alias) => {
             error!("Cannot delete undefined alias: {alias}");
         }
-        RecordIdState::InvalidRemoteId(record_error) => {
+        DatabaseResponse::InvalidRemoteId(record_error) => {
             reraise(&record_error);
         }
     };

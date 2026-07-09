@@ -6,7 +6,7 @@
 use chrono::{DateTime, Local};
 use rusqlite::{Row, types::ValueRef};
 
-use super::{ArbitraryData, RecordRow};
+use super::{ArbitraryData, Record};
 use crate::{RawEntryData, RemoteId};
 
 /// Equivalent to an [`ArbitraryData`], but borrows all of its data.
@@ -53,7 +53,7 @@ impl<'r> ArbitraryDataRef<'r> {
     }
 }
 
-impl<'r> RecordRow<ArbitraryDataRef<'r>, &'r str> {
+impl<'r> Record<ArbitraryDataRef<'r>, &'r str> {
     /// Load from a row in the 'Records' table. The query which produced the row must contain the following columns:
     ///
     /// - `record_id`

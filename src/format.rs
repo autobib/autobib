@@ -9,12 +9,12 @@ use nucleo_picker::Render;
 use self::parse::{Kind, Lexer, Token};
 
 use crate::{
-    db::{Identifier, state::RecordRow},
+    db::{Identifier, state::Record},
     entry::{
         AsEntryData, EntryData, FieldKey, MutableEntryData, RawEntryData, RawRecordFieldsIter,
     },
     error::{ClapTemplateError, KeyParseError, KeyParseErrorKind},
-    record::Record,
+    record::KeyedRecord,
 };
 
 /// A `{%meta}` token.
@@ -331,7 +331,7 @@ pub struct BibtexFields<'a> {
 }
 
 impl<'a> BibtexFields<'a> {
-    pub fn new(row: &'a RecordRow<RawEntryData>) -> Self {
+    pub fn new(row: &'a Record<RawEntryData>) -> Self {
         Self {
             inner: row.data.raw_fields().peekable(),
         }
@@ -358,7 +358,7 @@ enum DisplayedRow<'row, 'ast, 'state> {
     Row(&'row str),
     Ast(&'ast str),
     State(&'state str),
-    Json(&'row RecordRow<RawEntryData>),
+    Json(&'row Record<RawEntryData>),
     Timestamp(&'row DateTime<Local>),
     Skip,
 }
@@ -516,13 +516,13 @@ impl<T: TemplateData> Render<T> for Template {
 }
 
 pub trait TemplateData {
-    fn row(&self) -> &RecordRow<RawEntryData>;
+    fn row(&self) -> &Record<RawEntryData>;
 
     fn key(&self) -> &str;
 }
 
-impl TemplateData for RecordRow<RawEntryData> {
-    fn row(&self) -> &RecordRow<RawEntryData> {
+impl TemplateData for Record<RawEntryData> {
+    fn row(&self) -> &Record<RawEntryData> {
         self
     }
 
@@ -531,9 +531,9 @@ impl TemplateData for RecordRow<RawEntryData> {
     }
 }
 
-impl TemplateData for Record<RawEntryData> {
-    fn row(&self) -> &RecordRow<RawEntryData> {
-        &self.row
+impl TemplateData for KeyedRecord<RawEntryData> {
+    fn row(&self) -> &Record<RawEntryData> {
+        &self.record
     }
 
     fn key(&self) -> &str {
@@ -560,7 +560,7 @@ mod tests {
                 data.check_and_insert(k.into(), v.into()).unwrap();
             }
 
-            let row_data = RecordRow::<RawEntryData> {
+            let row_data = Record::<RawEntryData> {
                 data: RawEntryData::from_entry_data(&data),
                 canonical: RemoteId::from_parts("local", "123").unwrap(),
                 modified: Local::now(),
@@ -627,7 +627,7 @@ mod tests {
                 data.check_and_insert(k.into(), v.into()).unwrap();
             }
 
-            let row_data = RecordRow::<RawEntryData> {
+            let row_data = Record::<RawEntryData> {
                 data: RawEntryData::from_entry_data(&data),
                 canonical: RemoteId::from_parts(provider, sub_id).unwrap(),
                 modified: Local::now(),
@@ -702,7 +702,7 @@ mod tests {
         data.check_and_insert("a".into(), "A".into()).unwrap();
         data.check_and_insert("b".into(), "B".into()).unwrap();
 
-        let row_data = RecordRow::<RawEntryData> {
+        let row_data = Record::<RawEntryData> {
             data: RawEntryData::from_entry_data(&data),
             canonical: RemoteId::from_parts("local", "12345").unwrap(),
             modified: Local::now(),

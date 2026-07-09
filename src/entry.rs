@@ -14,12 +14,12 @@ use crate::error::BibtexDataError;
 
 /// A single regular entry in a BibTeX bibliography.
 #[derive(Debug, PartialEq)]
-pub struct Entry<D, S = String> {
+pub struct BibtexEntry<D, S = String> {
     pub key: EntryKey<S>,
     pub record_data: D,
 }
 
-impl<D, S> Entry<D, S> {
+impl<D, S> BibtexEntry<D, S> {
     /// Create a new entry with the provided key and record data.
     pub fn new(key: EntryKey<S>, record_data: D) -> Self {
         Self { key, record_data }
@@ -68,7 +68,7 @@ impl<W: fmt::Write> EntryWrite for FmtWriteWrap<W> {
     }
 }
 
-impl<D: AsEntryData, S: AsRef<str>> Entry<D, S> {
+impl<D: AsEntryData, S: AsRef<str>> BibtexEntry<D, S> {
     fn write_generic<W: EntryWrite>(&self, mut writer: W) -> Result<(), W::Error> {
         let tmp = self.record_data.as_entry_data();
         let (entry_type, fields) = tmp.entry_type_and_fields();
@@ -87,7 +87,7 @@ impl<D: AsEntryData, S: AsRef<str>> Entry<D, S> {
         self.write_generic(FmtWriteWrap(writer))
     }
 }
-impl<D: AsEntryData, S: AsRef<str>> fmt::Display for Entry<D, S> {
+impl<D: AsEntryData, S: AsRef<str>> fmt::Display for BibtexEntry<D, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.write_fmt(f)
     }
@@ -98,7 +98,7 @@ where
     W: io::Write,
     D: AsEntryData + 'a,
     S: AsRef<str> + 'a,
-    E: IntoIterator<Item = &'a Entry<D, S>>,
+    E: IntoIterator<Item = &'a BibtexEntry<D, S>>,
 {
     let mut first = true;
     for entry in entries {
@@ -115,15 +115,15 @@ where
 
 pub fn entries_from_bibtex(
     bibtex: &[u8],
-) -> impl Iterator<Item = Result<Entry<MutableEntryData>, BibtexDataError>> + use<'_> {
+) -> impl Iterator<Item = Result<BibtexEntry<MutableEntryData>, BibtexDataError>> + use<'_> {
     let mut dct = MacroDictionary::default();
     dct.set_month_macros();
     Deserializer::from_slice_with_macros(bibtex, dct)
-        .into_iter_regular_entry::<Entry<MutableEntryData>>()
+        .into_iter_regular_entry::<BibtexEntry<MutableEntryData>>()
         .map(|res_entry| res_entry.map_err(Into::into))
 }
 
-impl FromStr for Entry<MutableEntryData> {
+impl FromStr for BibtexEntry<MutableEntryData> {
     type Err = BibtexDataError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {

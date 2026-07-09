@@ -11,9 +11,9 @@ use crate::{
     config::Config,
     db::{
         RecordDatabase,
-        state::{IsEntry, IsMissing, IsVoid, RemoteIdState, State},
+        state::{DatabaseRemoteIdResponse, IsEntry, IsMissing, IsVoid, State},
     },
-    entry::{Entry, MutableEntryData, entries_from_bibtex},
+    entry::{BibtexEntry, MutableEntryData, entries_from_bibtex},
     error::{self, RecordError},
     http::Client,
     logger::{error, info, set_failed, warn},
@@ -90,13 +90,13 @@ enum ImportOutcome {
     /// The import was successful.
     Success,
     /// The import failed with an error and with the provided entry.
-    Failure(anyhow::Error, Entry<MutableEntryData>),
+    Failure(anyhow::Error, BibtexEntry<MutableEntryData>),
 }
 
 /// Import a single entry into the record database.
 #[inline]
 fn import_entry<C>(
-    entry: Entry<MutableEntryData>,
+    entry: BibtexEntry<MutableEntryData>,
     import_config: &ImportConfig,
     record_db: &mut RecordDatabase,
     client: &C,
@@ -132,27 +132,27 @@ where
                     if import_config.local_fallback {
                         let remote_id = RemoteId::local(&alias);
                         match record_db.state_from_remote_id(&remote_id)? {
-                            RemoteIdState::Entry(_, row) => {
+                            DatabaseRemoteIdResponse::Entry(_, row) => {
                                 row.commit()?;
                                 Ok(ImportAction::Fail(anyhow!(
                                     "Local id '{remote_id}' already exists.",
                                 )))
                             }
-                            RemoteIdState::Deleted(_, row) => {
+                            DatabaseRemoteIdResponse::Deleted(_, row) => {
                                 row.commit()?;
                                 Ok(ImportAction::Fail(anyhow!(
                                     "Local id '{remote_id}' previously existed but was soft-deleted.",
                                 )))
                             }
-                            RemoteIdState::Void(_, void) => {
+                            DatabaseRemoteIdResponse::Void(_, void) => {
                                 Ok(ImportAction::Revive(void, remote_id, Some(alias)))
                             }
-                            RemoteIdState::Null(null_row) => Ok(ImportAction::Insert(
+                            DatabaseRemoteIdResponse::Null(null_row) => Ok(ImportAction::Insert(
                                 null_row.delete()?,
                                 remote_id,
                                 Some(alias),
                             )),
-                            RemoteIdState::Unknown(missing) => {
+                            DatabaseRemoteIdResponse::Unknown(missing) => {
                                 Ok(ImportAction::Insert(missing, remote_id, Some(alias)))
                             }
                         }
@@ -164,49 +164,49 @@ where
                 }
                 DeterminedKey::Canonical(mkc, maybe_alias) => {
                     match record_db.state_from_remote_id(&mkc.mapped)? {
-                        RemoteIdState::Entry(_, state) => Ok(ImportAction::Update(
+                        DatabaseRemoteIdResponse::Entry(_, state) => Ok(ImportAction::Update(
                             state,
                             import_config.update,
                             mkc.mapped,
                             maybe_alias,
                         )),
-                        RemoteIdState::Deleted(_, deleted) => {
+                        DatabaseRemoteIdResponse::Deleted(_, deleted) => {
                             deleted.commit()?;
                             Ok(ImportAction::Fail(anyhow!(
                                 "Identifier '{mkc}' is a deletion marker."
                             )))
                         }
-                        RemoteIdState::Void(_, void) => {
+                        DatabaseRemoteIdResponse::Void(_, void) => {
                             Ok(ImportAction::Revive(void, mkc.mapped, maybe_alias))
                         }
-                        RemoteIdState::Null(null_row) => Ok(ImportAction::Insert(
+                        DatabaseRemoteIdResponse::Null(null_row) => Ok(ImportAction::Insert(
                             null_row.delete()?,
                             mkc.mapped,
                             maybe_alias,
                         )),
-                        RemoteIdState::Unknown(missing) => {
+                        DatabaseRemoteIdResponse::Unknown(missing) => {
                             Ok(ImportAction::Insert(missing, mkc.mapped, maybe_alias))
                         }
                     }
                 }
                 DeterminedKey::Reference(mkr, mkc, maybe_alias) => {
                     match record_db.state_from_remote_id(&mkr.mapped)? {
-                        RemoteIdState::Entry(data, state) => Ok(ImportAction::Update(
+                        DatabaseRemoteIdResponse::Entry(data, state) => Ok(ImportAction::Update(
                             state,
                             import_config.update,
                             data.canonical,
                             maybe_alias,
                         )),
-                        RemoteIdState::Deleted(_, state) => {
+                        DatabaseRemoteIdResponse::Deleted(_, state) => {
                             state.commit()?;
                             Ok(ImportAction::Fail(anyhow!(
                                 "Identifier '{mkr}' is a deletion marker."
                             )))
                         }
-                        RemoteIdState::Void(data, state) => {
+                        DatabaseRemoteIdResponse::Void(data, state) => {
                             Ok(ImportAction::Revive(state, data.canonical, maybe_alias))
                         }
-                        RemoteIdState::Null(state) => match mkc {
+                        DatabaseRemoteIdResponse::Null(state) => match mkc {
                             Some(canonical) => Ok(ImportAction::Insert(
                                 state.delete()?,
                                 canonical.mapped,
@@ -216,7 +216,7 @@ where
                                 "Failed to determine canonical id; only found reference id {mkr}"
                             ))),
                         },
-                        RemoteIdState::Unknown(state) => match mkc {
+                        DatabaseRemoteIdResponse::Unknown(state) => match mkc {
                             Some(canonical) => {
                                 Ok(ImportAction::Insert(state, canonical.mapped, maybe_alias))
                             }
@@ -312,7 +312,7 @@ impl<'a> FileImportTarget<'a> {
 }
 
 fn normalize_data(
-    entry: &mut Entry<MutableEntryData>,
+    entry: &mut BibtexEntry<MutableEntryData>,
     nl: &Normalization,
     file_import_target: Option<&mut FileImportTarget<'_>>,
     file_sep: &Option<String>,
@@ -341,7 +341,7 @@ fn normalize_data(
 #[inline]
 fn import_entry_impl<F>(
     record_db: &mut RecordDatabase,
-    mut entry: Entry<MutableEntryData>,
+    mut entry: BibtexEntry<MutableEntryData>,
     import_config: &ImportConfig,
     // no_alias: bool,
     nl: &Normalization,
@@ -350,7 +350,7 @@ fn import_entry_impl<F>(
 ) -> Result<ImportOutcome, anyhow::Error>
 where
     F: for<'conn> FnMut(
-        &Entry<MutableEntryData>,
+        &BibtexEntry<MutableEntryData>,
         &'conn mut RecordDatabase,
     ) -> Result<ImportAction<'conn>, error::Error>,
 {
@@ -468,7 +468,7 @@ impl DeterminedKey {
 }
 
 /// Determine the key associated with the provided entry.
-pub fn determine_key(entry: &Entry<MutableEntryData>, config: &Config) -> DeterminedKey {
+pub fn determine_key(entry: &BibtexEntry<MutableEntryData>, config: &Config) -> DeterminedKey {
     let score_fn = |id: &RemoteId| config.score_key(id.name());
 
     let resolved = RecordId::from(entry.key.as_ref())

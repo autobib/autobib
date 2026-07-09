@@ -11,7 +11,7 @@ use crate::{
 
 use super::{
     Tx,
-    state::{ArbitraryDataRef, RecordRow, RevisionId},
+    state::{ArbitraryDataRef, Record, RevisionId},
 };
 
 pub struct Snapshot<'conn> {
@@ -59,7 +59,7 @@ impl<'conn> Snapshot<'conn> {
     /// the function exits early.
     pub fn map_history<E, F>(&self, limit: Option<u32>, mut f: F) -> Result<(), SnapshotMapErr<E>>
     where
-        F: FnMut(RecordRow<ArbitraryDataRef<'_>, &'_ str>, RevisionId) -> Result<(), E>,
+        F: FnMut(Record<ArbitraryDataRef<'_>, &'_ str>, RevisionId) -> Result<(), E>,
     {
         // SQLite uses `-1` to indicate no limit
         let limit: i64 = limit.map(Into::into).unwrap_or(-1);
@@ -69,7 +69,7 @@ impl<'conn> Snapshot<'conn> {
 
         let mut rows = retriever.query([limit])?;
         while let Some(row) = rows.next()? {
-            let record_row = RecordRow::borrow_from_row_unchecked(row);
+            let record_row = Record::borrow_from_row_unchecked(row);
             let rev_id = row.get_unwrap("key");
             f(record_row, rev_id).map_err(SnapshotMapErr::CallbackFailed)?;
         }
@@ -278,7 +278,7 @@ WHERE variant = 1
     /// for which the provided closure returns true.
     pub fn filter_active_keys<F, T>(&self, mut f: F, buffer: &mut T) -> rusqlite::Result<()>
     where
-        F: FnMut(RecordRow<ArbitraryDataRef<'_>, &'_ str>) -> bool,
+        F: FnMut(Record<ArbitraryDataRef<'_>, &'_ str>) -> bool,
         T: Extend<RevisionId>,
     {
         let mut retriever = self
@@ -286,7 +286,7 @@ WHERE variant = 1
             .prepare("SELECT key, record_id, modified, data, variant FROM Records WHERE key IN (SELECT record_key FROM Identifiers)")?;
 
         let rows = retriever.query_map([], move |row| {
-            let record_row = RecordRow::borrow_from_row_unchecked(row);
+            let record_row = Record::borrow_from_row_unchecked(row);
             let rev_id: RevisionId = row.get_unwrap("key");
             Ok(if f(record_row) { Some(rev_id) } else { None })
         })?;

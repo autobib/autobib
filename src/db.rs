@@ -28,7 +28,7 @@ use nucleo_picker::{Injector, Render};
 use rusqlite::{Connection, DropBehavior, OpenFlags, OptionalExtension};
 
 use self::{
-    state::{RecordIdState, RecordRow, RemoteIdState},
+    state::{DatabaseRemoteIdResponse, DatabaseResponse, Record},
     validate::{DatabaseFault, DatabaseValidator},
 };
 use crate::{
@@ -37,7 +37,7 @@ use crate::{
     entry::RawEntryData,
     error::DatabaseError,
     logger::{debug, error, info, warn},
-    record::{LegacyAlias, Record},
+    record::{KeyedRecord, LegacyAlias},
 };
 pub use snapshot::{Snapshot, SnapshotMapErr};
 
@@ -304,23 +304,23 @@ impl RecordDatabase {
         self.conn.transaction().map(Into::into)
     }
 
-    /// Get the [`RecordIdState`] associated with a [`RecordId`].
+    /// Get the [`DatabaseResponse`] associated with a [`RecordId`].
     #[inline]
     pub fn state_from_record_id<A: AliasTransform>(
         &mut self,
         record_id: RecordId,
         alias_transform: &A,
-    ) -> Result<RecordIdState<'_>, rusqlite::Error> {
-        RecordIdState::determine(self.transaction()?, record_id, alias_transform)
+    ) -> Result<DatabaseResponse<'_>, rusqlite::Error> {
+        DatabaseResponse::determine(self.transaction()?, record_id, alias_transform)
     }
 
-    /// Get the [`RemoteIdState`] associated with a [`RemoteId`].
+    /// Get the [`DatabaseRemoteIdResponse`] associated with a [`RemoteId`].
     #[inline]
     pub fn state_from_remote_id(
         &mut self,
         remote_id: &RemoteId,
-    ) -> Result<RemoteIdState<'_>, rusqlite::Error> {
-        RemoteIdState::determine(self.transaction()?, remote_id)
+    ) -> Result<DatabaseRemoteIdResponse<'_>, rusqlite::Error> {
+        DatabaseRemoteIdResponse::determine(self.transaction()?, remote_id)
     }
 
     /// Optimize the database.
@@ -415,9 +415,9 @@ impl RecordDatabase {
     ///
     /// This is a convenience wrapper around [`Self::inject_active_records`] which simply sends all row data
     /// to the picker without filtering or mapping.
-    pub fn inject_all_active_records<R: Render<RecordRow<RawEntryData>>>(
+    pub fn inject_all_active_records<R: Render<Record<RawEntryData>>>(
         &mut self,
-        injector: Injector<RecordRow<RawEntryData>, R>,
+        injector: Injector<Record<RawEntryData>, R>,
     ) -> Result<(), rusqlite::Error> {
         self.inject_active_records(injector, Some)
     }
@@ -426,7 +426,7 @@ impl RecordDatabase {
     /// via its [`Injector`].
     ///
     /// The provided `filter_map` closure plays a similar role to [`Iterator::filter_map`]
-    /// by transforming a [`RecordRow`] into the picker item type, with the option to exclude
+    /// by transforming a [`Record`] into the picker item type, with the option to exclude
     /// the item from being sent to the matcher entirely by returning [`None`].
     ///
     /// This is a wrapper around [`map_active_records`](Self::map_active_records).
@@ -436,7 +436,7 @@ impl RecordDatabase {
         mut filter_map: F,
     ) -> Result<(), rusqlite::Error>
     where
-        F: FnMut(RecordRow<RawEntryData>) -> Option<T>,
+        F: FnMut(Record<RawEntryData>) -> Option<T>,
         R: Render<T>,
     {
         self.map_active_records(|res| {
@@ -453,14 +453,14 @@ impl RecordDatabase {
     /// the function exits early.
     pub fn map_active_records<E, F>(&mut self, mut f: F) -> Result<(), SnapshotMapErr<E>>
     where
-        F: FnMut(RecordRow<RawEntryData>) -> Result<(), E>,
+        F: FnMut(Record<RawEntryData>) -> Result<(), E>,
     {
         debug!("Mapping over all active database records.");
         let mut retriever = self
             .conn
             .prepare("SELECT record_id, modified, data, variant FROM Records WHERE key IN (SELECT record_key FROM Identifiers) AND variant = 0")?;
 
-        for res in retriever.query_map([], |row| Ok(RecordRow::from_row_unchecked(row)))? {
+        for res in retriever.query_map([], |row| Ok(Record::from_row_unchecked(row)))? {
             f(res?).map_err(SnapshotMapErr::CallbackFailed)?;
         }
 
@@ -476,14 +476,14 @@ impl RecordDatabase {
         mut f: F,
     ) -> Result<(), SnapshotMapErr<E>>
     where
-        F: FnMut(RecordRow<RawEntryData>) -> Result<(), E>,
+        F: FnMut(Record<RawEntryData>) -> Result<(), E>,
     {
         debug!("Mapping over all active database records with canonical ID matching '{glob}'.");
         let mut retriever = self
             .conn
             .prepare("SELECT record_id, modified, data, variant FROM Records WHERE key IN (SELECT record_key FROM Identifiers) AND variant = 0 AND record_id GLOB ?1")?;
 
-        for res in retriever.query_map([glob], |row| Ok(RecordRow::from_row_unchecked(row)))? {
+        for res in retriever.query_map([glob], |row| Ok(Record::from_row_unchecked(row)))? {
             f(res?).map_err(SnapshotMapErr::CallbackFailed)?;
         }
 
@@ -499,7 +499,7 @@ impl RecordDatabase {
         mut f: F,
     ) -> Result<(), SnapshotMapErr<E>>
     where
-        F: FnMut(Record<RawEntryData>) -> Result<(), E>,
+        F: FnMut(KeyedRecord<RawEntryData>) -> Result<(), E>,
     {
         debug!("Mapping over all active database records with canonical ID matching '{glob}'.");
         let mut retriever = self
@@ -508,8 +508,8 @@ impl RecordDatabase {
 
         for res in retriever.query_map([glob], |row| {
             let key = row.get_unwrap("name");
-            let row = RecordRow::from_row_unchecked(row);
-            Ok(Record { key, row })
+            let record = Record::from_row_unchecked(row);
+            Ok(KeyedRecord { key, record })
         })? {
             f(res?).map_err(SnapshotMapErr::CallbackFailed)?;
         }

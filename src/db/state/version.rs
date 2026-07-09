@@ -3,16 +3,14 @@ use std::{fmt, str::FromStr};
 use rusqlite::types::{FromSql, FromSqlError, ValueRef};
 use serde::Serialize;
 
-use super::{
-    ArbitraryData, CompleteRecordRow, InRecordsTable, RecordRow, RecordRowDisplay, State, Tx,
-};
+use super::{ArbitraryData, HistRecord, InRecordsTable, Record, RecordRowDisplay, State, Tx};
 
 /// A specific version of a record row.
 ///
 /// The lifetime is tied to the transaction in which the version is guaranteed to be valid.
 #[derive(Debug)]
 pub struct Version<'tx, 'conn> {
-    pub row: RecordRow<ArbitraryData>,
+    pub row: Record<ArbitraryData>,
     pub(in crate::db) row_id: i64,
     pub(super) tx: &'tx Tx<'conn>,
     parent_row_id: Option<i64>,
@@ -78,18 +76,18 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
 
 impl<'tx, 'conn> Version<'tx, 'conn> {
     fn init(tx: &'tx Tx<'conn>, row_id: i64) -> rusqlite::Result<Self> {
-        let row = CompleteRecordRow::load_unchecked(tx, row_id)?;
+        let row = HistRecord::load_unchecked(tx, row_id)?;
         Ok(Self {
-            row: row.row,
+            row: row.record,
             parent_row_id: row.parent,
             tx,
             row_id,
         })
     }
 
-    fn new(tx: &'tx Tx<'conn>, row_id: i64, row: CompleteRecordRow<super::ArbitraryData>) -> Self {
+    fn new(tx: &'tx Tx<'conn>, row_id: i64, row: HistRecord<super::ArbitraryData>) -> Self {
         Self {
-            row: row.row,
+            row: row.record,
             parent_row_id: row.parent,
             tx,
             row_id,
@@ -152,7 +150,7 @@ impl<'tx, 'conn> Version<'tx, 'conn> {
     /// The order in which the closure is applied is unspecified.
     pub(super) fn map_children<F>(&self, mut f: F) -> rusqlite::Result<()>
     where
-        F: FnMut(CompleteRecordRow<ArbitraryData>, i64) -> rusqlite::Result<()>,
+        F: FnMut(HistRecord<ArbitraryData>, i64) -> rusqlite::Result<()>,
     {
         // it is better to not use an ORDER BY clause here
         // since the number of results is in the majority of cases extremely
@@ -163,10 +161,7 @@ impl<'tx, 'conn> Version<'tx, 'conn> {
             .prepare_cached("SELECT key, record_id, modified, data, variant, parent_key FROM Records WHERE parent_key = ?1")?;
 
         for r in stmt.query_map([self.row_id], |row| {
-            Ok((
-                CompleteRecordRow::from_row_unchecked(row),
-                row.get_unwrap("key"),
-            ))
+            Ok((HistRecord::from_row_unchecked(row), row.get_unwrap("key")))
         })? {
             let (data, row_id) = r?;
             f(data, row_id)?;
