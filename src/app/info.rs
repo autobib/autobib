@@ -9,14 +9,6 @@ use crate::{
 };
 
 #[derive(Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RecordDataType {
-    Entry,
-    Deleted,
-    Void,
-}
-
-#[derive(Serialize)]
 pub struct KeyInfo {
     original: String,
     is_valid_bibtex: bool,
@@ -29,7 +21,6 @@ pub struct RecordInfo {
     pub key: KeyInfo,
     pub revision: RevisionId,
     pub record: Record<ArbitraryData>,
-    pub record_type: RecordDataType,
 }
 
 impl RecordInfo {
@@ -49,16 +40,10 @@ impl RecordInfo {
             equivalent,
         };
         let revision = state.rev();
-        let record_type = match &record.data {
-            ArbitraryData::Entry(_) => RecordDataType::Entry,
-            ArbitraryData::Deleted(_) => RecordDataType::Deleted,
-            ArbitraryData::Void => RecordDataType::Void,
-        };
         Ok(Self {
             key,
             revision,
             record,
-            record_type,
         })
     }
 }
