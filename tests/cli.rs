@@ -75,121 +75,139 @@ impl TestState {
     }
 
     fn create_test_db(&self) -> Result<()> {
-        let mut cmd = self.cmd()?;
-        cmd.args([
-            "local",
-            "first",
-            "--with-entry-type",
-            "book",
-            "--with-field",
-            "author = {1}",
-            "--with-field",
-            "title = {2}",
-        ]);
-        cmd.assert().success();
+        self.cmd()?
+            .args([
+                "local",
+                "first",
+                "--with-entry-type",
+                "book",
+                "--with-field",
+                "author = {1}",
+                "--with-field",
+                "title = {2}",
+            ])
+            .assert()
+            .success();
 
-        let mut cmd = self.cmd()?;
-        cmd.args([
-            "local",
-            "second",
-            "--with-entry-type",
-            "article",
-            "--with-field",
-            "author = {A}",
-        ]);
-        cmd.assert().success();
+        self.cmd()?
+            .args([
+                "local",
+                "second",
+                "--with-entry-type",
+                "article",
+                "--with-field",
+                "author = {A}",
+            ])
+            .assert()
+            .success();
 
-        let mut cmd = self.cmd()?;
-        cmd.args(["edit", "local:first", "--delete-field", "author"]);
-        cmd.assert().success();
+        self.cmd()?
+            .args(["edit", "local:first", "--delete-field", "author"])
+            .assert()
+            .success();
 
-        let mut cmd = self.cmd()?;
-        cmd.args(["hist", "undo", "local:first"]);
-        cmd.assert().success();
+        self.cmd()?
+            .args(["hist", "undo", "local:first"])
+            .assert()
+            .success();
 
-        let mut cmd = self.cmd()?;
-        cmd.args(["edit", "local:first", "--set-field", "title = {3}"]);
-        cmd.assert().success();
+        self.cmd()?
+            .args(["edit", "local:first", "--set-field", "title = {3}"])
+            .assert()
+            .success();
 
-        let mut cmd = self.cmd()?;
-        cmd.args(["hist", "undo", "local:first"]);
-        cmd.assert().success();
+        self.cmd()?
+            .args(["hist", "undo", "local:first"])
+            .assert()
+            .success();
 
-        let mut cmd = self.cmd()?;
-        cmd.args(["hist", "redo", "local:first", "0"]);
-        cmd.assert().success();
+        self.cmd()?
+            .args(["hist", "redo", "local:first", "0"])
+            .assert()
+            .success();
 
-        let mut cmd = self.cmd()?;
-        cmd.args(["edit", "local:first", "--set-field", "title = {4}"]);
-        cmd.assert().success();
+        self.cmd()?
+            .args(["edit", "local:first", "--set-field", "title = {4}"])
+            .assert()
+            .success();
 
-        let mut cmd = self.cmd()?;
-        cmd.args(["edit", "local:first", "--set-field", "title = {5}"]);
-        cmd.assert().success();
+        self.cmd()?
+            .args(["edit", "local:first", "--set-field", "title = {5}"])
+            .assert()
+            .success();
 
-        let mut cmd = self.cmd()?;
-        cmd.args([
-            "replace",
-            "local:first",
-            "--with",
-            "local:second",
-            "--ignore-attachments",
-        ]);
-        cmd.assert().success();
+        self.cmd()?
+            .args([
+                "replace",
+                "local:first",
+                "--with",
+                "local:second",
+                "--ignore-attachments",
+            ])
+            .assert()
+            .success();
 
-        let mut cmd = self.cmd()?;
-        cmd.args([
-            "hist",
-            "revive",
-            "local:first",
-            "--with-field",
-            "title = {6}",
-        ]);
-        cmd.assert().success();
+        self.cmd()?
+            .args([
+                "hist",
+                "revive",
+                "local:first",
+                "--with-field",
+                "title = {6}",
+            ])
+            .assert()
+            .success();
 
-        let mut cmd = self.cmd()?;
-        cmd.args(["edit", "local:second", "--update-entry-type", "manuscript"]);
-        cmd.assert().success();
+        self.cmd()?
+            .args(["edit", "local:second", "--update-entry-type", "manuscript"])
+            .assert()
+            .success();
 
-        let mut cmd = self.cmd()?;
-        cmd.args(["hist", "undo", "local:first", "--delete"]);
-        cmd.assert().success();
+        self.cmd()?
+            .args(["hist", "undo", "local:first", "--delete"])
+            .assert()
+            .success();
 
-        let mut cmd = self.cmd()?;
-        cmd.args(["hist", "undo", "local:first"]);
-        cmd.assert().success();
+        self.cmd()?
+            .args(["hist", "undo", "local:first"])
+            .assert()
+            .success();
 
-        let mut cmd = self.cmd()?;
-        cmd.args(["delete", "local:first"]);
-        cmd.assert().success();
+        self.cmd()?
+            .args(["delete", "local:first"])
+            .assert()
+            .success();
 
-        let mut cmd = self.cmd()?;
-        cmd.args([
-            "hist",
-            "revive",
-            "local:first",
-            "--with-field",
-            "author = {B}",
-            "--with-entry-type",
-            "book",
-        ]);
-        cmd.assert().success();
+        self.cmd()?
+            .args([
+                "hist",
+                "revive",
+                "local:first",
+                "--with-field",
+                "author = {B}",
+                "--with-entry-type",
+                "book",
+            ])
+            .assert()
+            .success();
 
-        let mut cmd = self.cmd()?;
-        cmd.args(["hist", "void", "local:first"]);
-        cmd.assert().success();
+        self.cmd()?
+            .args(["hist", "void", "local:first"])
+            .assert()
+            .success();
 
-        let mut cmd = self.cmd()?;
-        cmd.args([
-            "hist",
-            "revive",
-            "local:first",
-            "--with-field",
-            "author = {C}",
-            "--with-entry-type",
-            "article",
-        ]);
-        cmd.assert().success();
+        self.cmd()?
+            .args([
+                "hist",
+                "revive",
+                "local:first",
+                "--with-field",
+                "author = {C}",
+                "--with-entry-type",
+                "article",
+            ])
+            .assert()
+            .success();
 
         Ok(())
     }
@@ -204,8 +222,7 @@ impl TestState {
 fn runs_help() -> Result<()> {
     let s = TestState::init()?;
 
-    let mut cmd = s.cmd()?;
-    cmd.arg("help").assert().success();
+    s.cmd()?.arg("help").assert().success();
 
     s.close()
 }
@@ -215,9 +232,9 @@ fn runs_help() -> Result<()> {
 fn suggest_alternatives() -> Result<()> {
     let s = TestState::init()?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "zbl:math/0001001"]);
-    cmd.assert()
+    s.cmd()?
+        .args(["get", "zbl:math/0001001"])
+        .assert()
         .failure()
         .stderr(contains("arxiv:math/0001001"));
     Ok(())
@@ -228,66 +245,70 @@ fn suggest_alternatives() -> Result<()> {
 fn get() -> Result<()> {
     let s = TestState::init()?;
 
-    let mut cmd = s.cmd()?;
     let predicate_file = predicate::path::eq_file(Path::new("tests/resources/get/stdout.txt"))
         .utf8()
         .unwrap();
-    cmd.args([
-        "get",
-        "zbl:1337.28015",
-        "zbl:1285.28011",
-        "arxiv:1212.1873",
-        "mr:3224722",
-    ]);
-    cmd.assert()
+    s.cmd()?
+        .args([
+            "get",
+            "zbl:1337.28015",
+            "zbl:1285.28011",
+            "arxiv:1212.1873",
+            "mr:3224722",
+        ])
+        .assert()
         .success()
         .stdout(predicate_file)
         .stderr(predicate::str::is_empty());
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["--read-only", "get", "arxiv:1212.1873"]);
-    cmd.assert().success();
+    s.cmd()?
+        .args(["--read-only", "get", "arxiv:1212.1873"])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args([
-        "get",
-        "arxiv:1212.1873",
-        "zbl:1285.28011",
-        "--template",
-        "{pagetotal}",
-        "--strict",
-    ]);
-    cmd.assert().success().stdout("368\n");
+    s.cmd()?
+        .args([
+            "get",
+            "arxiv:1212.1873",
+            "zbl:1285.28011",
+            "--template",
+            "{pagetotal}",
+            "--strict",
+        ])
+        .assert()
+        .success()
+        .stdout("368\n");
 
-    let mut cmd = s.cmd()?;
-    cmd.args([
-        "get",
-        "zbl:1285.28011",
-        "-t",
-        r#"{author}{year}{%full_id}"#,
-        "--sep",
-        "$$",
-    ])
-    .write_stdin("arxiv:1212.1873\nmr:3224722");
-    cmd.assert()
+    s.cmd()?
+        .args([
+            "get",
+            "zbl:1285.28011",
+            "-t",
+            r#"{author}{year}{%full_id}"#,
+            "--sep",
+            "$$",
+        ])
+        .write_stdin("arxiv:1212.1873\nmr:3224722")
+        .assert()
         .success()
         .stdout("Falconer, Kenneth2014zbmath:6245248$$Hochman, Michael2014arxiv:1212.1873$$Hochman, Michael2014mr:3224722\n")
         .stderr(predicate::str::is_empty());
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["alias", "add", "my_alias", "zbmath:6245248"]);
-    cmd.assert().success();
+    s.cmd()?
+        .args(["alias", "add", "my_alias", "zbmath:6245248"])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args([
-        "get",
-        "my_alias",
-        "zbl:1285.28011",
-        "zbmath:06245248",
-        "-t",
-        "{%key}",
-    ]);
-    cmd.assert()
+    s.cmd()?
+        .args([
+            "get",
+            "my_alias",
+            "zbl:1285.28011",
+            "zbmath:06245248",
+            "-t",
+            "{%key}",
+        ])
+        .assert()
         .success()
         .stdout("my_alias\nzbl:1285.28011\nzbmath:06245248\n")
         .stderr(predicate::str::is_empty());
@@ -303,19 +324,19 @@ fn source_append() -> Result<()> {
     let output = NamedTempFile::new("out.bib")?;
     output.write_str("@preprint{arxiv:1212.1873,}\n")?;
 
-    let mut cmd = s.cmd()?;
-
-    cmd.args([
-        "source",
-        "--stdin",
-        "txt",
-        "--out",
-        &output.to_string_lossy(),
-        "--append",
-    ])
-    .write_stdin("zbl:1337.28015\narxiv:1212.1873");
-
-    cmd.assert().success().stderr(predicate::str::is_empty());
+    s.cmd()?
+        .args([
+            "source",
+            "--stdin",
+            "txt",
+            "--out",
+            &output.to_string_lossy(),
+            "--append",
+        ])
+        .write_stdin("zbl:1337.28015\narxiv:1212.1873")
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty());
 
     let predicate_file =
         predicate::path::eq_file(Path::new("tests/resources/get_append/stdout.txt"))
@@ -336,24 +357,24 @@ fn source() -> Result<()> {
         .utf8()
         .unwrap();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["source", "tests/resources/source/main.tex"]);
-    cmd.assert()
+    s.cmd()?
+        .args(["source", "tests/resources/source/main.tex"])
+        .assert()
         .success()
         .stdout(predicate_file.clone())
         .stderr(predicate::str::is_empty());
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["--read-only", "source", "tests/resources/source/main.tex"]);
-    cmd.assert()
+    s.cmd()?
+        .args(["--read-only", "source", "tests/resources/source/main.tex"])
+        .assert()
         .success()
         .stdout(predicate_file.clone())
         .stderr(predicate::str::is_empty());
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["source", "--stdin", "tex"])
-        .pipe_stdin("tests/resources/source/main.tex")?;
-    cmd.assert()
+    s.cmd()?
+        .args(["source", "--stdin", "tex"])
+        .pipe_stdin("tests/resources/source/main.tex")?
+        .assert()
         .success()
         .stdout(predicate_file)
         .stderr(predicate::str::is_empty());
@@ -361,9 +382,10 @@ fn source() -> Result<()> {
     let predicate_file = predicate::path::eq_file(Path::new("tests/resources/source/stdout.json"))
         .utf8()
         .unwrap();
-    let mut cmd = s.cmd()?;
-    cmd.args(["source", "tests/resources/source/main.tex", "--json"]);
-    cmd.assert()
+
+    s.cmd()?
+        .args(["source", "tests/resources/source/main.tex", "--json"])
+        .assert()
         .success()
         .stdout(predicate_file)
         .stderr(predicate::str::is_empty());
@@ -376,8 +398,11 @@ fn source() -> Result<()> {
 fn source_keys_only() -> Result<()> {
     let s = TestState::init()?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["source", "tests/resources/source/main.tex", "--print-keys"]);
+    s.cmd()?
+        .args(["source", "tests/resources/source/main.tex", "--print-keys"])
+        .assert()
+        .success()
+        .stdout("doi:10.4007/annals.2014.180.2.7\njfm:60.0017.02\n");
 
     s.close()
 }
@@ -392,13 +417,13 @@ fn source_typ() -> Result<()> {
             .utf8()
             .unwrap();
 
-    let mut cmd = s.cmd()?;
-    cmd.args([
-        "source",
-        "tests/resources/source_typ/main.typ",
-        "--print-keys",
-    ]);
-    cmd.assert()
+    s.cmd()?
+        .args([
+            "source",
+            "tests/resources/source_typ/main.typ",
+            "--print-keys",
+        ])
+        .assert()
         .success()
         .stdout(predicate_file)
         .stderr(predicate::str::is_empty());
@@ -415,23 +440,23 @@ fn source_skip() -> Result<()> {
     let output = NamedTempFile::new("out.bib")?;
     output.write_str("@preprint{arxiv:1212.1873,}\n")?;
 
-    let mut cmd = s.cmd()?;
-
-    cmd.arg("source")
-        .arg("tests/resources/source_skip/main.tex");
-    cmd.args([
-        "--skip",
-        "isbn:9781119942399",
-        "--skip-from",
-        "tests/resources/source_skip/skip.tex",
-        "--skip-from",
-        "tests/resources/source_skip/skip.bib",
-        "--out",
-        &output.to_string_lossy(),
-        "--append",
-    ]);
-
-    cmd.assert().success().stderr(predicate::str::is_empty());
+    s.cmd()?
+        .args([
+            "source",
+            "tests/resources/source_skip/main.tex",
+            "--skip",
+            "isbn:9781119942399",
+            "--skip-from",
+            "tests/resources/source_skip/skip.tex",
+            "--skip-from",
+            "tests/resources/source_skip/skip.bib",
+            "--out",
+            &output.to_string_lossy(),
+            "--append",
+        ])
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty());
 
     let predicate_file =
         predicate::path::eq_file(Path::new("tests/resources/source_skip/stdout.txt"))
@@ -448,13 +473,17 @@ fn source_skip() -> Result<()> {
 fn get_null() -> Result<()> {
     let s = TestState::init()?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "zbl:9999.28015"]);
-    cmd.assert().failure().stderr(contains("Null record"));
+    s.cmd()?
+        .args(["get", "zbl:9999.28015"])
+        .assert()
+        .failure()
+        .stderr(contains("Null record"));
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "--ignore-null", "zbl:9999.28015"]);
-    cmd.assert().success().stderr(predicate::str::is_empty());
+    s.cmd()?
+        .args(["get", "--ignore-null", "zbl:9999.28015"])
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty());
 
     s.close()
 }
@@ -464,64 +493,67 @@ fn get_null() -> Result<()> {
 fn local() -> Result<()> {
     let s = TestState::init()?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args([
-        "local",
-        "first",
-        "--from-bibtex",
-        "tests/resources/local/first.bib",
-    ]);
-    cmd.assert().success();
+    s.cmd()?
+        .args([
+            "local",
+            "first",
+            "--from-bibtex",
+            "tests/resources/local/first.bib",
+        ])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["--read-only", "local", "second"]);
-    cmd.assert()
+    s.cmd()?
+        .args(["--read-only", "local", "second"])
+        .assert()
         .failure()
         .stderr(contains("cannot be used in read-only mode"));
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "local:first"]);
     let predicate_file = predicate::path::eq_file(Path::new("tests/resources/local/stdout.txt"))
         .utf8()
         .unwrap();
-    cmd.assert().success().stdout(predicate_file);
+    s.cmd()?
+        .args(["get", "local:first"])
+        .assert()
+        .success()
+        .stdout(predicate_file);
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["local", "first"]);
-    cmd.assert().failure();
+    s.cmd()?.args(["local", "first"]).assert().failure();
 
-    let mut cmd = s.cmd()?;
-    cmd.args([
-        "local",
-        "first",
-        "--from-bibtex",
-        "tests/resources/local/first.bib",
-    ]);
-    cmd.assert()
+    s.cmd()?
+        .args([
+            "local",
+            "first",
+            "--from-bibtex",
+            "tests/resources/local/first.bib",
+        ])
+        .assert()
         .failure()
         .stderr(contains("Local record 'local:first' already exists"));
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["local", "second"]);
-    cmd.assert().success();
+    s.cmd()?.args(["local", "second"]).assert().success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "local:second"]);
     let predicate_file =
         predicate::path::eq_file(Path::new("tests/resources/local/stdout_short.txt"))
             .utf8()
             .unwrap();
-    cmd.assert().success().stdout(predicate_file);
+    s.cmd()?
+        .args(["get", "local:second"])
+        .assert()
+        .success()
+        .stdout(predicate_file);
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["local", " \n"]);
-    cmd.assert().failure().stderr(contains(
-        "local sub-id must contain non-whitespace characters",
-    ));
+    s.cmd()?
+        .args(["local", " \n"])
+        .assert()
+        .failure()
+        .stderr(contains(
+            "local sub-id must contain non-whitespace characters",
+        ));
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["local", ":"]);
-    cmd.assert()
+    s.cmd()?
+        .args(["local", ":"])
+        .assert()
         .failure()
         .stderr(contains("local sub-id must not contain a colon"));
 
@@ -533,87 +565,102 @@ fn local() -> Result<()> {
 fn alias() -> Result<()> {
     let s = TestState::init()?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args([
-        "local",
-        "first",
-        "--from-bibtex",
-        "tests/resources/local/first.bib",
-    ]);
-    cmd.assert().success();
+    s.cmd()?
+        .args([
+            "local",
+            "first",
+            "--from-bibtex",
+            "tests/resources/local/first.bib",
+        ])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "local:first"]);
-    cmd.assert().success();
+    s.cmd()?.args(["get", "local:first"]).assert().success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["alias", "add", "my_alias", "local:first"]);
-    cmd.assert().success();
+    s.cmd()?
+        .args(["alias", "add", "my_alias", "local:first"])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["local", "second"]);
-    cmd.assert().success();
+    s.cmd()?.args(["local", "second"]).assert().success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["alias", "add", "my_alias", "local:second"]);
-    cmd.assert()
+    s.cmd()?
+        .args(["alias", "add", "my_alias", "local:second"])
+        .assert()
         .failure()
         .stderr(contains("Alias already exists"));
 
-    let mut cmd = s.cmd()?;
-    cmd.arg("get").arg("my_alias");
     let predicate_file = predicate::path::eq_file(Path::new("tests/resources/alias/stdout.txt"))
         .utf8()
         .unwrap();
-    cmd.assert().success().stdout(predicate_file);
+    s.cmd()?
+        .arg("get")
+        .arg("my_alias")
+        .assert()
+        .success()
+        .stdout(predicate_file);
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["alias", "rename", "my_alias", "new_alias"]);
-    cmd.assert().success();
+    s.cmd()?
+        .args(["alias", "rename", "my_alias", "new_alias"])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "new_alias"]);
-    cmd.assert().success().stdout(contains("@book{new_alias"));
+    s.cmd()?
+        .args(["get", "new_alias"])
+        .assert()
+        .success()
+        .stdout(contains("@book{new_alias"));
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["alias", "delete", "new_alias"]);
-    cmd.assert().success();
+    s.cmd()?
+        .args(["alias", "delete", "new_alias"])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "my_alias"]);
-    cmd.assert().failure().stderr(contains("Undefined alias"));
+    s.cmd()?
+        .args(["get", "my_alias"])
+        .assert()
+        .failure()
+        .stderr(contains("Undefined alias"));
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "new_alias"]);
-    cmd.assert().failure().stderr(contains("Undefined alias"));
+    s.cmd()?
+        .args(["get", "new_alias"])
+        .assert()
+        .failure()
+        .stderr(contains("Undefined alias"));
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "--ignore-null", "new_alias"]);
-    cmd.assert().success().stderr(predicate::str::is_empty());
+    s.cmd()?
+        .args(["get", "--ignore-null", "new_alias"])
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty());
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["alias", "delete", "my_alias"]);
-    cmd.assert()
+    s.cmd()?
+        .args(["alias", "delete", "my_alias"])
+        .assert()
         .failure()
         .stderr(contains("Could not delete alias which does not exist"));
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["alias", "add", "  ", "not_an_alias"]);
-    cmd.assert().failure().stderr(
-        contains("invalid value '  ' for '<ALIAS>'")
-            .and(contains("alias must contain non-whitespace characters")),
-    );
+    s.cmd()?
+        .args(["alias", "add", "  ", "not_an_alias"])
+        .assert()
+        .failure()
+        .stderr(
+            contains("invalid value '  ' for '<ALIAS>'")
+                .and(contains("alias must contain non-whitespace characters")),
+        );
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["alias", "add", "\n\t", "not_an_alias"]);
-    cmd.assert().failure().stderr(
-        contains("invalid value '\n\t' for '<ALIAS>'")
-            .and(contains("alias must contain non-whitespace characters")),
-    );
+    s.cmd()?
+        .args(["alias", "add", "\n\t", "not_an_alias"])
+        .assert()
+        .failure()
+        .stderr(
+            contains("invalid value '\n\t' for '<ALIAS>'")
+                .and(contains("alias must contain non-whitespace characters")),
+        );
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["alias", "add", "has ws", "not_an_alias"]);
-    cmd.assert()
+    s.cmd()?
+        .args(["alias", "add", "has ws", "not_an_alias"])
+        .assert()
         .failure()
         .stderr(contains("Cannot create alias for undefined alias"));
 
@@ -625,33 +672,38 @@ fn alias() -> Result<()> {
 fn alias_remote() -> Result<()> {
     let s = TestState::init()?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["alias", "add", "al", "zbmath:6346461"]);
-    cmd.assert().success();
+    s.cmd()?
+        .args(["alias", "add", "al", "zbmath:6346461"])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "al"]);
     let predicate_file =
         predicate::path::eq_file(Path::new("tests/resources/alias_remote/stdout.txt"))
             .utf8()
             .unwrap();
-    cmd.assert().success().stdout(predicate_file);
+    s.cmd()?
+        .args(["get", "al"])
+        .assert()
+        .success()
+        .stdout(predicate_file);
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["alias", "add", "a2", "zbmath:96346461"]);
-    cmd.assert()
+    s.cmd()?
+        .args(["alias", "add", "a2", "zbmath:96346461"])
+        .assert()
         .failure()
         .stderr(contains("Cannot create alias for null record"));
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["alias", "add", "a2", "alias-does-not-exist"]);
-    cmd.assert()
+    s.cmd()?
+        .args(["alias", "add", "a2", "alias-does-not-exist"])
+        .assert()
         .failure()
         .stderr(contains("Cannot create alias for undefined alias"));
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "a2"]);
-    cmd.assert().failure().stderr(contains("Undefined alias"));
+    s.cmd()?
+        .args(["get", "a2"])
+        .assert()
+        .failure()
+        .stderr(contains("Undefined alias"));
 
     s.close()
 }
@@ -661,44 +713,44 @@ fn alias_remote() -> Result<()> {
 fn bibtex_key_validation() -> Result<()> {
     let s = TestState::init()?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args([
-        "alias",
-        "add",
-        "cst1989",
-        "doi:10.1016/0021-8693(89)90256-1",
-    ]);
-    cmd.assert().success();
+    s.cmd()?
+        .args([
+            "alias",
+            "add",
+            "cst1989",
+            "doi:10.1016/0021-8693(89)90256-1",
+        ])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "doi:10.1016/0021-8693(89)90256-1"]);
-    cmd.assert()
+    s.cmd()?
+        .args(["get", "doi:10.1016/0021-8693(89)90256-1"])
+        .assert()
         .failure()
         .stderr(contains("Identifier contains invalid character").and(contains("cst1989")));
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "cst1989"]);
-    cmd.assert().success();
+    s.cmd()?.args(["get", "cst1989"]).assert().success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args([
-        "get",
-        "--retrieve-only",
-        "doi:10.1016/0021-8693(89)90256-1",
-        "cst1989",
-    ]);
-    cmd.assert()
+    s.cmd()?
+        .args([
+            "get",
+            "--retrieve-only",
+            "doi:10.1016/0021-8693(89)90256-1",
+            "cst1989",
+        ])
+        .assert()
         .success()
         .stdout(predicate::str::is_empty())
         .stderr(predicate::str::is_empty());
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["alias", "add", "has ws", "cst1989"]);
-    cmd.assert().success();
+    s.cmd()?
+        .args(["alias", "add", "has ws", "cst1989"])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "has ws"]);
-    cmd.assert()
+    s.cmd()?
+        .args(["get", "has ws"])
+        .assert()
         .failure()
         .stderr(contains("Identifier contains invalid character"));
 
@@ -711,66 +763,66 @@ fn delete() -> Result<()> {
     let s = TestState::init()?;
 
     // single deletion OK even without `--force`
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "mr:3224722"]);
-    cmd.assert().success();
+    s.cmd()?.args(["get", "mr:3224722"]).assert().success();
 
     let attachment_dir = attachment_path(&s, "mr:3224722")?;
     fs::create_dir_all(&attachment_dir)?;
     fs::write(attachment_dir.join("attachment.txt"), "attachment contents")?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["delete", "mr:3224722"]);
-    cmd.assert()
+    s.cmd()?
+        .args(["delete", "mr:3224722"])
+        .assert()
         .success()
         .stderr(contains("Deleted record has attachment directory"));
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["delete", "mr:3224722"]);
-    cmd.assert().failure();
+    s.cmd()?.args(["delete", "mr:3224722"]).assert().failure();
 
     // multi deletion succeeds, and applies to all aliases
-    let mut cmd = s.cmd()?;
-    cmd.args([
-        "local",
-        "first",
-        "--from-bibtex",
-        "tests/resources/local/first.bib",
-    ]);
-    cmd.assert().success();
+    s.cmd()?
+        .args([
+            "local",
+            "first",
+            "--from-bibtex",
+            "tests/resources/local/first.bib",
+        ])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["alias", "add", "my_alias", "local:first"]);
-    cmd.assert().success();
+    s.cmd()?
+        .args(["alias", "add", "my_alias", "local:first"])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "local:first"]);
-    cmd.assert().success();
+    s.cmd()?.args(["get", "local:first"]).assert().success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["delete", "my_alias"]);
-    cmd.assert().success();
+    s.cmd()?.args(["delete", "my_alias"]).assert().success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "my_alias"]);
-    cmd.assert().failure().stderr(contains("Deleted record"));
+    s.cmd()?
+        .args(["get", "my_alias"])
+        .assert()
+        .failure()
+        .stderr(contains("Deleted record"));
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["delete", "my_alias"]);
-    cmd.assert().failure().stderr(contains("already deleted"));
+    s.cmd()?
+        .args(["delete", "my_alias"])
+        .assert()
+        .failure()
+        .stderr(contains("already deleted"));
 
     // deleting multiple
-    let mut cmd = s.cmd()?;
-    cmd.args(["delete", "--hard", "local:first", "my_alias"]);
-    cmd.assert()
+    s.cmd()?
+        .args(["delete", "--hard", "local:first", "my_alias"])
+        .assert()
         .failure()
         .stderr(contains("Cannot delete undefined alias"));
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "local:first"]);
-    cmd.assert().failure().stderr(contains(
-        "Cannot retrieve remote data for key with local provenance",
-    ));
+    s.cmd()?
+        .args(["get", "local:first"])
+        .assert()
+        .failure()
+        .stderr(contains(
+            "Cannot retrieve remote data for key with local provenance",
+        ));
 
     s.close()
 }
@@ -780,70 +832,74 @@ fn delete() -> Result<()> {
 fn list() -> Result<()> {
     let s = TestState::init()?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args([
-        "local",
-        "first",
-        "--from-bibtex",
-        "tests/resources/local/first.bib",
-    ]);
-    cmd.assert().success();
+    s.cmd()?
+        .args([
+            "local",
+            "first",
+            "--from-bibtex",
+            "tests/resources/local/first.bib",
+        ])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["alias", "add", "my_alias", "local:first"]);
-    cmd.assert().success();
+    s.cmd()?
+        .args(["alias", "add", "my_alias", "local:first"])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "zbl:1337.28015"]);
-    cmd.assert().success();
+    s.cmd()?.args(["get", "zbl:1337.28015"]).assert().success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["list"]);
-    cmd.assert()
+    s.cmd()?
+        .args(["list"])
+        .assert()
         .success()
         .stdout(contains("zbmath:6346461").and(contains("my_alias")));
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["--read-only", "list"]);
-    cmd.assert()
+    s.cmd()?
+        .args(["--read-only", "list"])
+        .assert()
         .success()
         .stdout(contains("zbmath:6346461").and(contains("my_alias")));
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["list", "--canonical"]);
-    cmd.assert()
+    s.cmd()?
+        .args(["list", "--canonical"])
+        .assert()
         .success()
         .stdout(contains("my_alias").not().and(contains("local:first")));
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["list", "local:*", "-t", "{title}"]);
-    cmd.assert().success().stdout("My favourite book\n");
+    s.cmd()?
+        .args(["list", "local:*", "-t", "{title}"])
+        .assert()
+        .success()
+        .stdout("My favourite book\n");
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["list", "--canonical", "-t", "{title}{%key}"]);
-    cmd.assert().success().stdout("My favourite booklocal:first\nOn self-similar sets with overlaps and inverse theorems for entropyzbmath:6346461\n");
+    s.cmd()?.args(["list", "--canonical", "-t", "{title}{%key}"])
+    .assert().success().stdout("My favourite booklocal:first\nOn self-similar sets with overlaps and inverse theorems for entropyzbmath:6346461\n");
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["list", "*_alias", "-t", "{%key}"]);
-    cmd.assert().success().stdout("my_alias\n");
+    s.cmd()?
+        .args(["list", "*_alias", "-t", "{%key}"])
+        .assert()
+        .success()
+        .stdout("my_alias\n");
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["list", "--canonical", "*_alias", "-t", "{%key}"]);
-    cmd.assert().success().stdout("");
+    s.cmd()?
+        .args(["list", "--canonical", "*_alias", "-t", "{%key}"])
+        .assert()
+        .success()
+        .stdout("");
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["delete", "my_alias"]);
-    cmd.assert().success();
+    s.cmd()?.args(["delete", "my_alias"]).assert().success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["list", "--deleted"]);
-    cmd.assert()
+    s.cmd()?
+        .args(["list", "--deleted"])
+        .assert()
         .success()
         .stdout(contains("my_alias").and(contains("local:first")));
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["list", "--deleted", "--template", "{%full_id}"]);
-    cmd.assert().failure();
+    s.cmd()?
+        .args(["list", "--deleted", "--template", "{%full_id}"])
+        .assert()
+        .failure();
 
     s.close()
 }
@@ -852,49 +908,54 @@ fn list() -> Result<()> {
 fn info() -> Result<()> {
     let s = TestState::init()?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["info", "zbl:1337.28015", "-r", "canonical"]);
-    cmd.assert()
+    s.cmd()?
+        .args(["info", "zbl:1337.28015", "-r", "canonical"])
+        .assert()
         .failure()
         .stderr(contains("Record not in database"));
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "zbl:1337.28015"]);
-    cmd.assert().success();
+    s.cmd()?.args(["get", "zbl:1337.28015"]).assert().success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["info", "zbl:1337.28015", "--report", "canonical"]);
-    cmd.assert().success().stdout("zbmath:6346461\n");
+    s.cmd()?
+        .args(["info", "zbl:1337.28015", "--report", "canonical"])
+        .assert()
+        .success()
+        .stdout("zbmath:6346461\n");
 
-    let mut cmd = s.cmd()?;
-    cmd.args([
-        "--read-only",
-        "info",
-        "zbl:1337.28015",
-        "--report",
-        "canonical",
-    ]);
-    cmd.assert().success().stdout("zbmath:6346461\n");
+    s.cmd()?
+        .args([
+            "--read-only",
+            "info",
+            "zbl:1337.28015",
+            "--report",
+            "canonical",
+        ])
+        .assert()
+        .success()
+        .stdout("zbmath:6346461\n");
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["alias", "add", "%", "zbmath:6346461"]);
-    cmd.assert().success();
+    s.cmd()?
+        .args(["alias", "add", "%", "zbmath:6346461"])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["info", "zbl:1337.28015", "-r", "equivalent"]);
-    cmd.assert().success().stdout(
-        contains("%")
-            .and(contains("zbmath:6346461"))
-            .and(contains("zbl:1337.28015")),
-    );
+    s.cmd()?
+        .args(["info", "zbl:1337.28015", "-r", "equivalent"])
+        .assert()
+        .success()
+        .stdout(
+            contains("%")
+                .and(contains("zbmath:6346461"))
+                .and(contains("zbl:1337.28015")),
+        );
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["info", "%", "-r", "valid"]);
-    cmd.assert().failure().stderr("%\n");
+    s.cmd()?
+        .args(["info", "%", "-r", "valid"])
+        .assert()
+        .failure()
+        .stderr("%\n");
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["info", "%"]);
-    cmd.assert().success().stdout(
+    s.cmd()?.args(["info", "%"]).assert().success().stdout(
         contains("modified")
             .and(contains("\"canonical\":\"zbmath:6346461\""))
             .and(contains("\"is_valid_bibtex\":false"))
@@ -916,45 +977,51 @@ fn attach() -> Result<()> {
 
     let attachment_file = s.attachment("zbmath/JX/TT/CT/GA3DGNBWGQ3DC===/attachment.txt");
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["attach", "zbl:1337.28015"]);
-    cmd.arg(temp.as_ref());
-    cmd.assert().success();
+    s.cmd()?
+        .args(["attach", "zbl:1337.28015"])
+        .arg(temp.as_ref())
+        .assert()
+        .success();
 
     attachment_file.assert(predicate::eq(temp_contents));
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["attach", "zbl:1337.28015"]);
-    cmd.arg(temp.as_ref());
-    cmd.args(["--rename", "attach2.txt"]);
-    cmd.assert().success();
+    s.cmd()?
+        .args(["attach", "zbl:1337.28015"])
+        .arg(temp.as_ref())
+        .args(["--rename", "attach2.txt"])
+        .assert()
+        .success();
 
     s.attachment("zbmath/JX/TT/CT/GA3DGNBWGQ3DC===/attach2.txt")
         .assert(predicate::eq(temp_contents));
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["attach", "zbl:1337.28015"]);
-    cmd.arg(temp.as_ref());
-    cmd.args(["--rename", ".."]);
-    cmd.assert().failure();
+    s.cmd()?
+        .args(["attach", "zbl:1337.28015"])
+        .arg(temp.as_ref())
+        .args(["--rename", ".."])
+        .assert()
+        .failure();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["attach", "zbl:1337.28015"]);
-    cmd.arg(temp.as_ref());
-    cmd.args(["--rename", "/invalid"]);
-    cmd.assert().failure();
+    s.cmd()?
+        .args(["attach", "zbl:1337.28015"])
+        .arg(temp.as_ref())
+        .args(["--rename", "/invalid"])
+        .assert()
+        .failure();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["attach", "zbl:1337.28015"]);
-    cmd.arg(temp.as_ref());
-    cmd.args(["--rename", ""]);
-    cmd.assert().failure();
+    s.cmd()?
+        .args(["attach", "zbl:1337.28015"])
+        .arg(temp.as_ref())
+        .args(["--rename", ""])
+        .assert()
+        .failure();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["attach", "zbl:1337.28015"]);
-    cmd.arg(temp.as_ref());
-    cmd.args(["--rename", "."]);
-    cmd.assert().failure();
+    s.cmd()?
+        .args(["attach", "zbl:1337.28015"])
+        .arg(temp.as_ref())
+        .args(["--rename", "."])
+        .assert()
+        .failure();
 
     temp.close()?;
     s.close()
@@ -965,30 +1032,27 @@ fn attach() -> Result<()> {
 fn path_platform_consistency() -> Result<()> {
     let s = TestState::init()?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "zbl:1337.28015"]);
-    cmd.assert().success();
-
-    let mut cmd = s.cmd()?;
-    cmd.args(["path", "zbl:1337.28015"]);
+    s.cmd()?.args(["get", "zbl:1337.28015"]).assert().success();
 
     let value = format!(
         "{}\n",
         native_path_dir(["zbmath", "JX", "TT", "CT", "GA3DGNBWGQ3DC==="])
     );
-
-    cmd.assert()
+    s.cmd()?
+        .args(["path", "zbl:1337.28015"])
+        .assert()
         .success()
         .stdout(predicate::str::ends_with(value));
 
-    let mut cmd = s.cmd()?;
-    cmd.args([
-        "alias",
-        "add",
-        "my-alias",
-        "doi:10.1016/0021-8693(89)90256-1",
-    ]);
-    cmd.assert().success();
+    s.cmd()?
+        .args([
+            "alias",
+            "add",
+            "my-alias",
+            "doi:10.1016/0021-8693(89)90256-1",
+        ])
+        .assert()
+        .success();
 
     let value = format!(
         "{}\n",
@@ -1001,9 +1065,9 @@ fn path_platform_consistency() -> Result<()> {
         ])
     );
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["path", "my-alias"]);
-    cmd.assert()
+    s.cmd()?
+        .args(["path", "my-alias"])
+        .assert()
         .success()
         .stdout(predicate::str::ends_with(value));
 
@@ -1013,9 +1077,10 @@ fn path_platform_consistency() -> Result<()> {
 fn import_zbmath_record(s: &TestState) -> Result<()> {
     fs::write(s.config.as_ref(), "preferred_keys = [\"^zbmath:.*\"]\n")?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["import", "tests/resources/import/file.bib"]);
-    cmd.assert().success();
+    s.cmd()?
+        .args(["import", "tests/resources/import/file.bib"])
+        .assert()
+        .success();
 
     Ok(())
 }
@@ -1026,15 +1091,13 @@ fn attachment_format_missing_uses_v0() -> Result<()> {
 
     import_zbmath_record(&s)?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["path", "zbmath:6346461"]);
-
     let value = format!(
         "{}\n",
         native_path_dir(["zbmath", "JX", "TT", "CT", "GA3DGNBWGQ3DC==="])
     );
-
-    cmd.assert()
+    s.cmd()?
+        .args(["path", "zbmath:6346461"])
+        .assert()
         .success()
         .stdout(predicate::str::ends_with(value));
 
@@ -1050,15 +1113,13 @@ fn attachment_format_v1_uses_normalized_zbmath_id() -> Result<()> {
 
     import_zbmath_record(&s)?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["path", "zbmath:6346461"]);
-
     let value = format!(
         "{}\n",
         native_path_dir(["zbmath", "6D", "UP", "TS", "GYZTINRUGYYQ"])
     );
-
-    cmd.assert()
+    s.cmd()?
+        .args(["path", "zbmath:6346461"])
+        .assert()
         .success()
         .stdout(predicate::str::ends_with(value));
 
@@ -1071,9 +1132,9 @@ fn attachment_format_v1_migrating_errors() -> Result<()> {
     s.create_test_db()?;
     s.init_attachments(Some("v1-migrating"))?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["path", "local:first"]);
-    cmd.assert()
+    s.cmd()?
+        .args(["path", "local:first"])
+        .assert()
         .failure()
         .stderr(contains("currently being migrated"));
 
@@ -1086,9 +1147,9 @@ fn attachment_format_unknown_errors() -> Result<()> {
     s.create_test_db()?;
     s.init_attachments(Some("v2"))?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["path", "local:first"]);
-    cmd.assert()
+    s.cmd()?
+        .args(["path", "local:first"])
+        .assert()
         .failure()
         .stderr(contains("Attachment directory is in unknown format 'v2'"));
 
@@ -1104,9 +1165,10 @@ fn migrate_attachments() -> Result<()> {
     let zbmath_old_attachment = s.attachment("zbmath/JX/TT/CT/GA3DGNBWGQ3DC===/attachment.txt");
     zbmath_old_attachment.write_str("zbmath attachment contents")?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["clean", "attachments", "--migrate"]);
-    cmd.assert().success();
+    s.cmd()?
+        .args(["clean", "attachments", "--migrate"])
+        .assert()
+        .success();
 
     local_old_attachment.assert(predicate::path::missing());
     s.attachment("local/QH/OV/RX/MZUXE43U/attachment.txt")
@@ -1132,9 +1194,10 @@ fn migrate_attachments_resume() -> Result<()> {
     let new_attachment = s.attachment("local/EN/6D/4U/ONSWG33OMQ/attachment.txt");
     new_attachment.write_str("new attachment")?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["clean", "attachments", "--migrate"]);
-    cmd.assert().success();
+    s.cmd()?
+        .args(["clean", "attachments", "--migrate"])
+        .assert()
+        .success();
 
     old_attachment.assert(predicate::path::missing());
     s.attachment("local/QH/OV/RX/MZUXE43U/attachment.txt")
@@ -1154,9 +1217,10 @@ fn migrate_replaces_empty_dir() -> Result<()> {
     old_attachment.write_str("attachment contents")?;
     fs::create_dir_all(s.attach_dir.join("local/QH/OV/RX/MZUXE43U"))?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["clean", "attachments", "--migrate"]);
-    cmd.assert().success();
+    s.cmd()?
+        .args(["clean", "attachments", "--migrate"])
+        .assert()
+        .success();
 
     old_attachment.assert(predicate::path::missing());
     s.attachment("local/QH/OV/RX/MZUXE43U/attachment.txt")
@@ -1177,19 +1241,21 @@ fn migrate_attachments_conflict() -> Result<()> {
     let zbmath_old_attachment = s.attachment("zbmath/JX/TT/CT/GA3DGNBWGQ3DC===/attachment.txt");
     zbmath_old_attachment.write_str("zbmath attachment contents")?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["clean", "attachments", "--migrate"]);
-    cmd.assert().failure().stderr(
-        contains("Target directory already exists")
-            .and(contains(native_path([
-                "local", "OM", "KH", "CW", "MZUXE43U",
-            ])))
-            .and(contains(native_path([
-                "local", "QH", "OV", "RX", "MZUXE43U",
-            ])))
-            .and(contains("Attachment migration is incomplete"))
-            .and(contains("attachments --migrate")),
-    );
+    s.cmd()?
+        .args(["clean", "attachments", "--migrate"])
+        .assert()
+        .failure()
+        .stderr(
+            contains("Target directory already exists")
+                .and(contains(native_path([
+                    "local", "OM", "KH", "CW", "MZUXE43U",
+                ])))
+                .and(contains(native_path([
+                    "local", "QH", "OV", "RX", "MZUXE43U",
+                ])))
+                .and(contains("Attachment migration is incomplete"))
+                .and(contains("attachments --migrate")),
+        );
 
     zbmath_old_attachment.assert(predicate::path::missing());
     s.attachment("zbmath/6D/UP/TS/GYZTINRUGYYQ/attachment.txt")
@@ -1216,18 +1282,20 @@ fn migrate_attachments_unrecognized() -> Result<()> {
     let old_attachment = s.attachment("local/OM/KH/CW/MZUXE43U/attachment.txt");
     old_attachment.write_str("attachment contents")?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["clean", "attachments", "--migrate"]);
-    cmd.assert().success().stderr(
-        contains("Skipping invalid attachment directory")
-            .and(contains("not-base32"))
-            .and(contains(native_path([
-                "unknown", "AA", "AA", "AA", "MZUXE43U",
-            ])))
-            .and(contains(native_path([
-                "local", "AA", "AA", "AA", "MZUXE43U",
-            ]))),
-    );
+    s.cmd()?
+        .args(["clean", "attachments", "--migrate"])
+        .assert()
+        .success()
+        .stderr(
+            contains("Skipping invalid attachment directory")
+                .and(contains("not-base32"))
+                .and(contains(native_path([
+                    "unknown", "AA", "AA", "AA", "MZUXE43U",
+                ])))
+                .and(contains(native_path([
+                    "local", "AA", "AA", "AA", "MZUXE43U",
+                ]))),
+        );
 
     s.attachment("local/not/base32/path/not-base32")
         .assert(predicate::eq("ignored contents"));
@@ -1248,15 +1316,15 @@ fn migrate_attachments_unrecognized() -> Result<()> {
 fn edit() -> Result<()> {
     let s = TestState::init()?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["edit", "zbl:9999.28015"]);
-    cmd.assert()
+    s.cmd()?
+        .args(["edit", "zbl:9999.28015"])
+        .assert()
         .failure()
         .stderr(contains("Cannot edit null record"));
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["edit", "my_alias"]);
-    cmd.assert()
+    s.cmd()?
+        .args(["edit", "my_alias"])
+        .assert()
         .failure()
         .stderr(contains("Cannot edit undefined alias"));
 
@@ -1264,24 +1332,30 @@ fn edit() -> Result<()> {
         predicate::path::eq_file(Path::new("tests/resources/edit/stdout_unedited.txt"))
             .utf8()
             .unwrap();
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "mr:3224722"]);
-    cmd.assert().success().stdout(predicate_file);
+    s.cmd()?
+        .args(["get", "mr:3224722"])
+        .assert()
+        .success()
+        .stdout(predicate_file);
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["edit", "--set-eprint=zbl,doi", "mr:3224722"]);
-    cmd.assert().success();
+    s.cmd()?
+        .args(["edit", "--set-eprint=zbl,doi", "mr:3224722"])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["edit", "mr:3224722", "--normalize-whitespace"]);
-    cmd.assert().success();
+    s.cmd()?
+        .args(["edit", "mr:3224722", "--normalize-whitespace"])
+        .assert()
+        .success();
 
     let predicate_file = predicate::path::eq_file(Path::new("tests/resources/edit/stdout.txt"))
         .utf8()
         .unwrap();
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "mr:3224722"]);
-    cmd.assert().success().stdout(predicate_file);
+    s.cmd()?
+        .args(["get", "mr:3224722"])
+        .assert()
+        .success()
+        .stdout(predicate_file);
 
     s.close()
 }
@@ -1290,9 +1364,9 @@ fn edit() -> Result<()> {
 fn update() -> Result<()> {
     let s = TestState::init()?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["update", "zbmath:6346461"]);
-    cmd.assert()
+    s.cmd()?
+        .args(["update", "zbmath:6346461"])
+        .assert()
         .failure()
         .stderr(contains("does not exist in database").and(contains("Use `autobib get`")));
 
@@ -1303,23 +1377,19 @@ fn update() -> Result<()> {
 fn update_local() -> Result<()> {
     let s = TestState::init()?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["local", "one"]);
-    cmd.assert().success();
+    s.cmd()?.args(["local", "one"]).assert().success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "local:one"]);
-    cmd.assert().success();
+    s.cmd()?.args(["get", "local:one"]).assert().success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["update", "local:one"]);
-    cmd.assert()
+    s.cmd()?
+        .args(["update", "local:one"])
+        .assert()
         .failure()
         .stderr(contains("Cannot update local record using remote data"));
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["update", "local:two"]);
-    cmd.assert()
+    s.cmd()?
+        .args(["update", "local:two"])
+        .assert()
         .failure()
         .stderr(contains("does not exist in database").and(contains("Use `autobib get`").not()));
 
@@ -1332,15 +1402,16 @@ fn consistency() -> Result<()> {
 
     let s = TestState::init()?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args([
-        "get",
-        "--retrieve-only",
-        "zbmath:6346461",
-        "zbl:1337.28015",
-        "mr:3224722",
-    ]);
-    cmd.assert().success();
+    s.cmd()?
+        .args([
+            "get",
+            "--retrieve-only",
+            "zbmath:6346461",
+            "zbl:1337.28015",
+            "mr:3224722",
+        ])
+        .assert()
+        .success();
 
     // perform some destructive changes to the database
     let conn = Connection::open(s.database.path())?;
@@ -1352,16 +1423,16 @@ fn consistency() -> Result<()> {
     drop(conn);
 
     // check that things are broken
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "zbmath:6346461"]);
-    cmd.assert().failure().stderr(predicate::str::contains(
-        "Database error: SQLite error: Query returned no rows",
-    ));
+    s.cmd()?
+        .args(["get", "zbmath:6346461"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "Database error: SQLite error: Query returned no rows",
+        ));
 
     // check that the error report is correct
-    let mut cmd = s.cmd()?;
-    cmd.args(["util", "check"]);
-    cmd.assert().failure().stderr(
+    s.cmd()?.args(["util", "check"]).assert().failure().stderr(
         predicate::str::contains("Record id 'mr:3224722' contains 0 active rows").and(
             predicate::str::contains("2 identifiers which reference records which do not exist"),
         ),
@@ -1375,21 +1446,22 @@ fn consistency() -> Result<()> {
 fn repeat() -> Result<()> {
     let s = TestState::init()?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["source", "--stdin", "txt"])
-        .write_stdin("zbmath:6346461\nzbl:1337.28015");
-    cmd.assert()
+    s.cmd()?
+        .args(["source", "--stdin", "txt"])
+        .write_stdin("zbmath:6346461\nzbl:1337.28015")
+        .assert()
         .success()
         .stderr(contains("Multiple keys for "));
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["alias", "add", "a", "zbl:1337.28015"]);
-    cmd.assert().success();
+    s.cmd()?
+        .args(["alias", "add", "a", "zbl:1337.28015"])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["source", "--stdin", "txt"])
-        .write_stdin("zbmath:6346461\na");
-    cmd.assert()
+    s.cmd()?
+        .args(["source", "--stdin", "txt"])
+        .write_stdin("zbmath:6346461\na")
+        .assert()
         .success()
         .stderr(contains("Multiple keys for "));
 
@@ -1401,14 +1473,10 @@ fn config() -> Result<()> {
     let s = TestState::init()?;
 
     s.set_config(Path::new("tests/resources/config/malformed.toml"))?;
-    let mut cmd = s.cmd()?;
-    cmd.arg("get");
-    cmd.assert().failure();
+    s.cmd()?.arg("get").assert().failure();
 
     s.set_config(Path::new("tests/resources/config/extra.toml"))?;
-    let mut cmd = s.cmd()?;
-    cmd.arg("get");
-    cmd.assert().failure();
+    s.cmd()?.arg("get").assert().failure();
 
     s.close()
 }
@@ -1424,9 +1492,11 @@ fn on_insert() -> Result<()> {
         predicate::path::eq_file(Path::new("tests/resources/on_insert/stdout.txt"))
             .utf8()
             .unwrap();
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "mr:3224722"]);
-    cmd.assert().success().stdout(predicate_file);
+    s.cmd()?
+        .args(["get", "mr:3224722"])
+        .assert()
+        .success()
+        .stdout(predicate_file);
 
     s.close()
 }
@@ -1436,9 +1506,10 @@ fn on_insert() -> Result<()> {
 fn identifier_exceptions() -> Result<()> {
     let s = TestState::init()?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "arxiv:2112.04570"]);
-    cmd.assert().success();
+    s.cmd()?
+        .args(["get", "arxiv:2112.04570"])
+        .assert()
+        .success();
 
     s.close()
 }
@@ -1447,9 +1518,10 @@ fn identifier_exceptions() -> Result<()> {
 fn quiet_returns_error() -> Result<()> {
     let s = TestState::init()?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["-q", "-q", "get", "::invalid"]);
-    cmd.assert().failure();
+    s.cmd()?
+        .args(["-q", "-q", "get", "::invalid"])
+        .assert()
+        .failure();
 
     s.close()
 }
@@ -1458,19 +1530,17 @@ fn quiet_returns_error() -> Result<()> {
 fn cache_evict() -> Result<()> {
     let s = TestState::init()?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "zbmath:96346461"]);
-    cmd.assert().failure();
+    s.cmd()?.args(["get", "zbmath:96346461"]).assert().failure();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["-v", "clean", "database", "--evict", "10000"]);
-    cmd.assert()
+    s.cmd()?
+        .args(["-v", "clean", "database", "--evict", "10000"])
+        .assert()
         .success()
         .stderr(contains("Removed 0 cached null"));
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["-v", "clean", "database", "--evict-all"]);
-    cmd.assert()
+    s.cmd()?
+        .args(["-v", "clean", "database", "--evict-all"])
+        .assert()
         .success()
         .stderr(contains("Removed 1 cached null"));
 
@@ -1481,23 +1551,25 @@ fn cache_evict() -> Result<()> {
 fn normalize() -> Result<()> {
     let s = TestState::init()?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "zbmath:6346461"]);
-    cmd.assert().success().stdout(
-        predicate::path::eq_file(Path::new("tests/resources/normalize/stdout.txt"))
-            .utf8()
-            .unwrap(),
-    );
+    s.cmd()?
+        .args(["get", "zbmath:6346461"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::path::eq_file(Path::new("tests/resources/normalize/stdout.txt"))
+                .utf8()
+                .unwrap(),
+        );
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["info", "zbmath:01111111"]);
-    cmd.assert()
+    s.cmd()?
+        .args(["info", "zbmath:01111111"])
+        .assert()
         .failure()
         .stderr(contains("converted from 'zbmath:01111111'"));
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["info", "zbmath:00000000"]);
-    cmd.assert()
+    s.cmd()?
+        .args(["info", "zbmath:00000000"])
+        .assert()
         .failure()
         .stderr(contains("converted from 'zbmath:00000000'"));
 
@@ -1512,13 +1584,15 @@ fn strip_journal_series() -> Result<()> {
         "tests/resources/strip_journal_series/config.toml",
     ))?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "zbl:1337.28015"]);
-    cmd.assert().success().stdout(
-        predicate::path::eq_file(Path::new("tests/resources/strip_journal_series/stdout.txt"))
-            .utf8()
-            .unwrap(),
-    );
+    s.cmd()?
+        .args(["get", "zbl:1337.28015"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::path::eq_file(Path::new("tests/resources/strip_journal_series/stdout.txt"))
+                .utf8()
+                .unwrap(),
+        );
 
     s.close()
 }
@@ -1529,41 +1603,47 @@ fn auto_alias() -> Result<()> {
 
     s.set_config(Path::new("tests/resources/auto_alias/config.toml"))?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "zbMATH06346461"]);
-    cmd.assert().success().stdout(
-        predicate::path::eq_file(Path::new("tests/resources/auto_alias/stdout.txt"))
-            .utf8()
-            .unwrap(),
-    );
+    s.cmd()?
+        .args(["get", "zbMATH06346461"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::path::eq_file(Path::new("tests/resources/auto_alias/stdout.txt"))
+                .utf8()
+                .unwrap(),
+        );
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "zbMATH6346461"]);
-    cmd.assert().failure().stderr(contains("Undefined alias"));
+    s.cmd()?
+        .args(["get", "zbMATH6346461"])
+        .assert()
+        .failure()
+        .stderr(contains("Undefined alias"));
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "zbl:1337.28015"]);
-    cmd.assert().success();
+    s.cmd()?.args(["get", "zbl:1337.28015"]).assert().success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["info", "zbl:1337.28015", "--report", "equivalent"]);
-    cmd.assert().success().stdout(contains("zbMATH06346461"));
+    s.cmd()?
+        .args(["info", "zbl:1337.28015", "--report", "equivalent"])
+        .assert()
+        .success()
+        .stdout(contains("zbMATH06346461"));
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "mr:3224722"]);
-    cmd.assert().success();
+    s.cmd()?.args(["get", "mr:3224722"]).assert().success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "MR3224722"]);
-    cmd.assert().success().stdout(
-        predicate::path::eq_file(Path::new("tests/resources/auto_alias/stdout_mr.txt"))
-            .utf8()
-            .unwrap(),
-    );
+    s.cmd()?
+        .args(["get", "MR3224722"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::path::eq_file(Path::new("tests/resources/auto_alias/stdout_mr.txt"))
+                .utf8()
+                .unwrap(),
+        );
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["info", "MR3224722", "--report", "equivalent"]);
-    cmd.assert().success().stdout(contains("mr:3224722"));
+    s.cmd()?
+        .args(["info", "MR3224722", "--report", "equivalent"])
+        .assert()
+        .success()
+        .stdout(contains("mr:3224722"));
 
     s.close()
 }
@@ -1574,21 +1654,24 @@ fn import_basic() -> Result<()> {
 
     s.set_config("tests/resources/import/config.toml")?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["import", "tests/resources/import/file.bib"]);
-    cmd.assert().success();
+    s.cmd()?
+        .args(["import", "tests/resources/import/file.bib"])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "attainable-assouad-spectra"]);
-    cmd.assert().success().stdout(
-        predicate::path::eq_file(Path::new("tests/resources/import/stdout_local.txt"))
-            .utf8()
-            .unwrap(),
-    );
+    s.cmd()?
+        .args(["get", "attainable-assouad-spectra"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::path::eq_file(Path::new("tests/resources/import/stdout_local.txt"))
+                .utf8()
+                .unwrap(),
+        );
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "zbmath:6346461"]);
-    cmd.assert()
+    s.cmd()?
+        .args(["get", "zbmath:6346461"])
+        .assert()
         .success()
         .stdout(contains("doi = {10.4007/annals.2014.180.2.7}"));
 
@@ -1600,27 +1683,30 @@ fn import_idempotent() -> Result<()> {
     let s = TestState::init()?;
     s.set_config("tests/resources/import/config.toml")?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["import", "tests/resources/import/file.bib"]);
-    cmd.assert().success();
+    s.cmd()?
+        .args(["import", "tests/resources/import/file.bib"])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["import", "tests/resources/import/file.bib"]);
-    cmd.assert().success();
+    s.cmd()?
+        .args(["import", "tests/resources/import/file.bib"])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["import", "tests/resources/import/file.bib"]);
-    cmd.assert().success();
+    s.cmd()?
+        .args(["import", "tests/resources/import/file.bib"])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["hist", "undo", "attainable-assouad-spectra"]);
-    cmd.assert()
+    s.cmd()?
+        .args(["hist", "undo", "attainable-assouad-spectra"])
+        .assert()
         .failure()
         .stderr(contains("Cannot void record"));
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["hist", "undo", "zbMATH06346461"]);
-    cmd.assert()
+    s.cmd()?
+        .args(["hist", "undo", "zbMATH06346461"])
+        .assert()
         .failure()
         .stderr(contains("Cannot void record"));
 
@@ -1631,13 +1717,16 @@ fn import_idempotent() -> Result<()> {
 fn import_no_alias() -> Result<()> {
     let s = TestState::init()?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["import", "tests/resources/import/file.bib", "--no-alias"]);
-    cmd.assert().success();
+    s.cmd()?
+        .args(["import", "tests/resources/import/file.bib", "--no-alias"])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "attainable-assouad-spectra"]);
-    cmd.assert().failure().stderr(contains("Undefined alias"));
+    s.cmd()?
+        .args(["get", "attainable-assouad-spectra"])
+        .assert()
+        .failure()
+        .stderr(contains("Undefined alias"));
 
     s.close()
 }
@@ -1646,48 +1735,52 @@ fn import_no_alias() -> Result<()> {
 fn no_key() -> Result<()> {
     let s = TestState::init()?;
 
-    let mut cmd = s.cmd()?;
-
     // no key for the import
-    cmd.args(["import", "tests/resources/import/no_ids.bib"]);
-    cmd.assert()
+    s.cmd()?
+        .args(["import", "tests/resources/import/no_ids.bib"])
+        .assert()
         .failure()
         .stdout(contains("Could not determine candidate key"));
 
     // but succeeds with local fallback
-    let mut cmd = s.cmd()?;
-    cmd.args([
-        "import",
-        "tests/resources/import/no_ids.bib",
-        "--local-fallback",
-    ]);
-    cmd.assert().success();
+    s.cmd()?
+        .args([
+            "import",
+            "tests/resources/import/no_ids.bib",
+            "--local-fallback",
+        ])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "local:my-article"]);
-    cmd.assert().success().stdout(contains("John, Doe"));
+    s.cmd()?
+        .args(["get", "local:my-article"])
+        .assert()
+        .success()
+        .stdout(contains("John, Doe"));
 
-    let mut cmd = s.cmd()?;
-    cmd.args([
-        "import",
-        "tests/resources/import/file.bib",
-        "--local-fallback",
-    ]);
-    cmd.assert().success();
+    s.cmd()?
+        .args([
+            "import",
+            "tests/resources/import/file.bib",
+            "--local-fallback",
+        ])
+        .assert()
+        .success();
 
     // local fallback is not used if the key could be determined
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "local:zbMATH06346461"]);
-    cmd.assert().failure();
+    s.cmd()?
+        .args(["get", "local:zbMATH06346461"])
+        .assert()
+        .failure();
 
     // local fallback is not used if reference key is found
-    let mut cmd = s.cmd()?;
-    cmd.args([
-        "import",
-        "tests/resources/import/retrieve.bib",
-        "--local-fallback",
-    ]);
-    cmd.assert()
+    s.cmd()?
+        .args([
+            "import",
+            "tests/resources/import/retrieve.bib",
+            "--local-fallback",
+        ])
+        .assert()
         .failure()
         .stdout(contains("Failed to determine canonical id"));
 
@@ -1698,29 +1791,27 @@ fn no_key() -> Result<()> {
 fn import_local_fallback_fails() -> Result<()> {
     let s = TestState::init()?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["local", "my-article"]);
-    cmd.assert().success();
+    s.cmd()?.args(["local", "my-article"]).assert().success();
 
     // local key already exists
-    let mut cmd = s.cmd()?;
-    cmd.args([
-        "import",
-        "tests/resources/import/no_ids.bib",
-        "--local-fallback",
-    ]);
-    cmd.assert()
+    s.cmd()?
+        .args([
+            "import",
+            "tests/resources/import/no_ids.bib",
+            "--local-fallback",
+        ])
+        .assert()
         .failure()
         .stdout(contains("Local id 'local:my-article' already exists"));
 
     // contains colon
-    let mut cmd = s.cmd()?;
-    cmd.args([
-        "import",
-        "tests/resources/import/id_contains_colon.bib",
-        "--local-fallback",
-    ]);
-    cmd.assert()
+    s.cmd()?
+        .args([
+            "import",
+            "tests/resources/import/id_contains_colon.bib",
+            "--local-fallback",
+        ])
+        .assert()
         .failure()
         .stdout(contains("provider is invalid"));
 
@@ -1733,19 +1824,22 @@ fn import_retrieve() -> Result<()> {
 
     s.set_config("tests/resources/import/config.toml")?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["import", "tests/resources/import/retrieve.bib"]);
-    cmd.assert()
+    s.cmd()?
+        .args(["import", "tests/resources/import/retrieve.bib"])
+        .assert()
         .failure()
         .stdout(contains("Failed to determine canonical id"));
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["import", "tests/resources/import/retrieve.bib", "--resolve"]);
-    cmd.assert().success();
+    s.cmd()?
+        .args(["import", "tests/resources/import/retrieve.bib", "--resolve"])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["info", "abc", "--report", "canonical"]);
-    cmd.assert().success().stdout("zbmath:6346461\n");
+    s.cmd()?
+        .args(["info", "abc", "--report", "canonical"])
+        .assert()
+        .success()
+        .stdout("zbmath:6346461\n");
 
     s.close()
 }
@@ -1754,43 +1848,45 @@ fn import_retrieve() -> Result<()> {
 fn import_update() -> Result<()> {
     let s = TestState::init()?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "zbmath:6346461"]);
-    cmd.assert().success();
+    s.cmd()?.args(["get", "zbmath:6346461"]).assert().success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args([
-        "import",
-        "tests/resources/import/retrieve.bib",
-        "--resolve",
-        "--update",
-        "prefer-current",
-    ]);
-    cmd.assert().success();
+    s.cmd()?
+        .args([
+            "import",
+            "tests/resources/import/retrieve.bib",
+            "--resolve",
+            "--update",
+            "prefer-current",
+        ])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "zbmath:6346461"]);
-    cmd.assert()
+    s.cmd()?
+        .args(["get", "zbmath:6346461"])
+        .assert()
         .success()
         .stdout(contains("note = {extra}").and(contains("inverse theorems for entropy")));
 
-    let mut cmd = s.cmd()?;
-    cmd.args([
-        "import",
-        "tests/resources/import/retrieve.bib",
-        "--resolve",
-        "--update",
-        "prefer-incoming",
-    ]);
-    cmd.assert().success();
+    s.cmd()?
+        .args([
+            "import",
+            "tests/resources/import/retrieve.bib",
+            "--resolve",
+            "--update",
+            "prefer-incoming",
+        ])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "zbmath:6346461"]);
-    cmd.assert().success().stdout(
-        contains("@book{")
-            .and(contains("note = {extra}"))
-            .and(contains("overlaps and typos")),
-    );
+    s.cmd()?
+        .args(["get", "zbmath:6346461"])
+        .assert()
+        .success()
+        .stdout(
+            contains("@book{")
+                .and(contains("note = {extra}"))
+                .and(contains("overlaps and typos")),
+        );
 
     s.close()
 }
@@ -1799,47 +1895,47 @@ fn import_update() -> Result<()> {
 fn read_only() -> Result<()> {
     let s = TestState::init()?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "zbl:1337.28015"]);
-    cmd.assert().success();
+    s.cmd()?.args(["get", "zbl:1337.28015"]).assert().success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["--read-only", "get", "zbl:1337.28015"]);
-    cmd.assert().success();
+    s.cmd()?
+        .args(["--read-only", "get", "zbl:1337.28015"])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["--read-only", "get", "arxiv:1212.1873"]);
-    cmd.assert()
+    s.cmd()?
+        .args(["--read-only", "get", "arxiv:1212.1873"])
+        .assert()
         .failure()
         .stderr(contains("Database does not contain key"));
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["--read-only", "util", "check"]);
-    cmd.assert().success();
+    s.cmd()?
+        .args(["--read-only", "util", "check"])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["--read-only", "info", "zbl:1337.28015"]);
-    cmd.assert().success();
+    s.cmd()?
+        .args(["--read-only", "info", "zbl:1337.28015"])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["--read-only", "info", "arxiv:1212.1873"]);
-    cmd.assert()
+    s.cmd()?
+        .args(["--read-only", "info", "arxiv:1212.1873"])
+        .assert()
         .failure()
         .stderr(contains("Record not in database"));
 
     s.attachment(AUTOBIB_LOCKFILE)
         .assert(predicate::path::missing());
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["--read-only", "path", "zbl:1337.28015"]);
-    cmd.assert().success();
+    s.cmd()?
+        .args(["--read-only", "path", "zbl:1337.28015"])
+        .assert()
+        .success();
 
     s.attachment(AUTOBIB_LOCKFILE)
         .assert(predicate::path::missing());
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["path", "zbl:1337.28015"]);
-    cmd.assert().success();
+    s.cmd()?.args(["path", "zbl:1337.28015"]).assert().success();
 
     s.attachment(AUTOBIB_LOCKFILE).assert(predicate::eq(""));
 
@@ -1852,82 +1948,99 @@ fn replace_auto() -> Result<()> {
 
     s.set_config("tests/resources/import/config.toml")?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["import", "tests/resources/import/init.bib", "--resolve"]);
-    cmd.assert().success();
+    s.cmd()?
+        .args(["import", "tests/resources/import/init.bib", "--resolve"])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["replace", "arxiv:1212.1873", "--auto"]);
-    cmd.assert()
+    s.cmd()?
+        .args(["replace", "arxiv:1212.1873", "--auto"])
+        .assert()
         .failure()
         .stderr(contains("is equivalent to the current identifier"));
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["alias", "add", "arx", "arxiv:1212.1873"]);
-    cmd.assert().success();
+    s.cmd()?
+        .args(["alias", "add", "arx", "arxiv:1212.1873"])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args([
-        "edit",
-        "arxiv:1212.1873",
-        "--set-field",
-        "zbmath = {6346461}",
-    ]);
-    cmd.assert().success();
+    s.cmd()?
+        .args([
+            "edit",
+            "arxiv:1212.1873",
+            "--set-field",
+            "zbmath = {6346461}",
+        ])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["replace", "arxiv:1212.1873", "--auto"]);
-    cmd.assert().success();
+    s.cmd()?
+        .args(["replace", "arxiv:1212.1873", "--auto"])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "arxiv:1212.1873"]);
-    cmd.assert().failure().stderr(contains(
-        "Perhaps use the replacement key: 'zbmath:6346461'",
-    ));
+    s.cmd()?
+        .args(["get", "arxiv:1212.1873"])
+        .assert()
+        .failure()
+        .stderr(contains(
+            "Perhaps use the replacement key: 'zbmath:6346461'",
+        ));
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "arx"]);
-    cmd.assert().failure().stderr(contains(
-        "Perhaps use the replacement key: 'zbmath:6346461'",
-    ));
+    s.cmd()?
+        .args(["get", "arx"])
+        .assert()
+        .failure()
+        .stderr(contains(
+            "Perhaps use the replacement key: 'zbmath:6346461'",
+        ));
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "zbmath:6346461"]);
-    cmd.assert().success().stdout(contains("@article{"));
+    s.cmd()?
+        .args(["get", "zbmath:6346461"])
+        .assert()
+        .success()
+        .stdout(contains("@article{"));
 
     s.close()
 }
 
 fn create_replace_records(s: &TestState) -> Result<()> {
-    let mut cmd = s.cmd()?;
-    cmd.args([
-        "local",
-        "first",
-        "--with-entry-type",
-        "book",
-        "--with-field",
-        "title = {First}",
-    ]);
-    cmd.assert().success();
+    s.cmd()?
+        .args([
+            "local",
+            "first",
+            "--with-entry-type",
+            "book",
+            "--with-field",
+            "title = {First}",
+        ])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args([
-        "local",
-        "second",
-        "--with-entry-type",
-        "book",
-        "--with-field",
-        "title = {Second}",
-    ]);
-    cmd.assert().success();
+    s.cmd()?
+        .args([
+            "local",
+            "second",
+            "--with-entry-type",
+            "book",
+            "--with-field",
+            "title = {Second}",
+        ])
+        .assert()
+        .success();
 
     Ok(())
 }
 
 fn attachment_path(s: &TestState, id: &str) -> Result<PathBuf> {
-    let mut cmd = s.cmd()?;
-    cmd.args(["path", id]);
-    let output = cmd.assert().success().get_output().stdout.clone();
+    let output = s
+        .cmd()?
+        .args(["path", id])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
     Ok(PathBuf::from(String::from_utf8(output)?.trim()))
 }
 
@@ -1936,9 +2049,11 @@ fn replace_migrates_attachments() -> Result<()> {
     let s = TestState::init()?;
     create_replace_records(&s)?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["replace", "local:first", "--with", "local:second"]);
-    cmd.assert().success().stderr(predicate::str::is_empty());
+    s.cmd()?
+        .args(["replace", "local:first", "--with", "local:second"])
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty());
     s.close()?;
 
     let s = TestState::init()?;
@@ -1948,9 +2063,11 @@ fn replace_migrates_attachments() -> Result<()> {
     fs::create_dir_all(&source)?;
     fs::write(source.join("attachment.txt"), "source attachment")?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["replace", "local:first", "--with", "local:second"]);
-    cmd.assert().success().stderr(predicate::str::is_empty());
+    s.cmd()?
+        .args(["replace", "local:first", "--with", "local:second"])
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty());
     assert!(!source.exists());
     assert_eq!(
         fs::read_to_string(target.join("attachment.txt"))?,
@@ -1965,9 +2082,11 @@ fn replace_migrates_attachments() -> Result<()> {
     fs::create_dir_all(&target)?;
     fs::write(target.join("attachment.txt"), "target attachment")?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["replace", "local:first", "--with", "local:second"]);
-    cmd.assert().success().stderr(predicate::str::is_empty());
+    s.cmd()?
+        .args(["replace", "local:first", "--with", "local:second"])
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty());
     assert!(!source.exists());
     assert_eq!(
         fs::read_to_string(target.join("attachment.txt"))?,
@@ -1984,9 +2103,9 @@ fn replace_migrates_attachments() -> Result<()> {
     fs::create_dir_all(&target)?;
     fs::write(target.join("attachment.txt"), "target attachment")?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["replace", "local:first", "--with", "local:second"]);
-    cmd.assert()
+    s.cmd()?
+        .args(["replace", "local:first", "--with", "local:second"])
+        .assert()
         .success()
         .stderr(
             contains("Could not merge attachment directories").and(contains(
@@ -2011,36 +2130,40 @@ fn replace_hard() -> Result<()> {
 
     s.set_config("tests/resources/import/config.toml")?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["import", "tests/resources/import/init.bib", "--resolve"]);
-    cmd.assert().success();
+    s.cmd()?
+        .args(["import", "tests/resources/import/init.bib", "--resolve"])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["replace", "arxiv:1212.1873", "--auto", "--hard"]);
-    cmd.assert()
+    s.cmd()?
+        .args(["replace", "arxiv:1212.1873", "--auto", "--hard"])
+        .assert()
         .failure()
         .stderr(contains("is equivalent to the current identifier"));
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["alias", "add", "arx", "arxiv:1212.1873"]);
-    cmd.assert().success();
+    s.cmd()?
+        .args(["alias", "add", "arx", "arxiv:1212.1873"])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args([
-        "edit",
-        "arxiv:1212.1873",
-        "--set-field",
-        "zbmath = {6346461}",
-    ]);
-    cmd.assert().success();
+    s.cmd()?
+        .args([
+            "edit",
+            "arxiv:1212.1873",
+            "--set-field",
+            "zbmath = {6346461}",
+        ])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["replace", "arxiv:1212.1873", "--auto", "--hard"]);
-    cmd.assert().success();
+    s.cmd()?
+        .args(["replace", "arxiv:1212.1873", "--auto", "--hard"])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "arx"]);
-    cmd.assert()
+    s.cmd()?
+        .args(["get", "arx"])
+        .assert()
         .success()
         .stdout(contains("zbmath = {6346461}"));
 
@@ -2052,47 +2175,59 @@ fn changelog() -> Result<()> {
     let s = TestState::init()?;
     s.create_test_db()?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["log", "local:first", "--all"]);
-    cmd.assert().success().stdout(contains("Void"));
+    s.cmd()?
+        .args(["log", "local:first", "--all"])
+        .assert()
+        .success()
+        .stdout(contains("Void"));
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["hist", "reset", "local:first", "0006"]);
-    cmd.assert().success();
+    s.cmd()?
+        .args(["hist", "reset", "local:first", "0006"])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["get", "local:first"]);
-    cmd.assert().success().stdout(contains("title = {5}"));
+    s.cmd()?
+        .args(["get", "local:first"])
+        .assert()
+        .success()
+        .stdout(contains("title = {5}"));
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["log", "local:first"]);
-    cmd.assert().success().stdout(
-        contains("│      title = {4}")
-            .and(contains("◉  rev 0006"))
-            .and(contains("Void").not()),
-    );
+    s.cmd()?
+        .args(["log", "local:first"])
+        .assert()
+        .success()
+        .stdout(
+            contains("│      title = {4}")
+                .and(contains("◉  rev 0006"))
+                .and(contains("Void").not()),
+        );
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["log", "local:first", "--tree", "--all"]);
-    cmd.assert().success().stdout(
-        contains("│ │ │    }")
-            .and(contains("├─╯ │"))
-            .and(contains("○ │ │  rev 0009 on"))
-            .and(contains(
-                "│ │ │    Replaced 'local:first' with 'local:second'",
-            ))
-            .and(contains("│      author = {C},")),
-    );
+    s.cmd()?
+        .args(["log", "local:first", "--tree", "--all"])
+        .assert()
+        .success()
+        .stdout(
+            contains("│ │ │    }")
+                .and(contains("├─╯ │"))
+                .and(contains("○ │ │  rev 0009 on"))
+                .and(contains(
+                    "│ │ │    Replaced 'local:first' with 'local:second'",
+                ))
+                .and(contains("│      author = {C},")),
+        );
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["hist", "reset", "local:first", "000c"]);
-    cmd.assert().success();
+    s.cmd()?
+        .args(["hist", "reset", "local:first", "000c"])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["hist", "undo", "local:first"]);
-    cmd.assert().failure().stderr(contains(
-        "suggestion: Undo into a deleted state with `autobib hist undo --delete`",
-    ));
+    s.cmd()?
+        .args(["hist", "undo", "local:first"])
+        .assert()
+        .failure()
+        .stderr(contains(
+            "suggestion: Undo into a deleted state with `autobib hist undo --delete`",
+        ));
 
     s.close()
 }
@@ -2103,82 +2238,96 @@ fn prune() -> Result<()> {
         let s = TestState::init()?;
 
         // create a node with two children
-        let mut cmd = s.cmd()?;
-        cmd.args(["local", "a", "--with-field", "title = {1}"]);
-        cmd.assert().success();
+        s.cmd()?
+            .args(["local", "a", "--with-field", "title = {1}"])
+            .assert()
+            .success();
 
-        let mut cmd = s.cmd()?;
-        cmd.args(["edit", "local:a", "--set-field", "title = {2}"]);
-        cmd.assert().success();
+        s.cmd()?
+            .args(["edit", "local:a", "--set-field", "title = {2}"])
+            .assert()
+            .success();
 
-        let mut cmd = s.cmd()?;
-        cmd.args(["info", "local:a", "-r", "revision"]);
-        let output = cmd.output()?;
+        let output = s
+            .cmd()?
+            .args(["info", "local:a", "-r", "revision"])
+            .output()?;
         assert!(output.status.success());
         let rev_1 = output.stdout;
 
-        let mut cmd = s.cmd()?;
-        cmd.args(["hist", "undo", "local:a"]);
-        cmd.assert().success();
+        s.cmd()?
+            .args(["hist", "undo", "local:a"])
+            .assert()
+            .success();
 
-        let mut cmd = s.cmd()?;
-        cmd.args(["edit", "local:a", "--set-field", "title = {3}"]);
-        cmd.assert().success();
+        s.cmd()?
+            .args(["edit", "local:a", "--set-field", "title = {3}"])
+            .assert()
+            .success();
 
         // create a node with two children, and then that child has the active node
-        let mut cmd = s.cmd()?;
-        cmd.args(["local", "b", "--with-field", "title = {1}"]);
-        cmd.assert().success();
+        s.cmd()?
+            .args(["local", "b", "--with-field", "title = {1}"])
+            .assert()
+            .success();
 
-        let mut cmd = s.cmd()?;
-        cmd.args(["edit", "local:b", "--set-field", "title = {2}"]);
-        cmd.assert().success();
+        s.cmd()?
+            .args(["edit", "local:b", "--set-field", "title = {2}"])
+            .assert()
+            .success();
 
-        let mut cmd = s.cmd()?;
-        cmd.args(["info", "local:b", "-r", "revision"]);
-        let output = cmd.output()?;
+        let output = s
+            .cmd()?
+            .args(["info", "local:b", "-r", "revision"])
+            .output()?;
         assert!(output.status.success());
         let rev_2 = output.stdout;
 
-        let mut cmd = s.cmd()?;
-        cmd.args(["hist", "undo", "local:b"]);
-        cmd.assert().success();
+        s.cmd()?
+            .args(["hist", "undo", "local:b"])
+            .assert()
+            .success();
 
-        let mut cmd = s.cmd()?;
-        cmd.args(["edit", "local:b", "--set-field", "title = {3}"]);
-        cmd.assert().success();
+        s.cmd()?
+            .args(["edit", "local:b", "--set-field", "title = {3}"])
+            .assert()
+            .success();
 
-        let mut cmd = s.cmd()?;
-        cmd.args(["edit", "local:b", "--set-field", "title = {4}"]);
-        cmd.assert().success();
+        s.cmd()?
+            .args(["edit", "local:b", "--set-field", "title = {4}"])
+            .assert()
+            .success();
 
-        let mut cmd = s.cmd()?;
-        cmd.args(["edit", "local:b", "--set-field", "title = {5}"]);
-        cmd.assert().success();
+        s.cmd()?
+            .args(["edit", "local:b", "--set-field", "title = {5}"])
+            .assert()
+            .success();
 
-        let mut cmd = s.cmd()?;
-        cmd.args(["info", "local:b", "-r", "revision"]);
-        let output = cmd.output()?;
+        let output = s
+            .cmd()?
+            .args(["info", "local:b", "-r", "revision"])
+            .output()?;
         assert!(output.status.success());
         let rev_3 = output.stdout;
 
-        let mut cmd = s.cmd()?;
-        cmd.args(["delete", "local:b"]);
-        cmd.assert().success();
+        s.cmd()?.args(["delete", "local:b"]).assert().success();
 
-        let mut cmd = s.cmd()?;
-        cmd.args(["info", "local:b", "-r", "revision"]);
-        let output = cmd.output()?;
+        let output = s
+            .cmd()?
+            .args(["info", "local:b", "-r", "revision"])
+            .output()?;
         assert!(output.status.success());
         let rev_4 = output.stdout;
 
-        let mut cmd = s.cmd()?;
-        cmd.args(["hist", "undo", "local:b"]);
-        cmd.assert().success();
+        s.cmd()?
+            .args(["hist", "undo", "local:b"])
+            .assert()
+            .success();
 
-        let mut cmd = s.cmd()?;
-        cmd.args(["hist", "undo", "local:b"]);
-        cmd.assert().success();
+        s.cmd()?
+            .args(["hist", "undo", "local:b"])
+            .assert()
+            .success();
 
         Ok((s, rev_1, rev_2, rev_3, rev_4))
     }
@@ -2186,199 +2335,211 @@ fn prune() -> Result<()> {
     // pruning all deletes past and present states
     let (s, rev_1, rev_2, rev_3, _) = init()?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["hist", "prune", "all"]);
-    cmd.assert().success();
+    s.cmd()?.args(["hist", "prune", "all"]).assert().success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args([
-        "hist",
-        "reset",
-        "local:a",
-        std::str::from_utf8(&rev_1).unwrap().trim_end(),
-    ]);
-    cmd.assert()
+    s.cmd()?
+        .args([
+            "hist",
+            "reset",
+            "local:a",
+            std::str::from_utf8(&rev_1).unwrap().trim_end(),
+        ])
+        .assert()
         .failure()
         .stderr(contains("Revision does not exist"));
 
-    let mut cmd = s.cmd()?;
-    cmd.args([
-        "hist",
-        "reset",
-        "local:b",
-        std::str::from_utf8(&rev_2).unwrap().trim_end(),
-    ]);
-    cmd.assert()
+    s.cmd()?
+        .args([
+            "hist",
+            "reset",
+            "local:b",
+            std::str::from_utf8(&rev_2).unwrap().trim_end(),
+        ])
+        .assert()
         .failure()
         .stderr(contains("Revision does not exist"));
 
-    let mut cmd = s.cmd()?;
-    cmd.args([
-        "hist",
-        "reset",
-        "local:b",
-        std::str::from_utf8(&rev_3).unwrap().trim_end(),
-    ]);
-    cmd.assert()
+    s.cmd()?
+        .args([
+            "hist",
+            "reset",
+            "local:b",
+            std::str::from_utf8(&rev_3).unwrap().trim_end(),
+        ])
+        .assert()
         .failure()
         .stderr(contains("Revision does not exist"));
 
     // pruning outdated does not delete future states
     let (s, rev_1, rev_2, rev_3, _) = init()?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["hist", "prune", "outdated"]);
-    cmd.assert().success();
+    s.cmd()?
+        .args(["hist", "prune", "outdated"])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args([
-        "hist",
-        "reset",
-        "local:a",
-        std::str::from_utf8(&rev_1).unwrap().trim_end(),
-    ]);
-    cmd.assert()
+    s.cmd()?
+        .args([
+            "hist",
+            "reset",
+            "local:a",
+            std::str::from_utf8(&rev_1).unwrap().trim_end(),
+        ])
+        .assert()
         .failure()
         .stderr(contains("Revision does not exist"));
 
-    let mut cmd = s.cmd()?;
-    cmd.args([
-        "hist",
-        "reset",
-        "local:b",
-        std::str::from_utf8(&rev_2).unwrap().trim_end(),
-    ]);
-    cmd.assert()
+    s.cmd()?
+        .args([
+            "hist",
+            "reset",
+            "local:b",
+            std::str::from_utf8(&rev_2).unwrap().trim_end(),
+        ])
+        .assert()
         .failure()
         .stderr(contains("Revision does not exist"));
 
-    let mut cmd = s.cmd()?;
-    cmd.args([
-        "hist",
-        "reset",
-        "local:b",
-        std::str::from_utf8(&rev_3).unwrap().trim_end(),
-    ]);
-    cmd.assert().success();
+    s.cmd()?
+        .args([
+            "hist",
+            "reset",
+            "local:b",
+            std::str::from_utf8(&rev_3).unwrap().trim_end(),
+        ])
+        .assert()
+        .success();
 
     s.close()?;
 
     // keep the correct number
     let (s, rev_1, rev_2, rev_3, _) = init()?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["hist", "prune", "outdated", "--retain", "1"]);
-    cmd.assert().success();
+    s.cmd()?
+        .args(["hist", "prune", "outdated", "--retain", "1"])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args([
-        "hist",
-        "reset",
-        "local:a",
-        std::str::from_utf8(&rev_1).unwrap().trim_end(),
-    ]);
-    cmd.assert().success();
+    s.cmd()?
+        .args([
+            "hist",
+            "reset",
+            "local:a",
+            std::str::from_utf8(&rev_1).unwrap().trim_end(),
+        ])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args([
-        "hist",
-        "reset",
-        "local:b",
-        std::str::from_utf8(&rev_2).unwrap().trim_end(),
-    ]);
-    cmd.assert()
+    s.cmd()?
+        .args([
+            "hist",
+            "reset",
+            "local:b",
+            std::str::from_utf8(&rev_2).unwrap().trim_end(),
+        ])
+        .assert()
         .failure()
         .stderr(contains("Revision does not exist"));
 
-    let mut cmd = s.cmd()?;
-    cmd.args([
-        "hist",
-        "reset",
-        "local:b",
-        std::str::from_utf8(&rev_3).unwrap().trim_end(),
-    ]);
-    cmd.assert().success();
+    s.cmd()?
+        .args([
+            "hist",
+            "reset",
+            "local:b",
+            std::str::from_utf8(&rev_3).unwrap().trim_end(),
+        ])
+        .assert()
+        .success();
 
     s.close()?;
 
     // keep the correct number
     let (s, rev_1, rev_2, rev_3, _) = init()?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["hist", "prune", "outdated", "--retain", "2"]);
-    cmd.assert().success();
+    s.cmd()?
+        .args(["hist", "prune", "outdated", "--retain", "2"])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args([
-        "hist",
-        "reset",
-        "local:a",
-        std::str::from_utf8(&rev_1).unwrap().trim_end(),
-    ]);
-    cmd.assert().success();
+    s.cmd()?
+        .args([
+            "hist",
+            "reset",
+            "local:a",
+            std::str::from_utf8(&rev_1).unwrap().trim_end(),
+        ])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args([
-        "hist",
-        "reset",
-        "local:b",
-        std::str::from_utf8(&rev_2).unwrap().trim_end(),
-    ]);
-    cmd.assert().success();
+    s.cmd()?
+        .args([
+            "hist",
+            "reset",
+            "local:b",
+            std::str::from_utf8(&rev_2).unwrap().trim_end(),
+        ])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args([
-        "hist",
-        "reset",
-        "local:b",
-        std::str::from_utf8(&rev_3).unwrap().trim_end(),
-    ]);
-    cmd.assert().success();
+    s.cmd()?
+        .args([
+            "hist",
+            "reset",
+            "local:b",
+            std::str::from_utf8(&rev_3).unwrap().trim_end(),
+        ])
+        .assert()
+        .success();
 
     s.close()?;
 
     // prune deleted
     let (s, rev_1, rev_2, rev_3, rev_4) = init()?;
 
-    let mut cmd = s.cmd()?;
-    cmd.args(["hist", "prune", "deleted"]);
-    cmd.assert().success();
+    s.cmd()?
+        .args(["hist", "prune", "deleted"])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args([
-        "hist",
-        "reset",
-        "local:a",
-        std::str::from_utf8(&rev_1).unwrap().trim_end(),
-    ]);
-    cmd.assert().success();
+    s.cmd()?
+        .args([
+            "hist",
+            "reset",
+            "local:a",
+            std::str::from_utf8(&rev_1).unwrap().trim_end(),
+        ])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args([
-        "hist",
-        "reset",
-        "local:b",
-        std::str::from_utf8(&rev_2).unwrap().trim_end(),
-    ]);
-    cmd.assert().success();
+    s.cmd()?
+        .args([
+            "hist",
+            "reset",
+            "local:b",
+            std::str::from_utf8(&rev_2).unwrap().trim_end(),
+        ])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args([
-        "hist",
-        "reset",
-        "local:b",
-        std::str::from_utf8(&rev_3).unwrap().trim_end(),
-    ]);
-    cmd.assert().success();
+    s.cmd()?
+        .args([
+            "hist",
+            "reset",
+            "local:b",
+            std::str::from_utf8(&rev_3).unwrap().trim_end(),
+        ])
+        .assert()
+        .success();
 
-    let mut cmd = s.cmd()?;
-    cmd.args([
-        "hist",
-        "reset",
-        "local:b",
-        std::str::from_utf8(&rev_4).unwrap().trim_end(),
-    ]);
-    cmd.assert().stderr(contains("Revision does not exist"));
+    s.cmd()?
+        .args([
+            "hist",
+            "reset",
+            "local:b",
+            std::str::from_utf8(&rev_4).unwrap().trim_end(),
+        ])
+        .assert()
+        .stderr(contains("Revision does not exist"));
 
     s.close()?;
 
@@ -2392,9 +2553,7 @@ macro_rules! test_provider_success {
         fn $name() -> Result<()> {
             let s = TestState::init()?;
 
-            let mut cmd = s.cmd()?;
-            cmd.args(["-vv", "get", $target]);
-            cmd.assert().success();
+            s.cmd()?.args(["-vv", "get", $target]).assert().success();
 
             s.close()
         }
