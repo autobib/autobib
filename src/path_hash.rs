@@ -4,15 +4,15 @@
 // to be fixed, so a lot of the logic here will become unnecessary, but in the meantime here is
 // a brief explanation of the format.
 //
-// A directory `$AUTOBIB_ATTACHMENTS_DIRECTORY/.autobib-format` contains marker directories which
-// describe the current state. The first case below to match determines the behaviour:
+// A file `$AUTOBIB_ATTACHMENTS_DIRECTORY/.autobib_lock` is used for process synchronization and to
+// define a small amount of current state. Currently, the file content is used to define the format:
 //
-// 1. `.autobib-format` does not exist, or `.autobib-format/v0` exists: this is the legacy
-//    attachment format, using `rapidhash::v1` and `zbmath` identifiers with 0-padding.
-// 2. `.autobib-format/v1-migrating` exists: migration from `v0` to `v1` was interrupted, so the
+// 1. does not exist, or is empty: this is the legacy attachment format, using
+//    `rapidhash::v1`, `zbmath` identifiers with 0-padding, and padded base-32 encoding.
+// 2. `v1-migrating`: migration from `v0` to `v1` was interrupted, so the
 //    directories are mixed between the `v0` and `v1` formats.
-// 3. `.autobib-format/v1` exists: this is the new attachment format, using
-//    `rapidhash::v3` and `zbmath` identifiers without 0-padding.
+// 3. `v1`: this is the new attachment format, using `rapidhash::v3`, `zbmath` identifiers without
+//    0-padding, and unpadded base-32 encoding.
 // 4. Else: the attachment format is unknown to the current binary, resulting in an error
 
 use std::{
@@ -56,7 +56,7 @@ pub struct AttachmentRootLock<const EXCLUSIVE: bool> {
 
 impl<const EXCLUSIVE: bool> AttachmentRootLock<EXCLUSIVE> {
     fn fmt_file() -> &'static str {
-        ".autobib-format"
+        ".autobib_lock"
     }
 
     fn format(&mut self) -> Result<AttachmentFormat, anyhow::Error> {
@@ -117,7 +117,7 @@ impl AttachmentRootLock<true> {
 /// The attachment directory root along with the format.
 ///
 /// The attachment root uses [filesystem locks](std::fs::File::lock) on the attachment format file
-/// `$AUTOBIB_ATTACHMENTS_DIRECTORY/.autobib-format`. These locks are advisory, and other Autobib
+/// `$AUTOBIB_ATTACHMENTS_DIRECTORY/.autobib_lock`. These locks are advisory, and other Autobib
 /// processes use them to coordinate.
 ///
 /// Note that early versions of Autobib do not respect the format file or the advisory locks.

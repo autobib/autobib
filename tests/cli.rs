@@ -10,6 +10,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+static AUTOBIB_LOCKFILE: &str = ".autobib_lock";
+
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 fn native_path<const N: usize>(parts: [&str; N]) -> String {
@@ -42,7 +44,7 @@ impl TestState {
     fn init_attachments(&self, fmt: Option<&'static str>) -> Result<()> {
         fs::create_dir_all(&self.attach_dir)?;
         if let Some(s) = fmt {
-            fs::write(self.attach_dir.join(".autobib-format"), s)?;
+            fs::write(self.attach_dir.join(AUTOBIB_LOCKFILE), s)?;
         }
         Ok(())
     }
@@ -1034,7 +1036,7 @@ fn attachment_format_missing_uses_v0() -> Result<()> {
         .success()
         .stdout(predicate::str::ends_with(value));
 
-    s.attachment(".autobib-format").assert(predicate::eq(""));
+    s.attachment(AUTOBIB_LOCKFILE).assert(predicate::eq(""));
 
     s.close()
 }
@@ -1110,7 +1112,7 @@ fn migrate_attachments() -> Result<()> {
     zbmath_old_attachment.assert(predicate::path::missing());
     s.attachment("zbmath/6D/UP/TS/GYZTINRUGYYQ/attachment.txt")
         .assert(predicate::eq("zbmath attachment contents"));
-    s.attachment(".autobib-format").assert(predicate::eq("v1"));
+    s.attachment(AUTOBIB_LOCKFILE).assert(predicate::eq("v1"));
 
     s.close()
 }
@@ -1120,8 +1122,13 @@ fn migrate_attachments_resume() -> Result<()> {
     let s = TestState::init()?;
     s.init_attachments(Some("v1-migrating"))?;
 
+    // `local:first` in v0
     let old_attachment = s.attachment("local/OM/KH/CW/MZUXE43U/attachment.txt");
-    old_attachment.write_str("attachment contents")?;
+    old_attachment.write_str("old attachment")?;
+
+    // `local:second` in v1
+    let new_attachment = s.attachment("local/EN/6D/4U/ONSWG33OMQ/attachment.txt");
+    new_attachment.write_str("new attachment")?;
 
     let mut cmd = s.cmd()?;
     cmd.args(["clean", "attachments", "--migrate"]);
@@ -1129,8 +1136,10 @@ fn migrate_attachments_resume() -> Result<()> {
 
     old_attachment.assert(predicate::path::missing());
     s.attachment("local/QH/OV/RX/MZUXE43U/attachment.txt")
-        .assert(predicate::eq("attachment contents"));
-    s.attachment(".autobib-format").assert(predicate::eq("v1"));
+        .assert(predicate::eq("old attachment"));
+    s.attachment("local/EN/6D/4U/ONSWG33OMQ/attachment.txt")
+        .assert(predicate::eq("new attachment"));
+    s.attachment(AUTOBIB_LOCKFILE).assert(predicate::eq("v1"));
 
     s.close()
 }
@@ -1150,7 +1159,7 @@ fn migrate_replaces_empty_dir() -> Result<()> {
     old_attachment.assert(predicate::path::missing());
     s.attachment("local/QH/OV/RX/MZUXE43U/attachment.txt")
         .assert(predicate::eq("attachment contents"));
-    s.attachment(".autobib-format").assert(predicate::eq("v1"));
+    s.attachment(AUTOBIB_LOCKFILE).assert(predicate::eq("v1"));
 
     s.close()
 }
@@ -1183,7 +1192,7 @@ fn migrate_attachments_conflict() -> Result<()> {
     zbmath_old_attachment.assert(predicate::path::missing());
     s.attachment("zbmath/6D/UP/TS/GYZTINRUGYYQ/attachment.txt")
         .assert(predicate::eq("zbmath attachment contents"));
-    s.attachment(".autobib-format")
+    s.attachment(AUTOBIB_LOCKFILE)
         .assert(predicate::eq("v1-migrating"));
 
     s.close()
@@ -1816,20 +1825,20 @@ fn read_only() -> Result<()> {
         .failure()
         .stderr(contains("Cannot obtain report for record not in database"));
 
-    s.attachment(".autobib-format")
+    s.attachment(AUTOBIB_LOCKFILE)
         .assert(predicate::path::missing());
 
     let mut cmd = s.cmd()?;
     cmd.args(["--read-only", "path", "zbl:1337.28015"]);
     cmd.assert().success();
 
-    s.attachment(".autobib-format").assert(predicate::eq(""));
+    s.attachment(AUTOBIB_LOCKFILE).assert(predicate::eq(""));
 
     let mut cmd = s.cmd()?;
     cmd.args(["path", "zbl:1337.28015"]);
     cmd.assert().success();
 
-    s.attachment(".autobib-format").assert(predicate::eq(""));
+    s.attachment(AUTOBIB_LOCKFILE).assert(predicate::eq(""));
 
     Ok(())
 }
