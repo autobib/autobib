@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Database information",
+  "description": "A complete report about the information corresponding to a record in the database",
+  "additionalProperties": false,
+  "required": ["key", "revision", "record"],
+  "properties": {
+    "key": {
+      "description": "Record key information",
+      "type": "object",
+      "properties": {
+        "original": {
+          "description": "The original key used to refer to this record.",
+          "type": "string"
+        },
+        "is_valid_bibtex": {
+          "description": "Whether the original key is a valid BibTeX key",
+          "type": "boolean"
+        },
+        "preferred": {
+          "description": "The preferred key, as determined from the configuration",
+          "type": ["string", "null"]
+        },
+        "equivalent": {
+          "description": "Equivalent keys which refer to this record",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "revision": {
+      "title": "Revision identifier",
+      "description": "A hexadecimal identifier which uniquely determines the revision in the revision tree",
+      "type": "string",
+      "pattern": "^[a-f0-9]+$"
+    },
+    "record": {
+      "title": "Record",
+      "description": "The record associated with the key",
+      "type": "object",
+      "oneOf": [
+        { "$ref": "record_entry.schema.json" },
+        { "$ref": "record_deleted.schema.json" },
+        { "$ref": "record_void.schema.json" }
+      ]
+    }
+  }
+}

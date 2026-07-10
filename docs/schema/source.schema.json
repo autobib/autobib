@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Source output",
+  "description": "JSON output with `autobib source --json`",
+  "additionalProperties": false,
+  "patternProperties": {
+    "^\\P{Cc}+$": {
+      "type": "object",
+      "$ref": "data.schema.json"
+    }
+  }
+}

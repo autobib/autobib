@@ -69,7 +69,7 @@ pub struct Cli {
 
 #[derive(Debug, Copy, Clone, ValueEnum, Default)]
 pub enum InfoReportType {
-    /// Show all info.
+    /// Show all info as a JSON record.
     #[default]
     #[value(alias("a"))]
     All,
@@ -79,13 +79,13 @@ pub enum InfoReportType {
     /// Check if the identifier is a valid BibTeX key.
     #[value(alias("v"))]
     Valid,
-    /// Print equivalent identifiers.
+    /// Print equivalent identifiers, one per line.
     #[value(alias("e"))]
     Equivalent,
-    /// Print preferred identifier.
+    /// Print the preferred identifier, with canonical fallback.
     #[value(alias("p"))]
     Preferred,
-    /// Print the last modified time.
+    /// Print the record modification time.
     #[value(alias("m"))]
     Modified,
     /// Print the revision number.

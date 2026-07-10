@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Void record",
+  "description": "A void marker in the database",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["canonical", "modified"],
+  "properties": {
+    "canonical": {
+      "description": "The canonical identifier",
+      "type": "string",
+      "pattern": "^.+:.+$"
+    },
+    "modified": {
+      "description": "When this record was last modified",
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}
