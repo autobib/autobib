@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Entry data",
+  "description": "Bibtex-style bibliographic data associated with the record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["entry_type", "fields"],
+  "properties": {
+    "entry_type": {
+      "title": "Entry type",
+      "description": "The type of bibliographic entry",
+      "type": "string",
+      "pattern": "^[^\\x00-\\x20{}(),=\\#%\"]+$"
+    },
+    "fields": {
+      "title": "Entry fields",
+      "description": "The fields in the bibliographic data",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^[^\\x00-\\x20{}(),=\\#%\"]+$": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

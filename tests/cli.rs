@@ -2171,6 +2171,84 @@ fn replace_hard() -> Result<()> {
 }
 
 #[test]
+fn json_schema() -> Result<()> {
+    fn assert_schema<const N: usize>(
+        s: &TestState,
+        args: [&'static str; N],
+        schema_path: &str,
+    ) -> Result<()> {
+        let mut schemas = Schemas::new();
+        let mut compiler = Compiler::new();
+        let sch_index = compiler.compile(schema_path, &mut schemas)?;
+        let instance: serde_json::Value =
+            serde_json::from_slice(&s.cmd()?.args(args).assert().success().get_output().stdout)?;
+        assert!(schemas.validate(&instance, sch_index).is_ok());
+
+        Ok(())
+    }
+
+    use boon::{Compiler, Schemas};
+    let s = TestState::init()?;
+
+    assert_schema(
+        &s,
+        ["source", "tests/resources/source/main.tex", "--json"],
+        "docs/schema/source.schema.json",
+    )?;
+
+    s.cmd()?
+        .args([
+            "get",
+            "zbl:1337.28015",
+            "zbl:1285.28011",
+            "arxiv:1212.1873",
+            "mr:3224722",
+        ])
+        .assert()
+        .success();
+
+    for id in [
+        "zbl:1337.28015",
+        "zbl:1285.28011",
+        "arxiv:1212.1873",
+        "mr:3224722",
+    ] {
+        assert_schema(
+            &s,
+            ["get", id, "-t", "{%json}"],
+            "docs/schema/record_entry.schema.json",
+        )?;
+    }
+
+    s.cmd()?
+        .args(["delete", "zbl:1285.28011"])
+        .assert()
+        .success();
+
+    s.cmd()?
+        .args(["replace", "arxiv:1212.1873", "--with", "mr:3224722"])
+        .assert()
+        .success();
+
+    for id in [
+        "zbl:1337.28015",
+        "zbl:1285.28011",
+        "arxiv:1212.1873",
+        "mr:3224722",
+    ] {
+        assert_schema(&s, ["info", id], "docs/schema/info.schema.json")?;
+    }
+
+    s.cmd()?
+        .args(["hist", "void", "mr:3224722"])
+        .assert()
+        .success();
+    assert_schema(&s, ["info", "mr:3224722"], "docs/schema/info.schema.json")?;
+
+    s.close()
+}
+
+#[test]
 fn changelog() -> Result<()> {
     let s = TestState::init()?;
     s.create_test_db()?;

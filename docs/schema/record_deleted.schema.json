@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Deleted record",
+  "description": "A deletion marker for a record which previously existed in the database",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["replacement", "canonical", "modified"],
+  "properties": {
+    "replacement": {
+      "description": "An optional replacement key",
+      "type": ["string", "null"],
+      "pattern": "^.+:.+$"
+    },
+    "canonical": {
+      "description": "The canonical identifier",
+      "type": "string",
+      "pattern": "^.+:.+$"
+    },
+    "modified": {
+      "description": "When this record was last modified",
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

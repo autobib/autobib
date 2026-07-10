@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Entry record",
+  "description": "An record in the database, containing bibliographic data",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["data", "canonical", "modified"],
+  "properties": {
+    "data": {
+      "$ref": "data.schema.json"
+    },
+    "canonical": {
+      "title": "Canonical identifier",
+      "description": "The unique canonical identifier associated with a record",
+      "type": "string",
+      "pattern": "^.+:.+$"
+    },
+    "modified": {
+      "title": "Modification timestamp",
+      "description": "When this record was last modified",
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}
