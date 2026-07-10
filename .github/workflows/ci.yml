@@ -56,17 +56,17 @@ jobs:
           key: ${{ env.CACHE_PREFIX }}-${{ matrix.image }}-${{ hashFiles(env.REMOTES_FILE, env.CACHE_FORMAT_DEF) }}
       - name: Build response cache binary
         if: steps.response-cache.outputs.cache-hit != 'true'
-        run: cargo build --locked --features write_response_cache
+        run: cargo build --profile=ci --locked --features write_response_cache
       - name: Create response cache
         if: steps.response-cache.outputs.cache-hit != 'true'
         shell: bash
-        run: cargo run --locked --features write_response_cache -- -vv source --retrieve-only --ignore-null '${{ env.REMOTES_FILE }}'
+        run: cargo run --profile=ci --locked --features write_response_cache -- -vv source --retrieve-only --ignore-null '${{ env.REMOTES_FILE }}'
 
       # Actually run tests
       - name: Build test binaries
-        run: cargo test --no-run --locked --features read_response_cache
+        run: cargo test --profile=ci --no-run --locked --features read_response_cache
       - name: Run tests
-        run: cargo test --no-fail-fast --locked --features read_response_cache
+        run: cargo test --profile=ci --no-fail-fast --locked --features read_response_cache
 
   checks:
     runs-on: ubuntu-latest
