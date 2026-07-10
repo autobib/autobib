@@ -118,6 +118,17 @@ impl Default for OnConflict {
     }
 }
 
+#[derive(Debug, Args)]
+#[group(required = true, multiple = false)]
+pub struct ReplacementTarget {
+    /// Replace with another identifier.
+    #[clap(short, long, value_name = "REPLACEMENT")]
+    pub with: Option<RecordId>,
+    /// Determine the replacement identifier using record data.
+    #[clap(short, long)]
+    pub auto: bool,
+}
+
 #[derive(Debug, Copy, Clone, ValueEnum, Default)]
 pub enum FindMode {
     /// Search record attachments and print the selected path.
@@ -411,14 +422,10 @@ pub enum Command {
     /// the database, its data will be retrieved first.
     Replace {
         /// The identifier to replace.
-        #[clap(value_name = "IDENTIFIER")]
+        #[clap(value_name = "KEY")]
         identifier: RecordId,
-        /// Replace with another identifier.
-        #[arg(short, long, group = "replace_target", value_name = "IDENTIFIER")]
-        with: Option<RecordId>,
-        /// Determine the replacement identifier using record data.
-        #[arg(short, long, group = "replace_target")]
-        auto: bool,
+        #[clap(flatten)]
+        target: ReplacementTarget,
         /// Permanently merge all data into the target.
         #[arg(long)]
         hard: bool,
@@ -473,7 +480,7 @@ pub enum Command {
         #[arg(long, group = "output")]
         print_keys: bool,
         /// Skip an identifier (if present).
-        #[arg(short, long, value_name = "IDENTIFIERS")]
+        #[arg(short, long, value_name = "KEY")]
         skip: Vec<RecordId>,
         /// Skip identifiers which are present in the provided file(s).
         #[arg(long, value_name = "PATH")]
@@ -500,7 +507,7 @@ pub enum Command {
         #[arg(short = 'b', long, value_name = "PATH", group = "update_from")]
         from_bibtex: Option<PathBuf>,
         /// Read update data from other record data.
-        #[arg(short = 'r', long, value_name = "IDENTIFIER", group = "update_from")]
+        #[arg(short = 'r', long, value_name = "KEY", group = "update_from")]
         from_record: Option<RecordId>,
         /// Read update data from record data in a specific revision.
         #[arg(long, value_name = "REV", group = "update_from")]
