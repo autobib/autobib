@@ -29,7 +29,7 @@ use etcetera::{AppStrategy, AppStrategyArgs, choose_app_strategy};
 use crate::{
     app::{
         attach::cleanup_empty_attachment_dirs,
-        cli::{GcCommand, HistCommand, IdTarget, PruneCommand},
+        cli::{GcCommand, HistCommand, IdTarget, PruneCommand, ReplacementTarget},
         log::print_log,
         retrieve::{sync_entries, sync_entries_read_only},
     },
@@ -1120,8 +1120,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
         }
         Command::Replace {
             identifier,
-            with,
-            auto,
+            target: ReplacementTarget { with, auto },
             hard,
             on_conflict,
             update_aliases,
@@ -1180,7 +1179,9 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     at_root,
                 )?;
             } else {
-                bail!("Missing replacement target: either use `--with <replacement>` or `--auto`");
+                unreachable!(
+                    "One of these must be set since `ReplacementTarget` has group(required = true)"
+                );
             }
         }
         Command::Source {
