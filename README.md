@@ -54,6 +54,7 @@ Jump to:
 - [Searching for records](#searching-for-records)
 - [Working with edit history](#working-with-edit-history)
 - [Importing records](#importing-records)
+- [JSON output](#json-output)
 - [Managing attachments](#managing-attachments)
 - [Shell completions](#shell-completions)
 - [User data and configuration file](#user-data-and-configuration-file)
@@ -244,8 +245,8 @@ This can be used to define a custom import pattern to map the citation keys to i
 
 If you are importing data with an identifier format that Autobib does not recognize, the `--local-fallback` option creates special `local:...` identifiers using the citation keys in the BibTeX file.
 
-Autobib tries to make imports as fine-grained as possible.
-Even if one entry fails to import, it will continue to try to import the remaining entries.
+Autobib tries to make imports succeed as much as possible.
+Even if one entry fails to import, it will continue to import the remaining entries.
 Any entry which could not be imported is printed to standard output along with a short description (in a BibTeX comment) explaining why the file could not be imported.
 This means you can use a workflow like the following:
 
@@ -263,6 +264,12 @@ autobib import failed.bib > failed_again.bib
 
 You can also import attachments using the `--include-files` flag.
 See the [attachments](#managing-attachments) for more detail when working with attachments.
+
+### JSON output
+
+Some commands can output JSON for easier integration with other programs.
+For example, JSON can be produced in templates, by `autobib source`, and by `autobib info`.
+See the [JSON output documentation](/docs/json.md) for more information.
 
 ### Managing attachments
 
