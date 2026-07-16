@@ -2,7 +2,7 @@
 # the value, replace each `provider` with the regex `^provider:.*`. For example,
 #   preferred_providers = ["zbl", "mr"]
 # is equivalent to
-#   preferred_keys = ["zbl:", "mr:"]
+#   preferred_keys = ["^zbl:.*", "^mr:.*"]
 preferred_providers = []
 
 # Regexes for automatic selection of keys. This is used to choose:
@@ -11,6 +11,8 @@ preferred_providers = []
 # When a record has multiple keys, a key will be chosen matching a prefix in this list.
 # Regexes earlier in the list are given priority. Further ties are broken by lexicographic
 # ordering of matching keys.
+#
+# The regex syntax is documented at https://docs.rs/regex/latest/regex/#syntax
 preferred_keys = []
 
 # Actions related to the picker interface, for example when running `autobib find`

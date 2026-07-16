@@ -155,8 +155,6 @@ pub enum Command {
         force: bool,
     },
     /// Backup the record database.
-    ///
-    ///
     Backup {
         /// The file into which to backup the database.
         into: PathBuf,
@@ -188,7 +186,7 @@ pub enum Command {
         delete_aliases: bool,
         /// Do not warn on orphaned attachment directories.
         #[arg(short = 'A', long)]
-        ignore_attachments: bool,
+        no_attachment_warning: bool,
     },
     /// Edit existing records.
     ///
@@ -248,7 +246,7 @@ pub enum Command {
         one: bool,
     },
     /// Utilities for maintenance and cleanup.
-    Gc {
+    Clean {
         #[command(subcommand)]
         gc_command: GcCommand,
     },
@@ -290,7 +288,7 @@ pub enum Command {
     /// Import records from BibTeX files.
     ///
     /// The implementation automatically determines a remote identifier from the data using
-    /// your `preferred_jeys` config setting, or with any other remote identifier that can
+    /// your `preferred_keys` config setting, or with any other remote identifier that can
     /// be found in the data. Use `--local-fallback` to import as `local:` identifiers if no
     /// canonical identifier could be found.
     ///
@@ -641,7 +639,7 @@ impl Command {
             Self::Update { .. } => "update",
             Self::Edit { .. } => "edit",
             Self::Hist { .. } => "hist",
-            Self::Gc { .. } => "gc",
+            Self::Clean { .. } => "clean",
             Self::Util { util_command } => return util_command.validate_read_only_compatibility(),
         };
         Err(ReadOnlyInvalid::Command(invalid_cmd))

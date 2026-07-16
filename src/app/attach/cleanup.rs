@@ -50,9 +50,8 @@ pub fn cleanup_empty_attachment_dirs(attachment_root: &mut AttachmentRoot<true>)
         if entry.file_type()?.is_dir()
             && entry
                 .file_name()
-                .as_os_str()
                 .to_str()
-                .is_some_and(|s| s.bytes().all(|b| b.is_ascii_alphabetic()))
+                .is_some_and(|s| !s.is_empty() && s.bytes().all(|b| b.is_ascii_alphabetic()))
         {
             // depth 4: provider/xx/xx/xx/base32/
             remove_empty_dirs(&entry.path(), 4)?;
