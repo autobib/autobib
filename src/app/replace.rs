@@ -116,6 +116,6 @@ where
             );
             Ok(())
         }
-        AttachmentRenameOutcome::FromMissing(_, _) | AttachmentRenameOutcome::Ok => Ok(()),
+        AttachmentRenameOutcome::FromMissing | AttachmentRenameOutcome::Ok => Ok(()),
     }
 }
