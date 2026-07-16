@@ -346,11 +346,11 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 for key in identifiers {
                     if let Some(canonical) = delete_cb(key)?
                         && let Some(at_root) = check_attachments.as_ref()
-                        && at_root.exists(&canonical)?
+                        && let Some(deleted_at_dir) = at_root.open_attachment_dir(&canonical)
                     {
                         warn!(
                             "Deleted record has attachment directory: {}",
-                            at_root.attachment_dir(&canonical).display()
+                            deleted_at_dir.display()
                         );
                     }
                 }

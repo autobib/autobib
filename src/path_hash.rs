@@ -128,10 +128,9 @@ pub struct AttachmentRoot<const EXCLUSIVE: bool> {
     format: AttachmentFormat,
 }
 
-#[expect(unused)]
 pub enum AttachmentRenameOutcome {
     /// The source attachment directory was missing.
-    FromMissing(PathBuf, PathBuf),
+    FromMissing,
     /// The target attachment directory already exists and is non-empty.
     ToExists(PathBuf, PathBuf),
     /// The directory was renamed successfully.
@@ -208,6 +207,21 @@ impl<const EXCLUSIVE: bool> AttachmentRoot<EXCLUSIVE> {
         path
     }
 
+    /// Get the attachment directory corresponding to the identifier if the attachment directory
+    /// already exists and there are existing attachments.
+    ///
+    /// This returns `None` if reading the directory contents fails. Typically, this happens when
+    /// the attachment directory does not exist, but this also may fail for other reasons as well.
+    pub fn open_attachment_dir(&self, id: &RemoteId) -> Option<PathBuf> {
+        let at_dir = self.attachment_dir(id);
+        // TODO: is it best to iterate here, or should we just check for existence?
+        if at_dir.read_dir().is_ok_and(|mut it| it.next().is_some()) {
+            Some(at_dir)
+        } else {
+            None
+        }
+    }
+
     /// Overwrite the provided buffer with the attachment directory corresponding to the identifier.
     ///
     /// This is useful for reducing allocations in case the caller already has a [`PathBuf`].
@@ -222,11 +236,6 @@ impl<const EXCLUSIVE: bool> AttachmentRoot<EXCLUSIVE> {
         }
     }
 
-    /// Check whether the attachment directory corresponding to the identifier exists.
-    pub fn exists(&self, id: &RemoteId) -> io::Result<bool> {
-        self.attachment_dir(id).try_exists()
-    }
-
     /// Try to rename the attachment directory at `from` to `to`.
     ///
     /// This will not overwrite the target directory.
@@ -235,14 +244,20 @@ impl<const EXCLUSIVE: bool> AttachmentRoot<EXCLUSIVE> {
         from: &RemoteId,
         to: &RemoteId,
     ) -> Result<AttachmentRenameOutcome, io::Error> {
-        let source = self.attachment_dir(from);
+        // extra check to avoid creating the target directory unnecessarily
+        // this is a toctou error, but we're doing this attachment stuff best-effort
+        // anyway so it's fine
+        let Some(source) = self.open_attachment_dir(from) else {
+            return Ok(AttachmentRenameOutcome::FromMissing);
+        };
         let target = self.attachment_dir(to);
+
         fs::create_dir_all(&target)?;
 
         match fs::rename(&source, &target) {
             Ok(()) => Ok(AttachmentRenameOutcome::Ok),
             Err(err) if err.kind() == io::ErrorKind::NotFound => {
-                Ok(AttachmentRenameOutcome::FromMissing(source, target))
+                Ok(AttachmentRenameOutcome::FromMissing)
             }
             Err(err)
                 if matches!(
