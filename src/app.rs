@@ -246,7 +246,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             let (record, row) = get_record_row(&mut record_db, identifier, client, &cfg)?
                 .exists_or_commit_null("Cannot attach file for")?;
             row.commit()?;
-            let root = get_attachment_root(&data_dir, cli.attachments_dir)?;
+            let root = get_attachment_root::<false>(&data_dir, cli.attachments_dir, cli.read_only)?;
             let mut target = root.attachment_dir(&record.row.canonical);
 
             let mut opts = OpenOptions::new();
@@ -361,7 +361,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             let attachment_root = if no_attachment_warning {
                 None
             } else {
-                get_existing_attachment_root(&data_dir, cli.attachments_dir)?
+                get_existing_attachment_root(&data_dir, cli.attachments_dir, cli.read_only)?
             };
 
             if hard {
@@ -476,7 +476,8 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
 
             match find_mode {
                 FindMode::Attachments => {
-                    let attachment_root = get_attachment_root(&data_dir, cli.attachments_dir)?;
+                    let attachment_root =
+                        get_attachment_root(&data_dir, cli.attachments_dir, cli.read_only)?;
                     let mut picker = choose_attachment_path(
                         record_db,
                         template,
@@ -528,7 +529,8 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 if empty || migrate {
                     let root_path = get_attachment_root_path(&data_dir, cli.attachments_dir);
 
-                    let mut at_root = AttachmentRoot::open_or_create_unchecked(root_path)?;
+                    let mut at_root =
+                        AttachmentRoot::open_or_create_unchecked(root_path, cli.read_only)?;
 
                     if migrate {
                         migrate_attachments(&mut at_root)?;
@@ -879,7 +881,11 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 local_fallback,
                 no_alias,
                 file_import_root: if include_files {
-                    Some(get_attachment_root(&data_dir, cli.attachments_dir)?)
+                    Some(get_attachment_root(
+                        &data_dir,
+                        cli.attachments_dir,
+                        cli.read_only,
+                    )?)
                 } else {
                     None
                 },
@@ -1106,7 +1112,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 None => return Ok(()),
             };
 
-            let root = get_attachment_root(&data_dir, cli.attachments_dir)?;
+            let root = get_attachment_root::<false>(&data_dir, cli.attachments_dir, cli.read_only)?;
             let mut target = root.attachment_dir(&canonical);
             if mkdir {
                 create_dir_all(&target)?;
@@ -1133,7 +1139,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 let at_root = if ignore_attachments {
                     None
                 } else {
-                    get_existing_attachment_root(&data_dir, cli.attachments_dir)?
+                    get_existing_attachment_root(&data_dir, cli.attachments_dir, cli.read_only)?
                 };
                 replace::replace(
                     identifier,
@@ -1153,7 +1159,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 let at_root = if ignore_attachments {
                     None
                 } else {
-                    get_existing_attachment_root(&data_dir, cli.attachments_dir)?
+                    get_existing_attachment_root(&data_dir, cli.attachments_dir, cli.read_only)?
                 };
                 replace::replace(
                     identifier,
