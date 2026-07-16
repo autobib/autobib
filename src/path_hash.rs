@@ -141,6 +141,7 @@ pub enum AttachmentRenameOutcome {
 impl<const EXCLUSIVE: bool> AttachmentRoot<EXCLUSIVE> {
     /// Acquire a lock (if necessary) and resolve the attachment format.
     pub fn open_or_create_unchecked(root: PathBuf) -> Result<Self, anyhow::Error> {
+        fs::create_dir_all(&root)?;
         let mut lock = AttachmentRootLock::acquire(root)?;
         let format = lock.format()?;
         Ok(Self { lock, format })
@@ -162,7 +163,7 @@ impl AttachmentRoot<false> {
         let at_root = Self::open_or_create_unchecked(root)?;
         if at_root.format == AttachmentFormat::V1Migrating {
             anyhow::bail!(
-                "Attachment directory is currently being migrated. Resume with `autobib gc attachments --migrate` in order to read and write to the directory."
+                "Attachment directory is currently being migrated. Resume with `autobib clean attachments --migrate` in order to read and write to the directory."
             );
         }
         Ok(at_root)
@@ -183,7 +184,9 @@ impl AttachmentRoot<false> {
 impl AttachmentRoot<true> {
     /// Change the format.
     pub fn set_format(&mut self, new: AttachmentFormat) -> Result<(), io::Error> {
-        self.lock.set_format(new)
+        self.lock.set_format(new)?;
+        self.format = new;
+        Ok(())
     }
 }
 
@@ -279,8 +282,8 @@ pub(crate) fn extend_attachment_path_v1<S: AsRef<str>>(id: &RemoteId<S>, path_bu
 /// ```
 ///
 /// The 30 bit header is formed by converting the u64 output of the relevant rapidhash algorithm
-/// applied to the format-specific sub-id into little endian bytes, then taking the four most
-/// significant bytes (in decreasing order), encoding using BASE32 into 8 ASCII characters, and then
+/// applied to the format-specific sub-id into little endian bytes, then taking the four least
+/// significant bytes (in decreasing order), encoding using BASE32 into 7 ASCII characters, and then
 /// taking the first 6.
 ///
 /// The header `xx/xx/xx` ensures that each directory does not have more than 1024 immediate
@@ -296,7 +299,9 @@ fn extend_hashed_path<'a, H: FnOnce(&'a [u8]) -> u64>(
 
     let mut buffer = [0; 8];
     let input = &sub_id_hash[..4];
-    let output = &mut buffer[0..encoding.encode_len(input.len())];
+    // FIXME: 8 with BASE32, 7 with BASE32_NOPAD; const-ify this later once we
+    // no longer need BASE32
+    let output = &mut buffer[..encoding.encode_len(input.len())];
     let res = encoding.encode_mut_str(input, output);
     let sub_id_encoded: String = encoding.encode(sub_id_bytes);
     path_buf.extend([

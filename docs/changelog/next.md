@@ -16,21 +16,11 @@ Changes since `v0.6.1`.
 - SQLite is now only bundled when the Cargo feature `bundled-sqlite` is enabled.
   This feature is enabled by default, but this may cause breakage with builds using `--no-default-features`.
   Disabling this feature will cause the compiled binary to link to your SQLite system library instead.
-- In a future version, Autobib will migrate to a new attachment folder format.
-  The new folder format is not compatibile with Autobib versions `< 0.7.0`.
-  - This version is able to read both the legacy format and the new format.
-  - You can migrate early by running `autobib gc attachments --migrate`.
-    Note that attachments will no longer be readable by old version of Autobib.
-- Aliases can no longer contain control characters (such as tab `\t` or newline `\n`).
-  - Existing aliases containing control characters can still be accessed and renamed.
 - `autobib find --mode canonical-id` has been renamed to `autobib find --mode records`.
   The CLI still accepts the old name as an alias, but this will be removed in the future.
 - `autobib get` has been reworked.
   Output is no longer sorted and deduplicated: instead, one record is printed for each identifier.
   This also means that the `--out` and `--append` options have been removed, and warnings are no longer printed for duplicate records.
-  There are also new features:
-  - Added `--template` option, to format records with an arbitrary template instead of as BibTeX.
-  - Added the ability to read from stdin.
   The previous behaviour can be reproduced using `autobib source`.
 - `autobib util list` has been renamed to `autobib list`.
   - Added optional glob pattern argument to filter identifiers.
@@ -38,6 +28,14 @@ Changes since `v0.6.1`.
 - The configuration value `preferred_providers` has been replaced by `preferred_keys`.
   - `preferred_keys` is more general and can contain a list of regexes to match keys
   - Migrate `preferred_providers` to `preferred_keys` by replacing each `provider` with the corresponding regex `^provider:.*`
+
+## Deprecations and future breaking changes
+
+- In a future version, Autobib will migrate to a new attachment folder format.
+  The new folder format is not compatible with Autobib versions `< 0.7.0`.
+  - This version is able to read both the legacy format and the new format.
+  - You can migrate early by running `autobib clean attachments --migrate`.
+    Note that attachments will no longer be readable by old version of Autobib.
 
 ## New features
 
@@ -52,6 +50,7 @@ Changes since `v0.6.1`.
 - Added `autobib info -r preferred` to print the preferred identifier associated with a record.
 - Added `autobib source --json`, which outputs a JSON dictionary mapping citation keys to record data.
 - Added `autobib backup` to backup the record SQL database to a separate file.
+- Added `autobib get --template`, to format records with an arbitrary template instead of as BibTeX.
 
 ## Changes
 
@@ -59,3 +58,4 @@ Changes since `v0.6.1`.
   - `replace` relocates attachment directories to the new location
   - `delete` warns on orphaned attachment directories
   - This behaviour can be disabled with the `-A` or `--ignore-attachments` option
+- `autobib get` now also reads keys from standard input, one per line (with whitespace stripped)

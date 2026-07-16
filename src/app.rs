@@ -89,8 +89,10 @@ fn handle_deprecation(cmd: Command) -> Command {
                 }
             }
             UtilCommand::Optimize => {
-                warn!("`autobib util optimize` is deprecated; use `autobib gc database --compact`");
-                Command::Gc {
+                warn!(
+                    "`autobib util optimize` is deprecated; use `autobib clean database --compact`"
+                );
+                Command::Clean {
                     gc_command: GcCommand::Database {
                         compact: true,
                         evict: None,
@@ -99,8 +101,8 @@ fn handle_deprecation(cmd: Command) -> Command {
                 }
             }
             UtilCommand::Evict { max_age } => {
-                warn!("`autobib util evict` is deprecated; use `autobib gc database`");
-                Command::Gc {
+                warn!("`autobib util evict` is deprecated; use `autobib clean database`");
+                Command::Clean {
                     gc_command: GcCommand::Database {
                         compact: false,
                         evict: max_age,
@@ -331,7 +333,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             identifiers,
             hard,
             delete_aliases,
-            ignore_attachments,
+            no_attachment_warning,
         } => {
             fn do_delete<F>(
                 identifiers: Vec<RecordId>,
@@ -356,7 +358,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             }
 
             let cfg = config::load(&config_path, missing_ok)?;
-            let attachment_root = if ignore_attachments {
+            let attachment_root = if no_attachment_warning {
                 None
             } else {
                 get_existing_attachment_root(&data_dir, cli.attachments_dir)?
@@ -397,14 +399,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             let no_non_interactive_cmd = nl.is_identity() && edit_cmd.is_identity();
 
             for key in identifiers {
-                let (
-                    record,
-                    // Record {
-                    //     key,
-                    //     row: RecordRow { data, .. },
-                    // },
-                    state,
-                ) = get_record_row(&mut record_db, key, client, &cfg)?
+                let (record, state) = get_record_row(&mut record_db, key, client, &cfg)?
                     .exists_or_commit_null("Cannot edit")?;
 
                 match (cli.no_interactive, no_non_interactive_cmd) {
@@ -525,7 +520,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 }
             }
         }
-        Command::Gc { gc_command } => match gc_command {
+        Command::Clean { gc_command } => match gc_command {
             cli::GcCommand::Attachments {
                 delete_empty: empty,
                 migrate,
@@ -1377,10 +1372,12 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 bail!("`autobib util list` is deprecated; use `autobib list` instead");
             }
             UtilCommand::Optimize => {
-                bail!("`autobib util optimize` is deprecated; use `autobib gc database --compact`");
+                bail!(
+                    "`autobib util optimize` is deprecated; use `autobib clean database --compact`"
+                );
             }
             UtilCommand::Evict { .. } => {
-                bail!("`autobib util evict` is deprecated; use `autobib gc database`");
+                bail!("`autobib util evict` is deprecated; use `autobib clean database`");
             }
         },
     };

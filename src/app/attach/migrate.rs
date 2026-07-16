@@ -1,9 +1,10 @@
 use std::{
     fs, io,
     path::{Path, PathBuf},
+    sync::LazyLock,
 };
 
-use data_encoding::BASE32;
+use data_encoding::{Encoding, Specification};
 use walkdir::{DirEntry, WalkDir};
 
 use crate::{
@@ -13,6 +14,14 @@ use crate::{
         AttachmentFormat, AttachmentRoot, extend_attachment_path_v0, extend_attachment_path_v1,
     },
 };
+
+// Like BASE32_NOPAD, but permits padding strings when decoding
+static BASE32_PERMISSIVE: LazyLock<Encoding> = LazyLock::new(|| {
+    let mut spec = Specification::new();
+    spec.symbols.push_str("ABCDEFGHIJKLMNOPQRSTUVWXYZ234567");
+    spec.ignore.push('=');
+    spec.encoding().unwrap()
+});
 
 /// Migrate attachment directory from v0 to v1
 pub fn migrate_attachments(at_root: &mut AttachmentRoot<true>) -> Result<(), anyhow::Error> {
@@ -31,7 +40,7 @@ pub fn migrate_attachments(at_root: &mut AttachmentRoot<true>) -> Result<(), any
         Ok(())
     } else {
         anyhow::bail!(
-            "Attachment migration is incomplete. Resolve the above conflicts and re-run `autobib gc attachments --migrate`"
+            "Attachment migration is incomplete. Resolve the above conflicts and re-run `autobib clean attachments --migrate`"
         );
     }
 }
@@ -103,7 +112,7 @@ fn is_attachment_walk_entry(entry: &DirEntry) -> bool {
         1 => entry
             .file_name()
             .to_str()
-            .is_some_and(|name| !name.is_empty() && name.bytes().all(|b| b.is_ascii_lowercase())),
+            .is_some_and(|s| !s.is_empty() && s.bytes().all(|b| b.is_ascii_alphabetic())),
         2..=4 => entry.file_name().to_str().is_some_and(|name| {
             matches!(
                 name.as_bytes(),
@@ -117,7 +126,7 @@ fn is_attachment_walk_entry(entry: &DirEntry) -> bool {
 
 fn decode_attachment_dir_id(provider: &str, source: &Path) -> Option<RemoteId> {
     if let Some(encoded) = source.file_name().and_then(|name| name.to_str())
-        && let Ok(sub_id_bytes) = BASE32.decode(encoded.as_bytes())
+        && let Ok(sub_id_bytes) = BASE32_PERMISSIVE.decode(encoded.as_bytes())
         && let Ok(sub_id) = std::str::from_utf8(&sub_id_bytes)
         && let Ok(id) = RemoteId::from_parts(provider, sub_id)
     {
@@ -181,7 +190,7 @@ fn migrate_attachment_dir(source: &Path, target: &Path) -> Result<bool, anyhow::
                 "Target directory already exists.\n\
                  source: {}\n\
                  target: {}\n\
-                 Merge, remove, or rename one of these directories, then rerun `autobib gc attachemnts --migrate`.",
+                 Merge, remove, or rename one of these directories, then rerun `autobib clean attachments --migrate`.",
                 source.display(),
                 target.display()
             );

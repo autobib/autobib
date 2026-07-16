@@ -90,7 +90,7 @@ where
         RecordIdState::NullRemoteId(mapped_key, state) => {
             state.commit()?;
             error!("Cannot delete null record data: {mapped_key}");
-            suggest!("Delete null records using `autobib util evict`.");
+            suggest!("Delete null records using `autobib clean database --evict`.");
         }
         RecordIdState::Unknown(unknown) => {
             let maybe_normalized = unknown.combine_and_commit()?;
