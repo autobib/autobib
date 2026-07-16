@@ -78,6 +78,7 @@ where
         }
         RecordIdState::Deleted(record, state) => {
             deleted_callback(record.key, state)?;
+            return Ok(Some(record.row.canonical));
         }
         RecordIdState::Void(
             Record {
