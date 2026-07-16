@@ -51,7 +51,11 @@ impl AttachmentFormat {
 #[derive(Debug)]
 pub struct AttachmentRootLock<const EXCLUSIVE: bool> {
     root: PathBuf,
-    fmt: File,
+    // if opened in read-only mode, the format may file may not exist
+    // in which case this is `None`
+    // FIXME: when we remove the format spec, this should just be a `File`
+    // and non-existence of the `File` means the attachment directory is empty
+    fmt: Option<File>,
 }
 
 impl<const EXCLUSIVE: bool> AttachmentRootLock<EXCLUSIVE> {
@@ -62,30 +66,58 @@ impl<const EXCLUSIVE: bool> AttachmentRootLock<EXCLUSIVE> {
     fn format(&mut self) -> Result<AttachmentFormat, anyhow::Error> {
         use std::io::Read as _;
         let mut fmt_string = String::new();
-        self.fmt.read_to_string(&mut fmt_string)?;
-        match &fmt_string[..] {
-            "" => Ok(AttachmentFormat::V0),
-            "v1-migrating" => Ok(AttachmentFormat::V1Migrating),
-            "v1" => Ok(AttachmentFormat::V1),
-            unknown => anyhow::bail!(
-                "Attachment directory is in unknown format '{unknown}'. The attachment directory may have been modified by a future version of Autobib."
-            ),
+        if let Some(ref mut f) = self.fmt {
+            f.read_to_string(&mut fmt_string)?;
+            match &fmt_string[..] {
+                "" => Ok(AttachmentFormat::V0),
+                "v1-migrating" => Ok(AttachmentFormat::V1Migrating),
+                "v1" => Ok(AttachmentFormat::V1),
+                unknown => anyhow::bail!(
+                    "Attachment directory is in unknown format '{unknown}'. The attachment directory may have been modified by a future version of Autobib."
+                ),
+            }
+        } else {
+            Ok(AttachmentFormat::V0)
         }
     }
 
     /// Acquire a lock to read or write to the attachment directory.
-    fn acquire(root: PathBuf) -> Result<Self, io::Error> {
-        let fmt = std::fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(root.join(Self::fmt_file()))?;
-        if EXCLUSIVE {
-            fmt.lock()?;
+    fn acquire(root: PathBuf, read_only: bool) -> Result<Self, io::Error> {
+        if read_only && EXCLUSIVE {
+            panic!("Tried to open attachment directory with exclusive lock in read-only mode!")
+        }
+
+        let fmt = if read_only {
+            match std::fs::OpenOptions::new()
+                .read(true)
+                .open(root.join(Self::fmt_file()))
+            {
+                Ok(f) => Some(f),
+                Err(err) if err.kind() == io::ErrorKind::NotFound => {
+                    // FIXME: maybe this warning is worth including; think about it
+                    // warn!("Failed to acquire shared attachment lock in `--read-only` mode since the attachment directory was never opened with write permission.\n      Reads may be invalid if the attachment directory is concurrently modified.");
+                    None
+                }
+                Err(err) => return Err(err),
+            }
         } else {
-            fmt.lock_shared()?;
+            Some(
+                std::fs::OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .create(true)
+                    .truncate(false)
+                    .open(root.join(Self::fmt_file()))?,
+            )
         };
+
+        if let Some(ref f) = fmt {
+            if EXCLUSIVE {
+                f.lock()?;
+            } else {
+                f.lock_shared()?;
+            };
+        }
 
         Ok(Self { root, fmt })
     }
@@ -99,7 +131,9 @@ impl AttachmentRootLock<false> {
     /// Upgrade to an exclusive lock
     fn upgrade(self) -> Result<AttachmentRootLock<true>, io::Error> {
         let Self { root, fmt } = self;
-        fmt.lock()?;
+        fmt.as_ref()
+            .expect("Tried to upgrade a read-only lock!")
+            .lock()?;
         Ok(AttachmentRootLock { root, fmt })
     }
 }
@@ -107,9 +141,13 @@ impl AttachmentRootLock<false> {
 impl AttachmentRootLock<true> {
     fn set_format(&mut self, new: AttachmentFormat) -> Result<(), io::Error> {
         info!("Setting attachment root format to '{}", new.as_fmt_str());
-        self.fmt.set_len(0)?;
-        self.fmt.rewind()?;
-        self.fmt.write_all(new.as_fmt_str().as_bytes())?;
+        let f = self
+            .fmt
+            .as_mut()
+            .expect("Tried to change the format of a read-only attachment directory!");
+        f.set_len(0)?;
+        f.rewind()?;
+        f.write_all(new.as_fmt_str().as_bytes())?;
         Ok(())
     }
 }
@@ -139,27 +177,27 @@ pub enum AttachmentRenameOutcome {
 
 impl<const EXCLUSIVE: bool> AttachmentRoot<EXCLUSIVE> {
     /// Acquire a lock (if necessary) and resolve the attachment format.
-    pub fn open_or_create_unchecked(root: PathBuf) -> Result<Self, anyhow::Error> {
-        fs::create_dir_all(&root)?;
-        let mut lock = AttachmentRootLock::acquire(root)?;
+    pub fn open_or_create_unchecked(root: PathBuf, read_only: bool) -> Result<Self, anyhow::Error> {
+        if !read_only {
+            fs::create_dir_all(&root)?;
+        }
+        let mut lock = AttachmentRootLock::acquire(root, read_only)?;
         let format = lock.format()?;
         Ok(Self { lock, format })
     }
-}
 
-impl AttachmentRoot<false> {
     /// Open an existing attachment root.
-    pub fn open(root: PathBuf) -> Result<Option<Self>, anyhow::Error> {
+    pub fn open(root: PathBuf, read_only: bool) -> Result<Option<Self>, anyhow::Error> {
         Ok(if root.is_dir() {
-            Some(Self::open_or_create(root)?)
+            Some(Self::open_or_create(root, read_only)?)
         } else {
             None
         })
     }
 
     /// Acquire a lock (if necessary) and resolve the attachment format.
-    pub fn open_or_create(root: PathBuf) -> Result<Self, anyhow::Error> {
-        let at_root = Self::open_or_create_unchecked(root)?;
+    pub fn open_or_create(root: PathBuf, read_only: bool) -> Result<Self, anyhow::Error> {
+        let at_root = Self::open_or_create_unchecked(root, read_only)?;
         if at_root.format == AttachmentFormat::V1Migrating {
             anyhow::bail!(
                 "Attachment directory is currently being migrated. Resume with `autobib clean attachments --migrate` in order to read and write to the directory."

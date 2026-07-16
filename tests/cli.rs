@@ -1832,7 +1832,8 @@ fn read_only() -> Result<()> {
     cmd.args(["--read-only", "path", "zbl:1337.28015"]);
     cmd.assert().success();
 
-    s.attachment(AUTOBIB_LOCKFILE).assert(predicate::eq(""));
+    s.attachment(AUTOBIB_LOCKFILE)
+        .assert(predicate::path::missing());
 
     let mut cmd = s.cmd()?;
     cmd.args(["path", "zbl:1337.28015"]);
