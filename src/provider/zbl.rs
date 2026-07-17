@@ -7,7 +7,7 @@ use super::{BodyBytes, Client, Ctx, ProviderError, RemoteId, StatusCode, Validat
 
 #[derive(Deserialize)]
 pub struct Response {
-    pub result: EntryIdOnly,
+    pub result: Option<EntryIdOnly>,
 }
 
 #[derive(Deserialize)]
@@ -39,9 +39,12 @@ pub fn get_canonical<C: Client>(id: &str, ctx: Ctx<C>) -> Result<Option<RemoteId
     };
 
     match body.read_json::<Response>() {
-        Ok(response) => Ok(Some(RemoteId::from_parts(
+        Ok(Response { result: None }) => Ok(None),
+        Ok(Response {
+            result: Some(entry_id_only),
+        }) => Ok(Some(RemoteId::from_parts(
             "zbmath",
-            &response.result.id.to_string(),
+            &entry_id_only.id.to_string(),
         )?)),
         Err(err) => Err(ProviderError::UnexpectedResponseFormat(err.to_string())),
     }
