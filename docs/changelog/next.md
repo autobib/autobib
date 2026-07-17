@@ -59,3 +59,7 @@ Changes since `v0.6.1`.
   - `delete` warns on orphaned attachment directories
   - This behaviour can be disabled with the `-A` or `--ignore-attachments` option
 - `autobib get` now also reads keys from standard input, one per line (with whitespace stripped)
+
+## Fixes
+
+- Adjust to new zbMath API format for null records.
