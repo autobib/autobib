@@ -174,7 +174,7 @@ impl TryFrom<Entry> for MutableEntryData {
 
 #[derive(Deserialize)]
 pub struct Response {
-    pub result: Entry,
+    pub result: Option<Entry>,
     // pub status: Status,
 }
 

@@ -44,7 +44,10 @@ pub fn get_record<C: Client>(
     };
 
     match body.read_json::<Response>() {
-        Ok(response) => Ok(Some(response.result.try_into()?)),
+        Ok(Response { result: None }) => Ok(None),
+        Ok(Response {
+            result: Some(entry),
+        }) => Ok(Some(entry.try_into()?)),
         Err(err) => Err(ProviderError::UnexpectedResponseFormat(err.to_string())),
     }
 }
