@@ -31,7 +31,7 @@ pub mod typ;
 
 use std::{ffi::OsStr, path::Path, str::FromStr};
 
-use crate::{RecordId, error::Error};
+use crate::{Key, error::Error};
 
 /// The file type of a source from which citation keys can be read.
 #[derive(clap::ValueEnum, Debug, Clone, Copy)]
@@ -83,13 +83,13 @@ struct FilterExtend<'a, E, F> {
     f: F,
 }
 
-impl<E: Extend<RecordId>, F: FnMut(&RecordId) -> bool> Extend<RecordId> for FilterExtend<'_, E, F> {
-    fn extend<T: IntoIterator<Item = RecordId>>(&mut self, iter: T) {
+impl<E: Extend<Key>, F: FnMut(&Key) -> bool> Extend<Key> for FilterExtend<'_, E, F> {
+    fn extend<T: IntoIterator<Item = Key>>(&mut self, iter: T) {
         self.container.extend(iter.into_iter().filter(&mut self.f));
     }
 }
 
-pub fn get_citekeys_filter<T: Extend<RecordId>, F: FnMut(&RecordId) -> bool>(
+pub fn get_citekeys_filter<T: Extend<Key>, F: FnMut(&Key) -> bool>(
     ft: SourceFileType,
     buffer: &[u8],
     container: &mut T,
@@ -111,6 +111,6 @@ pub fn get_citekeys_filter<T: Extend<RecordId>, F: FnMut(&RecordId) -> bool>(
 /// The byte buffer is assumed to have file type specified by `ft`.
 /// The citekeys are inserted into the container using the container's [`Extend`] implementation.
 /// The order is is not necessarily the same as the order of the keys in the buffer.
-pub fn get_citekeys<T: Extend<RecordId>>(ft: SourceFileType, buffer: &[u8], container: &mut T) {
+pub fn get_citekeys<T: Extend<Key>>(ft: SourceFileType, buffer: &[u8], container: &mut T) {
     get_citekeys_filter(ft, buffer, container, |_| true);
 }

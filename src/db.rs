@@ -28,11 +28,11 @@ use nucleo_picker::{Injector, Render};
 use rusqlite::{Connection, DropBehavior, OpenFlags, OptionalExtension};
 
 use self::{
-    state::{DatabaseRemoteIdResponse, DatabaseResponse, Record},
+    state::{DatabaseIdResponse, DatabaseResponse, Record},
     validate::{DatabaseFault, DatabaseValidator},
 };
 use crate::{
-    Alias, RecordId, RemoteId,
+    Alias, Identifier, Key,
     config::AliasTransform,
     entry::RawEntryData,
     error::DatabaseError,
@@ -43,7 +43,7 @@ pub use snapshot::{Snapshot, SnapshotMapErr};
 
 /// The current database version expected by the application.
 pub const fn user_version() -> i32 {
-    3
+    4
 }
 
 /// The unique application id used to determine if the opened database matches one used by this
@@ -58,34 +58,33 @@ pub const fn application_id() -> i32 {
 /// implicit `rowid` column in the table schema defined in [`schema::null_records`]
 type RowId = i64;
 
-/// Determine the [`RowId`] in the `Records` table corresponding to a [`Identifier`].
-fn get_row_id<K: Identifier>(tx: &Tx, record_id: &K) -> Result<Option<RowId>, rusqlite::Error> {
-    tx.prepare_cached("SELECT record_key FROM Identifiers WHERE name = ?1")?
-        .query_row([record_id.name()], |row| row.get("record_key"))
+/// Determine the [`RowId`] in the `Records` table corresponding to an [`Identifier`].
+fn get_row_id<K: AsKey>(tx: &Tx, record_id: &K) -> Result<Option<RowId>, rusqlite::Error> {
+    tx.prepare_cached("SELECT record_key FROM Keys WHERE name = ?1")?
+        .query_row([record_id.as_key()], |row| row.get("record_key"))
         .optional()
 }
 
-/// Determine the [`RowId`] in the `NullRecords` table corresponding to a [`Identifier`].
-pub fn get_null_row_id(tx: &Tx, remote_id: &RemoteId) -> Result<Option<RowId>, rusqlite::Error> {
+/// Determine the [`RowId`] in the `NullRecords` table corresponding to an [`Identifier`].
+pub fn get_null_row_id(tx: &Tx, id: &Identifier) -> Result<Option<RowId>, rusqlite::Error> {
     tx.prepare_cached("SELECT rowid FROM NullRecords WHERE record_id = ?1")?
-        .query_row([remote_id.name()], |row| row.get("rowid"))
+        .query_row([id.as_key()], |row| row.get("rowid"))
         .optional()
 }
 
-/// This trait represents types which can be stored as a row in the SQL database underlying a
-/// [`RecordDatabase`].
-pub trait Identifier: private::Sealed {
+/// This trait represents types which can be stored as a row in the Keys table
+pub trait AsKey: private::Sealed {
     /// The string to use as the key for a row.
-    fn name(&self) -> &str;
+    fn as_key(&self) -> &str;
 }
 
 mod private {
-    /// Prevent implemntation of [`Identifier`](super::Identifier) by foreign types.
+    /// Prevent implemntation of [`AsKey`](super::AsKey) by foreign types.
     pub trait Sealed {}
 
     impl Sealed for crate::Alias {}
-    impl Sealed for crate::RecordId {}
-    impl<S: AsRef<str>> Sealed for crate::RemoteId<S> {}
+    impl Sealed for crate::Key {}
+    impl<S: AsRef<str>> Sealed for crate::Identifier<S> {}
     impl<T> Sealed for crate::MappedKey<T> {}
 }
 
@@ -96,13 +95,13 @@ mod private {
 /// 1. `Records`. This is the primary table used to store records. The integer primary key
 ///    `key` is used as the internal unambiguous reference for each record and is used for
 ///    de-duplication. The table schema is documented in [`schema::records`].
-/// 2. `Identifiers`. This is the table used to store lookup keys for records. The corresponding
+/// 2. `Keys`. This is the table used to store lookup keys for records. The corresponding
 ///    rows are automatically deleted when the record is deleted. The table schema is
-///    documented in [`schema::identifiers`].
+///    documented in [`schema::keys`].
 /// 3. `NullRecords`. This is a cache table used to keep track of records which are known to
 ///    not exist. The table schema is documented in [`schema::null_records`].
 ///
-/// For a [`RemoteId`], there are two variants depending on the value returned by [`get_remote_response`](crate::provider::get_remote_response):
+/// For an [`Identifier`], there are two variants depending on the value returned by [`get_remote_response`](crate::provider::get_remote_response):
 ///
 /// - Canonical: if the return type is
 ///   [`RemoteResponse::Data`](crate::provider::RemoteResponse::Data).
@@ -111,10 +110,10 @@ mod private {
 ///
 /// This distinction is not currently enforced by types, but it may be in the future.
 ///
-/// The two identifier types, [`Alias`] and [`RemoteId`], with the "Canonical" and "Reference"
-/// for [`RemoteId`], are stored according to the following table.
+/// The two identifier types, [`Alias`] and [`Identifier`], with the "Canonical" and "Reference"
+/// for [`Identifier`], are stored according to the following table.
 ///
-/// |            | Stored in Records | Stored in NullRecords | Stored in Identifiers |
+/// |            | Stored in Records | Stored in NullRecords | Stored in Keys |
 /// |------------|-------------------|-----------------------|------------------------|
 /// |CanonicalId |        YES        |          YES          |          YES           |
 /// |ReferenceId |        NO         |          YES          |          YES           |
@@ -230,7 +229,7 @@ impl RecordDatabase {
 
                 debug!("Initializing database tables");
                 tx.execute(schema::records(), ())?;
-                tx.execute(schema::identifiers(), ())?;
+                tx.execute(schema::keys(), ())?;
                 tx.execute(schema::null_records(), ())?;
 
                 debug!("Initializing indices");
@@ -304,23 +303,23 @@ impl RecordDatabase {
         self.conn.transaction().map(Into::into)
     }
 
-    /// Get the [`DatabaseResponse`] associated with a [`RecordId`].
+    /// Get the [`DatabaseResponse`] associated with a [`Key`].
     #[inline]
-    pub fn state_from_record_id<A: AliasTransform>(
+    pub fn state_from_key<A: AliasTransform>(
         &mut self,
-        record_id: RecordId,
+        record_id: Key,
         alias_transform: &A,
     ) -> Result<DatabaseResponse<'_>, rusqlite::Error> {
         DatabaseResponse::determine(self.transaction()?, record_id, alias_transform)
     }
 
-    /// Get the [`DatabaseRemoteIdResponse`] associated with a [`RemoteId`].
+    /// Get the [`DatabaseIdResponse`] associated with an [`Identifier`].
     #[inline]
-    pub fn state_from_remote_id(
+    pub fn state_from_id(
         &mut self,
-        remote_id: &RemoteId,
-    ) -> Result<DatabaseRemoteIdResponse<'_>, rusqlite::Error> {
-        DatabaseRemoteIdResponse::determine(self.transaction()?, remote_id)
+        id: &Identifier,
+    ) -> Result<DatabaseIdResponse<'_>, rusqlite::Error> {
+        DatabaseIdResponse::determine(self.transaction()?, id)
     }
 
     /// Optimize the database.
@@ -378,12 +377,12 @@ impl RecordDatabase {
     fn fix_fault_tx(tx: &Tx, fault: &DatabaseFault) -> Result<bool, rusqlite::Error> {
         match fault {
             DatabaseFault::RowHasInvalidCanonicalId(_, _) => Ok(false),
-            DatabaseFault::NullIdentifiers(_) => {
+            DatabaseFault::NullKeys(_) => {
                 let mut invalid_keys: Vec<String> = Vec::new();
                 {
                     let mut stmt = tx.prepare(
-                                        "SELECT name FROM Identifiers WHERE record_key NOT IN (SELECT key FROM Records)",
-                                    )?;
+                        "SELECT name FROM Keys WHERE record_key NOT IN (SELECT key FROM Records)",
+                    )?;
                     let mut rows = stmt.query(())?;
                     while let Some(row) = rows.next()? {
                         invalid_keys.push(row.get("name")?);
@@ -394,10 +393,8 @@ impl RecordDatabase {
                 for name in invalid_keys {
                     eprintln!("  {name}");
                 }
-                tx.prepare(
-                    "DELETE FROM Identifiers WHERE record_key NOT IN (SELECT key FROM Records)",
-                )?
-                .execute(())?;
+                tx.prepare("DELETE FROM Keys WHERE record_key NOT IN (SELECT key FROM Records)")?
+                    .execute(())?;
                 Ok(true)
             }
             _ => Ok(false),
@@ -458,7 +455,7 @@ impl RecordDatabase {
         debug!("Mapping over all active database records.");
         let mut retriever = self
             .conn
-            .prepare("SELECT record_id, modified, data, variant FROM Records WHERE key IN (SELECT record_key FROM Identifiers) AND variant = 0")?;
+            .prepare("SELECT record_id, modified, data, variant FROM Records WHERE key IN (SELECT record_key FROM Keys) AND variant = 0")?;
 
         for res in retriever.query_map([], |row| Ok(Record::from_row_unchecked(row)))? {
             f(res?).map_err(SnapshotMapErr::CallbackFailed)?;
@@ -481,7 +478,7 @@ impl RecordDatabase {
         debug!("Mapping over all active database records with canonical ID matching '{glob}'.");
         let mut retriever = self
             .conn
-            .prepare("SELECT record_id, modified, data, variant FROM Records WHERE key IN (SELECT record_key FROM Identifiers) AND variant = 0 AND record_id GLOB ?1")?;
+            .prepare("SELECT record_id, modified, data, variant FROM Records WHERE key IN (SELECT record_key FROM Keys) AND variant = 0 AND record_id GLOB ?1")?;
 
         for res in retriever.query_map([glob], |row| Ok(Record::from_row_unchecked(row)))? {
             f(res?).map_err(SnapshotMapErr::CallbackFailed)?;
@@ -504,7 +501,7 @@ impl RecordDatabase {
         debug!("Mapping over all active database records with canonical ID matching '{glob}'.");
         let mut retriever = self
             .conn
-            .prepare("SELECT name, record_id, modified, data, variant FROM Records INNER JOIN Identifiers ON Identifiers.record_key = Records.key WHERE Records.variant =0 AND Identifiers.name GLOB ?1")?;
+            .prepare("SELECT name, record_id, modified, data, variant FROM Records INNER JOIN Keys ON Keys.record_key = Records.key WHERE Records.variant =0 AND Keys.name GLOB ?1")?;
 
         for res in retriever.query_map([glob], |row| {
             let key = row.get_unwrap("name");
@@ -525,8 +522,8 @@ impl RecordDatabase {
     ) -> Result<RenameAliasResult, rusqlite::Error> {
         let mut updater = self
             .conn
-            .prepare("UPDATE Identifiers SET name = ?1 WHERE name = ?2")?;
-        match flatten_constraint_violation(updater.execute((new.name(), old.as_ref())))? {
+            .prepare("UPDATE Keys SET name = ?1 WHERE name = ?2")?;
+        match flatten_constraint_violation(updater.execute((new.as_key(), old.as_ref())))? {
             Constraint::Satisfied(_) => Ok(RenameAliasResult::Renamed),
             Constraint::Violated => Ok(RenameAliasResult::TargetExists),
         }
@@ -537,9 +534,7 @@ impl RecordDatabase {
         &mut self,
         alias: &LegacyAlias,
     ) -> Result<DeleteAliasResult, rusqlite::Error> {
-        let mut deleter = self
-            .conn
-            .prepare("DELETE FROM Identifiers WHERE name = ?1")?;
+        let mut deleter = self.conn.prepare("DELETE FROM Keys WHERE name = ?1")?;
         if deleter.execute((alias.as_ref(),))? == 0 {
             Ok(DeleteAliasResult::Missing)
         } else {

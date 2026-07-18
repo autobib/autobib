@@ -18,8 +18,8 @@ use ureq::http::StatusCode;
 
 // re-imports exposed to provider implementations
 use crate::{
-    MappedKey, RemoteId,
-    db::Identifier,
+    Identifier, MappedKey,
+    db::AsKey,
     entry::{AsEntryData, EntryData, EntryType, MutableEntryData},
     error::{ProviderError, RecordDataError},
     http::{BodyBytes, Client},
@@ -43,8 +43,8 @@ impl<'a, C> Ctx<'a, C> {
 /// A resolver, which converts a `sub_id` into [`MutableEntryData`].
 type Resolver<C> = fn(&str, Ctx<C>) -> Result<Option<MutableEntryData>, ProviderError>;
 
-/// A referrer, which converts a `sub_id` into [`RemoteId`].
-type Referrer<C> = fn(&str, Ctx<C>) -> Result<Option<RemoteId>, ProviderError>;
+/// A referrer, which converts a `sub_id` into [`Identifier`].
+type Referrer<C> = fn(&str, Ctx<C>) -> Result<Option<Identifier>, ProviderError>;
 
 /// A validator, which checks that a `sub_id` is valid.
 type Validator = fn(&str) -> ValidationOutcome;
@@ -58,7 +58,7 @@ enum Provider<C: Client> {
 pub const REMOTE_PROVIDERS: [&str; 8] =
     ["arxiv", "doi", "isbn", "jfm", "mr", "ol", "zbmath", "zbl"];
 
-/// Map the `provider` part of a [`RemoteId`] to a [`Resolver`] or [`Referrer`].
+/// Map the `provider` part of an [`Identifier`] to a [`Resolver`] or [`Referrer`].
 #[inline]
 fn lookup_provider<C: Client>(provider: &str) -> Provider<C> {
     match provider {
@@ -77,7 +77,7 @@ fn lookup_provider<C: Client>(provider: &str) -> Provider<C> {
     }
 }
 
-/// Validate a [`RemoteId`].
+/// Validate an [`Identifier`].
 #[inline]
 fn lookup_validator(provider: &str) -> Option<Validator> {
     match provider {
@@ -119,7 +119,7 @@ pub enum ValidationOutcomeExtended {
     InvalidSubId,
 }
 
-pub enum RemoteIdCandidate {
+pub enum IdCandidate {
     /// The optimal identifier found was canonical.
     OptimalCanonical(MappedKey),
     /// The optimal identifier found was a reference identifier. This also includes the optimal
@@ -132,8 +132,8 @@ pub enum RemoteIdCandidate {
 pub fn determine_key_from_data<D: AsEntryData>(
     data: D,
     config: &crate::config::Config,
-) -> RemoteIdCandidate {
-    determine_remote_id_candidates(data, |id| config.score_key(id.name()), None, None)
+) -> IdCandidate {
+    determine_id_candidates(data, |id| config.score_key(id.as_key()), None, None)
 }
 
 /// Determine candidates for valid remote identifiers from the provided bibtex data.
@@ -142,12 +142,12 @@ pub fn determine_key_from_data<D: AsEntryData>(
 ///
 /// - If a canonical identifier could be found and it received the highest score, it is returned alone.
 /// - If a reference identifier had the highest score, the canonical identifier with the highest score (if any) is returned as well.
-pub fn determine_remote_id_candidates<K: Ord, D: AsEntryData, F: FnMut(&RemoteId) -> K>(
+pub fn determine_id_candidates<K: Ord, D: AsEntryData, F: FnMut(&Identifier) -> K>(
     container: D,
     mut score: F,
     candidate_canonical: Option<MappedKey>,
     candidate_reference: Option<MappedKey>,
-) -> RemoteIdCandidate {
+) -> IdCandidate {
     /// Convert a bibtex field name whose value may contain an identifier for the returned provider.
     #[inline]
     fn field_name_to_provider(field_name: &str) -> Option<&'static str> {
@@ -163,7 +163,7 @@ pub fn determine_remote_id_candidates<K: Ord, D: AsEntryData, F: FnMut(&RemoteId
 
     /// A closure to compare the new result with the existing optimal, updating if it is better.
     #[inline]
-    fn update_in_place<K: Ord, F: FnOnce(&RemoteId) -> K>(
+    fn update_in_place<K: Ord, F: FnOnce(&Identifier) -> K>(
         provider: &str,
         sub_id: &str,
         score: F,
@@ -230,14 +230,14 @@ pub fn determine_remote_id_candidates<K: Ord, D: AsEntryData, F: FnMut(&RemoteId
     match (bc, br) {
         (Some((c, score_c)), Some((r, score_r))) => {
             if score_c >= score_r {
-                RemoteIdCandidate::OptimalCanonical(c)
+                IdCandidate::OptimalCanonical(c)
             } else {
-                RemoteIdCandidate::OptimalReference(r, Some(c))
+                IdCandidate::OptimalReference(r, Some(c))
             }
         }
-        (Some((c, _)), None) => RemoteIdCandidate::OptimalCanonical(c),
-        (None, Some((r, _))) => RemoteIdCandidate::OptimalReference(r, None),
-        (None, None) => RemoteIdCandidate::None,
+        (Some((c, _)), None) => IdCandidate::OptimalCanonical(c),
+        (None, Some((r, _))) => IdCandidate::OptimalReference(r, None),
+        (None, None) => IdCandidate::None,
     }
 }
 
@@ -254,13 +254,13 @@ pub fn validate_provider_sub_id(provider: &str, sub_id: &str) -> ValidationOutco
     }
 }
 
-/// Given a sub-id, determine valid [`RemoteId`]s with the given `sub_id` which are also valid.
-pub fn suggest_valid_remote_identifiers<E, F>(sub_id: &str, mut cb: F) -> Result<(), E>
+/// Given a sub-id, determine valid [`Identifier`]s with the given `sub_id` which are also valid.
+pub fn suggest_valid_ids<E, F>(sub_id: &str, mut cb: F) -> Result<(), E>
 where
-    F: FnMut(RemoteId) -> Result<(), E>,
+    F: FnMut(Identifier) -> Result<(), E>,
 {
     for provider in REMOTE_PROVIDERS {
-        if let Ok(new) = RemoteId::from_parts(provider, sub_id) {
+        if let Ok(new) = Identifier::from_parts(provider, sub_id) {
             cb(new)?;
         }
     }
@@ -305,26 +305,26 @@ pub fn is_reference(provider: &str) -> bool {
 pub enum RemoteResponse {
     /// The provider was a [`Resolver`] and returned [`MutableEntryData`].
     Data(MutableEntryData),
-    /// The provider was a [`Referrer`] and returned a new [`RemoteId`].
-    Reference(RemoteId),
+    /// The provider was a [`Referrer`] and returned a new [`Identifier`].
+    Reference(Identifier),
     /// The provider returned `None`.
     Null,
 }
 
-/// Obtain the [`RemoteResponse`] by looking up the [`RemoteId`] using the provided `client`.
+/// Obtain the [`RemoteResponse`] by looking up the [`Identifier`] using the provided `client`.
 #[inline]
 pub fn get_remote_response<C: Client>(
     client: &C,
-    remote_id: &RemoteId,
+    id: &Identifier,
 ) -> Result<RemoteResponse, ProviderError> {
     let ctx = Ctx::new(client);
-    Ok(match lookup_provider(remote_id.provider()) {
-        Provider::Resolver(resolver) => match resolver(remote_id.sub_id(), ctx)? {
+    Ok(match lookup_provider(id.provider()) {
+        Provider::Resolver(resolver) => match resolver(id.sub_id(), ctx)? {
             Some(data) => RemoteResponse::Data(data),
             None => RemoteResponse::Null,
         },
-        Provider::Referrer(referrer) => match referrer(remote_id.sub_id(), ctx)? {
-            Some(new_remote_id) => RemoteResponse::Reference(new_remote_id),
+        Provider::Referrer(referrer) => match referrer(id.sub_id(), ctx)? {
+            Some(new_id) => RemoteResponse::Reference(new_id),
             None => RemoteResponse::Null,
         },
     })

@@ -9,7 +9,7 @@ use nucleo_picker::Render;
 use self::parse::{Kind, Lexer, Token};
 
 use crate::{
-    db::{Identifier, state::Record},
+    db::{AsKey, state::Record},
     entry::{
         AsEntryData, EntryData, FieldKey, MutableEntryData, RawEntryData, RawRecordFieldsIter,
     },
@@ -411,7 +411,7 @@ impl<'row, 'ast, 'state> DisplayedRow<'row, 'ast, 'state> {
                 }
                 Meta::Provider => DisplayedRow::Row(row_data.row().canonical.provider()),
                 Meta::SubId => DisplayedRow::Row(row_data.row().canonical.sub_id()),
-                Meta::FullId => DisplayedRow::Row(row_data.row().canonical.name()),
+                Meta::FullId => DisplayedRow::Row(row_data.row().canonical.as_key()),
                 Meta::Key => DisplayedRow::Row(row_data.key()),
                 Meta::Modified => DisplayedRow::Timestamp(&row_data.row().modified),
                 Meta::Json => DisplayedRow::Json(row_data.row()),
@@ -527,7 +527,7 @@ impl TemplateData for Record<RawEntryData> {
     }
 
     fn key(&self) -> &str {
-        self.canonical.name()
+        self.canonical.as_key()
     }
 }
 
@@ -543,7 +543,7 @@ impl TemplateData for KeyedRecord<RawEntryData> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{entry::RawEntryData, record::RemoteId};
+    use crate::{entry::RawEntryData, record::Identifier};
 
     use chrono::Local;
 
@@ -562,7 +562,7 @@ mod tests {
 
             let row_data = Record::<RawEntryData> {
                 data: RawEntryData::from_entry_data(&data),
-                canonical: RemoteId::from_parts("local", "123").unwrap(),
+                canonical: Identifier::from_parts("local", "123").unwrap(),
                 modified: Local::now(),
             };
 
@@ -629,7 +629,7 @@ mod tests {
 
             let row_data = Record::<RawEntryData> {
                 data: RawEntryData::from_entry_data(&data),
-                canonical: RemoteId::from_parts(provider, sub_id).unwrap(),
+                canonical: Identifier::from_parts(provider, sub_id).unwrap(),
                 modified: Local::now(),
             };
 
@@ -704,7 +704,7 @@ mod tests {
 
         let row_data = Record::<RawEntryData> {
             data: RawEntryData::from_entry_data(&data),
-            canonical: RemoteId::from_parts("local", "12345").unwrap(),
+            canonical: Identifier::from_parts("local", "12345").unwrap(),
             modified: Local::now(),
         };
 

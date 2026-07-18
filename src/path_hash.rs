@@ -24,7 +24,7 @@ use std::{
 use data_encoding::{BASE32, BASE32_NOPAD, Encoding};
 use rapidhash::{v1::rapidhash_v1, v3::rapidhash_v3};
 
-use crate::{RemoteId, logger::info};
+use crate::{Identifier, logger::info};
 
 /// Attachment directory format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -239,7 +239,7 @@ impl<const EXCLUSIVE: bool> AttachmentRoot<EXCLUSIVE> {
     }
 
     /// Get the attachment directory corresponding to the identifier.
-    pub fn attachment_dir(&self, id: &RemoteId) -> PathBuf {
+    pub fn attachment_dir(&self, id: &Identifier) -> PathBuf {
         let mut path = PathBuf::new();
         self.attachment_dir_in(id, &mut path);
         path
@@ -250,7 +250,7 @@ impl<const EXCLUSIVE: bool> AttachmentRoot<EXCLUSIVE> {
     ///
     /// This returns `None` if reading the directory contents fails. Typically, this happens when
     /// the attachment directory does not exist, but this also may fail for other reasons as well.
-    pub fn open_attachment_dir(&self, id: &RemoteId) -> Option<PathBuf> {
+    pub fn open_attachment_dir(&self, id: &Identifier) -> Option<PathBuf> {
         let at_dir = self.attachment_dir(id);
         // TODO: is it best to iterate here, or should we just check for existence?
         if at_dir.read_dir().is_ok_and(|mut it| it.next().is_some()) {
@@ -263,13 +263,13 @@ impl<const EXCLUSIVE: bool> AttachmentRoot<EXCLUSIVE> {
     /// Overwrite the provided buffer with the attachment directory corresponding to the identifier.
     ///
     /// This is useful for reducing allocations in case the caller already has a [`PathBuf`].
-    pub fn attachment_dir_in(&self, id: &RemoteId, path: &mut PathBuf) {
+    pub fn attachment_dir_in(&self, id: &Identifier, path: &mut PathBuf) {
         path.clear();
         path.push(self.lock.root());
         match self.format {
-            AttachmentFormat::V0 => RemoteIdAttachmentPathV0(id).extend_attachments_path(path),
+            AttachmentFormat::V0 => IdAttachmentPathV0(id).extend_attachments_path(path),
             AttachmentFormat::V1Migrating | AttachmentFormat::V1 => {
-                RemoteIdAttachmentPathV1(id).extend_attachments_path(path);
+                IdAttachmentPathV1(id).extend_attachments_path(path);
             }
         }
     }
@@ -279,8 +279,8 @@ impl<const EXCLUSIVE: bool> AttachmentRoot<EXCLUSIVE> {
     /// This will not overwrite the target directory.
     pub fn rename(
         &self,
-        from: &RemoteId,
-        to: &RemoteId,
+        from: &Identifier,
+        to: &Identifier,
     ) -> Result<AttachmentRenameOutcome, io::Error> {
         // extra check to avoid creating the target directory unnecessarily
         // this is a toctou error, but we're doing this attachment stuff best-effort
@@ -316,16 +316,16 @@ pub trait PathHash {
     fn extend_attachments_path(&self, path_buf: &mut PathBuf);
 }
 
-struct RemoteIdAttachmentPathV0<'a, S: AsRef<str>>(&'a RemoteId<S>);
+struct IdAttachmentPathV0<'a, S: AsRef<str>>(&'a Identifier<S>);
 
-struct RemoteIdAttachmentPathV1<'a, S: AsRef<str>>(&'a RemoteId<S>);
+struct IdAttachmentPathV1<'a, S: AsRef<str>>(&'a Identifier<S>);
 
-pub(crate) fn extend_attachment_path_v0<S: AsRef<str>>(id: &RemoteId<S>, path_buf: &mut PathBuf) {
-    RemoteIdAttachmentPathV0(id).extend_attachments_path(path_buf);
+pub(crate) fn extend_attachment_path_v0<S: AsRef<str>>(id: &Identifier<S>, path_buf: &mut PathBuf) {
+    IdAttachmentPathV0(id).extend_attachments_path(path_buf);
 }
 
-pub(crate) fn extend_attachment_path_v1<S: AsRef<str>>(id: &RemoteId<S>, path_buf: &mut PathBuf) {
-    RemoteIdAttachmentPathV1(id).extend_attachments_path(path_buf);
+pub(crate) fn extend_attachment_path_v1<S: AsRef<str>>(id: &Identifier<S>, path_buf: &mut PathBuf) {
+    IdAttachmentPathV1(id).extend_attachments_path(path_buf);
 }
 
 /// In order to reduce the number of files which are in the same directory, we apply a 30-bit
@@ -366,7 +366,7 @@ fn extend_hashed_path<'a, H: FnOnce(&'a [u8]) -> u64>(
     ]);
 }
 
-impl<S: AsRef<str>> PathHash for RemoteIdAttachmentPathV0<'_, S> {
+impl<S: AsRef<str>> PathHash for IdAttachmentPathV0<'_, S> {
     fn extend_attachments_path(&self, path_buf: &mut PathBuf) {
         let id = self.0;
         if id.provider() == "zbmath" && id.sub_id().len() < 8 {
@@ -387,7 +387,7 @@ impl<S: AsRef<str>> PathHash for RemoteIdAttachmentPathV0<'_, S> {
     }
 }
 
-impl<S: AsRef<str>> PathHash for RemoteIdAttachmentPathV1<'_, S> {
+impl<S: AsRef<str>> PathHash for IdAttachmentPathV1<'_, S> {
     fn extend_attachments_path(&self, path_buf: &mut PathBuf) {
         let id = self.0;
         extend_hashed_path(

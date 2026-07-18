@@ -5,8 +5,8 @@ use rusqlite::{OptionalExtension, Row};
 use serde::{Serialize, ser::SerializeStruct};
 
 use crate::{
-    Alias, RawEntryData, RemoteId,
-    db::{Constraint, Identifier, flatten_constraint_violation, get_row_id},
+    Alias, Identifier, RawEntryData,
+    db::{AsKey, Constraint, flatten_constraint_violation, get_row_id},
     entry::{AsEntryData, EntryData},
     logger::{debug, info},
 };
@@ -40,7 +40,7 @@ pub struct Record<D, S = String> {
     /// The associated data.
     pub data: D,
     /// The canonical identifier.
-    pub canonical: RemoteId<S>,
+    pub canonical: Identifier<S>,
     /// When the record was modified.
     pub modified: DateTime<Local>,
 }
@@ -54,7 +54,7 @@ impl<D: FromBytesAndVariant> Record<D> {
     /// - `variant`
     pub(in crate::db) fn from_row_unchecked(row: &Row<'_>) -> Self {
         let data = D::from_bytes_and_variant(row.get_unwrap("data"), row.get_unwrap("variant"));
-        let canonical = RemoteId::from_string_unchecked(row.get_unwrap("record_id"));
+        let canonical = Identifier::from_string_unchecked(row.get_unwrap("record_id"));
         let modified = row.get_unwrap("modified");
 
         Self {
@@ -130,7 +130,7 @@ impl<D: AsRecordData, T: AsRef<str>> Serialize for Record<D, T> {
 
         let mut state = serializer.serialize_struct("Record", field_count)?;
         self.data.serialize_in(&mut state)?;
-        state.serialize_field("canonical", self.canonical.name())?;
+        state.serialize_field("canonical", self.canonical.as_key())?;
         state.serialize_field("modified", &self.modified)?;
         state.end()
     }
@@ -198,7 +198,7 @@ pub enum ArbitraryData {
     /// Entry data.
     Entry(RawEntryData),
     /// Deleted data.
-    Deleted(Option<RemoteId>),
+    Deleted(Option<Identifier>),
     /// Void data.
     Void,
 }
@@ -207,7 +207,7 @@ impl FromBytesAndVariant for ArbitraryData {
     fn from_bytes_and_variant(bytes: Vec<u8>, variant: i64) -> Self {
         match variant {
             0 => Self::Entry(RawEntryData::from_bytes_and_variant(bytes, variant)),
-            1 => Self::Deleted(Option::<RemoteId>::from_bytes_and_variant(bytes, variant)),
+            1 => Self::Deleted(Option::<Identifier>::from_bytes_and_variant(bytes, variant)),
             2 => Self::Void,
             _ => panic!("Unexpected 'Records' table row variant: expected entry or deleted data."),
         }
@@ -227,14 +227,14 @@ pub enum EntryOrDeletedData {
     /// Entry data.
     Entry(RawEntryData),
     /// Deleted data.
-    Deleted(Option<RemoteId>),
+    Deleted(Option<Identifier>),
 }
 
 impl FromBytesAndVariant for EntryOrDeletedData {
     fn from_bytes_and_variant(bytes: Vec<u8>, variant: i64) -> Self {
         match variant {
             0 => Self::Entry(RawEntryData::from_bytes_and_variant(bytes, variant)),
-            1 => Self::Deleted(Option::<RemoteId>::from_bytes_and_variant(bytes, variant)),
+            1 => Self::Deleted(Option::<Identifier>::from_bytes_and_variant(bytes, variant)),
             _ => panic!("Unexpected 'Records' table row variant: expected entry or deleted data."),
         }
     }
@@ -266,7 +266,7 @@ impl_record_key!(IsEntry, RawEntryData);
 #[derive(Debug)]
 pub struct IsDeleted(i64);
 
-impl FromBytesAndVariant for Option<RemoteId> {
+impl FromBytesAndVariant for Option<Identifier> {
     fn from_bytes_and_variant(bytes: Vec<u8>, variant: i64) -> Self {
         assert!(
             variant == 1,
@@ -275,7 +275,7 @@ impl FromBytesAndVariant for Option<RemoteId> {
         if bytes.is_empty() {
             None
         } else {
-            Some(RemoteId::from_string_unchecked(bytes.try_into().expect(
+            Some(Identifier::from_string_unchecked(bytes.try_into().expect(
                 "Invalid database: 'data' column for deleted row contains non-UTF8 blob data.",
             )))
         }
@@ -285,7 +285,7 @@ impl FromBytesAndVariant for Option<RemoteId> {
 impl NotVoid for IsDeleted {}
 impl NotEntry for IsDeleted {}
 
-impl_record_key!(IsDeleted, Option<RemoteId>);
+impl_record_key!(IsDeleted, Option<Identifier>);
 
 /// The 'void' root node in the 'Records' table.
 ///
@@ -310,7 +310,7 @@ impl_record_key!(IsVoid, ());
 /// A row in the 'Records' table, disambiguated based on what type of row it is.
 pub enum DisambiguatedRecordState<'conn> {
     Entry(Record<RawEntryData>, State<'conn, IsEntry>),
-    Deleted(Record<Option<RemoteId>>, State<'conn, IsDeleted>),
+    Deleted(Record<Option<Identifier>>, State<'conn, IsDeleted>),
     Void(Record<()>, State<'conn, IsVoid>),
 }
 
@@ -353,9 +353,9 @@ impl AsRecordData for RawEntryData {
     }
 }
 
-impl AsRecordData for Option<&RemoteId> {
+impl AsRecordData for Option<&Identifier> {
     fn data_blob(&self) -> &[u8] {
-        self.map_or(b"", |r| r.name().as_bytes())
+        self.map_or(b"", |r| r.as_key().as_bytes())
     }
 
     fn variant(&self) -> i64 {
@@ -367,13 +367,13 @@ impl AsRecordData for Option<&RemoteId> {
     }
 
     fn serialize_in<S: SerializeStruct>(&self, ser_struct: &mut S) -> Result<(), S::Error> {
-        ser_struct.serialize_field("replacement", &self.as_ref().map(|i| i.name()))
+        ser_struct.serialize_field("replacement", &self.as_ref().map(|i| i.as_key()))
     }
 }
 
-impl AsRecordData for Option<RemoteId> {
+impl AsRecordData for Option<Identifier> {
     fn data_blob(&self) -> &[u8] {
-        self.as_ref().map_or(b"", |r| r.name().as_bytes())
+        self.as_ref().map_or(b"", |r| r.as_key().as_bytes())
     }
 
     fn variant(&self) -> i64 {
@@ -411,28 +411,28 @@ impl AsRecordData for EntryOrDeletedData {
     fn data_blob(&self) -> &[u8] {
         match self {
             Self::Entry(raw_entry_data) => raw_entry_data.data_blob(),
-            Self::Deleted(remote_id) => remote_id.data_blob(),
+            Self::Deleted(id) => id.data_blob(),
         }
     }
 
     fn variant(&self) -> i64 {
         match self {
             Self::Entry(raw_entry_data) => raw_entry_data.variant(),
-            Self::Deleted(remote_id) => remote_id.variant(),
+            Self::Deleted(id) => id.variant(),
         }
     }
 
     fn serializable(&self) -> bool {
         match self {
             Self::Entry(raw_entry_data) => raw_entry_data.serializable(),
-            Self::Deleted(remote_id) => remote_id.serializable(),
+            Self::Deleted(id) => id.serializable(),
         }
     }
 
     fn serialize_in<S: SerializeStruct>(&self, ser_struct: &mut S) -> Result<(), S::Error> {
         match self {
             Self::Entry(raw_entry_data) => raw_entry_data.serialize_in(ser_struct),
-            Self::Deleted(remote_id) => remote_id.serialize_in(ser_struct),
+            Self::Deleted(id) => id.serialize_in(ser_struct),
         }
     }
 }
@@ -441,7 +441,7 @@ impl AsRecordData for ArbitraryData {
     fn data_blob(&self) -> &[u8] {
         match self {
             Self::Entry(raw_entry_data) => raw_entry_data.data_blob(),
-            Self::Deleted(remote_id) => remote_id.data_blob(),
+            Self::Deleted(id) => id.data_blob(),
             Self::Void => ().data_blob(),
         }
     }
@@ -449,7 +449,7 @@ impl AsRecordData for ArbitraryData {
     fn variant(&self) -> i64 {
         match self {
             Self::Entry(raw_entry_data) => raw_entry_data.variant(),
-            Self::Deleted(remote_id) => remote_id.variant(),
+            Self::Deleted(id) => id.variant(),
             Self::Void => ().variant(),
         }
     }
@@ -457,7 +457,7 @@ impl AsRecordData for ArbitraryData {
     fn serializable(&self) -> bool {
         match self {
             Self::Entry(raw_entry_data) => raw_entry_data.serializable(),
-            Self::Deleted(remote_id) => remote_id.serializable(),
+            Self::Deleted(id) => id.serializable(),
             Self::Void => ().serializable(),
         }
     }
@@ -465,17 +465,17 @@ impl AsRecordData for ArbitraryData {
     fn serialize_in<S: SerializeStruct>(&self, ser_struct: &mut S) -> Result<(), S::Error> {
         match self {
             Self::Entry(raw_entry_data) => raw_entry_data.serialize_in(ser_struct),
-            Self::Deleted(remote_id) => remote_id.serialize_in(ser_struct),
+            Self::Deleted(id) => id.serialize_in(ser_struct),
             Self::Void => ().serialize_in(ser_struct),
         }
     }
 }
 
 /// Get the canonical identifier.
-fn get_canonical(tx: &Tx, row_id: i64) -> rusqlite::Result<RemoteId> {
+fn get_canonical(tx: &Tx, row_id: i64) -> rusqlite::Result<Identifier> {
     tx.prepare_cached("SELECT record_id FROM Records WHERE key = ?1")?
         .query_row([row_id], |row| {
-            row.get("record_id").map(RemoteId::from_string_unchecked)
+            row.get("record_id").map(Identifier::from_string_unchecked)
         })
 }
 
@@ -510,7 +510,7 @@ impl<'conn, N, O: InRecordsTable, E> RecordRowMoveResult<'conn, N, O, E> {
 
 pub enum SetActiveError {
     RowIdUndefined,
-    DifferentCanonical(RemoteId),
+    DifferentCanonical(Identifier),
 }
 
 impl<'conn, I: InRecordsTable> State<'conn, I> {
@@ -533,7 +533,7 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
         Ok(State::init(self.tx, IsMissing))
     }
 
-    /// Unchecked conversion with a new row id of any type, updating the rows in the Identifiers table.
+    /// Unchecked conversion with a new row id of any type, updating the rows in the Keys table.
     fn transmute<N: FromRowId>(self, new_row_id: i64) -> rusqlite::Result<State<'conn, N>> {
         self.update_identifier_lookup(new_row_id)?;
         Ok(State::init(self.tx, N::from_row_id(new_row_id)))
@@ -548,9 +548,9 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
         Record::load_unchecked(&self.tx, self.row_id())
     }
 
-    /// Get the canonical [`RemoteId`].
+    /// Get the canonical [`Identifier`].
     #[inline]
-    pub fn canonical(&self) -> Result<RemoteId, rusqlite::Error> {
+    pub fn canonical(&self) -> Result<Identifier, rusqlite::Error> {
         debug!("Getting canonical identifier for '{}'.", self.row_id());
         get_canonical(&self.tx, self.row_id())
     }
@@ -616,43 +616,43 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
             before
         );
         let canonical = self.canonical()?;
-        let new_id = create_rewind_target(&self.tx, canonical.name(), before)?;
+        let new_id = create_rewind_target(&self.tx, canonical.as_key(), before)?;
         self.transmute(new_id)
     }
 
-    /// Update the 'Identifiers' table by setting any rows which reference the current row to
+    /// Update the 'Keys' table by setting any rows which reference the current row to
     /// reference a new row id instead.
     fn update_identifier_lookup(&self, new_key: i64) -> Result<usize, rusqlite::Error> {
-        self.prepare("UPDATE Identifiers SET record_key = ?1 WHERE record_key = ?2")?
+        self.prepare("UPDATE Keys SET record_key = ?1 WHERE record_key = ?2")?
             .execute((new_key, self.row_id()))
     }
 
-    /// Get every key in the `Identifiers` table which references this row.
+    /// Get every key in the `Keys` table which references this row.
     pub fn referencing_keys(&self) -> Result<Vec<String>, rusqlite::Error> {
         self.referencing_keys_impl(|k| Some(k.to_owned()))
     }
 
-    /// Apply a mutable closure to every key in the `Identifiers` table which references this row.
+    /// Apply a mutable closure to every key in the `Keys` table which references this row.
     pub fn map_referencing_keys(&self, mut f: impl FnMut(&str)) -> Result<(), rusqlite::Error> {
         debug!("Getting referencing keys for '{}'.", self.row_id());
-        let mut selector = self.prepare("SELECT name FROM Identifiers WHERE record_key = ?1")?;
+        let mut selector = self.prepare("SELECT name FROM Keys WHERE record_key = ?1")?;
         let mut rows = selector.query((self.row_id(),))?;
         while let Some(row) = rows.next()? {
             if let rusqlite::types::ValueRef::Text(bytes) = row.get_ref_unwrap(0) {
                 f(std::str::from_utf8(bytes).unwrap());
             } else {
-                panic!("'Identifiers' table has unexpected schema: column 'name' is not a TEXT!");
+                panic!("Keys table has unexpected schema: column 'name' is not a TEXT!");
             }
         }
         Ok(())
     }
 
-    /// Get every remote id in the `Identifiers` table which references this row.
-    pub fn referencing_remote_ids(&self) -> Result<Vec<RemoteId>, rusqlite::Error> {
-        self.referencing_keys_impl(|k| RemoteId::from_alias_or_remote_id_unchecked(k.to_owned()))
+    /// Get every remote id in the `Keys` table which references this row.
+    pub fn referencing_ids(&self) -> Result<Vec<Identifier>, rusqlite::Error> {
+        self.referencing_keys_impl(|k| Identifier::from_key_unchecked(k.to_owned()))
     }
 
-    /// Get a transformed version of every key in the `Identifiers` table which references
+    /// Get a transformed version of every key in the `Keys` table which references
     /// the current row for which the provided `filter_map` does not return `None`.
     fn referencing_keys_impl<T, F: FnMut(&str) -> Option<T>>(
         &self,
@@ -667,12 +667,12 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
         Ok(referencing)
     }
 
-    /// Insert [`RemoteId`] references for this row.
+    /// Insert [`Identifier`] references for this row.
     ///
     /// The return value is `false` if the insertion failed and `IdentifierInsertMode` is
     /// `FailIfExists`, and otherwise `true`.
     #[inline]
-    pub fn add_refs<'a, R: Iterator<Item = &'a RemoteId>>(
+    pub fn add_refs<'a, R: Iterator<Item = &'a Identifier>>(
         &self,
         refs: R,
     ) -> Result<bool, rusqlite::Error> {
@@ -683,28 +683,26 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
     ///
     /// The return value is `false` if the insertion failed and `IdentifierInsertMode` is
     /// `FailIfExists`, and otherwise `true`.
-    fn add_refs_impl<'a, K: Identifier + 'a, R: Iterator<Item = &'a K>>(
+    fn add_refs_impl<'a, K: AsKey + 'a, R: Iterator<Item = &'a K>>(
         &self,
         refs: R,
         mode: IdentifierInsertMode,
     ) -> Result<bool, rusqlite::Error> {
         debug!("Inserting references to row_id '{}'", self.row_id());
-        for remote_id in refs {
+        for id in refs {
             let stmt = match mode {
                 IdentifierInsertMode::Overwrite => {
-                    "INSERT OR REPLACE INTO Identifiers (name, record_key) values (?1, ?2)"
+                    "INSERT OR REPLACE INTO Keys (name, record_key) values (?1, ?2)"
                 }
                 IdentifierInsertMode::IgnoreIfExists => {
-                    "INSERT OR IGNORE INTO Identifiers (name, record_key) values (?1, ?2)"
+                    "INSERT OR IGNORE INTO Keys (name, record_key) values (?1, ?2)"
                 }
                 IdentifierInsertMode::FailIfExists => {
-                    "INSERT INTO Identifiers (name, record_key) values (?1, ?2)"
+                    "INSERT INTO Keys (name, record_key) values (?1, ?2)"
                 }
             };
             let mut key_writer = self.prepare(stmt)?;
-            match flatten_constraint_violation(
-                key_writer.execute((remote_id.name(), self.row_id())),
-            )? {
+            match flatten_constraint_violation(key_writer.execute((id.as_key(), self.row_id())))? {
                 Constraint::Satisfied(_) => {}
                 Constraint::Violated => return Ok(false),
             }
@@ -730,7 +728,7 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
         // the remaining fields use their default values
         let dt = Local::now();
         let new_key: i64 = self.prepare("INSERT INTO Records (record_id, data, modified, variant, parent_key) VALUES (?1, ?2, ?3, ?4, ?5) RETURNING key")?
-            .query_row((existing.record.canonical.name(), data.data_blob(), &dt, data.variant(), self.row_id()), |row| row.get(0))?;
+            .query_row((existing.record.canonical.as_key(), data.data_blob(), &dt, data.variant(), self.row_id()), |row| row.get(0))?;
 
         self.update_identifier_lookup(new_key)?;
 
@@ -821,7 +819,7 @@ impl<'conn, I: NotVoid> State<'conn, I> {
 
         let new_row_id = match root.row.data {
             ArbitraryData::Deleted(_) | ArbitraryData::Entry(_) => {
-                create_void_parent(root.tx, root.row_id, root.row.canonical.name())?
+                create_void_parent(root.tx, root.row_id, root.row.canonical.as_key())?
             }
             ArbitraryData::Void => root_row_id,
         };
@@ -841,14 +839,14 @@ impl<'conn, I: NotVoid> State<'conn, I> {
 pub fn replace_hard_unchecked<'conn>(
     tx: Tx<'conn>,
     original: IsEntry,
-    original_canonical: &RemoteId,
+    original_canonical: &Identifier,
     target: IsEntry,
 ) -> rusqlite::Result<Tx<'conn>> {
-    tx.prepare("UPDATE Identifiers SET record_key = ?1 WHERE record_key = ?2")?
+    tx.prepare("UPDATE Keys SET record_key = ?1 WHERE record_key = ?2")?
         .execute((target.0, original.0))?;
 
     tx.prepare("DELETE FROM Records WHERE record_id = ?1")?
-        .execute([original_canonical.name()])?;
+        .execute([original_canonical.as_key()])?;
 
     Ok(tx)
 }
@@ -924,13 +922,13 @@ impl<'conn> State<'conn, IsEntry> {
     /// identifier exists in the record database.
     pub fn update_canonical(
         self,
-        candidate: &RemoteId,
+        candidate: &Identifier,
         update_aliases: bool,
     ) -> rusqlite::Result<RecordRowMoveResult<'conn, IsDeleted, IsEntry, bool>> {
         let replacement: Option<i64> = self
             .tx
-            .prepare("SELECT record_key FROM Identifiers WHERE name = ?1")?
-            .query_row([candidate.name()], |row| row.get("record_key"))
+            .prepare("SELECT record_key FROM Keys WHERE name = ?1")?
+            .query_row([candidate.as_key()], |row| row.get("record_key"))
             .optional()?;
 
         match replacement {
@@ -943,9 +941,9 @@ impl<'conn> State<'conn, IsEntry> {
                         .tx
                         .prepare("SELECT record_id FROM Records WHERE key = ?1")?
                         .query_row([row_id], |row| row.get("record_id"))?;
-                    let remote_id = RemoteId::from_string_unchecked(repl);
-                    info!("Replacing row with new canonical id '{remote_id}'");
-                    let deleted = self.delete_soft(Some(&remote_id), update_aliases)?.state;
+                    let id = Identifier::from_string_unchecked(repl);
+                    info!("Replacing row with new canonical id '{id}'");
+                    let deleted = self.delete_soft(Some(&id), update_aliases)?.state;
                     Ok(RecordRowMoveResult::Updated(deleted))
                 }
             }
@@ -976,8 +974,8 @@ impl From<RawEntryData> for ArbitraryData {
     }
 }
 
-impl From<Option<RemoteId>> for ArbitraryData {
-    fn from(data: Option<RemoteId>) -> Self {
+impl From<Option<Identifier>> for ArbitraryData {
+    fn from(data: Option<Identifier>) -> Self {
         Self::Deleted(data)
     }
 }
@@ -1001,7 +999,7 @@ macro_rules! impl_row_from {
     };
 }
 
-impl_row_from!(RawEntryData, Option<RemoteId>, ());
+impl_row_from!(RawEntryData, Option<Identifier>, ());
 
 impl<'conn> State<'conn, IsEntry> {
     /// Insert new data, preserving the old row as the parent row.
@@ -1035,7 +1033,7 @@ RETURNING key",
     /// Replace this row with a deletion marker, preserving the old row as the parent row.
     pub fn delete_soft(
         self,
-        replacement: Option<&RemoteId>,
+        replacement: Option<&Identifier>,
         update_aliases: bool,
     ) -> Result<Updated<'conn, IsDeleted>, rusqlite::Error> {
         let (new_key, modified) = self.replace_impl(&replacement)?;
@@ -1043,13 +1041,13 @@ RETURNING key",
             match replacement {
                 Some(canonical) => {
                     self.prepare(
-                        "UPDATE Identifiers SET record_key = (SELECT record_key FROM Identifiers WHERE name = ?1) WHERE instr(name, ':') = 0 AND record_key = ?2",
+                        "UPDATE Keys SET record_key = (SELECT record_key FROM Keys WHERE name = ?1) WHERE instr(name, ':') = 0 AND record_key = ?2",
                     )?
-                    .execute((canonical.name(), new_key))?;
+                    .execute((canonical.as_key(), new_key))?;
                 }
                 None => {
                     self.prepare(
-                        "DELETE FROM Identifiers WHERE instr(name, ':') = 0 AND record_key = ?1",
+                        "DELETE FROM Keys WHERE instr(name, ':') = 0 AND record_key = ?1",
                     )?
                     .execute([new_key])?;
                 }
@@ -1076,8 +1074,8 @@ RETURNING key",
     #[inline]
     pub fn update_alias(&self, alias: &Alias) -> Result<bool, rusqlite::Error> {
         let rows_changed = self
-            .prepare("UPDATE Identifiers SET record_key = ?1 WHERE name = ?2")?
-            .execute((self.row_id(), alias.name()))?;
+            .prepare("UPDATE Keys SET record_key = ?1 WHERE name = ?2")?
+            .execute((self.row_id(), alias.as_key()))?;
         Ok(rows_changed == 1)
     }
 
@@ -1085,7 +1083,7 @@ RETURNING key",
     ///
     /// If the alias already exists and points to a different row, the canonical id of the other row is returned.
     #[inline]
-    pub fn ensure_alias(&self, alias: &Alias) -> Result<Option<RemoteId>, rusqlite::Error> {
+    pub fn ensure_alias(&self, alias: &Alias) -> Result<Option<Identifier>, rusqlite::Error> {
         debug!(
             "Ensuring alias '{alias}' refers to row_id '{}'",
             self.row_id()
@@ -1099,8 +1097,8 @@ RETURNING key",
                 }
             }
             None => {
-                self.prepare("INSERT INTO Identifiers (name, record_key) values (?1, ?2)")?
-                    .execute((alias.name(), self.row_id()))?;
+                self.prepare("INSERT INTO Keys (name, record_key) values (?1, ?2)")?
+                    .execute((alias.as_key(), self.row_id()))?;
                 Ok(None)
             }
         }

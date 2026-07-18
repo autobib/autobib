@@ -58,11 +58,11 @@ on the `variant`.
 - `variant = 2`: The special void marker.
   The value in `data` is ignored and should be empty.
 
-### `Identifiers` table
+### `Keys` table
 
 This table has schema
 ```sql
-CREATE TABLE Identifiers (
+CREATE TABLE Keys (
     name TEXT NOT NULL PRIMARY KEY,
     record_key INTEGER NOT NULL REFERENCES Records(key)
         ON UPDATE RESTRICT
@@ -91,7 +91,7 @@ The following invariants must be upheld at all times.
 2. The `modified` column must be sorted in descending order down the tree: that is, each parent must have `modified` time which is greater than the `modified` time of the child node.
 3. If a void node exists, its `parent_key` must be null.
 4. The modification time of the void node must be exactly `-262143-01-01 00:00:00+00:00`.
-5. A row in the 'Records' table with a key that is present in the `Identifiers` table is called *active*.
+5. A row in the 'Records' table with a key that is present in the `Keys` table is called *active*.
    Exactly one row per `record_id`-tree must be active.
 
 ## Internal binary data format

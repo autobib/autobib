@@ -24,7 +24,7 @@ use crate::output::stdout_lock_wrap;
 
 use self::{
     app::{Cli, Command, run_cli},
-    db::Identifier,
+    db::AsKey,
     entry::RawEntryData,
     logger::{Logger, reraise},
 };
@@ -33,7 +33,7 @@ pub use self::{
     config::Config,
     entry::BibtexEntry,
     normalize::{Normalization, Normalize},
-    record::{Alias, AliasOrRemoteId, MappedKey, RecordId, RemoteId, get_record},
+    record::{Alias, AliasOrId, Identifier, Key, MappedKey, get_record},
     term::{Confirm, Editor, EditorConfig},
 };
 

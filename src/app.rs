@@ -29,7 +29,7 @@ use etcetera::{AppStrategy, AppStrategyArgs, choose_app_strategy};
 use crate::{
     app::{
         attach::cleanup_empty_attachment_dirs,
-        cli::{GcCommand, HistCommand, IdTarget, PruneCommand, ReplacementTarget},
+        cli::{GcCommand, HistCommand, KeyTarget, PruneCommand, ReplacementTarget},
         log::print_log,
         retrieve::{sync_entries, sync_entries_read_only},
     },
@@ -51,8 +51,8 @@ use crate::{
     normalize::{Normalization, Normalize},
     output::{owriteln, stdout_lock_wrap},
     path_hash::AttachmentRoot,
-    provider::{RemoteIdCandidate, determine_key_from_data},
-    record::{Alias, RecordId, RemoteId, get_record, get_record_tx},
+    provider::{IdCandidate, determine_key_from_data},
+    record::{Alias, Identifier, Key, get_record, get_record_tx},
     term::Editor,
 };
 
@@ -207,7 +207,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             }
         },
         Command::Attach {
-            identifier,
+            key,
             file,
             rename,
             force,
@@ -243,7 +243,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
 
             // Extend with the filename.
             let cfg = config::load(&config_path, missing_ok)?;
-            let (record, row) = get_record(&mut record_db, identifier, client, &cfg)?
+            let (record, row) = get_record(&mut record_db, key, client, &cfg)?
                 .exists_or_commit_null("Cannot attach file for")?;
             row.commit()?;
             let root = get_attachment_root::<false>(&data_dir, cli.attachments_dir, cli.read_only)?;
@@ -330,20 +330,20 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             config::write_default(stdout_lock_wrap())?;
         }
         Command::Delete {
-            identifiers,
+            keys,
             hard,
             delete_aliases,
             no_attachment_warning,
         } => {
             fn do_delete<F>(
-                identifiers: Vec<RecordId>,
+                keys: Vec<Key>,
                 check_attachments: &Option<AttachmentRoot<false>>,
                 mut delete_cb: F,
             ) -> Result<(), anyhow::Error>
             where
-                F: FnMut(RecordId) -> Result<Option<RemoteId>, rusqlite::Error>,
+                F: FnMut(Key) -> Result<Option<Identifier>, rusqlite::Error>,
             {
-                for key in identifiers {
+                for key in keys {
                     if let Some(canonical) = delete_cb(key)?
                         && let Some(at_root) = check_attachments.as_ref()
                         && let Some(deleted_at_dir) = at_root.open_attachment_dir(&canonical)
@@ -365,17 +365,17 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             };
 
             if hard {
-                do_delete(identifiers, &attachment_root, |key| {
+                do_delete(keys, &attachment_root, |key| {
                     hard_delete(key, &mut record_db, &cfg)
                 })?;
             } else {
-                do_delete(identifiers, &attachment_root, |key| {
+                do_delete(keys, &attachment_root, |key| {
                     soft_delete(key, &None, &mut record_db, &cfg, delete_aliases)
                 })?;
             }
         }
         Command::Edit {
-            identifiers,
+            keys,
             normalize_whitespace,
             set_eprint,
             strip_journal_series,
@@ -398,7 +398,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
 
             let no_non_interactive_cmd = nl.is_identity() && edit_cmd.is_identity();
 
-            for key in identifiers {
+            for key in keys {
                 let (record, state) = get_record(&mut record_db, key, client, &cfg)?
                     .exists_or_commit_null("Cannot edit")?;
 
@@ -559,7 +559,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             }
         },
         Command::Get {
-            identifiers,
+            keys,
             retrieve_only,
             ignore_null,
             template,
@@ -575,7 +575,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         get::TemplateOutput::new(strict, template, &mut lock, &sep),
                         &cfg,
                         &mut record_db,
-                        identifiers,
+                        keys,
                         ignore_null,
                     )?;
                 } else if retrieve_only {
@@ -583,7 +583,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         get::NoOutput,
                         &cfg,
                         &mut record_db,
-                        identifiers,
+                        keys,
                         ignore_null,
                     )?;
                 } else {
@@ -591,7 +591,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         get::BibtexOutput::new(&mut lock),
                         &cfg,
                         &mut record_db,
-                        identifiers,
+                        keys,
                         ignore_null,
                     )?;
                 }
@@ -602,7 +602,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         &cfg,
                         client,
                         &mut record_db,
-                        identifiers,
+                        keys,
                         ignore_null,
                     )?;
                 } else if retrieve_only {
@@ -611,7 +611,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         &cfg,
                         client,
                         &mut record_db,
-                        identifiers,
+                        keys,
                         ignore_null,
                     )?;
                 } else {
@@ -620,7 +620,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         &cfg,
                         client,
                         &mut record_db,
-                        identifiers,
+                        keys,
                         ignore_null,
                     )?;
                 }
@@ -639,15 +639,11 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 }
                 snapshot.commit()?;
             }
-            HistCommand::Redo {
-                identifier,
-                index,
-                revive,
-            } => {
+            HistCommand::Redo { key, index, revive } => {
                 let index = index.unwrap_or(-1);
                 let cfg = config::load(&config_path, missing_ok)?;
                 match record_db
-                    .state_from_record_id(identifier, &cfg.alias_transform)?
+                    .state_from_key(key, &cfg.alias_transform)?
                     .require_record()?
                 {
                     Some((_, DisambiguatedRecordState::Entry(_, state))) => {
@@ -694,10 +690,10 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     None => {}
                 }
             }
-            HistCommand::Reset { identifier, rev } => {
+            HistCommand::Reset { key, rev } => {
                 let cfg = config::load(&config_path, missing_ok)?;
                 if let Some((_, disambiguated)) = record_db
-                    .state_from_record_id(identifier, &cfg.alias_transform)?
+                    .state_from_key(key, &cfg.alias_transform)?
                     .require_record()?
                 {
                     let (_, state) = disambiguated.forget();
@@ -713,9 +709,9 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                                 SetActiveError::RowIdUndefined => {
                                     error!("Revision does not exist in the 'Records' table");
                                 }
-                                SetActiveError::DifferentCanonical(remote_id) => {
+                                SetActiveError::DifferentCanonical(id) => {
                                     error!(
-                                        "Revision exists, but it corresponds to a different record with canonical identifier '{remote_id}'"
+                                        "Revision exists, but it corresponds to a different record with canonical identifier '{id}'"
                                     );
                                 }
                             }
@@ -724,7 +720,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 }
             }
             HistCommand::Revive {
-                identifier,
+                key,
                 from_bibtex,
                 with_entry_type,
                 with_field,
@@ -736,7 +732,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     delete_field: Vec::new(),
                 };
                 match record_db
-                    .state_from_record_id(identifier, &cfg.alias_transform)?
+                    .state_from_key(key, &cfg.alias_transform)?
                     .require_record()?
                 {
                     Some((_, DisambiguatedRecordState::Entry(_, state))) => {
@@ -770,16 +766,16 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             }
             HistCommand::Rewind {
                 before,
-                target: IdTarget { id, all },
+                target: KeyTarget { key, all },
             } => {
                 if all {
                     let snapshot = record_db.snapshot()?;
                     snapshot.rewind_all(before)?;
                     snapshot.commit()?;
-                } else if let Some(record_id) = id {
+                } else if let Some(record_id) = key {
                     let cfg = config::load(&config_path, missing_ok)?;
                     if let Some((_, disambiguated)) = record_db
-                        .state_from_record_id(record_id, &cfg.alias_transform)?
+                        .state_from_key(record_id, &cfg.alias_transform)?
                         .require_record()?
                     {
                         let (_, state) = disambiguated.forget();
@@ -802,14 +798,14 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 snapshot.commit()?;
             }
             HistCommand::Touch {
-                target: IdTarget { id, all },
+                target: KeyTarget { key, all },
             } => {
                 let modified = if all {
                     let snapshot = record_db.snapshot()?;
                     let modified = snapshot.touch_all()?;
                     snapshot.commit()?;
                     modified
-                } else if let Some(record_id) = id {
+                } else if let Some(record_id) = key {
                     let modified = chrono::Local::now();
                     let cfg = config::load(&config_path, missing_ok)?;
                     let (_, row) = get_record(&mut record_db, record_id, client, &cfg)?
@@ -821,10 +817,10 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 };
                 owriteln!("{modified}")?;
             }
-            HistCommand::Undo { identifier, delete } => {
+            HistCommand::Undo { key, delete } => {
                 let cfg = config::load(&config_path, missing_ok)?;
                 match record_db
-                    .state_from_record_id(identifier, &cfg.alias_transform)?
+                    .state_from_key(key, &cfg.alias_transform)?
                     .require_record()?
                 {
                     Some((_, DisambiguatedRecordState::Entry(_, state))) => {
@@ -847,10 +843,10 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     None => {}
                 }
             }
-            HistCommand::Void { identifier } => {
+            HistCommand::Void { key } => {
                 let cfg = config::load(&config_path, missing_ok)?;
                 match record_db
-                    .state_from_record_id(identifier, &cfg.alias_transform)?
+                    .state_from_key(key, &cfg.alias_transform)?
                     .require_record()?
                 {
                     Some((_, DisambiguatedRecordState::Entry(_, state))) => {
@@ -920,14 +916,10 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 }
             }
         }
-        Command::Info {
-            identifier,
-            report,
-            json,
-        } => {
+        Command::Info { key, report, json } => {
             let cfg = config::load(&config_path, missing_ok)?;
             if let Some((key, disambiguated)) = record_db
-                .state_from_record_id(identifier, &cfg.alias_transform)?
+                .state_from_key(key, &cfg.alias_transform)?
                 .require_record()?
             {
                 let (record, state) = disambiguated.forget();
@@ -942,7 +934,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         }
                     }
                     InfoReportType::Canonical => {
-                        let canonical = crate::db::Identifier::name(&record.canonical);
+                        let canonical = crate::db::AsKey::as_key(&record.canonical);
                         if json {
                             serde_json::to_writer(&mut writer, canonical)?;
                         } else {
@@ -1053,13 +1045,13 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     AliasErrorKind::Empty => {
                         bail!("local sub-id must contain non-whitespace characters")
                     }
-                    AliasErrorKind::IsRemoteId => bail!("local sub-id must not contain a colon"),
+                    AliasErrorKind::IsIdentifier => bail!("local sub-id must not contain a colon"),
                     AliasErrorKind::ContainsControl => {
                         bail!("local sub-id must not contain control characters")
                     }
                 },
             };
-            let remote_id = RemoteId::local(&alias);
+            let id = Identifier::local(&alias);
             let edit_cmd = EntryEditCommand {
                 update_entry_type: with_entry_type,
                 set_field: with_field,
@@ -1069,14 +1061,14 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             let alias_opt = if create_alias { Some(&alias) } else { None };
 
             // insert the data
-            match record_db.state_from_remote_id(&remote_id)?.delete_null()? {
+            match record_db.state_from_id(&id)?.delete_null()? {
                 ExistsOrUnknown::Entry(_, state) => {
                     state.commit()?;
-                    bail!("Local record '{remote_id}' already exists")
+                    bail!("Local record '{id}' already exists")
                 }
                 ExistsOrUnknown::Deleted(_, state) => {
                     state.commit()?;
-                    error!("Local record '{remote_id}' was soft-deleted");
+                    error!("Local record '{id}' was soft-deleted");
                     suggest!(
                         "Use `autobib hist undo` to recover past data or `autobib hist revive` to insert new data"
                     );
@@ -1086,7 +1078,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     insert(
                         void,
                         from_bibtex,
-                        &remote_id,
+                        &id,
                         cli.no_interactive,
                         &cfg.on_insert,
                         &edit_cmd,
@@ -1098,7 +1090,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     insert(
                         missing,
                         from_bibtex,
-                        &remote_id,
+                        &id,
                         cli.no_interactive,
                         &cfg.on_insert,
                         &edit_cmd,
@@ -1108,14 +1100,14 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             };
         }
         Command::Log {
-            identifier,
+            key,
             tree,
             all,
             reverse,
         } => {
             let cfg = config::load(&config_path, missing_ok)?;
             if let Some((_, entry_or_deleted)) = record_db
-                .state_from_record_id(identifier, &cfg.alias_transform)?
+                .state_from_key(key, &cfg.alias_transform)?
                 .require_record()?
             {
                 let (_, state) = entry_or_deleted.forget();
@@ -1123,11 +1115,11 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 state.commit()?;
             }
         }
-        Command::Path { identifier, mkdir } => {
+        Command::Path { key, mkdir } => {
             let cfg = config::load(&config_path, missing_ok)?;
 
             let canonical = match record_db
-                .state_from_record_id(identifier, &cfg.alias_transform)?
+                .state_from_key(key, &cfg.alias_transform)?
                 .require_record()?
             {
                 Some((_, DisambiguatedRecordState::Entry(record_row, _))) => record_row.canonical,
@@ -1149,7 +1141,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             owriteln!("{}", target.display())?;
         }
         Command::Replace {
-            identifier,
+            key,
             target: ReplacementTarget { with, auto },
             hard,
             on_conflict,
@@ -1166,7 +1158,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     get_existing_attachment_root(&data_dir, cli.attachments_dir, cli.read_only)?
                 };
                 replace::replace(
-                    identifier,
+                    key,
                     tx,
                     &cfg,
                     |tx, _| {
@@ -1186,12 +1178,12 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     get_existing_attachment_root(&data_dir, cli.attachments_dir, cli.read_only)?
                 };
                 replace::replace(
-                    identifier,
+                    key,
                     tx,
                     &cfg,
                     |tx, data| match determine_key_from_data(data, &cfg) {
-                        RemoteIdCandidate::OptimalReference(mapped_key, _)
-                        | RemoteIdCandidate::OptimalCanonical(mapped_key) => {
+                        IdCandidate::OptimalReference(mapped_key, _)
+                        | IdCandidate::OptimalCanonical(mapped_key) => {
                             let msg = format!(
                                 "Automatically determined identifier '{}' is",
                                 mapped_key.mapped
@@ -1199,7 +1191,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                             get_record_tx(tx, mapped_key.mapped.forget(), client, &cfg)?
                                 .exists_or_commit_null(&msg)
                         }
-                        RemoteIdCandidate::None => {
+                        IdCandidate::None => {
                             bail!("Could not determine replacement identifier from record data")
                         }
                     },
@@ -1240,7 +1232,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             // - explicitly passed keys
             // - keys from the provided files
             // - any keys in the output bibfile, if appending
-            let mut skipped_keys: HashSet<RecordId> = HashSet::new();
+            let mut skipped_keys: HashSet<Key> = HashSet::new();
             skipped_keys.extend(skip);
             for skip_path in skip_from {
                 source::get_citekeys_from_file(
@@ -1264,7 +1256,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
 
             if print_keys {
                 // only print the keys which were found
-                let mut all_citekeys: BTreeSet<RecordId> = BTreeSet::new();
+                let mut all_citekeys: BTreeSet<Key> = BTreeSet::new();
 
                 if let Some(stdin_file_type) = stdin {
                     source::get_citekeys_from_stdin(
@@ -1293,7 +1285,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 //
                 // The ids do not need to be sorted since sorting
                 // happens in the `validate_and_retrieve` function.
-                let mut all_citekeys: HashSet<RecordId> = HashSet::new();
+                let mut all_citekeys: HashSet<Key> = HashSet::new();
 
                 if let Some(stdin_file_type) = stdin {
                     source::get_citekeys_from_stdin(
@@ -1339,7 +1331,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             }
         }
         Command::Update {
-            identifier,
+            key,
             from_bibtex,
             from_record,
             from_rev,
@@ -1366,7 +1358,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
 
             update(
                 on_conflict,
-                DatabaseResponse::determine(tx, identifier, &cfg.alias_transform)?,
+                DatabaseResponse::determine(tx, key, &cfg.alias_transform)?,
                 provided_data,
                 &cfg.on_insert,
                 revive,

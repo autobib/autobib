@@ -19,8 +19,8 @@ pub use self::{
     format::{KeyParseError, KeyParseErrorKind},
     provider::ProviderError,
     record::{
-        AliasConversionError, AliasErrorKind, RecordError, RecordErrorKind,
-        RemoteIdConversionError, RemoteIdErrorKind,
+        AliasConversionError, AliasErrorKind, IdConversionError, IdErrorKind, RecordError,
+        RecordErrorKind,
     },
     record_data::{InvalidBytesError, RecordDataError},
 };

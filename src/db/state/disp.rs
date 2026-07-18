@@ -8,7 +8,7 @@ use chrono::{DateTime, Local};
 use crossterm::style::{ContentStyle, StyledContent, Stylize};
 
 use super::{ArbitraryDataRef, InRecordsTable, Record, RevisionId, State, Version};
-use crate::{entry::EntryData, logger::LogDisplay, record::RemoteId};
+use crate::{entry::EntryData, logger::LogDisplay, record::Identifier};
 
 impl<'conn, I: InRecordsTable> LogDisplay for State<'conn, I> {
     fn log_display(&self, styled: bool, mut buf: impl std::io::Write) -> anyhow::Result<()> {
@@ -25,7 +25,7 @@ pub struct RecordRowDisplay<'a> {
     pub(super) data: ArbitraryDataRef<'a>,
     pub(super) modified: DateTime<Local>,
     rev_id: RevisionId,
-    canonical: RemoteId<&'a str>,
+    canonical: Identifier<&'a str>,
 }
 
 impl<'a> RecordRowDisplay<'a> {
@@ -107,12 +107,8 @@ impl<'a> fmt::Display for RecordRowDisplay<'a> {
             }
             ArbitraryDataRef::Deleted(replacement) => {
                 writeln!(buf, "{hex} {datestamp}\n")?;
-                if let Some(remote_id) = replacement {
-                    write!(
-                        buf,
-                        "{PREFIX}Replaced '{}' with '{remote_id}'",
-                        self.canonical
-                    )?;
+                if let Some(id) = replacement {
+                    write!(buf, "{PREFIX}Replaced '{}' with '{id}'", self.canonical)?;
                 } else {
                     write!(buf, "{PREFIX}Deleted '{}'", self.canonical)?;
                 }

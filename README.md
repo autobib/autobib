@@ -61,7 +61,7 @@ Jump to:
 
 ### Getting records
 
-At its most basic, Autobib converts *identifiers* into *records*.
+At its most basic, Autobib converts *keys* into *records*.
 To obtain the data associated with the zbMath record [`Zbl 1337.28015`](https://zbmath.org/1528.14024), running
 ```sh
 autobib get zbl:1337.28015
@@ -159,7 +159,7 @@ Then running `autobib get hochman-entropy` returns
 }
 ```
 The record is identical to the record `zbl:1337.28015`, except that the citation key is the name of the alias.
-In order to distinguish from usual identifiers, an alias cannot contain the colon `:`.
+In order to distinguish from identifiers, an alias cannot contain the colon `:`.
 
 Note that the characters `{}(),=\#%"` and [whitespace](https://doc.rust-lang.org/reference/whitespace.html) are not permitted in a BibTeX entry key.
 You can still create aliases using these characters: for instance, `autobib alias add % zbl:1337.28015` works.
@@ -225,7 +225,7 @@ Autobib maintains a comprehensive edit history: every change to a record in the 
 
 You can recover the previous version(s) using `autobib hist undo` and `autobib hist redo`.
 
-Internally, undo-states are stored as a *tree*: you can visualize the entire edit history associated with an identifier using `autobib log --tree`.
+Internally, undo-states are stored as a *tree*: you can visualize the entire edit history associated with a key using `autobib log --tree`.
 You can move to arbitrary states in the edit tree using `autobib hist reset`.
 
 Your data is never deleted automatically.

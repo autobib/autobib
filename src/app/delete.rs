@@ -1,5 +1,5 @@
 use crate::{
-    Config, RecordId, RemoteId,
+    Config, Identifier, Key,
     db::{
         RecordDatabase,
         state::{self, DatabaseResponse},
@@ -13,12 +13,12 @@ use crate::{
 /// If record data exists for the provided key, the data is replaced with a 'deletion' marker, but not
 /// removed from the database.
 pub fn soft_delete(
-    id: RecordId,
-    replace: &Option<RemoteId>,
+    id: Key,
+    replace: &Option<Identifier>,
     record_db: &mut RecordDatabase,
     config: &Config,
     update_aliases: bool,
-) -> Result<Option<RemoteId>, rusqlite::Error> {
+) -> Result<Option<Identifier>, rusqlite::Error> {
     delete_impl(
         id,
         record_db,
@@ -41,12 +41,12 @@ pub fn soft_delete(
 
 /// Hard-delete the data associated with the provided identifier.
 ///
-/// This deletes all data (including past data) as well as all identifiers in the `Identifiers` table.
+/// This deletes all data (including past data) as well as all identifiers in the `Keys` table.
 pub fn hard_delete(
-    id: RecordId,
+    id: Key,
     record_db: &mut RecordDatabase,
     config: &Config,
-) -> Result<Option<RemoteId>, rusqlite::Error> {
+) -> Result<Option<Identifier>, rusqlite::Error> {
     delete_impl(
         id,
         record_db,
@@ -59,19 +59,19 @@ pub fn hard_delete(
 
 /// Handle the cases where the key is not in the database and defer deletion to the callback.
 fn delete_impl<R, D, V>(
-    id: RecordId,
+    id: Key,
     record_db: &mut RecordDatabase,
     config: &Config,
     entry_callback: R,
     deleted_callback: D,
     voided_callback: V,
-) -> Result<Option<RemoteId>, rusqlite::Error>
+) -> Result<Option<Identifier>, rusqlite::Error>
 where
     R: FnOnce(String, state::State<'_, state::IsEntry>) -> Result<(), rusqlite::Error>,
     D: FnOnce(String, state::State<'_, state::IsDeleted>) -> Result<(), rusqlite::Error>,
     V: FnOnce(String, state::State<'_, state::IsVoid>) -> Result<(), rusqlite::Error>,
 {
-    match record_db.state_from_record_id(id, &config.alias_transform)? {
+    match record_db.state_from_key(id, &config.alias_transform)? {
         DatabaseResponse::Entry(record, state) => {
             entry_callback(record.key, state)?;
             return Ok(Some(record.record.canonical));
@@ -88,7 +88,7 @@ where
         ) => {
             voided_callback(original_name, state)?;
         }
-        DatabaseResponse::NullRemoteId(mapped_key, state) => {
+        DatabaseResponse::NullId(mapped_key, state) => {
             state.commit()?;
             error!("Cannot delete null record data: {mapped_key}");
             suggest!("Delete null records using `autobib clean database --evict`.");
@@ -100,7 +100,7 @@ where
         DatabaseResponse::UndefinedAlias(alias) => {
             error!("Cannot delete undefined alias: {alias}");
         }
-        DatabaseResponse::InvalidRemoteId(record_error) => {
+        DatabaseResponse::InvalidId(record_error) => {
             reraise(&record_error);
         }
     };

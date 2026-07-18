@@ -62,9 +62,9 @@ impl fmt::Display for RecordInfo {
                     writeln!(f, "  {k} = {{{v}}}")?;
                 }
             }
-            ArbitraryData::Deleted(remote_id) => {
+            ArbitraryData::Deleted(id) => {
                 writeln!(f, "==> Soft-deleted",)?;
-                if let Some(s) = remote_id {
+                if let Some(s) = id {
                     writeln!(f, "Replaced by: {s}")?;
                 } else {
                     writeln!(f, "No replacement key")?;

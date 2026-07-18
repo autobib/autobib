@@ -14,7 +14,7 @@ macro_rules! schema {
     };
 }
 
-schema!(identifiers, "The lookup table for identifiers.");
+schema!(keys, "The lookup table for identifiers.");
 
 schema!(records, "The table which stores record data.");
 

@@ -7,7 +7,7 @@ use chrono::{DateTime, Local};
 use rusqlite::{Row, types::ValueRef};
 
 use super::{ArbitraryData, Record};
-use crate::{RawEntryData, RemoteId};
+use crate::{Identifier, RawEntryData};
 
 /// Equivalent to an [`ArbitraryData`], but borrows all of its data.
 #[derive(Debug)]
@@ -15,7 +15,7 @@ pub enum ArbitraryDataRef<'r> {
     /// Entry data.
     Entry(RawEntryData<&'r [u8]>),
     /// Deleted data.
-    Deleted(Option<RemoteId<&'r str>>),
+    Deleted(Option<Identifier<&'r str>>),
     /// Void data.
     Void,
 }
@@ -26,7 +26,7 @@ impl ArbitraryData {
         match self {
             Self::Entry(raw_entry_data) => ArbitraryDataRef::Entry(raw_entry_data.as_deref()),
             Self::Deleted(replacement) => {
-                ArbitraryDataRef::Deleted(replacement.as_ref().map(RemoteId::as_deref))
+                ArbitraryDataRef::Deleted(replacement.as_ref().map(Identifier::as_deref))
             }
             Self::Void => ArbitraryDataRef::Void,
         }
@@ -41,7 +41,7 @@ impl<'r> ArbitraryDataRef<'r> {
             1 => Self::Deleted(if bytes.is_empty() {
                 None
             } else {
-                Some(RemoteId::from_string_unchecked(
+                Some(Identifier::from_string_unchecked(
                     std::str::from_utf8(bytes).expect(
                 "Invalid database: 'data' column for deleted row contains non-UTF8 blob data.",
                         ),
@@ -72,7 +72,7 @@ impl<'r> Record<ArbitraryDataRef<'r>, &'r str> {
         };
         let modified: DateTime<Local> = row.get_unwrap("modified");
         let data = ArbitraryDataRef::from_borrowed_bytes_and_variant(data_bytes, variant);
-        let canonical = RemoteId::from_string_unchecked(std::str::from_utf8(record_id).unwrap());
+        let canonical = Identifier::from_string_unchecked(std::str::from_utf8(record_id).unwrap());
         Self {
             data,
             modified,

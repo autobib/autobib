@@ -6,14 +6,14 @@ use typst_syntax::{
     parse,
 };
 
-use crate::{RecordId, logger::error};
+use crate::{Key, logger::error};
 
 /// Get all citation keys in the buffer.
 ///
 /// This intentionally supports only explicit calls to Typst's `cite` function, like `#cite(<key>)` and
 /// `#cite(label("key"))`. For now, we ignore the shorthand `@key` syntax since this is ambiguous with
 /// internal Typst labels.
-pub fn get_citekeys<T: Extend<RecordId>>(buffer: &[u8], container: &mut T) {
+pub fn get_citekeys<T: Extend<Key>>(buffer: &[u8], container: &mut T) {
     match from_utf8(buffer) {
         Ok(contents) => {
             let root = parse(contents);
@@ -25,7 +25,7 @@ pub fn get_citekeys<T: Extend<RecordId>>(buffer: &[u8], container: &mut T) {
     }
 }
 
-fn collect_citekeys<T: Extend<RecordId>>(node: &SyntaxNode, container: &mut T) {
+fn collect_citekeys<T: Extend<Key>>(node: &SyntaxNode, container: &mut T) {
     if let Some(call) = node.cast::<ast::FuncCall>()
         && is_named_call(call, "cite")
         && let Some(key) = call.args().items().find_map(from_arg)
@@ -38,7 +38,7 @@ fn collect_citekeys<T: Extend<RecordId>>(node: &SyntaxNode, container: &mut T) {
     }
 }
 
-fn from_arg(arg: Arg<'_>) -> Option<RecordId> {
+fn from_arg(arg: Arg<'_>) -> Option<Key> {
     let Arg::Pos(expr) = arg else {
         return None;
     };
@@ -46,9 +46,9 @@ fn from_arg(arg: Arg<'_>) -> Option<RecordId> {
     from_expr(expr)
 }
 
-fn from_expr(expr: Expr<'_>) -> Option<RecordId> {
+fn from_expr(expr: Expr<'_>) -> Option<Key> {
     match expr {
-        Expr::Label(label) => Some(RecordId::from(label.get())),
+        Expr::Label(label) => Some(Key::from(label.get())),
         // unfortunately, it seems to be necessary to manually parse label(...) arguments
         // since these are not convertex automatically by `typst-syntax`.
         Expr::FuncCall(call) if is_named_call(call, "label") => {
@@ -59,13 +59,13 @@ fn from_expr(expr: Expr<'_>) -> Option<RecordId> {
     }
 }
 
-fn from_string_arg(arg: Arg<'_>) -> Option<RecordId> {
+fn from_string_arg(arg: Arg<'_>) -> Option<Key> {
     let Arg::Pos(Expr::Str(string)) = arg else {
         return None;
     };
 
     let key = string.get();
-    (!key.is_empty()).then(|| RecordId::from(key.as_str()))
+    (!key.is_empty()).then(|| Key::from(key.as_str()))
 }
 
 fn is_named_call(call: ast::FuncCall<'_>, name: &str) -> bool {
@@ -103,7 +103,7 @@ This reference is intentionally ignored: @internal-label.
         ];
         assert_eq!(keys.len(), expected.len());
         for key in expected {
-            assert!(keys.contains(&RecordId::from(key)));
+            assert!(keys.contains(&Key::from(key)));
         }
     }
 }

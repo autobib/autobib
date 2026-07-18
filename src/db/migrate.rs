@@ -165,6 +165,12 @@ pub fn migrate(conn: &mut Connection, v: i32) -> Result<(), DatabaseError> {
 
             tx.commit()?;
         }
+        3 => {
+            let tx = conn.transaction()?;
+            debug!("Renaming `Identifiers` table to `Keys`");
+            tx.execute("ALTER TABLE Identifiers RENAME TO Keys", ())?;
+            tx.commit()?;
+        }
         // this is only reachable if the user_version was set by a different program
         _ => return Err(DatabaseError::InvalidDatabase),
     }

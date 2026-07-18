@@ -2,16 +2,16 @@ use std::str::from_utf8;
 
 use memchr::memchr_iter;
 
-use crate::RecordId;
+use crate::Key;
 
-pub fn get_citekeys<T: Extend<RecordId>>(buffer: &[u8], container: &mut T) {
+pub fn get_citekeys<T: Extend<Key>>(buffer: &[u8], container: &mut T) {
     let mut start = 0;
     container.extend(memchr_iter(b'\n', buffer).filter_map(|end| {
         let res = from_utf8(&buffer[start..end])
             .ok()
             .and_then(|s| match s.trim() {
                 "" => None,
-                s => Some(RecordId::from(s)),
+                s => Some(Key::from(s)),
             });
         start = end + 1;
         res
@@ -19,7 +19,7 @@ pub fn get_citekeys<T: Extend<RecordId>>(buffer: &[u8], container: &mut T) {
     if let Ok(s) = from_utf8(&buffer[start..]) {
         let s = s.trim();
         if !s.is_empty() {
-            container.extend([RecordId::from(s)]);
+            container.extend([Key::from(s)]);
         }
     }
 }
@@ -37,11 +37,11 @@ d e f \t
 
 ghi
         ";
-        let mut vec: Vec<RecordId> = Vec::new();
+        let mut vec: Vec<Key> = Vec::new();
         get_citekeys(input, &mut vec);
         assert!(vec.len() == 4);
         for s in ["a", "bc", "d e f", "ghi"] {
-            assert!(vec.contains(&RecordId::from(s)));
+            assert!(vec.contains(&Key::from(s)));
         }
     }
 }

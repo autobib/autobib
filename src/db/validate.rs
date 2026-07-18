@@ -11,9 +11,7 @@ use chrono::{DateTime, Local};
 use rusqlite::types::ValueRef;
 
 use super::{Tx, schema};
-use crate::{
-    Identifier, RawEntryData, RecordId, RemoteId, error::InvalidBytesError, logger::debug,
-};
+use crate::{AsKey, Identifier, Key, RawEntryData, error::InvalidBytesError, logger::debug};
 
 /// A possible fault that could occurr inside the database.
 #[derive(Debug)]
@@ -37,11 +35,11 @@ pub enum DatabaseFault {
     /// A row has a canonical id which has not been normalized.
     RowHasNonNormalizedCanonicalId(i64, String, String),
     /// A row has an invalid canonical id.
-    InvalidIdentifier(String),
+    InvalidKey(String),
     /// A row has a canonical id which has not been normalized.
-    NonNormalizedIdentifier(String, String),
-    /// There are `NonZero<usize>` rows in the `Identifiers` table which point to a `Records` row which does not exist.
-    NullIdentifiers(NonZero<usize>),
+    NonNormalizedId(String, String),
+    /// There are `NonZero<usize>` rows in the `Keys` table which point to a `Records` row which does not exist.
+    NullKeys(NonZero<usize>),
     /// There was an underlying SQLite integrity error.
     IntegrityError(String),
     /// A row in the `Records` table contains invalid binary data.
@@ -110,19 +108,19 @@ impl fmt::Display for DatabaseFault {
                     "Record row '{row_id}' contains record id '{name}' which is not normalized: expected '{expected}'"
                 )
             }
-            Self::InvalidIdentifier(name) => {
+            Self::InvalidKey(name) => {
                 write!(
                     f,
-                    "Identifiers table contains record id '{name}' which is not a valid canonical id"
+                    "Keys table contains record id '{name}' which is not a valid canonical id"
                 )
             }
-            Self::NonNormalizedIdentifier(name, expected) => {
+            Self::NonNormalizedId(name, expected) => {
                 write!(
                     f,
-                    "Identifiers table contains record id '{name}' which is not normalized: expected '{expected}'"
+                    "Keys table contains record id '{name}' which is not normalized: expected '{expected}'"
                 )
             }
-            Self::NullIdentifiers(count) => {
+            Self::NullKeys(count) => {
                 if count.get() == 1 {
                     write!(
                         f,
@@ -186,7 +184,7 @@ impl<'conn> DatabaseValidator<'conn> {
     pub fn table_schema(&self, faults: &mut Vec<DatabaseFault>) -> Result<(), rusqlite::Error> {
         for (tbl_name, schema) in [
             ("Records", schema::records()),
-            ("Identifiers", schema::identifiers()),
+            ("Keys", schema::keys()),
             ("NullRecords", schema::null_records()),
         ] {
             debug!("Checking schema for table '{tbl_name}'.");
@@ -200,7 +198,7 @@ impl<'conn> DatabaseValidator<'conn> {
 
     /// Check the contents of the `Records` table for the following errors:
     /// 1. Invalid formats of canonical ids.
-    /// 2. Records which do not correspond to any rows in the `Identifiers` table.
+    /// 2. Records which do not correspond to any rows in the `Keys` table.
     pub fn record_indexing(&self, faults: &mut Vec<DatabaseFault>) -> Result<(), rusqlite::Error> {
         debug!("Checking record indexing");
         let mut retriever = self.tx.prepare("SELECT * FROM Records")?;
@@ -210,19 +208,19 @@ impl<'conn> DatabaseValidator<'conn> {
             // first verify that we actually get a proper canonical id
             let row_id = row.get("key")?;
             let name: String = row.get("record_id")?;
-            let canonical_id: RemoteId = match RemoteId::from_str(name.as_ref()) {
-                Ok(remote_id) => remote_id,
+            let canonical_id: Identifier = match Identifier::from_str(name.as_ref()) {
+                Ok(id) => id,
                 Err(_) => {
                     faults.push(DatabaseFault::RowHasInvalidCanonicalId(row_id, name));
                     continue;
                 }
             };
 
-            if name != canonical_id.name() {
+            if name != canonical_id.as_key() {
                 faults.push(DatabaseFault::RowHasNonNormalizedCanonicalId(
                     row_id,
                     name,
-                    canonical_id.name().to_string(),
+                    canonical_id.as_key().to_string(),
                 ));
                 continue;
             }
@@ -262,14 +260,14 @@ impl<'conn> DatabaseValidator<'conn> {
     }
 
     pub fn check_active_row_counts(&self, faults: &mut Vec<DatabaseFault>) -> rusqlite::Result<()> {
-        debug!("Checking that each canonical id occurs at most once in the Identifiers table");
+        debug!("Checking that each canonical id occurs at most once in the Keys table");
         let mut stmt = self.tx.prepare(
             "
 SELECT
     record_id,
     count(DISTINCT key) as active_row_count
 FROM Records
-WHERE key IN (SELECT record_key FROM Identifiers)
+WHERE key IN (SELECT record_key FROM Keys)
 GROUP BY record_id
 HAVING count(DISTINCT key) != 1
 ",
@@ -285,7 +283,7 @@ HAVING count(DISTINCT key) != 1
             faults.push(DatabaseFault::IncorrectActiveRowCount(record_id, n));
         }
 
-        debug!("Checking that each canonical id occurs in the Identifiers table");
+        debug!("Checking that each canonical id occurs in the Keys table");
         let mut stmt = self.tx.prepare(
             "
 SELECT DISTINCT
@@ -294,7 +292,7 @@ FROM Records
 WHERE record_id NOT IN (
     SELECT r.record_id
     FROM Records AS r
-    WHERE r.key IN (SELECT record_key FROM Identifiers)
+    WHERE r.key IN (SELECT record_key FROM Keys)
 )
 ",
         )?;
@@ -358,15 +356,15 @@ WHERE c.modified < p.modified",
         })
     }
 
-    /// Check the `Identifiers` table for foreign key constraint violations.
+    /// Check the `Keys` table for foreign key constraint violations.
     pub fn invalid_identifiers(
         &self,
         faults: &mut Vec<DatabaseFault>,
     ) -> Result<(), rusqlite::Error> {
-        debug!("Checking 'Identifiers' table consistency");
+        debug!("Checking 'Keys' table consistency");
         let mut num_faults: usize = 0;
 
-        // since `Identifiers` is a `WITHOUT ROWID` table, `PRAGMA foreign_key_check;` does not
+        // since `Keys` is a `WITHOUT ROWID` table, `PRAGMA foreign_key_check;` does not
         // return meaningful information since it cannot provide a rowid for which the foreign key
         // constraint is violated. As a result, the best way for us to handle this is just to
         // return the number of violations.
@@ -376,26 +374,26 @@ WHERE c.modified < p.modified",
         })?;
 
         if let Some(nz) = NonZero::new(num_faults) {
-            faults.push(DatabaseFault::NullIdentifiers(nz));
+            faults.push(DatabaseFault::NullKeys(nz));
         }
 
-        debug!("Checking 'Identifiers' table for non-normalized identifiers");
-        let mut retriever = self.tx.prepare("SELECT * FROM Identifiers")?;
+        debug!("Checking 'Keys' table for non-normalized identifiers");
+        let mut retriever = self.tx.prepare("SELECT * FROM Keys")?;
         let mut rows = retriever.query([])?;
 
         while let Some(row) = rows.next()? {
             let name: String = row.get("name")?;
 
-            let id: String = match RecordId::from(name.as_ref()).resolve(&()) {
-                Ok(alias_or_remote_id) => alias_or_remote_id.into(),
+            let id: String = match Key::from(name.as_ref()).resolve(&()) {
+                Ok(alias_or_id) => alias_or_id.into(),
                 Err(_) => {
-                    faults.push(DatabaseFault::InvalidIdentifier(name));
+                    faults.push(DatabaseFault::InvalidKey(name));
                     continue;
                 }
             };
 
             if name != id {
-                faults.push(DatabaseFault::NonNormalizedIdentifier(name, id));
+                faults.push(DatabaseFault::NonNormalizedId(name, id));
                 continue;
             }
         }

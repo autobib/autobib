@@ -12,16 +12,16 @@ pub struct RecordError {
 
 #[derive(Debug)]
 pub enum RecordErrorKind {
-    RemoteId(RemoteIdErrorKind),
+    Identifier(IdErrorKind),
     Alias(AliasErrorKind),
-    InvalidMappedAlias(RemoteIdErrorKind),
+    InvalidMappedAlias(IdErrorKind),
 }
 
 impl fmt::Display for RecordError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Invalid key '{}': ", self.input)?;
         match &self.kind {
-            RecordErrorKind::RemoteId(kind) => write!(f, "{}", kind.msg()),
+            RecordErrorKind::Identifier(kind) => write!(f, "{}", kind.msg()),
             RecordErrorKind::Alias(kind) => write!(f, "{}", kind.msg()),
             RecordErrorKind::InvalidMappedAlias(kind) => {
                 write!(f, "auto-aliased to invalid remote id: {}", kind.msg())
@@ -31,12 +31,12 @@ impl fmt::Display for RecordError {
         // compute and print alternative keys
         if let Some((_, sub_id)) = self.input.split_once(':') {
             let mut first = true;
-            crate::provider::suggest_valid_remote_identifiers(sub_id, |remote_id| {
+            crate::provider::suggest_valid_ids(sub_id, |id| {
                 if first {
                     first = false;
-                    write!(f, "\n       Maybe you meant: '{remote_id}'")
+                    write!(f, "\n       Maybe you meant: '{id}'")
                 } else {
-                    write!(f, ", '{remote_id}'")
+                    write!(f, ", '{id}'")
                 }
             })?;
         };
@@ -45,13 +45,13 @@ impl fmt::Display for RecordError {
 }
 
 #[derive(Error, Debug)]
-pub struct RemoteIdConversionError {
+pub struct IdConversionError {
     pub input: String,
-    pub kind: RemoteIdErrorKind,
+    pub kind: IdErrorKind,
 }
 
 #[derive(Debug)]
-pub enum RemoteIdErrorKind {
+pub enum IdErrorKind {
     InvalidProvider,
     InvalidSubId,
     EmptyProvider,
@@ -59,7 +59,7 @@ pub enum RemoteIdErrorKind {
     IsAlias,
 }
 
-impl RemoteIdErrorKind {
+impl IdErrorKind {
     fn msg(&self) -> &'static str {
         match self {
             Self::EmptyProvider => "provider must contain non-whitespace characters",
@@ -71,13 +71,13 @@ impl RemoteIdErrorKind {
     }
 }
 
-impl ShortError for RemoteIdConversionError {
+impl ShortError for IdConversionError {
     fn short_err(&self) -> &'static str {
         self.kind.msg()
     }
 }
 
-impl fmt::Display for RemoteIdConversionError {
+impl fmt::Display for IdConversionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -88,12 +88,12 @@ impl fmt::Display for RemoteIdConversionError {
     }
 }
 
-impl From<RemoteIdConversionError> for RecordError {
-    fn from(value: RemoteIdConversionError) -> Self {
-        let RemoteIdConversionError { input, kind } = value;
+impl From<IdConversionError> for RecordError {
+    fn from(value: IdConversionError) -> Self {
+        let IdConversionError { input, kind } = value;
         Self {
             input,
-            kind: RecordErrorKind::RemoteId(kind),
+            kind: RecordErrorKind::Identifier(kind),
         }
     }
 }
@@ -107,7 +107,7 @@ pub struct AliasConversionError {
 #[derive(Debug)]
 pub enum AliasErrorKind {
     Empty,
-    IsRemoteId,
+    IsIdentifier,
     ContainsControl,
 }
 
@@ -115,7 +115,7 @@ impl AliasErrorKind {
     fn msg(&self) -> &'static str {
         match self {
             Self::Empty => "alias must contain non-whitespace characters",
-            Self::IsRemoteId => "alias must not contain a colon",
+            Self::IsIdentifier => "alias must not contain a colon",
             Self::ContainsControl => "alias must not contain control characters",
         }
     }

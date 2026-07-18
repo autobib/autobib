@@ -1,16 +1,16 @@
 # The Autobib data model
 
-## Identifiers
+## Keys
 
-Any way to refer to record data stored in your database is called an **identifier**.
+Any way to refer to record data stored in your database is called a **key**.
 There are three ways to refer to record data:
 
 - By [**provenance**](#provenance): the source that the record data originated from.
-  The corresponding identifiers are called *canonical id*s.
+  The corresponding keys are called *canonical id*s.
 - By [**reference**](#references-to-provenance): a standardized way of referring to a specific provenance.
-  The corresponding identifiers are called *ref id*s.
+  The corresponding keys are called *ref id*s.
 - By [**alias**](#aliases): an alternative name for provenance
-  The corresponding identifiers are called *alias*es.
+  The corresponding keys are called *alias*es.
 
 ### Provenance
 

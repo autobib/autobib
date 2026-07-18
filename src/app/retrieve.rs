@@ -19,17 +19,17 @@ use crate::{
     error::{DatabaseError, Error},
     http::Client,
     logger::{error, reraise, suggest},
-    record::{KeyedRecord, RecordId, RecordResponse, RemoteId, get_record},
+    record::{Identifier, Key, KeyedRecord, RecordResponse, get_record},
 };
 
 /// Retrieve identifiers as BibTeX entries.
-pub fn retrieve_entries<T: IntoIterator<Item = RecordId>, C: Client>(
+pub fn retrieve_entries<T: IntoIterator<Item = Key>, C: Client>(
     ids: T,
     record_db: &mut RecordDatabase,
     client: &C,
     ignore_null: bool,
     config: &Config,
-) -> BTreeMap<RemoteId, NonEmpty<BibtexEntry<RawEntryData>>> {
+) -> BTreeMap<Identifier, NonEmpty<BibtexEntry<RawEntryData>>> {
     let valid_entries = ids.into_iter().filter_map(|id| {
         retrieve_single_entry(record_db, id, client, ignore_null, config, |r, s| {
             Ok(try_data_to_entry(r, s))
@@ -43,7 +43,7 @@ pub fn retrieve_entries<T: IntoIterator<Item = RecordId>, C: Client>(
 }
 
 /// Synchronize entries with remote.
-pub fn sync_entries<T: IntoIterator<Item = RecordId>, C: Client>(
+pub fn sync_entries<T: IntoIterator<Item = Key>, C: Client>(
     ids: T,
     record_db: &mut RecordDatabase,
     client: &C,
@@ -63,12 +63,12 @@ pub fn sync_entries<T: IntoIterator<Item = RecordId>, C: Client>(
 
 /// Retrieve identifiers as BibTeX entries without writing to the database or making remote
 /// requests.
-pub fn retrieve_entries_read_only<T: IntoIterator<Item = RecordId>>(
+pub fn retrieve_entries_read_only<T: IntoIterator<Item = Key>>(
     ids: T,
     record_db: &mut RecordDatabase,
     ignore_null: bool,
     config: &Config,
-) -> BTreeMap<RemoteId, NonEmpty<BibtexEntry<RawEntryData>>> {
+) -> BTreeMap<Identifier, NonEmpty<BibtexEntry<RawEntryData>>> {
     let valid_entries = ids.into_iter().filter_map(|record_id| {
         retrieve_single_entry_read_only(record_db, record_id, ignore_null, config, |r, s| {
             Ok(try_data_to_entry(r, s))
@@ -82,7 +82,7 @@ pub fn retrieve_entries_read_only<T: IntoIterator<Item = RecordId>>(
 }
 
 /// Synchronize entries with remote.
-pub fn sync_entries_read_only<T: IntoIterator<Item = RecordId>>(
+pub fn sync_entries_read_only<T: IntoIterator<Item = Key>>(
     ids: T,
     record_db: &mut RecordDatabase,
     ignore_null: bool,
@@ -102,7 +102,7 @@ pub fn sync_entries_read_only<T: IntoIterator<Item = RecordId>>(
 /// Retrieve a single entry and apply a closure to the resulting data.
 pub fn retrieve_single_entry_read_only<V, T>(
     record_db: &mut RecordDatabase,
-    id: RecordId,
+    id: Key,
     ignore_null: bool,
     config: &Config,
     validate: V,
@@ -110,7 +110,7 @@ pub fn retrieve_single_entry_read_only<V, T>(
 where
     V: FnOnce(KeyedRecord<RawEntryData>, &State<'_, IsEntry>) -> Result<Option<T>, DatabaseError>,
 {
-    match record_db.state_from_record_id(id, &config.alias_transform)? {
+    match record_db.state_from_key(id, &config.alias_transform)? {
         DatabaseResponse::Entry(record, state) => {
             let entry = validate(record, &state)?;
             state.commit()?;
@@ -137,9 +137,9 @@ where
             error!("Record exists but has been voided: {key}");
             Ok(None)
         }
-        DatabaseResponse::NullRemoteId(remote_id, missing) => {
+        DatabaseResponse::NullId(id, missing) => {
             if !ignore_null {
-                error!("Null record: '{remote_id}'");
+                error!("Null record: '{id}'");
             }
             missing.commit()?;
             Ok(None)
@@ -150,7 +150,7 @@ where
             }
             Ok(None)
         }
-        DatabaseResponse::InvalidRemoteId(err) => {
+        DatabaseResponse::InvalidId(err) => {
             reraise(&err);
             Ok(None)
         }
@@ -165,7 +165,7 @@ where
 /// Retrieve and apply a validation function to a single record
 pub fn retrieve_single_entry<C, V, T>(
     record_db: &mut RecordDatabase,
-    id: RecordId,
+    id: Key,
     client: &C,
     ignore_null: bool,
     config: &Config,
@@ -191,9 +191,9 @@ where
             deleted.commit()?;
             Ok(None)
         }
-        RecordResponse::NullRemoteId(remote_id, missing) => {
+        RecordResponse::NullId(id, missing) => {
             if !ignore_null {
-                error!("Null record: '{remote_id}'");
+                error!("Null record: '{id}'");
             }
             missing.commit()?;
             Ok(None)
@@ -204,7 +204,7 @@ where
             }
             Ok(None)
         }
-        RecordResponse::InvalidRemoteId(err) => {
+        RecordResponse::InvalidId(err) => {
             reraise(&err);
             Ok(None)
         }
@@ -220,7 +220,7 @@ pub fn try_data_to_entry(
         },
     }: KeyedRecord<RawEntryData>,
     row: &State<'_, IsEntry>,
-) -> Option<(BibtexEntry<RawEntryData>, RemoteId)> {
+) -> Option<(BibtexEntry<RawEntryData>, Identifier)> {
     validate_bibtex_key(key, row).map(|key| (BibtexEntry::new(key, data), canonical))
 }
 
@@ -257,11 +257,11 @@ fn validate_bibtex_key(key: String, row: &State<IsEntry>) -> Option<EntryKey<Str
 /// Group valid entries by their canonical id in order to catch duplicate entries.
 fn group_valid_entries_by_canonical<T>(
     valid_entries: T,
-) -> BTreeMap<RemoteId, NonEmpty<BibtexEntry<RawEntryData>>>
+) -> BTreeMap<Identifier, NonEmpty<BibtexEntry<RawEntryData>>>
 where
-    T: IntoIterator<Item = (BibtexEntry<RawEntryData>, RemoteId)>,
+    T: IntoIterator<Item = (BibtexEntry<RawEntryData>, Identifier)>,
 {
-    let mut grouped_entries: BTreeMap<RemoteId, NonEmpty<BibtexEntry<RawEntryData>>> =
+    let mut grouped_entries: BTreeMap<Identifier, NonEmpty<BibtexEntry<RawEntryData>>> =
         BTreeMap::new();
     for (bibtex_entry, canonical) in valid_entries {
         match grouped_entries.entry(canonical) {

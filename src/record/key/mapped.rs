@@ -1,8 +1,8 @@
 use std::fmt;
 
-use super::{Alias, AliasOrRemoteId, Identifier, RecordError, RecordId, RemoteId};
+use super::{Alias, AliasOrId, AsKey, Identifier, Key, RecordError};
 
-/// A wrapper struct for a [`RemoteId`] which has been transformed from an original key, for
+/// A wrapper struct for an [`Identifier`] which has been transformed from an original key, for
 /// instance through a sub_id normalization or an alias transform.
 ///
 /// This struct has a special [`Display`](fmt::Display) implementation which shows both the key and
@@ -10,14 +10,14 @@ use super::{Alias, AliasOrRemoteId, Identifier, RecordError, RecordId, RemoteId}
 #[derive(Debug)]
 pub struct MappedKey<T = String> {
     /// The underlying key.
-    pub mapped: RemoteId,
+    pub mapped: Identifier,
     /// The original value of the key, if normalization was applied.
     pub original: Option<T>,
 }
 
 impl<T> MappedKey<T> {
     /// Initialize for a key which was unchanged.
-    pub fn unchanged(key: RemoteId) -> Self {
+    pub fn unchanged(key: Identifier) -> Self {
         Self {
             mapped: key,
             original: None,
@@ -25,7 +25,7 @@ impl<T> MappedKey<T> {
     }
 
     /// Initialize for a key which was mapped from some original value.
-    pub fn mapped(key: RemoteId, original: T) -> Self {
+    pub fn mapped(key: Identifier, original: T) -> Self {
         Self {
             mapped: key,
             original: Some(original),
@@ -39,7 +39,7 @@ impl<T> MappedKey<T> {
 }
 
 impl MappedKey {
-    /// Construct a [`RemoteId`] from the provider and sub_id components.
+    /// Construct an [`Identifier`] from the provider and sub_id components.
     #[inline]
     pub fn mapped_from_parts(provider: &str, sub_id: &str) -> Result<Self, RecordError> {
         let mut full_id = String::with_capacity(provider.len() + sub_id.len() + 1);
@@ -47,7 +47,7 @@ impl MappedKey {
         full_id.push(':');
         full_id.push_str(sub_id);
 
-        RecordId {
+        Key {
             full_id,
             provider_len: Some(provider.len()),
         }
@@ -65,7 +65,7 @@ impl<T: Into<Self>> From<MappedKey<T>> for String {
     }
 }
 
-impl<T> From<MappedKey<T>> for RemoteId {
+impl<T> From<MappedKey<T>> for Identifier {
     fn from(value: MappedKey<T>) -> Self {
         value.mapped
     }
@@ -81,31 +81,29 @@ impl<T: fmt::Display> fmt::Display for MappedKey<T> {
     }
 }
 
-impl<T> Identifier for MappedKey<T> {
-    fn name(&self) -> &str {
-        self.mapped.name()
+impl<T> AsKey for MappedKey<T> {
+    fn as_key(&self) -> &str {
+        self.mapped.as_key()
     }
 }
 
-/// Either an [`Alias`] or a [`RemoteId`].
+/// Either an [`Alias`] or an [`Identifier`].
 #[derive(Debug)]
-pub enum MappedAliasOrRemoteId {
+pub enum MappedAliasOrId {
     /// An [`Alias`].
     Alias(Alias),
-    /// A [`RemoteId`], which may be a normalized form of the original `provider:sub_id` or may
+    /// A [`Identifier`], which may be a normalized form of the original `provider:sub_id` or may
     /// have been mapped from an alias using an alias transformation.
-    RemoteId(MappedKey),
+    Id(MappedKey),
 }
 
-impl From<AliasOrRemoteId> for MappedAliasOrRemoteId {
+impl From<AliasOrId> for MappedAliasOrId {
     /// Convert the mapped alias variant into a mapped key, preserving the other values.
-    fn from(value: AliasOrRemoteId) -> Self {
+    fn from(value: AliasOrId) -> Self {
         match value {
-            AliasOrRemoteId::Alias(alias, None) => Self::Alias(alias),
-            AliasOrRemoteId::Alias(alias, Some(remote_id)) => {
-                Self::RemoteId(MappedKey::mapped(remote_id, alias.into()))
-            }
-            AliasOrRemoteId::RemoteId(mapped_key) => Self::RemoteId(mapped_key),
+            AliasOrId::Alias(alias, None) => Self::Alias(alias),
+            AliasOrId::Alias(alias, Some(id)) => Self::Id(MappedKey::mapped(id, alias.into())),
+            AliasOrId::Id(mapped_key) => Self::Id(mapped_key),
         }
     }
 }

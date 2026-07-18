@@ -4,7 +4,7 @@ use memchr::{memchr, memchr2, memchr3};
 use regex::Regex;
 use serde_bibtex::token::is_entry_key;
 
-use crate::RecordId;
+use crate::Key;
 
 /// Move forward until all comments and whitespace are consumed.
 fn comment_and_ws(buffer: &[u8], mut pos: usize) -> usize {
@@ -109,7 +109,7 @@ fn macro_argument(buffer: &[u8], mut pos: usize) -> (Option<String>, usize) {
 }
 
 /// Parse the citation contents and append new keys to `keys`.
-fn parse_cite_contents<T: Extend<RecordId>>(contents: &str, container: &mut T) {
+fn parse_cite_contents<T: Extend<Key>>(contents: &str, container: &mut T) {
     container.extend(
         contents
             .split(',')
@@ -131,7 +131,7 @@ fn is_citation_macro_name(cmd: &str) -> bool {
 ///
 /// Citekeys essentially appear in the buffer in the form `\...cite{key1, key2}`, though there is a decent
 /// amount of extra work required to properly handle comments and other subtleties.
-pub fn get_citekeys<T: Extend<RecordId>>(buffer: &[u8], container: &mut T) {
+pub fn get_citekeys<T: Extend<Key>>(buffer: &[u8], container: &mut T) {
     let mut pos: usize = 0;
 
     while let Some(next) = memchr2(b'%', b'\\', &buffer[pos..]) {
@@ -166,7 +166,7 @@ mod test {
     use std::iter::zip;
 
     use super::*;
-    use crate::Identifier;
+    use crate::AsKey;
 
     #[test]
     fn test_citation_macro() {
@@ -200,7 +200,7 @@ mod test {
         let expected = ["ref1", "ref2", "ref3", "ref4"];
         assert_eq!(container.len(), expected.len());
         for (exp, rec) in zip(expected.iter(), container.iter()) {
-            assert_eq!(*exp, rec.name());
+            assert_eq!(*exp, rec.as_key());
         }
     }
 }
