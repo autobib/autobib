@@ -949,7 +949,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                             writeln!(writer, "{canonical}")?;
                         }
                     }
-                    InfoReportType::Valid => {
+                    InfoReportType::Bibtex => {
                         let is_valid = serde_bibtex::token::is_entry_key(&key);
                         if json {
                             serde_json::to_writer(&mut writer, &is_valid)?;
