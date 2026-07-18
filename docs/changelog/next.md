@@ -28,7 +28,8 @@ Changes since `v0.6.1`.
 - The configuration value `preferred_providers` has been replaced by `preferred_keys`.
   - `preferred_keys` is more general and can contain a list of regexes to match keys
   - Migrate `preferred_providers` to `preferred_keys` by replacing each `provider` with the corresponding regex `^provider:.*`
-- `autobib info` has been refactored to print JSON with `--report all`
+- `autobib info` format with `--report all` has changed.
+  Note that `autobib info` is not intended to be machine-readable; use `autobib info --json` isntead.
 - Aliases can no longer contain control characters (such as tab `\t` or newline `\n`).
   - Existing aliases containing control characters can still be accessed and renamed.
 
@@ -52,6 +53,7 @@ Changes since `v0.6.1`.
   - Single-selection mode can be re-enabled with `-1/--one`
 - Added `autobib info -r preferred` to print the preferred identifier associated with a record.
 - Added `autobib source --json`, which outputs a JSON dictionary mapping citation keys to record data.
+- Added `autobib info --json` to format the report as appropriate JSON.
 - Added `autobib backup` to backup the record SQL database to a separate file.
 - Added `autobib get --template`, to format records with an arbitrary template instead of as BibTeX.
 
