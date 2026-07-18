@@ -69,7 +69,7 @@ pub struct Cli {
 
 #[derive(Debug, Copy, Clone, ValueEnum, Default)]
 pub enum InfoReportType {
-    /// Show all info as a JSON record.
+    /// Show all info.
     #[default]
     #[value(alias("a"))]
     All,
@@ -342,6 +342,9 @@ pub enum Command {
         /// The type of information to display.
         #[arg(short, long, value_enum, default_value_t)]
         report: InfoReportType,
+        /// Format the report as JSON.
+        #[arg(short, long)]
+        json: bool,
     },
     /// List identifiers present in the database.
     #[command(alias = "ls")]

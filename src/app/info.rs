@@ -1,4 +1,4 @@
-use std::cmp::Ordering;
+use std::{cmp::Ordering, fmt};
 
 use serde::Serialize;
 use serde_bibtex::token::is_entry_key;
@@ -6,6 +6,7 @@ use serde_bibtex::token::is_entry_key;
 use crate::{
     config::Config,
     db::state::{ArbitraryData, InRecordsTable, Record, RevisionId, State},
+    entry::{AsEntryData, EntryData},
 };
 
 #[derive(Serialize)]
@@ -21,6 +22,60 @@ pub struct RecordInfo {
     pub key: KeyInfo,
     pub revision: RevisionId,
     pub record: Record<ArbitraryData>,
+}
+
+impl fmt::Display for RecordInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Key: {}", self.key.original)?;
+        writeln!(f, "Revision: {}", self.revision)?;
+        writeln!(f, "Last modified: {}", self.record.modified)?;
+        writeln!(f, "==> Key and identifier")?;
+        writeln!(f, "Canonical identifier: {}", self.record.canonical)?;
+        if let Some(ref preferred) = self.key.preferred {
+            writeln!(f, "Preferred key: {preferred}")?;
+        } else {
+            writeln!(f, "No matching preferred key")?;
+        }
+        writeln!(
+            f,
+            "Valid bibtex? {}",
+            if self.key.is_valid_bibtex {
+                "yes"
+            } else {
+                "no"
+            }
+        )?;
+        writeln!(f, "Equivalent keys:")?;
+        for k in &self.key.equivalent {
+            writeln!(f, "  {k}")?;
+        }
+        match &self.record.data {
+            ArbitraryData::Entry(raw_entry_data) => {
+                writeln!(f, "==> Entry data",)?;
+                writeln!(
+                    f,
+                    "Entry type: {}",
+                    raw_entry_data.as_entry_data().entry_type()
+                )?;
+                writeln!(f, "Fields:",)?;
+                for (k, v) in raw_entry_data.as_entry_data().fields() {
+                    writeln!(f, "  {k} = {{{v}}}")?;
+                }
+            }
+            ArbitraryData::Deleted(remote_id) => {
+                writeln!(f, "==> Soft-deleted",)?;
+                if let Some(s) = remote_id {
+                    writeln!(f, "Replaced by: {s}")?;
+                } else {
+                    writeln!(f, "No replacement key")?;
+                }
+            }
+            ArbitraryData::Void => {
+                writeln!(f, "==> Void")?;
+            }
+        }
+        Ok(())
+    }
 }
 
 impl RecordInfo {
