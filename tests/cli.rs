@@ -1428,7 +1428,7 @@ fn consistency() -> Result<()> {
     conn.pragma_update(None, "foreign_keys", 0)?;
     conn.prepare("DELETE FROM Records WHERE record_id = 'zbmath:6346461'")?
         .execute(())?;
-    conn.prepare("DELETE FROM Identifiers WHERE name = 'mr:3224722'")?
+    conn.prepare("DELETE FROM Keys WHERE name = 'mr:3224722'")?
         .execute(())?;
     drop(conn);
 

@@ -8,7 +8,7 @@ use data_encoding::{Encoding, Specification};
 use walkdir::{DirEntry, WalkDir};
 
 use crate::{
-    RemoteId,
+    Identifier,
     logger::{error, warn},
     path_hash::{
         AttachmentFormat, AttachmentRoot, extend_attachment_path_v0, extend_attachment_path_v1,
@@ -124,11 +124,11 @@ fn is_attachment_walk_entry(entry: &DirEntry) -> bool {
     }
 }
 
-fn decode_attachment_dir_id(provider: &str, source: &Path) -> Option<RemoteId> {
+fn decode_attachment_dir_id(provider: &str, source: &Path) -> Option<Identifier> {
     if let Some(encoded) = source.file_name().and_then(|name| name.to_str())
         && let Ok(sub_id_bytes) = BASE32_PERMISSIVE.decode(encoded.as_bytes())
         && let Ok(sub_id) = std::str::from_utf8(&sub_id_bytes)
-        && let Ok(id) = RemoteId::from_parts(provider, sub_id)
+        && let Ok(id) = Identifier::from_parts(provider, sub_id)
     {
         Some(id)
     } else {

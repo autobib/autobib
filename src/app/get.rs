@@ -15,7 +15,7 @@ use crate::{
     error::DatabaseError,
     format::{Template, TemplateData},
     http::Client,
-    record::{KeyedRecord, RecordId, RemoteId},
+    record::{Identifier, Key, KeyedRecord},
 };
 
 pub trait Output {
@@ -67,7 +67,7 @@ impl<'r, W: io::Write + ?Sized> BibtexOutput<'r, W> {
 }
 
 impl<'r, W: io::Write + ?Sized> Output for BibtexOutput<'r, W> {
-    type Data = (BibtexEntry<RawEntryData>, RemoteId);
+    type Data = (BibtexEntry<RawEntryData>, Identifier);
 
     fn write_item(&mut self, (entry, _): Self::Data) -> Result<(), io::Error> {
         if self.first {
@@ -194,7 +194,7 @@ pub fn retrieve_all<W, C>(
     cfg: &Config,
     client: &C,
     record_db: &mut RecordDatabase,
-    identifiers: Vec<RecordId>,
+    identifiers: Vec<Key>,
     ignore_null: bool,
 ) -> anyhow::Result<()>
 where
@@ -214,7 +214,7 @@ where
     let stdin = io::stdin().lock();
     if !stdin.is_terminal() {
         for line in stdin.lines() {
-            let id = RecordId::from(line?);
+            let id = Key::from(line?);
             if let Some(item) =
                 retrieve_single_entry(record_db, id, client, ignore_null, cfg, W::filter_map)?
             {
@@ -231,7 +231,7 @@ pub fn retrieve_all_read_only<W>(
     mut writer: W,
     cfg: &Config,
     record_db: &mut RecordDatabase,
-    identifiers: Vec<RecordId>,
+    identifiers: Vec<Key>,
     ignore_null: bool,
 ) -> anyhow::Result<()>
 where
@@ -249,7 +249,7 @@ where
     let stdin = io::stdin().lock();
     if !stdin.is_terminal() {
         for line in stdin.lines() {
-            let id = RecordId::from(line?);
+            let id = Key::from(line?);
             if let Some(item) =
                 retrieve_single_entry_read_only(record_db, id, ignore_null, cfg, W::filter_map)?
             {

@@ -12,14 +12,14 @@ use crate::{
     entry::{MutableEntryData, RawEntryData},
     logger::{suggest, warn},
     path_hash::{AttachmentRenameOutcome, AttachmentRoot},
-    record::{KeyedRecord, RecordId},
+    record::{Key, KeyedRecord},
 };
 
 /// The closure `data_cb` is a function which accepts a transaction and the entry data for the
 /// record to be replaced and returns a record corresponding to its replacement.
 #[expect(clippy::too_many_arguments)]
 pub fn replace<'conn, G>(
-    identifier: RecordId,
+    identifier: Key,
     tx: Tx<'conn>,
     cfg: &Config,
     data_cb: G,

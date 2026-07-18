@@ -4,9 +4,9 @@ use chrono::{DateTime, Local};
 use rusqlite::types::ValueRef;
 
 use crate::{
-    db::{Identifier, state::create_rewind_target},
+    db::{AsKey, state::create_rewind_target},
     logger::info,
-    record::RemoteId,
+    record::Identifier,
 };
 
 use super::{
@@ -87,7 +87,7 @@ impl<'conn> Snapshot<'conn> {
 WITH RECURSIVE ancestors AS (
     SELECT key, parent_key
     FROM Records
-    WHERE key IN (SELECT record_key FROM Identifiers)
+    WHERE key IN (SELECT record_key FROM Keys)
 
     UNION ALL
 
@@ -115,7 +115,7 @@ DELETE FROM Records WHERE key NOT IN (SELECT key FROM descendants);
         let now = Local::now();
 
         // create a new version for every non-leaf node, returning the required update pairs
-        // for the Identifiers table
+        // for the Keys table
         let mut to_update: Vec<(i64, i64)> = Vec::new();
 
         let mut stmt = self.tx.prepare(
@@ -123,7 +123,7 @@ DELETE FROM Records WHERE key NOT IN (SELECT key FROM descendants);
 INSERT INTO Records (record_id, data, modified, variant, parent_key)
 SELECT r.record_id, r.data, ?1, r.variant, r.key
 FROM Records AS r
-WHERE r.key IN (SELECT record_key FROM Identifiers)
+WHERE r.key IN (SELECT record_key FROM Keys)
 RETURNING key, parent_key",
         )?;
 
@@ -136,7 +136,7 @@ RETURNING key, parent_key",
 
         for (key, parent_key) in to_update {
             self.tx
-                .prepare_cached("UPDATE Identifiers SET record_key = ?1 WHERE record_key = ?2")?
+                .prepare_cached("UPDATE Keys SET record_key = ?1 WHERE record_key = ?2")?
                 .execute((key, parent_key))?;
         }
 
@@ -149,7 +149,7 @@ RETURNING key, parent_key",
         // delete everything which is not active. we don't need to set `parent_key = NULL` because
         // of the `ON DELETE SET NULL` foreign key constraint
         self.tx
-            .prepare("DELETE FROM Records WHERE key NOT IN (SELECT record_key FROM Identifiers)")?
+            .prepare("DELETE FROM Records WHERE key NOT IN (SELECT record_key FROM Keys)")?
             .execute([])?;
         Ok(())
     }
@@ -162,7 +162,7 @@ RETURNING key, parent_key",
             .prepare(
                 "
 WITH RECURSIVE descendants AS (
-  SELECT DISTINCT record_key AS key FROM Identifiers
+  SELECT DISTINCT record_key AS key FROM Keys
 
   UNION ALL
 
@@ -186,7 +186,7 @@ DELETE FROM Records WHERE key NOT IN (SELECT key FROM descendants)",
 WITH RECURSIVE ancestors AS (
     SELECT key, parent_key, 0 as level
     FROM Records
-    WHERE key IN (SELECT record_key FROM Identifiers)
+    WHERE key IN (SELECT record_key FROM Keys)
 
     UNION ALL
 
@@ -214,7 +214,7 @@ DELETE FROM Records WHERE key NOT IN (SELECT key FROM descendants);
     /// Check whether a specific revision is active.
     pub fn is_active(&self, rev_id: RevisionId) -> rusqlite::Result<bool> {
         self.tx
-            .prepare("SELECT EXISTS (SELECT 1 FROM Identifiers WHERE record_key = ?1)")?
+            .prepare("SELECT EXISTS (SELECT 1 FROM Keys WHERE record_key = ?1)")?
             .query_one([rev_id.0], |row| row.get(0))
     }
 
@@ -226,7 +226,7 @@ DELETE FROM Records WHERE key NOT IN (SELECT key FROM descendants);
                 "
 DELETE FROM Records
 WHERE variant = 2
-  AND key NOT IN (SELECT record_key FROM Identifiers)
+  AND key NOT IN (SELECT record_key FROM Keys)
   AND (SELECT count(*) FROM Records AS r WHERE r.parent_key = Records.key LIMIT 2) = 1",
             )?
             .execute([])?;
@@ -242,7 +242,7 @@ WHERE variant = 2
                 "
 DELETE FROM Records
 WHERE variant = 1
-  AND key NOT IN (SELECT record_key FROM Identifiers)
+  AND key NOT IN (SELECT record_key FROM Keys)
   AND NOT EXISTS (SELECT 1 FROM Records AS r WHERE r.parent_key = Records.key)",
             )?
             .execute([])?;
@@ -254,7 +254,7 @@ WHERE variant = 1
     pub fn rewind_all(&self, after: DateTime<Local>) -> rusqlite::Result<()> {
         let mut retriever = self
             .tx
-            .prepare("SELECT record_id, key FROM Records WHERE key IN (SELECT record_key FROM Identifiers) AND modified > ?1")?;
+            .prepare("SELECT record_id, key FROM Records WHERE key IN (SELECT record_key FROM Keys) AND modified > ?1")?;
 
         let mut outdated: Vec<(String, i64)> = Vec::new();
 
@@ -268,7 +268,7 @@ WHERE variant = 1
             let new_row_id = create_rewind_target(&self.tx, &canonical, after)?;
             info!("Rewinding '{canonical}' from rev {row_id:0>4x} to rev {new_row_id:0>4x}");
             self.tx
-                .prepare_cached("UPDATE Identifiers SET record_key = ?1 WHERE record_key = ?2")?
+                .prepare_cached("UPDATE Keys SET record_key = ?1 WHERE record_key = ?2")?
                 .execute((new_row_id, row_id))?;
         }
         Ok(())
@@ -283,7 +283,7 @@ WHERE variant = 1
     {
         let mut retriever = self
             .tx
-            .prepare("SELECT key, record_id, modified, data, variant FROM Records WHERE key IN (SELECT record_key FROM Identifiers)")?;
+            .prepare("SELECT key, record_id, modified, data, variant FROM Records WHERE key IN (SELECT record_key FROM Keys)")?;
 
         let rows = retriever.query_map([], move |row| {
             let record_row = Record::borrow_from_row_unchecked(row);
@@ -301,29 +301,29 @@ WHERE variant = 1
 
     /// Iterate over all active canonical identifiers and apply the fallible closure `f` to each
     /// remote id.
-    pub fn map_canonical_identifiers<E, F: FnMut(RemoteId<&str>) -> Result<(), E>>(
+    pub fn map_canonical_identifiers<E, F: FnMut(Identifier<&str>) -> Result<(), E>>(
         &self,
         deleted: bool,
         pattern: &str,
         mut f: F,
     ) -> Result<(), SnapshotMapErr<E>> {
-        let mut selector = self.tx.prepare("SELECT record_id FROM Records WHERE key IN (SELECT record_key FROM Identifiers) AND variant = ?1  AND record_id GLOB ?2")?;
+        let mut selector = self.tx.prepare("SELECT record_id FROM Records WHERE key IN (SELECT record_key FROM Keys) AND variant = ?1  AND record_id GLOB ?2")?;
         let variant = if deleted { 1 } else { 0 };
 
         let mut rows = selector.query((variant, pattern))?;
         while let Some(row) = rows.next()? {
             if let ValueRef::Text(bytes) = row.get_ref_unwrap(0) {
-                f(RemoteId::from_string_unchecked(from_utf8(bytes).unwrap()))
+                f(Identifier::from_string_unchecked(from_utf8(bytes).unwrap()))
                     .map_err(SnapshotMapErr::CallbackFailed)?;
             } else {
-                panic!("'Identifiers' table has unexpected schema: column 'name' is not TEXT!");
+                panic!("Keys table has unexpected schema: column 'name' is not TEXT!");
             }
         }
 
         Ok(())
     }
 
-    /// Iterate over all names in the Identifiers table and apply the fallible closure
+    /// Iterate over all names in the Keys table and apply the fallible closure
     /// `f` to each key. If an error is returned by the closure, it is immediately propagated and
     /// the function exits early.
     pub fn map_identifiers<E, F: FnMut(&str) -> Result<(), E>>(
@@ -333,7 +333,7 @@ WHERE variant = 1
         mut f: F,
     ) -> Result<(), SnapshotMapErr<E>> {
         let mut selector =
-            self.tx.prepare("SELECT name FROM Identifiers INNER JOIN Records ON Identifiers.record_key = Records.key WHERE Records.variant = ?1 AND Identifiers.name GLOB ?2")?;
+            self.tx.prepare("SELECT name FROM Keys INNER JOIN Records ON Keys.record_key = Records.key WHERE Records.variant = ?1 AND Keys.name GLOB ?2")?;
         let variant = if deleted { 1 } else { 0 };
 
         let mut rows = selector.query((variant, pattern))?;
@@ -341,21 +341,21 @@ WHERE variant = 1
             if let ValueRef::Text(bytes) = row.get_ref_unwrap(0) {
                 f(from_utf8(bytes).unwrap()).map_err(SnapshotMapErr::CallbackFailed)?;
             } else {
-                panic!("'Identifiers' table has unexpected schema: column 'name' is not a TEXT!");
+                panic!("Keys table has unexpected schema: column 'name' is not a TEXT!");
             }
         }
 
         Ok(())
     }
 
-    pub fn equivalent_remote_ids<I: Identifier, F>(&self, id: &I, mut f: F) -> rusqlite::Result<()>
+    pub fn equivalent_ids<I: AsKey, F>(&self, id: &I, mut f: F) -> rusqlite::Result<()>
     where
-        F: FnMut(RemoteId),
+        F: FnMut(Identifier),
     {
-        for remote_id in self.tx.prepare("SELECT name FROM Identifiers WHERE record_key = (SELECT record_key FROM Identifiers WHERE name = ?1) AND instr(name, ':') != 0")?.query_map([id.name()], |row| {
-            Ok(RemoteId::from_string_unchecked(row.get(0)?))
+        for id in self.tx.prepare("SELECT name FROM Keys WHERE record_key = (SELECT record_key FROM Keys WHERE name = ?1) AND instr(name, ':') != 0")?.query_map([id.as_key()], |row| {
+            Ok(Identifier::from_string_unchecked(row.get(0)?))
         })? {
-            f(remote_id?);
+            f(id?);
         }
 
         Ok(())

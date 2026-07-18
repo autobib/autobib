@@ -14,7 +14,7 @@ use crate::{
     logger::{error, suggest},
     normalize::{Normalization, Normalize},
     record::{
-        KeyedRecord, RecordId, RecursiveRemoteResponse, RemoteId, get_remote_response_recursive,
+        Identifier, Key, KeyedRecord, RecursiveRemoteResponse, get_remote_response_recursive,
     },
 };
 
@@ -34,7 +34,7 @@ pub fn update<F>(
     produce_data: F,
 ) -> Result<(), anyhow::Error>
 where
-    F: FnOnce(RemoteId) -> Result<MutableEntryData, anyhow::Error>,
+    F: FnOnce(Identifier) -> Result<MutableEntryData, anyhow::Error>,
 {
     match record_id_state {
         DatabaseResponse::Entry(
@@ -110,9 +110,9 @@ where
                 suggest!("Use `autobib hist revive` to insert new data.");
             }
         }
-        DatabaseResponse::NullRemoteId(mapped_remote_id, null_row) => {
+        DatabaseResponse::NullId(mapped_id, null_row) => {
             null_row.commit()?;
-            bail!("Cannot update null record with identifier: {mapped_remote_id}");
+            bail!("Cannot update null record with identifier: {mapped_id}");
         }
         DatabaseResponse::Unknown(unknown) => {
             let maybe_normalized = unknown.combine_and_commit()?;
@@ -124,26 +124,26 @@ where
         DatabaseResponse::UndefinedAlias(alias) => {
             bail!("Undefined alias: '{alias}'");
         }
-        DatabaseResponse::InvalidRemoteId(err) => bail!("{err}"),
+        DatabaseResponse::InvalidId(err) => bail!("{err}"),
     };
     Ok(())
 }
 
 pub fn data_from_remote<C: Client>(
-    remote_id: RemoteId,
+    id: Identifier,
     client: &C,
-) -> Result<(MutableEntryData, RemoteId), anyhow::Error> {
-    match get_remote_response_recursive(remote_id, client)? {
+) -> Result<(MutableEntryData, Identifier), anyhow::Error> {
+    match get_remote_response_recursive(id, client)? {
         RecursiveRemoteResponse::Exists(record_data, canonical) => Ok((record_data, canonical)),
-        RecursiveRemoteResponse::Null(null_remote_id) => {
-            bail!("Remote data for canonical id '{null_remote_id}' is null");
+        RecursiveRemoteResponse::Null(null_id) => {
+            bail!("Remote data for canonical id '{null_id}' is null");
         }
     }
 }
 
 pub fn data_from_key<'conn>(
     tx: Tx<'conn>,
-    record_id: RecordId,
+    record_id: Key,
     cfg: &Config,
 ) -> Result<(MutableEntryData, Tx<'conn>), anyhow::Error> {
     match DatabaseResponse::determine(tx, record_id, &cfg.alias_transform)? {
@@ -159,7 +159,7 @@ pub fn data_from_key<'conn>(
             state.commit()?;
             bail!("Cannot read update data from voided row");
         }
-        DatabaseResponse::NullRemoteId(_, state) => {
+        DatabaseResponse::NullId(_, state) => {
             state.commit()?;
             bail!("Cannot read update data from null record");
         }
@@ -170,7 +170,7 @@ pub fn data_from_key<'conn>(
         DatabaseResponse::UndefinedAlias(_) => {
             bail!("Cannot read update data from undefined alias");
         }
-        DatabaseResponse::InvalidRemoteId(record_error) => {
+        DatabaseResponse::InvalidId(record_error) => {
             bail!("Cannot read update data: {record_error}");
         }
     }

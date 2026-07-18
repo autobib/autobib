@@ -3,17 +3,15 @@ mod key;
 use anyhow::bail;
 use nonempty::NonEmpty;
 
-pub use self::key::{
-    Alias, AliasOrRemoteId, LegacyAlias, MappedAliasOrRemoteId, MappedKey, RecordId, RemoteId,
-};
+pub use self::key::{Alias, AliasOrId, Identifier, Key, LegacyAlias, MappedAliasOrId, MappedKey};
 use crate::{
     Config,
     config::AliasTransform,
     db::{
         RecordDatabase, Tx,
         state::{
-            DatabaseRemoteIdResponse, DatabaseResponse, IsDeleted, IsEntry, IsMissing, IsNull,
-            IsVoid, Record, State, Unknown, Updated,
+            DatabaseIdResponse, DatabaseResponse, IsDeleted, IsEntry, IsMissing, IsNull, IsVoid,
+            Record, State, Unknown, Updated,
         },
     },
     entry::{MutableEntryData, RawEntryData},
@@ -56,11 +54,11 @@ pub enum RecordResponse<'conn> {
     /// The record exists.
     Exists(KeyedRecord<RawEntryData>, State<'conn, IsEntry>),
     /// The record was deleted.
-    Deleted(KeyedRecord<Option<RemoteId>>, State<'conn, IsDeleted>),
+    Deleted(KeyedRecord<Option<Identifier>>, State<'conn, IsDeleted>),
     /// The record is null.
-    NullRemoteId(RemoteId, State<'conn, IsNull>),
+    NullId(Identifier, State<'conn, IsNull>),
     /// The identifier has an invalid form.
-    InvalidRemoteId(RecordError),
+    InvalidId(RecordError),
     /// The alias does not exist.
     NullAlias(Alias),
 }
@@ -89,11 +87,11 @@ impl<'conn> RecordResponse<'conn> {
                     bail!("{err_prefix} deleted record '{}'", data.key);
                 }
             }
-            RecordResponse::NullRemoteId(remote_id, null_row) => {
+            RecordResponse::NullId(id, null_row) => {
                 f(null_row.into_tx())?;
-                bail!("{err_prefix} null record '{remote_id}'");
+                bail!("{err_prefix} null record '{id}'");
             }
-            RecordResponse::InvalidRemoteId(record_error) => {
+            RecordResponse::InvalidId(record_error) => {
                 bail!(record_error);
             }
             RecordResponse::NullAlias(alias) => {
@@ -124,11 +122,11 @@ impl<'conn> RecordResponse<'conn> {
                     bail!("{err_prefix} deleted record '{}'", data.key);
                 }
             }
-            RecordResponse::NullRemoteId(remote_id, null_row) => {
+            RecordResponse::NullId(id, null_row) => {
                 null_row.commit()?;
-                bail!("{err_prefix} null record '{remote_id}'");
+                bail!("{err_prefix} null record '{id}'");
             }
-            RecordResponse::InvalidRemoteId(record_error) => {
+            RecordResponse::InvalidId(record_error) => {
                 bail!(record_error);
             }
             RecordResponse::NullAlias(alias) => {
@@ -140,7 +138,7 @@ impl<'conn> RecordResponse<'conn> {
 
 pub fn get_record_tx<'conn, C>(
     tx: Tx<'conn>,
-    record_id: RecordId,
+    record_id: Key,
     client: &C,
     config: &Config,
 ) -> Result<RecordResponse<'conn>, Error>
@@ -153,11 +151,9 @@ where
             Ok(RecordResponse::Exists(record, state))
         }
         DatabaseResponse::Deleted(record, state) => Ok(RecordResponse::Deleted(record, state)),
-        DatabaseResponse::NullRemoteId(remote_id, null_row) => {
-            Ok(RecordResponse::NullRemoteId(remote_id.mapped, null_row))
-        }
+        DatabaseResponse::NullId(id, null_row) => Ok(RecordResponse::NullId(id.mapped, null_row)),
         DatabaseResponse::UndefinedAlias(alias) => Ok(RecordResponse::NullAlias(alias)),
-        DatabaseResponse::InvalidRemoteId(err) => Ok(RecordResponse::InvalidRemoteId(err)),
+        DatabaseResponse::InvalidId(err) => Ok(RecordResponse::InvalidId(err)),
         DatabaseResponse::Void(KeyedRecord { key, record }, void) => {
             let (raw_entry_data, updated) =
                 revive_void(void, &record.canonical, client, &config.on_insert)?;
@@ -190,27 +186,25 @@ where
                 alias,
             )
         }
-        DatabaseResponse::Unknown(Unknown::RemoteId(maybe_normalized, missing)) => {
-            get_record_recursive(
-                missing,
-                maybe_normalized.mapped,
-                client,
-                &config.on_insert,
-                |_, t| Ok(t),
-                |_, t| Ok(t),
-                maybe_normalized.original,
-            )
-        }
+        DatabaseResponse::Unknown(Unknown::Id(maybe_normalized, missing)) => get_record_recursive(
+            missing,
+            maybe_normalized.mapped,
+            client,
+            &config.on_insert,
+            |_, t| Ok(t),
+            |_, t| Ok(t),
+            maybe_normalized.original,
+        ),
     }
 }
 
-/// Get the [`Record`] associated with a [`RecordId`].
+/// Get the [`Record`] associated with a [`Key`].
 ///
 /// The database state is passed back to the caller and must be commited for the record to be
 /// recorded in the database.
 pub fn get_record<'conn, C>(
     db: &'conn mut RecordDatabase,
-    record_id: RecordId,
+    record_id: Key,
     client: &C,
     config: &Config,
 ) -> Result<RecordResponse<'conn>, Error>
@@ -231,7 +225,7 @@ fn into_last<T>(NonEmpty { head, mut tail }: NonEmpty<T>) -> T {
 /// The `exists_callback` is called if the remote record exists, and is passed a reference to the
 /// row which will eventually be returned. The closure can optionally return a string which
 /// will be used as the bibtex key in the resulting returned [`Record`]. If the closure
-/// returns `None`, the original [`RemoteId`] is used as the bibtex key.
+/// returns `None`, the original [`Identifier`] is used as the bibtex key.
 ///
 /// The `deleted_callback` is called if the record exists in the database, but it was deleted.
 ///
@@ -240,7 +234,7 @@ fn into_last<T>(NonEmpty { head, mut tail }: NonEmpty<T>) -> T {
 /// database.
 fn get_record_recursive<'conn, O, C: Client>(
     mut missing: State<'conn, IsMissing>,
-    remote_id: RemoteId,
+    id: Identifier,
     client: &C,
     normalization: &Normalization,
     exists_callback: impl FnOnce(&State<'conn, IsEntry>, O) -> Result<Option<String>, rusqlite::Error>,
@@ -250,8 +244,8 @@ fn get_record_recursive<'conn, O, C: Client>(
     ) -> Result<Option<String>, rusqlite::Error>,
     original: O,
 ) -> Result<RecordResponse<'conn>, Error> {
-    info!("Resolving remote record for {remote_id}");
-    let mut history = NonEmpty::singleton(remote_id);
+    info!("Resolving remote record for {id}");
+    let mut history = NonEmpty::singleton(id);
     loop {
         missing = match get_remote_response(client, history.last())? {
             RemoteResponse::Data(mut data) => {
@@ -283,10 +277,10 @@ fn get_record_recursive<'conn, O, C: Client>(
                     row.state,
                 ));
             }
-            RemoteResponse::Reference(new_remote_id) => {
-                match DatabaseRemoteIdResponse::determine(missing.into_tx(), &new_remote_id)? {
-                    DatabaseRemoteIdResponse::Entry(record, state) => {
-                        // not necessary to insert `new_remote_id` since we just saw that it
+            RemoteResponse::Reference(new_id) => {
+                match DatabaseIdResponse::determine(missing.into_tx(), &new_id)? {
+                    DatabaseIdResponse::Entry(record, state) => {
+                        // not necessary to insert `new_id` since we just saw that it
                         // is present in the database
                         state.add_refs(history.iter())?;
                         let maybe_key = exists_callback(&state, original)?;
@@ -298,7 +292,7 @@ fn get_record_recursive<'conn, O, C: Client>(
                             state,
                         ));
                     }
-                    DatabaseRemoteIdResponse::Deleted(record, state) => {
+                    DatabaseIdResponse::Deleted(record, state) => {
                         // we still add the refs to the deleted row
                         state.add_refs(history.iter())?;
                         let maybe_key = deleted_callback(&state, original)?;
@@ -310,18 +304,17 @@ fn get_record_recursive<'conn, O, C: Client>(
                             state,
                         ));
                     }
-                    DatabaseRemoteIdResponse::Null(null_records_row) => {
+                    DatabaseIdResponse::Null(null_records_row) => {
                         null_records_row.commit()?;
-                        break Err(ProviderError::UnexpectedNullRemoteFromProvider(
-                            new_remote_id.into(),
-                        )
-                        .into());
+                        break Err(
+                            ProviderError::UnexpectedNullRemoteFromProvider(new_id.into()).into(),
+                        );
                     }
-                    DatabaseRemoteIdResponse::Unknown(missing) => {
-                        history.push(new_remote_id);
+                    DatabaseIdResponse::Unknown(missing) => {
+                        history.push(new_id);
                         missing
                     }
-                    DatabaseRemoteIdResponse::Void(record_row, void) => {
+                    DatabaseIdResponse::Void(record_row, void) => {
                         // use the special 'lookup and reinsert' method
                         let (data, entry) =
                             revive_void(void, &record_row.canonical, client, normalization)?;
@@ -346,9 +339,9 @@ fn get_record_recursive<'conn, O, C: Client>(
             }
             RemoteResponse::Null => {
                 if history.tail.is_empty() {
-                    let remote_id = into_last(history);
-                    let null_row = missing.set_null(&remote_id)?;
-                    break Ok(RecordResponse::NullRemoteId(remote_id, null_row));
+                    let id = into_last(history);
+                    let null_row = missing.set_null(&id)?;
+                    break Ok(RecordResponse::NullId(id, null_row));
                 } else {
                     break Err(ProviderError::UnexpectedNullRemoteFromProvider(
                         into_last(history).into(),
@@ -363,15 +356,15 @@ fn get_record_recursive<'conn, O, C: Client>(
 /// The result of obtaining a remote record, with no reference to a database.
 pub enum RecursiveRemoteResponse {
     /// The remote record exists, and has the provided data and canonical identifier.
-    Exists(MutableEntryData, RemoteId),
+    Exists(MutableEntryData, Identifier),
     /// The remote record does not exist.
-    Null(RemoteId),
+    Null(Identifier),
 }
 
 /// Revive a void record by retrieving the canonical data and re-inserting the record.
 pub fn revive_void<'conn, C: Client>(
     void: State<'conn, IsVoid>,
-    canonical: &RemoteId,
+    canonical: &Identifier,
     client: &C,
     normalization: &Normalization,
 ) -> Result<(RawEntryData, Updated<'conn, IsEntry>), Error> {
@@ -382,9 +375,9 @@ pub fn revive_void<'conn, C: Client>(
             let entry = void.reinsert(&data)?;
             Ok((data, entry))
         }
-        RemoteResponse::Reference(remote_id) => {
+        RemoteResponse::Reference(id) => {
             panic!(
-                "Database error: 'Records' table contains identifier {remote_id} which is not canonical"
+                "Database error: 'Records' table contains identifier {id} which is not canonical"
             );
         }
         RemoteResponse::Null => {
@@ -393,16 +386,16 @@ pub fn revive_void<'conn, C: Client>(
     }
 }
 
-/// Get the [`Record`] associated with a [`RemoteId`], or [`None`] if the [`Record`] does not exist.
+/// Get the [`Record`] associated with an [`Identifier`], or [`None`] if the [`Record`] does not exist.
 ///
 /// This method does not involve any database reads or writes, and simply loops to obtain the
-/// remote record associated with a [`RemoteId`].
+/// remote record associated with an [`Identifier`].
 pub fn get_remote_response_recursive<C: Client>(
-    remote_id: RemoteId,
+    id: Identifier,
     client: &C,
 ) -> Result<RecursiveRemoteResponse, Error> {
-    info!("Resolving remote record for '{remote_id}'");
-    let mut history = NonEmpty::singleton(remote_id);
+    info!("Resolving remote record for '{id}'");
+    let mut history = NonEmpty::singleton(id);
     loop {
         let last = history.last();
 
@@ -410,8 +403,8 @@ pub fn get_remote_response_recursive<C: Client>(
             RemoteResponse::Data(data) => {
                 break Ok(RecursiveRemoteResponse::Exists(data, into_last(history)));
             }
-            RemoteResponse::Reference(new_remote_id) => {
-                history.push(new_remote_id);
+            RemoteResponse::Reference(new_id) => {
+                history.push(new_id);
             }
             RemoteResponse::Null => {
                 break Ok(RecursiveRemoteResponse::Null(history.head));

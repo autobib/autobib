@@ -1,7 +1,7 @@
 use chrono::Local;
 
 use super::{IsEntry, IsNull, NotEntry, State, Updated};
-use crate::{RawEntryData, RemoteId, db::Identifier, entry::EntryData, logger::debug};
+use crate::{Identifier, RawEntryData, db::AsKey, entry::EntryData, logger::debug};
 
 /// Types which know how to insert new data.
 ///
@@ -12,7 +12,7 @@ pub trait RecordsInsert<'conn> {
     fn insert(
         self,
         data: &RawEntryData,
-        canonical: &RemoteId,
+        canonical: &Identifier,
     ) -> Result<Updated<'conn, IsEntry>, rusqlite::Error>;
 }
 
@@ -20,7 +20,7 @@ impl<'conn> RecordsInsert<'conn> for State<'conn, IsMissing> {
     fn insert(
         self,
         data: &RawEntryData,
-        canonical: &RemoteId,
+        canonical: &Identifier,
     ) -> Result<Updated<'conn, IsEntry>, rusqlite::Error> {
         self.insert_new(data, canonical)
     }
@@ -30,7 +30,7 @@ impl<'conn, I: NotEntry> RecordsInsert<'conn> for State<'conn, I> {
     fn insert(
         self,
         data: &RawEntryData,
-        _: &RemoteId,
+        _: &Identifier,
     ) -> Result<Updated<'conn, IsEntry>, rusqlite::Error> {
         self.reinsert(data)
     }
@@ -40,7 +40,7 @@ impl<'conn> RecordsInsert<'conn> for State<'conn, IsEntry> {
     fn insert(
         self,
         data: &RawEntryData,
-        _: &RemoteId,
+        _: &Identifier,
     ) -> Result<Updated<'conn, IsEntry>, rusqlite::Error> {
         self.modify(data)
     }
@@ -52,11 +52,11 @@ pub struct IsMissing;
 
 impl<'conn> State<'conn, IsMissing> {
     /// Set a null row, converting into the [`IsNull`] state.
-    pub fn set_null(self, remote_id: &RemoteId) -> Result<State<'conn, IsNull>, rusqlite::Error> {
+    pub fn set_null(self, id: &Identifier) -> Result<State<'conn, IsNull>, rusqlite::Error> {
         let row_id: i64 = {
             let mut setter = self.prepare_cached("INSERT OR REPLACE INTO NullRecords (record_id, attempted) values (?1, ?2) RETURNING rowid")?;
             let cache_time = Local::now();
-            setter.query_row((remote_id.name(), cache_time), |row| row.get(0))?
+            setter.query_row((id.as_key(), cache_time), |row| row.get(0))?
         };
 
         Ok(State::init(self.tx, IsNull(row_id)))
@@ -66,16 +66,16 @@ impl<'conn> State<'conn, IsMissing> {
     ///
     /// # Safety
     /// The 'canonical' remote id must be present in the provided `refs` iterator.
-    pub(crate) fn insert_with_refs<'a, R: Iterator<Item = &'a RemoteId>>(
+    pub(crate) fn insert_with_refs<'a, R: Iterator<Item = &'a Identifier>>(
         self,
         data: &RawEntryData,
-        canonical: &RemoteId,
+        canonical: &Identifier,
         refs: R,
     ) -> Result<Updated<'conn, IsEntry>, rusqlite::Error> {
         debug!("Inserting data for canonical id '{canonical}'");
         let modified = Local::now();
         let row_id: i64 = self.prepare_cached("INSERT OR ABORT INTO Records (record_id, data, modified) values (?1, ?2, ?3) RETURNING key")?.query_row(
-            (canonical.name(), data.to_byte_repr(), &modified),
+            (canonical.as_key(), data.to_byte_repr(), &modified),
             |row| row.get(0),
         )?;
         let row = State::init(self.tx, IsEntry(row_id));
@@ -88,17 +88,17 @@ impl<'conn> State<'conn, IsMissing> {
     pub fn insert_entry_data<'r, D: EntryData<'r>>(
         self,
         data: D,
-        canonical: &RemoteId,
+        canonical: &Identifier,
     ) -> Result<Updated<'conn, IsEntry>, rusqlite::Error> {
         let raw_record_data = RawEntryData::from_entry_data(data);
         self.insert_new(&raw_record_data, canonical)
     }
 
-    /// Create the row and also insert a link in the `Identifiers` table.
+    /// Create the row and also insert a link in the `Keys` table.
     pub fn insert_new(
         self,
         data: &RawEntryData,
-        canonical: &RemoteId,
+        canonical: &Identifier,
     ) -> Result<Updated<'conn, IsEntry>, rusqlite::Error> {
         // SAFETY: 'canonical' is passed as a ref.
         let row = self.insert_with_refs(data, canonical, std::iter::once(canonical))?;

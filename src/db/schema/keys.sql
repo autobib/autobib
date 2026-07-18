@@ -1,4 +1,4 @@
-CREATE TABLE "Identifiers" (
+CREATE TABLE "Keys" (
   "name" TEXT NOT NULL PRIMARY KEY,
   "record_key" INTEGER NOT NULL REFERENCES "Records"(key)
     ON UPDATE RESTRICT

@@ -8,7 +8,7 @@ use serde::Deserialize;
 use toml::from_str;
 
 use crate::{
-    Alias, Identifier,
+    Alias, AsKey,
     format::DEFAULT_FIND_TEMPLATE,
     logger::{debug, info, suggest, warn},
     normalize::Normalization,
@@ -252,7 +252,7 @@ pub trait AliasTransform {
         None
     }
 
-    /// Whether or not to save the alias in the the `Identifiers` table after mapping.
+    /// Whether or not to save the alias in the the `Keys` table after mapping.
     fn create(&self) -> bool {
         false
     }
@@ -263,7 +263,7 @@ impl AliasTransform for () {}
 impl AliasTransform for LazyAliasTransform {
     fn map_alias<'a>(&'a self, alias: &'a Alias) -> Option<(&'a str, &'a str)> {
         for (re, provider) in self.rule_pairs() {
-            if let Some((_, [res])) = re.captures(alias.name()).map(|caps| caps.extract()) {
+            if let Some((_, [res])) = re.captures(alias.as_key()).map(|caps| caps.extract()) {
                 return Some((provider, res));
             }
         }

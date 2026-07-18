@@ -20,7 +20,7 @@ use crate::{
     entry::{EntryType, FieldKey, SetFieldCommand},
     error::ShortError,
     format::Template,
-    record::{Alias, LegacyAlias, RecordId},
+    record::{Alias, Key, LegacyAlias},
 };
 
 /// Determine the default value for `no_interactive` based on interactivity of stdin and stderr.
@@ -73,16 +73,16 @@ pub enum InfoReportType {
     #[default]
     #[value(alias("a"))]
     All,
-    /// Print the canonical identifer.
+    /// Print the canonical id.
     #[value(alias("c"))]
     Canonical,
     /// Check if the key is a valid BibTeX key.
     #[value(aliases(["v", "b", "valid"]))]
     Bibtex,
-    /// Print equivalent identifiers, one per line.
+    /// Print equivalent keys, one per line.
     #[value(alias("e"))]
     Equivalent,
-    /// Print the preferred identifier, with canonical fallback.
+    /// Print the preferred key, with canonical fallback.
     #[value(alias("p"))]
     Preferred,
     /// Print the record modification time.
@@ -121,10 +121,10 @@ impl Default for OnConflict {
 #[derive(Debug, Args)]
 #[group(required = true, multiple = false)]
 pub struct ReplacementTarget {
-    /// Replace with another identifier.
+    /// Replace with another record.
     #[clap(short, long, value_name = "REPLACEMENT")]
-    pub with: Option<RecordId>,
-    /// Determine the replacement identifier using record data.
+    pub with: Option<Key>,
+    /// Determine the replacement using record data.
     #[clap(short, long)]
     pub auto: bool,
 }
@@ -155,7 +155,7 @@ pub enum Command {
     /// with the `--rename` option.
     Attach {
         /// The record to associate the file with.
-        identifier: RecordId,
+        key: Key,
         /// The path or URL for the file to add.
         file: String,
         /// Rename the file.
@@ -185,10 +185,10 @@ pub enum Command {
     /// but future attempts to read them will result in an error. The data can be recovered with
     /// `autobib hist undo`.
     ///
-    /// With the `--hard` option, the data as well as all identifiers are deleted permanently.
+    /// With the `--hard` option, the data as well as all keys are deleted permanently.
     Delete {
         /// The records to delete.
-        identifiers: Vec<RecordId>,
+        keys: Vec<Key>,
         /// Hard deletion, which removes all history and aliases, and cannot be undone.
         #[arg(long, group = "delete_mode")]
         hard: bool,
@@ -209,7 +209,7 @@ pub enum Command {
     /// modify the record.
     Edit {
         /// The record(s) to edit.
-        identifiers: Vec<RecordId>,
+        keys: Vec<Key>,
         /// Normalize whitespace.
         ///
         /// This converts whitespace blocks into a single ASCII space.
@@ -234,9 +234,9 @@ pub enum Command {
         #[arg(long, value_name = "FIELD_KEY={VALUE}")]
         set_field: Vec<SetFieldCommand>,
     },
-    /// Search for an identifier.
+    /// Search for a record.
     ///
-    /// Open an interactive picker to search for a given identifier. The lines in the
+    /// Open an interactive picker to search all records. The lines in the
     /// picker are rendered using the template provided by the `--template` option, falling
     /// back to the config value or a default template.
     Find {
@@ -261,20 +261,20 @@ pub enum Command {
         #[command(subcommand)]
         gc_command: GcCommand,
     },
-    /// Retrieve records given identifiers.
+    /// Retrieve records given keys.
     ///
     /// There is no sorting or deduplication, and output is streamed as records are received. Any
-    /// identifiers passed as command-line arguments are processed before standard input.
+    /// keys passed as command-line arguments are processed before standard input.
     /// See `autobib source` for much more input and output processing options.
     ///
-    /// By default, the output is formatted as BibTeX entries corresponding to the identifiers.
-    /// Identifiers which are invalid BibTeX entry keys are skipped. In order to write other data
+    /// By default, the output is formatted as BibTeX entries corresponding to the keys.
+    /// Keys which are invalid BibTeX entry keys are skipped. In order to write other data
     /// associated with the records, use the `--template` option. To retrieve records
     /// without writing anything (for instance, to guarantee that they are present in the database),
     /// use `--retrieve-only`.
     Get {
-        /// Identifiers to retrieve.
-        identifiers: Vec<RecordId>,
+        /// Keys to retrieve.
+        keys: Vec<Key>,
         /// Retrieve records but do not write any output.
         #[arg(long, group = "get-output")]
         retrieve_only: bool,
@@ -335,10 +335,10 @@ pub enum Command {
         #[arg(long, requires = "include_files")]
         file_sep: Option<String>,
     },
-    /// Show metadata associated with an identifier.
+    /// Show metadata associated with a record.
     Info {
-        /// The identifier.
-        identifier: RecordId,
+        /// The key for the record.
+        key: Key,
         /// The type of information to display.
         #[arg(short, long, value_enum, default_value_t)]
         report: InfoReportType,
@@ -346,7 +346,7 @@ pub enum Command {
         #[arg(short, long)]
         json: bool,
     },
-    /// List identifiers present in the database.
+    /// List keys present in the database.
     #[command(alias = "ls")]
     List {
         /// A glob pattern to match against.
@@ -355,10 +355,10 @@ pub enum Command {
         /// Only list canonical identifiers.
         #[arg(short, long)]
         canonical: bool,
-        /// Print deleted identifiers instead of those with data.
+        /// Print deleted keys instead of those with data.
         #[arg(short, long, conflicts_with = "template")]
         deleted: bool,
-        /// Format identifier data using a template.
+        /// Format records using a template.
         #[arg(short, long)]
         template: Option<Template>,
         /// Skip records which are missing fields from the template.
@@ -397,10 +397,10 @@ pub enum Command {
         #[arg(short = 'a', long)]
         create_alias: bool,
     },
-    /// Display the revision history associated with an identifier.
+    /// Display the revision history associated with a record.
     Log {
-        /// The identifier.
-        identifier: RecordId,
+        /// A key for the record.
+        key: Key,
         /// Show parallel changes, instead of only the history of the active version.
         #[arg(short, long)]
         tree: bool,
@@ -411,22 +411,21 @@ pub enum Command {
         #[arg(short, long)]
         reverse: bool,
     },
-    /// Show attachment directory associated with record.
+    /// Show attachment directory associated with a record.
     Path {
-        /// Show directory path associated with this identifier.
-        identifier: RecordId,
+        /// Show directory path associated with this record.
+        key: Key,
         /// Also create the directory if it does not exist.
         #[arg(short, long)]
         mkdir: bool,
     },
-    /// Replace an identifier with another one and merge the data.
+    /// Replace a record with another one and merge the data.
     ///
-    /// The original identifier must be present in the database. If the target identifier is not in
+    /// The original record must be present in the database. If the target record is not in
     /// the database, its data will be retrieved first.
     Replace {
-        /// The identifier to replace.
-        #[clap(value_name = "KEY")]
-        identifier: RecordId,
+        /// The key for the record to replace.
+        key: Key,
         #[clap(flatten)]
         target: ReplacementTarget,
         /// Permanently merge all data into the target.
@@ -434,7 +433,7 @@ pub enum Command {
         hard: bool,
         /// How to resolve conflicting field values.
         ///
-        /// 'incoming' refers to the identifier to replace, and 'current' refers to the
+        /// 'incoming' refers to the record to replace, and 'current' refers to the
         /// replacement.
         #[arg(
             short = 'n',
@@ -445,17 +444,17 @@ pub enum Command {
         )]
         #[arg(long)]
         on_conflict: OnConflict,
-        /// Update aliases to point to the new identifier.
+        /// Update aliases to point to the new record.
         #[arg(long)]
         update_aliases: bool,
         /// Do not migrate attachment directories.
         #[arg(short = 'A', long)]
         ignore_attachments: bool,
     },
-    /// Generate records by searching for identifiers inside files.
+    /// Generate records by searching for keys inside files.
     ///
     /// This is essentially a call to `autobib get`, except with a custom search which attempts
-    /// to find identifiers inside the provided file(s), typically as citation keys.
+    /// to find keys inside the provided file(s), typically as citation keys.
     /// The search method depends on the file type, which is determined purely based
     /// on the extension. File type detection can be overrided manually.
     Source {
@@ -476,16 +475,16 @@ pub enum Command {
         /// Output record data as JSON.
         #[arg(short, long, group = "output")]
         json: bool,
-        /// Retrieve records but do not output BibTeX or check the validity of identifiers.
+        /// Retrieve records but do not output BibTeX or check the validity of keys.
         #[arg(long, group = "output")]
         retrieve_only: bool,
-        /// Only print the identifiers which were found (sorted and deduplicated).
+        /// Only print the keys which were found (sorted and deduplicated).
         #[arg(long, group = "output")]
         print_keys: bool,
-        /// Skip an identifier (if present).
+        /// Skip a key (if present).
         #[arg(short, long, value_name = "KEY")]
-        skip: Vec<RecordId>,
-        /// Skip identifiers which are present in the provided file(s).
+        skip: Vec<Key>,
+        /// Skip keys which are present in the provided file(s).
         #[arg(long, value_name = "PATH")]
         skip_from: Vec<PathBuf>,
         /// Override file type detection for skip files.
@@ -495,7 +494,7 @@ pub enum Command {
         #[arg(long)]
         ignore_null: bool,
     },
-    /// Update data associated with an identifier.
+    /// Update record data associated with a key.
     ///
     /// By default, you will be prompted if there is a conflict between the current and incoming
     /// records.
@@ -504,14 +503,14 @@ pub enum Command {
     /// If the terminal is not interactive or the `--no-interactive` global option is set, this
     /// will result in an error if the `-n prefer-current` or `-n prefer-incoming` is not explicitly set.
     Update {
-        /// The identifier for the update operation.
-        identifier: RecordId,
+        /// The key for the update operation.
+        key: Key,
         /// Read update data from a BibTeX entry in a file.
         #[arg(short = 'b', long, value_name = "PATH", group = "update_from")]
         from_bibtex: Option<PathBuf>,
         /// Read update data from other record data.
         #[arg(short = 'r', long, value_name = "KEY", group = "update_from")]
-        from_record: Option<RecordId>,
+        from_record: Option<Key>,
         /// Read update data from record data in a specific revision.
         #[arg(long, value_name = "REV", group = "update_from")]
         from_rev: Option<RevisionId>,
@@ -556,7 +555,7 @@ pub enum AliasCommand {
         #[arg(value_parser = with_short_err::<Alias>)]
         alias: Alias,
         /// What the alias points to.
-        target: RecordId,
+        target: Key,
     },
     /// Delete an existing alias.
     #[command(alias = "rm")]
@@ -581,7 +580,7 @@ pub enum AliasCommand {
         #[arg(value_parser = with_short_err::<Alias>)]
         alias: Alias,
         /// What the alias should point to.
-        target: RecordId,
+        target: Key,
     },
 }
 
@@ -658,10 +657,10 @@ impl Command {
 
 #[derive(Debug, Args)]
 #[group(required = true, multiple = false)]
-pub struct IdTarget {
-    /// Apply to the record with this identifier.
-    #[arg(short, long)]
-    pub id: Option<RecordId>,
+pub struct KeyTarget {
+    /// Apply to the record with this key.
+    #[arg(short, long, alias = "id")]
+    pub key: Option<Key>,
     /// Apply to all records.
     #[arg(short, long)]
     pub all: bool,
@@ -686,8 +685,8 @@ pub enum HistCommand {
     ///
     /// View divergent changes using `autobib log --tree`.
     Redo {
-        /// The identifier for the redo operation.
-        identifier: RecordId,
+        /// The key for the redo operation.
+        key: Key,
         /// The index of the redo, ordered from oldest to newest.
         index: Option<isize>,
         /// Redo beyond a deleted state.
@@ -696,8 +695,8 @@ pub enum HistCommand {
     },
     /// Set the active version to a specific revision.
     Reset {
-        /// The identifier for the reset operation.
-        identifier: RecordId,
+        /// The key for the reset operation.
+        key: Key,
         /// The target active revision.
         rev: RevisionId,
     },
@@ -716,8 +715,8 @@ pub enum HistCommand {
     /// The `--with-entry-type` or `--with-field` values will override any
     /// values present in the data read from the BibTeX file.
     Revive {
-        /// The identifier for the revive operation.
-        identifier: RecordId,
+        /// The key for the revive operation.
+        key: Key,
         /// Create the record using the provided BibTeX data.
         #[arg(short = 'b', long, value_name = "PATH")]
         from_bibtex: Option<PathBuf>,
@@ -743,7 +742,7 @@ pub enum HistCommand {
         /// timezone. See, for example, the output of `autobib info -r modified`.
         before: DateTime<Local>,
         #[command(flatten)]
-        target: IdTarget,
+        target: KeyTarget,
     },
     /// Show all database changes in descending order by time.
     Show {
@@ -756,12 +755,12 @@ pub enum HistCommand {
     /// On success, this prints the new modification time.
     Touch {
         #[command(flatten)]
-        target: IdTarget,
+        target: KeyTarget,
     },
-    /// Undo the most recent change associated with an identifier.
+    /// Undo the most recent change associated with a key.
     Undo {
-        /// The identifier for the undo operation.
-        identifier: RecordId,
+        /// The key for the undo operation.
+        key: Key,
         /// Undo into a deleted state.
         #[arg(short, long)]
         delete: bool,
@@ -771,8 +770,8 @@ pub enum HistCommand {
     /// A voided record is equivalent to a record which is not in the database, but the previous
     /// history is still recoverable.
     Void {
-        /// The identifier to void.
-        identifier: RecordId,
+        /// The key for the record to void.
+        key: Key,
     },
 }
 
@@ -829,13 +828,13 @@ pub enum UtilCommand {
         #[arg(short, long)]
         fix: bool,
     },
-    /// List all valid identifiers.
+    /// List all valid keys.
     #[clap(hide = true)]
     List {
         /// Only list the canonical identifiers.
         #[arg(short, long)]
         canonical: bool,
-        /// List deleted identifiers instead of those with data.
+        /// List keys for deleted records instead of those with data.
         #[arg(short, long)]
         deleted: bool,
     },

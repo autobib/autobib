@@ -7,7 +7,7 @@ use super::OnConflict;
 use crate::{
     app::data_from_path,
     db::{
-        Identifier,
+        AsKey,
         state::{IsEntry, RecordsInsert, State},
     },
     entry::{
@@ -17,7 +17,7 @@ use crate::{
     error::{MergeError, ShortError},
     logger::{error, info, reraise, set_failed, suggest, warn},
     normalize::{Normalization, Normalize},
-    record::{Alias, RemoteId},
+    record::{Alias, Identifier},
     term::{Editor, EditorConfig, Input},
 };
 
@@ -27,8 +27,8 @@ use crate::{
 pub fn create_alias_if_valid(key: &str, row: &State<IsEntry>) -> Result<(), rusqlite::Error> {
     match Alias::from_str(key) {
         Ok(alias) => {
-            if let Some(other_remote_id) = row.ensure_alias(&alias)? {
-                warn!("Alias '{alias}' already exists and refers to '{other_remote_id}'.");
+            if let Some(other_id) = row.ensure_alias(&alias)? {
+                warn!("Alias '{alias}' already exists and refers to '{other_id}'.");
             }
         }
         Err(err) => {
@@ -51,7 +51,7 @@ pub fn create_alias_if_valid(key: &str, row: &State<IsEntry>) -> Result<(), rusq
 pub fn insert<'conn, I>(
     missing: State<'conn, I>,
     from_bibtex: Option<PathBuf>,
-    remote_id: &RemoteId,
+    id: &Identifier,
     no_interactive: bool,
     normalization: &Normalization,
     edit: &EntryEditCommand,
@@ -63,28 +63,27 @@ where
     let exists = if let Some(path) = from_bibtex {
         let mut data = data_from_path(path)?;
         data.normalize(normalization);
-        missing.insert(&RawEntryData::from_entry_data(&data), remote_id)?
+        missing.insert(&RawEntryData::from_entry_data(&data), id)?
     } else if !edit.is_identity() {
         let mut data = MutableEntryData::default();
         data.edit(edit);
-        missing.insert(&RawEntryData::from_entry_data(&data), remote_id)?
+        missing.insert(&RawEntryData::from_entry_data(&data), id)?
     } else if no_interactive {
         let data = MutableEntryData::<&'static str>::default();
         warn!("Inserting local data with no contents in non-interactive mode");
-        missing.insert(&RawEntryData::from_entry_data(&data), remote_id)?
+        missing.insert(&RawEntryData::from_entry_data(&data), id)?
     } else {
         let record_data = MutableEntryData::<String>::default();
         let entry = BibtexEntry {
-            key: EntryKey::try_new(remote_id.name().into())
-                .unwrap_or_else(|_| EntryKey::placeholder()),
+            key: EntryKey::try_new(id.as_key().into()).unwrap_or_else(|_| EntryKey::placeholder()),
             record_data,
         };
 
         if let Some(BibtexEntry { key, record_data }) = Editor::new_bibtex().edit(&entry)? {
             let row = missing
-                .insert(&RawEntryData::from_entry_data(&record_data), remote_id)?
+                .insert(&RawEntryData::from_entry_data(&record_data), id)?
                 .state;
-            if key.as_ref() != remote_id.name() && !key.is_placeholder() {
+            if key.as_ref() != id.as_key() && !key.is_placeholder() {
                 create_alias_if_valid(key.as_ref(), &row)?;
             }
             row.commit()?;

@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-use super::{BodyBytes, Client, Ctx, ProviderError, RemoteId, StatusCode, ValidationOutcome};
+use super::{BodyBytes, Client, Ctx, Identifier, ProviderError, StatusCode, ValidationOutcome};
 
 /// Convert an ascii digit into the actual numerical value of the digit
 fn ascii_digit_to_u8(b: u8) -> Option<u8> {
@@ -145,7 +145,10 @@ struct OLKeyExtractor {
     key: String,
 }
 
-pub fn get_canonical<C: Client>(id: &str, ctx: Ctx<C>) -> Result<Option<RemoteId>, ProviderError> {
+pub fn get_canonical<C: Client>(
+    id: &str,
+    ctx: Ctx<C>,
+) -> Result<Option<Identifier>, ProviderError> {
     let response = ctx
         .client()
         .get(format!("https://openlibrary.org/isbn/{id}.json"))?;
@@ -164,7 +167,7 @@ pub fn get_canonical<C: Client>(id: &str, ctx: Ctx<C>) -> Result<Option<RemoteId
     };
 
     match extractor.key.strip_prefix("/books/OL") {
-        Some(ol_id) => Ok(Some(RemoteId::from_parts("ol", ol_id)?)),
+        Some(ol_id) => Ok(Some(Identifier::from_parts("ol", ol_id)?)),
         None => Err(ProviderError::Unexpected(
             "Open Library JSON response is invalid!".into(),
         )),

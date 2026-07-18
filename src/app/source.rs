@@ -6,12 +6,12 @@ use std::{
 use anyhow::bail;
 
 use crate::{
-    RecordId,
+    Key,
     cite_search::{SourceFileType, get_citekeys_filter},
     logger::{error, info},
 };
 
-pub fn get_citekeys_from_file<T: Extend<RecordId>, P: AsRef<std::path::Path>>(
+pub fn get_citekeys_from_file<T: Extend<Key>, P: AsRef<std::path::Path>>(
     read_from: P,
     file_type: Option<SourceFileType>,
     container: &mut T,
@@ -21,7 +21,7 @@ pub fn get_citekeys_from_file<T: Extend<RecordId>, P: AsRef<std::path::Path>>(
     get_citekeys_from_file_filter(read_from, file_type, container, scratch, ft_flag, |_| true)
 }
 
-pub fn get_citekeys_from_stdin<T: Extend<RecordId>, E: FnMut(&RecordId) -> bool>(
+pub fn get_citekeys_from_stdin<T: Extend<Key>, E: FnMut(&Key) -> bool>(
     file_type: SourceFileType,
     container: &mut T,
     scratch: &mut Vec<u8>,
@@ -40,9 +40,9 @@ pub fn get_citekeys_from_stdin<T: Extend<RecordId>, E: FnMut(&RecordId) -> bool>
 /// A wrapper around [`get_citekeys_filter`] to open the file, detect the file type (or use the provided
 /// override) and then update the container with the keys.
 pub fn get_citekeys_from_file_filter<
-    T: Extend<RecordId>,
+    T: Extend<Key>,
     P: AsRef<std::path::Path>,
-    E: FnMut(&RecordId) -> bool,
+    E: FnMut(&Key) -> bool,
 >(
     read_from: P,
     file_type: Option<SourceFileType>,

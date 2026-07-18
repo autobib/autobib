@@ -5,15 +5,15 @@ use std::{fmt, str::FromStr};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    Identifier,
+    AsKey,
     config::AliasTransform,
     error::{
-        AliasConversionError, AliasErrorKind, RecordError, RecordErrorKind,
-        RemoteIdConversionError, RemoteIdErrorKind,
+        AliasConversionError, AliasErrorKind, IdConversionError, IdErrorKind, RecordError,
+        RecordErrorKind,
     },
     provider::{ValidationOutcomeExtended, validate_provider_sub_id},
 };
-pub use mapped::{MappedAliasOrRemoteId, MappedKey};
+pub use mapped::{MappedAliasOrId, MappedKey};
 
 /// Resolve the provider and sub_id implicit inside the provided `full_id`.
 ///
@@ -24,39 +24,38 @@ pub use mapped::{MappedAliasOrRemoteId, MappedKey};
 fn resolve_provider_sub_id(
     full_id: String,
     provider_len: usize,
-) -> Result<MappedKey, RemoteIdConversionError> {
+) -> Result<MappedKey, IdConversionError> {
     if provider_len + 1 == full_id.len() {
-        Err(RemoteIdConversionError {
+        Err(IdConversionError {
             input: full_id,
-            kind: RemoteIdErrorKind::EmptySubId,
+            kind: IdErrorKind::EmptySubId,
         })
     } else if provider_len == 0 {
-        Err(RemoteIdConversionError {
+        Err(IdConversionError {
             input: full_id,
-            kind: RemoteIdErrorKind::EmptyProvider,
+            kind: IdErrorKind::EmptyProvider,
         })
     } else {
         let provider = &full_id[..provider_len];
         let sub_id = &full_id[provider_len + 1..];
         match validate_provider_sub_id(provider, sub_id) {
-            ValidationOutcomeExtended::Valid => Ok(MappedKey::unchanged(RemoteId::new_unchecked(
-                full_id,
-                provider_len,
-            ))),
+            ValidationOutcomeExtended::Valid => Ok(MappedKey::unchanged(
+                Identifier::new_unchecked(full_id, provider_len),
+            )),
             ValidationOutcomeExtended::Normalize(mut normalized) => {
                 normalized.insert_str(0, &full_id[..provider_len + 1]);
                 Ok(MappedKey::mapped(
-                    RemoteId::new_unchecked(normalized, provider_len),
+                    Identifier::new_unchecked(normalized, provider_len),
                     full_id,
                 ))
             }
-            ValidationOutcomeExtended::InvalidSubId => Err(RemoteIdConversionError {
+            ValidationOutcomeExtended::InvalidSubId => Err(IdConversionError {
                 input: full_id,
-                kind: RemoteIdErrorKind::InvalidSubId,
+                kind: IdErrorKind::InvalidSubId,
             }),
-            ValidationOutcomeExtended::InvalidProvider => Err(RemoteIdConversionError {
+            ValidationOutcomeExtended::InvalidProvider => Err(IdConversionError {
                 input: full_id,
-                kind: RemoteIdErrorKind::InvalidProvider,
+                kind: IdErrorKind::InvalidProvider,
             }),
         }
     }
@@ -64,25 +63,22 @@ fn resolve_provider_sub_id(
 
 /// An unvalidated wrapper for user input representing either a `provider:sub_id` or an `alias`.
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize, PartialOrd, Ord)]
-pub struct RecordId {
+pub struct Key {
     full_id: String,
     provider_len: Option<usize>,
 }
 
-impl RecordId {
-    /// Convert a [`RecordId`] into either an [`Alias`] or a [`RemoteId`].
+impl Key {
+    /// Convert a [`Key`] into either an [`Alias`] or an [`Identifier`].
     ///
     /// The [`Alias`] conversion is infallible (validation only requires checking that the
-    /// colon is not present) whereas the [`RemoteId`] conversion can fail if `provider` is
+    /// colon is not present) whereas the [`Identifier`] conversion can fail if `provider` is
     /// invalid or if `sub_id` is invalid given the provider.
     #[inline]
-    pub fn resolve<A: AliasTransform>(
-        self,
-        alias_transform: &A,
-    ) -> Result<AliasOrRemoteId, RecordError> {
+    pub fn resolve<A: AliasTransform>(self, alias_transform: &A) -> Result<AliasOrId, RecordError> {
         match self.provider_len {
             Some(provider_len) => resolve_provider_sub_id(self.full_id, provider_len)
-                .map(AliasOrRemoteId::RemoteId)
+                .map(AliasOrId::Id)
                 .map_err(Into::into),
             None => {
                 if self.full_id.is_empty() {
@@ -108,9 +104,9 @@ impl RecordId {
                                 });
                             }
                         };
-                        Ok(AliasOrRemoteId::Alias(alias, Some(resolved.mapped)))
+                        Ok(AliasOrId::Alias(alias, Some(resolved.mapped)))
                     } else {
-                        Ok(AliasOrRemoteId::Alias(alias, None))
+                        Ok(AliasOrId::Alias(alias, None))
                     }
                 }
             }
@@ -118,27 +114,27 @@ impl RecordId {
     }
 }
 
-impl Identifier for RecordId {
-    fn name(&self) -> &str {
+impl AsKey for Key {
+    fn as_key(&self) -> &str {
         &self.full_id
     }
 }
 
-impl fmt::Display for RecordId {
+impl fmt::Display for Key {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.name().fmt(f)
+        self.as_key().fmt(f)
     }
 }
 
-impl From<RecordId> for String {
-    fn from(record_id: RecordId) -> Self {
+impl From<Key> for String {
+    fn from(record_id: Key) -> Self {
         record_id.full_id
     }
 }
 
-/// Convert an `&str` to a [`RecordId`]. The input is whitespace-trimmed. Otherwise, this
+/// Convert an `&str` to a [`Key`]. The input is whitespace-trimmed. Otherwise, this
 /// implementation is very cheap and does no validation.
-impl From<&str> for RecordId {
+impl From<&str> for Key {
     fn from(s: &str) -> Self {
         let full_id: String = s.trim().into();
         let provider_len = full_id.find(':');
@@ -149,9 +145,9 @@ impl From<&str> for RecordId {
     }
 }
 
-/// Convert a `String` to a [`RecordId`]. The input is not whitespace-trimmed.
+/// Convert a `String` to a [`Key`]. The input is not whitespace-trimmed.
 /// The implementation is very cheap and does no validation.
-impl From<String> for RecordId {
+impl From<String> for Key {
     fn from(full_id: String) -> Self {
         // let full_id: String = s.trim().into();
         let provider_len = full_id.find(':');
@@ -162,44 +158,44 @@ impl From<String> for RecordId {
     }
 }
 
-/// Either an [`Alias`] or a [`RemoteId`].
+/// Either an [`Alias`] or an [`Identifier`].
 #[derive(Debug)]
-pub enum AliasOrRemoteId {
+pub enum AliasOrId {
     /// An [`Alias`], and a possible value that it was mapped to.
-    Alias(Alias, Option<RemoteId>),
-    /// A [`RemoteId`], which may be a normalized form of the original `provider:sub_id`.
-    RemoteId(MappedKey),
+    Alias(Alias, Option<Identifier>),
+    /// A [`Identifier`], which may be a normalized form of the original `provider:sub_id`.
+    Id(MappedKey),
 }
 
-impl From<AliasOrRemoteId> for String {
-    fn from(value: AliasOrRemoteId) -> Self {
+impl From<AliasOrId> for String {
+    fn from(value: AliasOrId) -> Self {
         match value {
-            AliasOrRemoteId::Alias(alias, _) => alias.into(),
-            AliasOrRemoteId::RemoteId(maybe_transformed) => maybe_transformed.mapped.into(),
+            AliasOrId::Alias(alias, _) => alias.into(),
+            AliasOrId::Id(maybe_transformed) => maybe_transformed.mapped.into(),
         }
     }
 }
 
-impl TryFrom<AliasOrRemoteId> for MappedKey {
+impl TryFrom<AliasOrId> for MappedKey {
     type Error = RecordError;
 
     #[inline]
-    fn try_from(value: AliasOrRemoteId) -> Result<Self, Self::Error> {
+    fn try_from(value: AliasOrId) -> Result<Self, Self::Error> {
         match value {
-            AliasOrRemoteId::Alias(alias, _) => Err(Self::Error {
+            AliasOrId::Alias(alias, _) => Err(Self::Error {
                 input: alias.into(),
-                kind: RecordErrorKind::RemoteId(RemoteIdErrorKind::IsAlias),
+                kind: RecordErrorKind::Identifier(IdErrorKind::IsAlias),
             }),
-            AliasOrRemoteId::RemoteId(maybe_normalized) => Ok(maybe_normalized),
+            AliasOrId::Id(maybe_normalized) => Ok(maybe_normalized),
         }
     }
 }
 
-impl TryFrom<AliasOrRemoteId> for RemoteId {
+impl TryFrom<AliasOrId> for Identifier {
     type Error = RecordError;
 
     #[inline]
-    fn try_from(value: AliasOrRemoteId) -> Result<Self, Self::Error> {
+    fn try_from(value: AliasOrId) -> Result<Self, Self::Error> {
         MappedKey::try_from(value).map(|k| k.mapped)
     }
 }
@@ -214,8 +210,8 @@ impl From<Alias> for String {
     }
 }
 
-impl Identifier for Alias {
-    fn name(&self) -> &str {
+impl AsKey for Alias {
+    fn as_key(&self) -> &str {
         &self.0
     }
 }
@@ -236,7 +232,7 @@ impl FromStr for Alias {
         if input.find(':').is_some() {
             return Err(AliasConversionError {
                 input,
-                kind: AliasErrorKind::IsRemoteId,
+                kind: AliasErrorKind::IsIdentifier,
             });
         }
 
@@ -277,7 +273,7 @@ impl FromStr for LegacyAlias {
         if input.find(':').is_some() {
             return Err(AliasConversionError {
                 input,
-                kind: AliasErrorKind::IsRemoteId,
+                kind: AliasErrorKind::IsIdentifier,
             });
         }
 
@@ -297,11 +293,11 @@ impl AsRef<str> for LegacyAlias {
     }
 }
 
-impl TryFrom<RecordId> for Alias {
+impl TryFrom<Key> for Alias {
     type Error = AliasConversionError;
 
-    fn try_from(record_id: RecordId) -> Result<Self, Self::Error> {
-        if let RecordId {
+    fn try_from(record_id: Key) -> Result<Self, Self::Error> {
+        if let Key {
             full_id: s,
             provider_len: None,
         } = record_id
@@ -317,7 +313,7 @@ impl TryFrom<RecordId> for Alias {
         } else {
             Err(AliasConversionError {
                 input: record_id.full_id,
-                kind: AliasErrorKind::IsRemoteId,
+                kind: AliasErrorKind::IsIdentifier,
             })
         }
     }
@@ -325,13 +321,13 @@ impl TryFrom<RecordId> for Alias {
 
 /// A validated `provider:sub_id`.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
-pub struct RemoteId<S = String> {
+pub struct Identifier<S = String> {
     full_id: S,
     provider_len: usize,
 }
 
-impl<S: AsRef<str>> RemoteId<S> {
-    /// Construct a new [`RemoteId`], assuming that the struct has been validated.
+impl<S: AsRef<str>> Identifier<S> {
+    /// Construct a new [`Identifier`], assuming that the struct has been validated.
     #[inline]
     fn new_unchecked(full_id: S, provider_len: usize) -> Self {
         Self {
@@ -340,7 +336,7 @@ impl<S: AsRef<str>> RemoteId<S> {
         }
     }
 
-    /// Construct a new [`RemoteId`] from the given full_id.
+    /// Construct a new [`Identifier`] from the given full_id.
     ///
     /// # Safety
     /// The caller is required to guarantee that:
@@ -350,10 +346,10 @@ impl<S: AsRef<str>> RemoteId<S> {
     /// 4. [`validate_provider_sub_id`] is valid.
     #[inline]
     pub(crate) fn from_string_unchecked(full_id: S) -> Self {
-        Self::from_alias_or_remote_id_unchecked(full_id).unwrap()
+        Self::from_key_unchecked(full_id).unwrap()
     }
 
-    /// Construct a new [`RemoteId`] from the given identifier which might be an alias.
+    /// Construct a new [`Identifier`] from the given identifier which might be an alias.
     ///
     /// # Safety
     /// The caller is required to guarantee that either the identifier is an alias, or:
@@ -361,7 +357,7 @@ impl<S: AsRef<str>> RemoteId<S> {
     /// 2. The `full_id` has a non-empty `sub_id` part, i.e. the first ':' is not at the end; and
     /// 3. [`validate_provider_sub_id`] is valid.
     #[inline]
-    pub(crate) fn from_alias_or_remote_id_unchecked(full_id: S) -> Option<Self> {
+    pub(crate) fn from_key_unchecked(full_id: S) -> Option<Self> {
         full_id
             .as_ref()
             .find(':')
@@ -387,22 +383,22 @@ impl<S: AsRef<str>> RemoteId<S> {
     }
 }
 
-impl RemoteId {
-    /// Construct a [`RemoteId`] from the provider and sub_id components.
+impl Identifier {
+    /// Construct an [`Identifier`] from the provider and sub_id components.
     #[inline]
     pub fn from_parts(provider: &str, sub_id: &str) -> Result<Self, RecordError> {
         MappedKey::mapped_from_parts(provider, sub_id).map(Into::into)
     }
 
-    /// Forget that this is a [`RemoteId`] and convert back into a [`RecordId`].
-    pub fn forget(self) -> RecordId {
-        RecordId {
+    /// Forget that this is an [`Identifier`] and convert back into a [`Key`].
+    pub fn forget(self) -> Key {
+        Key {
             full_id: self.full_id,
             provider_len: Some(self.provider_len),
         }
     }
 
-    /// Create a new `local` [`RecordId`].
+    /// Create a new `local` [`Key`].
     pub fn local(alias: &Alias) -> Self {
         const LOCAL_PROVIDER: &str = "local";
         const PROVIDER_LEN: usize = LOCAL_PROVIDER.len();
@@ -414,36 +410,36 @@ impl RemoteId {
         Self::new_unchecked(full_id, PROVIDER_LEN)
     }
 
-    pub fn as_deref(&self) -> RemoteId<&str> {
-        RemoteId {
+    pub fn as_deref(&self) -> Identifier<&str> {
+        Identifier {
             full_id: &self.full_id,
             provider_len: self.provider_len,
         }
     }
 }
 
-impl<S: AsRef<str>> Identifier for RemoteId<S> {
-    fn name(&self) -> &str {
+impl<S: AsRef<str>> AsKey for Identifier<S> {
+    fn as_key(&self) -> &str {
         self.full_id.as_ref()
     }
 }
 
-impl<S: AsRef<str>> fmt::Display for RemoteId<S> {
+impl<S: AsRef<str>> fmt::Display for Identifier<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.name().fmt(f)
+        self.as_key().fmt(f)
     }
 }
 
-impl From<RemoteId> for String {
-    fn from(remote_id: RemoteId) -> Self {
-        remote_id.full_id
+impl From<Identifier> for String {
+    fn from(id: Identifier) -> Self {
+        id.full_id
     }
 }
 
-impl FromStr for RemoteId {
+impl FromStr for Identifier {
     type Err = RecordError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        RecordId::from(s).resolve(&()).and_then(TryFrom::try_from)
+        Key::from(s).resolve(&()).and_then(TryFrom::try_from)
     }
 }
