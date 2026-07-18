@@ -76,9 +76,9 @@ pub enum InfoReportType {
     /// Print the canonical identifer.
     #[value(alias("c"))]
     Canonical,
-    /// Check if the identifier is a valid BibTeX key.
-    #[value(alias("v"))]
-    Valid,
+    /// Check if the key is a valid BibTeX key.
+    #[value(aliases(["v", "b", "valid"]))]
+    Bibtex,
     /// Print equivalent identifiers, one per line.
     #[value(alias("e"))]
     Equivalent,
@@ -98,10 +98,10 @@ pub enum OnConflict {
     /// Always keep current values.
     ///
     /// This is the default if the terminal is not interactive.
-    #[value(alias("c"), alias("current"))]
+    #[value(aliases(["c", "current"]))]
     PreferCurrent,
     /// Overwrite current values.
-    #[value(alias("i"), alias("incoming"))]
+    #[value(aliases(["i", "incoming"]))]
     PreferIncoming,
     /// Prompt if the there is a conflict.
     #[value(alias("p"))]
