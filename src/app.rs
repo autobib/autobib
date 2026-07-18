@@ -920,7 +920,11 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 }
             }
         }
-        Command::Info { identifier, report } => {
+        Command::Info {
+            identifier,
+            report,
+            json,
+        } => {
             let cfg = config::load(&config_path, missing_ok)?;
             if let Some((key, disambiguated)) = record_db
                 .state_from_record_id(identifier, &cfg.alias_transform)?
@@ -931,34 +935,67 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 match report {
                     InfoReportType::All => {
                         let record_info = info::RecordInfo::from_data(key, record, &state, &cfg)?;
-                        serde_json::to_writer(&mut writer, &record_info)?;
+                        if json {
+                            serde_json::to_writer(&mut writer, &record_info)?;
+                        } else {
+                            write!(writer, "{record_info}")?;
+                        }
                     }
                     InfoReportType::Canonical => {
-                        writeln!(writer, "{}", record.canonical)?;
+                        let canonical = crate::db::Identifier::name(&record.canonical);
+                        if json {
+                            serde_json::to_writer(&mut writer, canonical)?;
+                        } else {
+                            writeln!(writer, "{canonical}")?;
+                        }
                     }
                     InfoReportType::Valid => {
-                        if !serde_bibtex::token::is_entry_key(&key) {
-                            set_failed();
-                            eprintln!("{key}");
+                        let is_valid = serde_bibtex::token::is_entry_key(&key);
+                        if json {
+                            serde_json::to_writer(&mut writer, &is_valid)?;
                         } else {
-                            writeln!(writer, "{key}")?;
+                            if is_valid {
+                                writeln!(writer, "{key}")?;
+                            } else {
+                                set_failed();
+                                eprintln!("{key}");
+                            }
                         }
                     }
                     InfoReportType::Equivalent => {
-                        for k in state.referencing_keys()? {
-                            writeln!(writer, "{k}")?;
+                        let referencing_keys = state.referencing_keys()?;
+                        if json {
+                            serde_json::to_writer(&mut writer, &referencing_keys)?;
+                        } else {
+                            for k in referencing_keys {
+                                writeln!(writer, "{k}")?;
+                            }
                         }
                     }
                     InfoReportType::Preferred => {
                         let preferred = info::get_preferred_id(&state, &cfg)?
                             .unwrap_or(record.canonical.into());
-                        writeln!(writer, "{preferred}")?;
+                        if json {
+                            serde_json::to_writer(&mut writer, &preferred)?;
+                        } else {
+                            writeln!(writer, "{preferred}")?;
+                        }
                     }
                     InfoReportType::Modified => {
-                        writeln!(writer, "{}", record.modified)?;
+                        let modified = record.modified;
+                        if json {
+                            serde_json::to_writer(&mut writer, &modified)?;
+                        } else {
+                            writeln!(writer, "{modified}")?;
+                        }
                     }
                     InfoReportType::Revision => {
-                        writeln!(writer, "{}", state.rev())?;
+                        let rev = state.rev();
+                        if json {
+                            serde_json::to_writer(&mut writer, &rev)?;
+                        } else {
+                            writeln!(writer, "{}", state.rev())?;
+                        }
                     }
                 }
                 state.commit()?;

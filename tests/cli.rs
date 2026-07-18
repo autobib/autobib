@@ -382,7 +382,6 @@ fn source() -> Result<()> {
     let predicate_file = predicate::path::eq_file(Path::new("tests/resources/source/stdout.json"))
         .utf8()
         .unwrap();
-
     s.cmd()?
         .args(["source", "tests/resources/source/main.tex", "--json"])
         .assert()
@@ -955,13 +954,24 @@ fn info() -> Result<()> {
         .failure()
         .stderr("%\n");
 
+    s.cmd()?
+        .args(["info", "%", "--json"])
+        .assert()
+        .success()
+        .stdout(
+            contains("modified")
+                .and(contains("\"canonical\":\"zbmath:6346461\""))
+                .and(contains("\"is_valid_bibtex\":false"))
+                .and(contains("author"))
+                .and(contains("title"))
+                .and(contains("\"preferred\":null")),
+        );
+
     s.cmd()?.args(["info", "%"]).assert().success().stdout(
-        contains("modified")
-            .and(contains("\"canonical\":\"zbmath:6346461\""))
-            .and(contains("\"is_valid_bibtex\":false"))
-            .and(contains("author"))
-            .and(contains("title"))
-            .and(contains("\"preferred\":null")),
+        contains("Canonical identifier: zbmath:6346461")
+            .and(contains("Entry type: article"))
+            .and(contains("No matching preferred key"))
+            .and(contains("Key: %")),
     );
 
     s.close()
@@ -2236,14 +2246,18 @@ fn json_schema() -> Result<()> {
         "arxiv:1212.1873",
         "mr:3224722",
     ] {
-        assert_schema(&s, ["info", id], "docs/schema/info.schema.json")?;
+        assert_schema(&s, ["info", "--json", id], "docs/schema/info.schema.json")?;
     }
 
     s.cmd()?
         .args(["hist", "void", "mr:3224722"])
         .assert()
         .success();
-    assert_schema(&s, ["info", "mr:3224722"], "docs/schema/info.schema.json")?;
+    assert_schema(
+        &s,
+        ["info", "--json", "mr:3224722"],
+        "docs/schema/info.schema.json",
+    )?;
 
     s.close()
 }
