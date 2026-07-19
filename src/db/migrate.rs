@@ -192,7 +192,7 @@ ALTER TABLE Keys RENAME COLUMN record_key TO record_rev;
             )?;
 
             debug!("Recreating indices");
-            tx.execute_batch(super::schema::create_indices())?;
+            tx.execute_batch(include_str!("migrate/v3/create_indices.sql"))?;
 
             tx.commit()?;
         }
