@@ -54,7 +54,7 @@ impl<D: FromBytesAndVariant> Record<D> {
     /// - `variant`
     pub(in crate::db) fn from_row_unchecked(row: &Row<'_>) -> Self {
         let data = D::from_bytes_and_variant(row.get_unwrap("data"), row.get_unwrap("variant"));
-        let canonical = Identifier::from_string_unchecked(row.get_unwrap("record_id"));
+        let canonical = Identifier::from_string_unchecked(row.get_unwrap("canonical"));
         let modified = row.get_unwrap("modified");
 
         Self {
@@ -67,7 +67,7 @@ impl<D: FromBytesAndVariant> Record<D> {
     /// Load from a row id, which the caller promises is a valid row ID in the 'Records' table and
     /// moreover has type `D`.
     pub(super) fn load_unchecked(tx: &Tx<'_>, row_id: i64) -> rusqlite::Result<Self> {
-        tx.prepare_cached("SELECT record_id, modified, data, variant FROM Records WHERE key = ?1")?
+        tx.prepare_cached("SELECT canonical, modified, data, variant FROM Records WHERE rev = ?1")?
             .query_row((row_id,), |row| Ok(Self::from_row_unchecked(row)))
     }
 }
@@ -144,7 +144,7 @@ pub struct HistRecord<D> {
 
 impl<D: FromBytesAndVariant> HistRecord<D> {
     pub(super) fn from_row_unchecked(row: &Row<'_>) -> Self {
-        let parent = row.get_unwrap("parent_key");
+        let parent = row.get_unwrap("parent_rev");
         let record = Record::from_row_unchecked(row);
 
         Self { record, parent }
@@ -152,7 +152,7 @@ impl<D: FromBytesAndVariant> HistRecord<D> {
 
     pub(super) fn load_unchecked(tx: &Tx<'_>, row_id: i64) -> rusqlite::Result<Self> {
         tx.prepare_cached(
-            "SELECT record_id, modified, data, variant, parent_key FROM Records WHERE key = ?1",
+            "SELECT canonical, modified, data, variant, parent_rev FROM Records WHERE rev = ?1",
         )?
         .query_row((row_id,), |row| Ok(Self::from_row_unchecked(row)))
     }
@@ -163,7 +163,7 @@ trait FromRowId: InRecordsTable {
     fn from_row_id(row_id: i64) -> Self;
 }
 
-macro_rules! impl_record_key {
+macro_rules! impl_from_row_id {
     ($v:ident, $data:ty) => {
         impl std::fmt::Display for $v {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -214,7 +214,7 @@ impl FromBytesAndVariant for ArbitraryData {
     }
 }
 
-impl_record_key!(IsArbitrary, ArbitraryData);
+impl_from_row_id!(IsArbitrary, ArbitraryData);
 
 /// The `key` of a row in the 'Records' table which is either an `entry` or `deleted`.
 #[derive(Debug)]
@@ -242,7 +242,7 @@ impl FromBytesAndVariant for EntryOrDeletedData {
 
 impl NotVoid for IsEntryOrDeleted {}
 
-impl_record_key!(IsEntryOrDeleted, EntryOrDeletedData);
+impl_from_row_id!(IsEntryOrDeleted, EntryOrDeletedData);
 
 /// An entry in the 'Records' table.
 #[derive(Debug)]
@@ -260,7 +260,7 @@ impl FromBytesAndVariant for RawEntryData {
 
 impl NotVoid for IsEntry {}
 
-impl_record_key!(IsEntry, RawEntryData);
+impl_from_row_id!(IsEntry, RawEntryData);
 
 /// A deletion marker in the 'Records' table.
 #[derive(Debug)]
@@ -285,7 +285,7 @@ impl FromBytesAndVariant for Option<Identifier> {
 impl NotVoid for IsDeleted {}
 impl NotEntry for IsDeleted {}
 
-impl_record_key!(IsDeleted, Option<Identifier>);
+impl_from_row_id!(IsDeleted, Option<Identifier>);
 
 /// The 'void' root node in the 'Records' table.
 ///
@@ -305,7 +305,7 @@ impl FromBytesAndVariant for () {
 
 impl NotEntry for IsVoid {}
 
-impl_record_key!(IsVoid, ());
+impl_from_row_id!(IsVoid, ());
 
 /// A row in the 'Records' table, disambiguated based on what type of row it is.
 pub enum DisambiguatedRecordState<'conn> {
@@ -473,15 +473,15 @@ impl AsRecordData for ArbitraryData {
 
 /// Get the canonical identifier.
 fn get_canonical(tx: &Tx, row_id: i64) -> rusqlite::Result<Identifier> {
-    tx.prepare_cached("SELECT record_id FROM Records WHERE key = ?1")?
+    tx.prepare_cached("SELECT canonical FROM Records WHERE rev = ?1")?
         .query_row([row_id], |row| {
-            row.get("record_id").map(Identifier::from_string_unchecked)
+            row.get("canonical").map(Identifier::from_string_unchecked)
         })
 }
 
 /// Get the last modified time.
 fn get_last_modified(tx: &Tx, row_id: i64) -> rusqlite::Result<DateTime<Local>> {
-    tx.prepare_cached("SELECT modified FROM Records WHERE key = ?1")?
+    tx.prepare_cached("SELECT modified FROM Records WHERE rev = ?1")?
         .query_row([row_id], |row| row.get("modified"))
 }
 
@@ -526,7 +526,7 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
             self.row_id()
         );
         self.prepare(
-            "DELETE FROM Records WHERE record_id IN (SELECT record_id FROM Records WHERE key = ?1);",
+            "DELETE FROM Records WHERE canonical IN (SELECT canonical FROM Records WHERE rev = ?1);",
         )?
         .execute((self.row_id(),))?;
 
@@ -623,7 +623,7 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
     /// Update the 'Keys' table by setting any rows which reference the current row to
     /// reference a new row id instead.
     fn update_identifier_lookup(&self, new_key: i64) -> Result<usize, rusqlite::Error> {
-        self.prepare("UPDATE Keys SET record_key = ?1 WHERE record_key = ?2")?
+        self.prepare("UPDATE Keys SET record_rev = ?1 WHERE record_rev = ?2")?
             .execute((new_key, self.row_id()))
     }
 
@@ -635,7 +635,7 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
     /// Apply a mutable closure to every key in the `Keys` table which references this row.
     pub fn map_referencing_keys(&self, mut f: impl FnMut(&str)) -> Result<(), rusqlite::Error> {
         debug!("Getting referencing keys for '{}'.", self.row_id());
-        let mut selector = self.prepare("SELECT name FROM Keys WHERE record_key = ?1")?;
+        let mut selector = self.prepare("SELECT name FROM Keys WHERE record_rev = ?1")?;
         let mut rows = selector.query((self.row_id(),))?;
         while let Some(row) = rows.next()? {
             if let rusqlite::types::ValueRef::Text(bytes) = row.get_ref_unwrap(0) {
@@ -692,13 +692,13 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
         for id in refs {
             let stmt = match mode {
                 IdentifierInsertMode::Overwrite => {
-                    "INSERT OR REPLACE INTO Keys (name, record_key) values (?1, ?2)"
+                    "INSERT OR REPLACE INTO Keys (name, record_rev) values (?1, ?2)"
                 }
                 IdentifierInsertMode::IgnoreIfExists => {
-                    "INSERT OR IGNORE INTO Keys (name, record_key) values (?1, ?2)"
+                    "INSERT OR IGNORE INTO Keys (name, record_rev) values (?1, ?2)"
                 }
                 IdentifierInsertMode::FailIfExists => {
-                    "INSERT INTO Keys (name, record_key) values (?1, ?2)"
+                    "INSERT INTO Keys (name, record_rev) values (?1, ?2)"
                 }
             };
             let mut key_writer = self.prepare(stmt)?;
@@ -723,11 +723,11 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
         // - the new data
         // - the current timestamp
         // - the correct variant
-        // - the key of the row being replaced, in parent_key
+        // - the key of the row being replaced, in parent_rev
         //
         // the remaining fields use their default values
         let dt = Local::now();
-        let new_key: i64 = self.prepare("INSERT INTO Records (record_id, data, modified, variant, parent_key) VALUES (?1, ?2, ?3, ?4, ?5) RETURNING key")?
+        let new_key: i64 = self.prepare("INSERT INTO Records (canonical, data, modified, variant, parent_rev) VALUES (?1, ?2, ?3, ?4, ?5) RETURNING rev")?
             .query_row((existing.record.canonical.as_key(), data.data_blob(), &dt, data.variant(), self.row_id()), |row| row.get(0))?;
 
         self.update_identifier_lookup(new_key)?;
@@ -842,10 +842,10 @@ pub fn replace_hard_unchecked<'conn>(
     original_canonical: &Identifier,
     target: IsEntry,
 ) -> rusqlite::Result<Tx<'conn>> {
-    tx.prepare("UPDATE Keys SET record_key = ?1 WHERE record_key = ?2")?
+    tx.prepare("UPDATE Keys SET record_rev = ?1 WHERE record_rev = ?2")?
         .execute((target.0, original.0))?;
 
-    tx.prepare("DELETE FROM Records WHERE record_id = ?1")?
+    tx.prepare("DELETE FROM Records WHERE canonical = ?1")?
         .execute([original_canonical.as_key()])?;
 
     Ok(tx)
@@ -861,7 +861,7 @@ pub(in crate::db) fn create_rewind_target(
     before: DateTime<Local>,
 ) -> rusqlite::Result<i64> {
     // first, try to find a candidate vertex to swap to
-    let id_opt: Option<i64> = tx.prepare("SELECT key FROM Records WHERE record_id = ?1 AND modified <= ?2 ORDER BY modified DESC LIMIT 1")?
+    let id_opt: Option<i64> = tx.prepare("SELECT rev FROM Records WHERE canonical = ?1 AND modified <= ?2 ORDER BY modified DESC LIMIT 1")?
             .query_row((canonical, before), |row| row.get(0)).optional()?;
 
     Ok(if let Some(id) = id_opt {
@@ -870,7 +870,7 @@ pub(in crate::db) fn create_rewind_target(
         // if no candidate exists, this means the modified time is > `before` on every entry in
         // canonical, so we find the root and add the void vertex before it
         let root_row_id: i64 = tx
-            .prepare("SELECT key FROM Records WHERE record_id = ?1 AND parent_key IS NULL")?
+            .prepare("SELECT rev FROM Records WHERE canonical = ?1 AND parent_rev IS NULL")?
             .query_row([canonical], |row| row.get(0))?;
         create_void_parent(tx, root_row_id, canonical)?
     })
@@ -879,11 +879,11 @@ pub(in crate::db) fn create_rewind_target(
 /// Create a parent to this row which is a void record.
 fn create_void_parent(tx: &Tx<'_>, root_row_id: i64, canonical: &str) -> rusqlite::Result<i64> {
     // create the void root
-    let new_row_id: i64 = tx.prepare("INSERT INTO Records (record_id, data, modified, variant) VALUES (?1, ?2, ?3, ?4) RETURNING key")?
+    let new_row_id: i64 = tx.prepare("INSERT INTO Records (canonical, data, modified, variant) VALUES (?1, ?2, ?3, ?4) RETURNING rev")?
             .query_row((canonical, ().data_blob(), DateTime::<Local>::MIN_UTC, ().variant()), |row| row.get(0))?;
 
     // update the non-void root to reference the parent
-    tx.prepare("UPDATE Records SET parent_key = ?1 WHERE key = ?2")?
+    tx.prepare("UPDATE Records SET parent_rev = ?1 WHERE rev = ?2")?
         .execute((Some(new_row_id), root_row_id))?;
 
     Ok(new_row_id)
@@ -927,8 +927,8 @@ impl<'conn> State<'conn, IsEntry> {
     ) -> rusqlite::Result<RecordRowMoveResult<'conn, IsDeleted, IsEntry, bool>> {
         let replacement: Option<i64> = self
             .tx
-            .prepare("SELECT record_key FROM Keys WHERE name = ?1")?
-            .query_row([candidate.as_key()], |row| row.get("record_key"))
+            .prepare("SELECT record_rev FROM Keys WHERE name = ?1")?
+            .query_row([candidate.as_key()], |row| row.get("record_rev"))
             .optional()?;
 
         match replacement {
@@ -939,8 +939,8 @@ impl<'conn> State<'conn, IsEntry> {
                 } else {
                     let repl: String = self
                         .tx
-                        .prepare("SELECT record_id FROM Records WHERE key = ?1")?
-                        .query_row([row_id], |row| row.get("record_id"))?;
+                        .prepare("SELECT canonical FROM Records WHERE rev = ?1")?
+                        .query_row([row_id], |row| row.get("canonical"))?;
                     let id = Identifier::from_string_unchecked(repl);
                     info!("Replacing row with new canonical id '{id}'");
                     let deleted = self.delete_soft(Some(&id), update_aliases)?.state;
@@ -1016,17 +1016,18 @@ impl<'conn> State<'conn, IsEntry> {
     /// Create a new row which is a copy of the current row but with the provided modification
     /// time.
     pub fn touch_with_timestamp(self, dt: &DateTime<Local>) -> rusqlite::Result<Self> {
+        // TODO: this is never used / tested
         let new_row_id: i64 = self
             .tx
             .prepare(
                 "
-INSERT INTO Records (record_id, data, modified, variant, parent_key)
-SELECT record_id, data, ?1, variant, key
+INSERT INTO Records (canonical, data, modified, variant, parent_rev)
+SELECT canonical, data, ?1, variant, rev
 FROM Records
-WHERE key = ?2
-RETURNING key",
+WHERE rev = ?2
+RETURNING rev",
             )?
-            .query_row((dt, self.row_id()), |row| row.get("key"))?;
+            .query_row((dt, self.row_id()), |row| row.get("rev"))?;
         self.transmute(new_row_id)
     }
 
@@ -1041,13 +1042,13 @@ RETURNING key",
             match replacement {
                 Some(canonical) => {
                     self.prepare(
-                        "UPDATE Keys SET record_key = (SELECT record_key FROM Keys WHERE name = ?1) WHERE instr(name, ':') = 0 AND record_key = ?2",
+                        "UPDATE Keys SET record_rev = (SELECT record_rev FROM Keys WHERE name = ?1) WHERE instr(name, ':') = 0 AND record_rev = ?2",
                     )?
                     .execute((canonical.as_key(), new_key))?;
                 }
                 None => {
                     self.prepare(
-                        "DELETE FROM Keys WHERE instr(name, ':') = 0 AND record_key = ?1",
+                        "DELETE FROM Keys WHERE instr(name, ':') = 0 AND record_rev = ?1",
                     )?
                     .execute([new_key])?;
                 }
@@ -1074,7 +1075,7 @@ RETURNING key",
     #[inline]
     pub fn update_alias(&self, alias: &Alias) -> Result<bool, rusqlite::Error> {
         let rows_changed = self
-            .prepare("UPDATE Keys SET record_key = ?1 WHERE name = ?2")?
+            .prepare("UPDATE Keys SET record_rev = ?1 WHERE name = ?2")?
             .execute((self.row_id(), alias.as_key()))?;
         Ok(rows_changed == 1)
     }
@@ -1097,7 +1098,7 @@ RETURNING key",
                 }
             }
             None => {
-                self.prepare("INSERT INTO Keys (name, record_key) values (?1, ?2)")?
+                self.prepare("INSERT INTO Keys (name, record_rev) values (?1, ?2)")?
                     .execute((alias.as_key(), self.row_id()))?;
                 Ok(None)
             }

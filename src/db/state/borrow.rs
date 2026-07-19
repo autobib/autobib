@@ -61,8 +61,8 @@ impl<'r> Record<ArbitraryDataRef<'r>, &'r str> {
     /// - `data`
     /// - `variant`
     pub(in crate::db) fn borrow_from_row_unchecked(row: &'r Row<'_>) -> Self {
-        let ValueRef::Text(record_id) = row.get_ref_unwrap("record_id") else {
-            panic!("Expected 'record_id' column to be of type TEXT");
+        let ValueRef::Text(record_id) = row.get_ref_unwrap("canonical") else {
+            panic!("Expected 'canonical' column to be of type TEXT");
         };
         let ValueRef::Blob(data_bytes) = row.get_ref_unwrap("data") else {
             panic!("Expected 'data' column to be of type BLOB");

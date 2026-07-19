@@ -65,12 +65,12 @@ impl<'conn> Snapshot<'conn> {
         let limit: i64 = limit.map(Into::into).unwrap_or(-1);
         let mut retriever = self
             .tx
-            .prepare("SELECT key, record_id, modified, data, variant FROM Records WHERE variant != 2 ORDER BY modified DESC LIMIT ?1")?;
+            .prepare("SELECT rev, canonical, modified, data, variant FROM Records WHERE variant != 2 ORDER BY modified DESC LIMIT ?1")?;
 
         let mut rows = retriever.query([limit])?;
         while let Some(row) = rows.next()? {
             let record_row = Record::borrow_from_row_unchecked(row);
-            let rev_id = row.get_unwrap("key");
+            let rev_id = row.get_unwrap("rev");
             f(record_row, rev_id).map_err(SnapshotMapErr::CallbackFailed)?;
         }
         Ok(())
@@ -85,26 +85,26 @@ impl<'conn> Snapshot<'conn> {
             .prepare(
                 "
 WITH RECURSIVE ancestors AS (
-    SELECT key, parent_key
+    SELECT rev, parent_rev
     FROM Records
-    WHERE key IN (SELECT record_key FROM Keys)
+    WHERE rev IN (SELECT record_rev FROM Keys)
 
     UNION ALL
 
-    SELECT r.key, r.parent_key
+    SELECT r.rev, r.parent_rev
     FROM ancestors a
-    INNER JOIN Records AS r ON a.parent_key = r.key
+    INNER JOIN Records AS r ON a.parent_rev = r.rev
 ),
 descendants AS (
-    SELECT key FROM ancestors
+    SELECT rev FROM ancestors
 
     UNION
 
-    SELECT r.key
+    SELECT r.rev
     FROM Records AS r
-    INNER JOIN descendants AS d ON r.parent_key = d.key
+    INNER JOIN descendants AS d ON r.parent_rev = d.rev
 )
-DELETE FROM Records WHERE key NOT IN (SELECT key FROM descendants);
+DELETE FROM Records WHERE rev NOT IN (SELECT rev FROM descendants);
 ",
             )?
             .execute([])?;
@@ -120,24 +120,24 @@ DELETE FROM Records WHERE key NOT IN (SELECT key FROM descendants);
 
         let mut stmt = self.tx.prepare(
             "
-INSERT INTO Records (record_id, data, modified, variant, parent_key)
-SELECT r.record_id, r.data, ?1, r.variant, r.key
+INSERT INTO Records (canonical, data, modified, variant, parent_rev)
+SELECT r.canonical, r.data, ?1, r.variant, r.rev
 FROM Records AS r
-WHERE r.key IN (SELECT record_key FROM Keys)
-RETURNING key, parent_key",
+WHERE r.rev IN (SELECT record_rev FROM Keys)
+RETURNING rev, parent_rev",
         )?;
 
         for row in stmt.query_map([now], |row| {
-            Ok((row.get_unwrap("key"), row.get_unwrap("parent_key")))
+            Ok((row.get_unwrap("rev"), row.get_unwrap("parent_rev")))
         })? {
-            let (key, parent_key) = row?;
-            to_update.push((key, parent_key));
+            let (rev, parent_rev) = row?;
+            to_update.push((rev, parent_rev));
         }
 
-        for (key, parent_key) in to_update {
+        for (rev, parent_rev) in to_update {
             self.tx
-                .prepare_cached("UPDATE Keys SET record_key = ?1 WHERE record_key = ?2")?
-                .execute((key, parent_key))?;
+                .prepare_cached("UPDATE Keys SET record_rev = ?1 WHERE record_rev = ?2")?
+                .execute((rev, parent_rev))?;
         }
 
         Ok(now)
@@ -146,10 +146,10 @@ RETURNING key, parent_key",
     /// Delete all inactive records.
     pub fn prune_all(&self) -> rusqlite::Result<()> {
         info!("Pruning all inactive revisions.");
-        // delete everything which is not active. we don't need to set `parent_key = NULL` because
+        // delete everything which is not active. we don't need to set `parent_rev = NULL` because
         // of the `ON DELETE SET NULL` foreign key constraint
         self.tx
-            .prepare("DELETE FROM Records WHERE key NOT IN (SELECT record_key FROM Keys)")?
+            .prepare("DELETE FROM Records WHERE rev NOT IN (SELECT record_rev FROM Keys)")?
             .execute([])?;
         Ok(())
     }
@@ -162,15 +162,15 @@ RETURNING key, parent_key",
             .prepare(
                 "
 WITH RECURSIVE descendants AS (
-  SELECT DISTINCT record_key AS key FROM Keys
+  SELECT DISTINCT record_rev AS rev FROM Keys
 
   UNION ALL
 
-  SELECT Records.key
+  SELECT Records.rev
   FROM Records
-  INNER JOIN descendants ON Records.parent_key = descendants.key
+  INNER JOIN descendants ON Records.parent_rev = descendants.rev
 )
-DELETE FROM Records WHERE key NOT IN (SELECT key FROM descendants)",
+DELETE FROM Records WHERE rev NOT IN (SELECT rev FROM descendants)",
             )?
             .execute([])?;
         Ok(())
@@ -184,27 +184,27 @@ DELETE FROM Records WHERE key NOT IN (SELECT key FROM descendants)",
             .prepare(
                 "
 WITH RECURSIVE ancestors AS (
-    SELECT key, parent_key, 0 as level
+    SELECT rev, parent_rev, 0 as level
     FROM Records
-    WHERE key IN (SELECT record_key FROM Keys)
+    WHERE rev IN (SELECT record_rev FROM Keys)
 
     UNION ALL
 
-    SELECT r.key, r.parent_key, a.level + 1
+    SELECT r.rev, r.parent_rev, a.level + 1
     FROM ancestors a
-    INNER JOIN Records AS r ON a.parent_key = r.key
+    INNER JOIN Records AS r ON a.parent_rev = r.rev
     WHERE a.level < ?1
 ),
 descendants AS (
-    SELECT key FROM ancestors
+    SELECT rev FROM ancestors
 
     UNION
 
-    SELECT r.key
+    SELECT r.rev
     FROM Records AS r
-    INNER JOIN descendants AS d ON r.parent_key = d.key
+    INNER JOIN descendants AS d ON r.parent_rev = d.rev
 )
-DELETE FROM Records WHERE key NOT IN (SELECT key FROM descendants);
+DELETE FROM Records WHERE rev NOT IN (SELECT rev FROM descendants);
 ",
             )?
             .execute([retain])?;
@@ -214,7 +214,7 @@ DELETE FROM Records WHERE key NOT IN (SELECT key FROM descendants);
     /// Check whether a specific revision is active.
     pub fn is_active(&self, rev_id: RevisionId) -> rusqlite::Result<bool> {
         self.tx
-            .prepare("SELECT EXISTS (SELECT 1 FROM Keys WHERE record_key = ?1)")?
+            .prepare("SELECT EXISTS (SELECT 1 FROM Keys WHERE record_rev = ?1)")?
             .query_one([rev_id.0], |row| row.get(0))
     }
 
@@ -226,8 +226,8 @@ DELETE FROM Records WHERE key NOT IN (SELECT key FROM descendants);
                 "
 DELETE FROM Records
 WHERE variant = 2
-  AND key NOT IN (SELECT record_key FROM Keys)
-  AND (SELECT count(*) FROM Records AS r WHERE r.parent_key = Records.key LIMIT 2) = 1",
+  AND rev NOT IN (SELECT record_rev FROM Keys)
+  AND (SELECT count(*) FROM Records AS r WHERE r.parent_rev = Records.rev LIMIT 2) = 1",
             )?
             .execute([])?;
         Ok(())
@@ -236,14 +236,14 @@ WHERE variant = 2
     /// Delete inactive deleted records which have no children.
     pub fn prune_deleted(&self) -> rusqlite::Result<()> {
         info!("Pruning deletion records with no children.");
-        // the `parent_key` is automatically set to null when the parent is deleted
+        // the `parent_rev` is automatically set to null when the parent is deleted
         self.tx
             .prepare(
                 "
 DELETE FROM Records
 WHERE variant = 1
-  AND key NOT IN (SELECT record_key FROM Keys)
-  AND NOT EXISTS (SELECT 1 FROM Records AS r WHERE r.parent_key = Records.key)",
+  AND rev NOT IN (SELECT record_rev FROM Keys)
+  AND NOT EXISTS (SELECT 1 FROM Records AS r WHERE r.parent_rev = Records.rev)",
             )?
             .execute([])?;
         self.prune_void()
@@ -254,21 +254,21 @@ WHERE variant = 1
     pub fn rewind_all(&self, after: DateTime<Local>) -> rusqlite::Result<()> {
         let mut retriever = self
             .tx
-            .prepare("SELECT record_id, key FROM Records WHERE key IN (SELECT record_key FROM Keys) AND modified > ?1")?;
+            .prepare("SELECT canonical, rev FROM Records WHERE rev IN (SELECT record_rev FROM Keys) AND modified > ?1")?;
 
         let mut outdated: Vec<(String, i64)> = Vec::new();
 
-        for key in retriever.query_map([after], |row| {
-            Ok((row.get_unwrap("record_id"), row.get_unwrap("key")))
+        for rev in retriever.query_map([after], |row| {
+            Ok((row.get_unwrap("canonical"), row.get_unwrap("rev")))
         })? {
-            outdated.push(key?);
+            outdated.push(rev?);
         }
 
         for (canonical, row_id) in outdated {
             let new_row_id = create_rewind_target(&self.tx, &canonical, after)?;
             info!("Rewinding '{canonical}' from rev {row_id:0>4x} to rev {new_row_id:0>4x}");
             self.tx
-                .prepare_cached("UPDATE Keys SET record_key = ?1 WHERE record_key = ?2")?
+                .prepare_cached("UPDATE Keys SET record_rev = ?1 WHERE record_rev = ?2")?
                 .execute((new_row_id, row_id))?;
         }
         Ok(())
@@ -283,11 +283,11 @@ WHERE variant = 1
     {
         let mut retriever = self
             .tx
-            .prepare("SELECT key, record_id, modified, data, variant FROM Records WHERE key IN (SELECT record_key FROM Keys)")?;
+            .prepare("SELECT rev, canonical, modified, data, variant FROM Records WHERE rev IN (SELECT record_rev FROM Keys)")?;
 
         let rows = retriever.query_map([], move |row| {
             let record_row = Record::borrow_from_row_unchecked(row);
-            let rev_id: RevisionId = row.get_unwrap("key");
+            let rev_id: RevisionId = row.get_unwrap("rev");
             Ok(if f(record_row) { Some(rev_id) } else { None })
         })?;
         buffer.extend(rows.filter_map(|row| match row {
@@ -307,7 +307,7 @@ WHERE variant = 1
         pattern: &str,
         mut f: F,
     ) -> Result<(), SnapshotMapErr<E>> {
-        let mut selector = self.tx.prepare("SELECT record_id FROM Records WHERE key IN (SELECT record_key FROM Keys) AND variant = ?1  AND record_id GLOB ?2")?;
+        let mut selector = self.tx.prepare("SELECT canonical FROM Records WHERE rev IN (SELECT record_rev FROM Keys) AND variant = ?1  AND canonical GLOB ?2")?;
         let variant = if deleted { 1 } else { 0 };
 
         let mut rows = selector.query((variant, pattern))?;
@@ -333,7 +333,7 @@ WHERE variant = 1
         mut f: F,
     ) -> Result<(), SnapshotMapErr<E>> {
         let mut selector =
-            self.tx.prepare("SELECT name FROM Keys INNER JOIN Records ON Keys.record_key = Records.key WHERE Records.variant = ?1 AND Keys.name GLOB ?2")?;
+            self.tx.prepare("SELECT name FROM Keys INNER JOIN Records ON Keys.record_rev = Records.rev WHERE Records.variant = ?1 AND Keys.name GLOB ?2")?;
         let variant = if deleted { 1 } else { 0 };
 
         let mut rows = selector.query((variant, pattern))?;
@@ -352,7 +352,7 @@ WHERE variant = 1
     where
         F: FnMut(Identifier),
     {
-        for id in self.tx.prepare("SELECT name FROM Keys WHERE record_key = (SELECT record_key FROM Keys WHERE name = ?1) AND instr(name, ':') != 0")?.query_map([id.as_key()], |row| {
+        for id in self.tx.prepare("SELECT name FROM Keys WHERE record_rev = (SELECT record_rev FROM Keys WHERE name = ?1) AND instr(name, ':') != 0")?.query_map([id.as_key()], |row| {
             Ok(Identifier::from_string_unchecked(row.get(0)?))
         })? {
             f(id?);
