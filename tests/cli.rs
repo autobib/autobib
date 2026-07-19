@@ -1426,7 +1426,7 @@ fn consistency() -> Result<()> {
     // perform some destructive changes to the database
     let conn = Connection::open(s.database.path())?;
     conn.pragma_update(None, "foreign_keys", 0)?;
-    conn.prepare("DELETE FROM Records WHERE record_id = 'zbmath:6346461'")?
+    conn.prepare("DELETE FROM Records WHERE canonical = 'zbmath:6346461'")?
         .execute(())?;
     conn.prepare("DELETE FROM Keys WHERE name = 'mr:3224722'")?
         .execute(())?;

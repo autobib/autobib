@@ -167,8 +167,33 @@ pub fn migrate(conn: &mut Connection, v: i32) -> Result<(), DatabaseError> {
         }
         3 => {
             let tx = conn.transaction()?;
+
             debug!("Renaming `Identifiers` table to `Keys`");
             tx.execute("ALTER TABLE Identifiers RENAME TO Keys", ())?;
+
+            debug!("Deleting indices");
+            tx.execute_batch(
+                "
+DROP INDEX IF EXISTS records_parent_key;
+DROP INDEX IF EXISTS records_record_id;
+DROP INDEX IF EXISTS records_modified;
+DROP INDEX IF EXISTS citation_keys_record_key;",
+            )?;
+
+            debug!("Renaming columns");
+            tx.execute_batch(
+                "
+ALTER TABLE Records RENAME COLUMN record_id TO canonical;
+ALTER TABLE Records RENAME COLUMN parent_key TO parent_rev;
+ALTER TABLE Records RENAME COLUMN key TO rev;
+ALTER TABLE NullRecords RENAME COLUMN record_id TO canonical;
+ALTER TABLE Keys RENAME COLUMN record_key TO record_rev;
+",
+            )?;
+
+            debug!("Recreating indices");
+            tx.execute_batch(super::schema::create_indices())?;
+
             tx.commit()?;
         }
         // this is only reachable if the user_version was set by a different program

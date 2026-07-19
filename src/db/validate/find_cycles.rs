@@ -4,7 +4,7 @@ use super::DatabaseFault;
 
 /// Detects cycles in a parent-key graph structure.
 ///
-/// Each element in `records` is a `(key, parent_key)` pair, where `parent_key = None`
+/// Each element in `records` is a `(key, parent_rev)` pair, where `parent_rev = None`
 /// indicates a root node. Returns a vector of cycles, where each cycle is represented
 /// as a vector of keys forming the cycle.
 ///
@@ -51,8 +51,8 @@ pub fn detect_cycles(parent_map: &HashMap<i64, Option<i64>>, faults: &mut Vec<Da
             path_set.insert(*current);
 
             match parent_map.get(current) {
-                Some(Some(parent_key)) => {
-                    current = parent_key;
+                Some(Some(parent_rev)) => {
+                    current = parent_rev;
                 }
                 Some(None) => {
                     // reached a root node; ok

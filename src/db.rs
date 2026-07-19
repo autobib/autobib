@@ -60,14 +60,14 @@ type RowId = i64;
 
 /// Determine the [`RowId`] in the `Records` table corresponding to an [`Identifier`].
 fn get_row_id<K: AsKey>(tx: &Tx, record_id: &K) -> Result<Option<RowId>, rusqlite::Error> {
-    tx.prepare_cached("SELECT record_key FROM Keys WHERE name = ?1")?
-        .query_row([record_id.as_key()], |row| row.get("record_key"))
+    tx.prepare_cached("SELECT record_rev FROM Keys WHERE name = ?1")?
+        .query_row([record_id.as_key()], |row| row.get("record_rev"))
         .optional()
 }
 
 /// Determine the [`RowId`] in the `NullRecords` table corresponding to an [`Identifier`].
 pub fn get_null_row_id(tx: &Tx, id: &Identifier) -> Result<Option<RowId>, rusqlite::Error> {
-    tx.prepare_cached("SELECT rowid FROM NullRecords WHERE record_id = ?1")?
+    tx.prepare_cached("SELECT rowid FROM NullRecords WHERE canonical = ?1")?
         .query_row([id.as_key()], |row| row.get("rowid"))
         .optional()
 }
@@ -381,7 +381,7 @@ impl RecordDatabase {
                 let mut invalid_keys: Vec<String> = Vec::new();
                 {
                     let mut stmt = tx.prepare(
-                        "SELECT name FROM Keys WHERE record_key NOT IN (SELECT key FROM Records)",
+                        "SELECT name FROM Keys WHERE record_rev NOT IN (SELECT rev FROM Records)",
                     )?;
                     let mut rows = stmt.query(())?;
                     while let Some(row) = rows.next()? {
@@ -393,7 +393,7 @@ impl RecordDatabase {
                 for name in invalid_keys {
                     eprintln!("  {name}");
                 }
-                tx.prepare("DELETE FROM Keys WHERE record_key NOT IN (SELECT key FROM Records)")?
+                tx.prepare("DELETE FROM Keys WHERE record_rev NOT IN (SELECT rev FROM Records)")?
                     .execute(())?;
                 Ok(true)
             }
@@ -455,7 +455,7 @@ impl RecordDatabase {
         debug!("Mapping over all active database records.");
         let mut retriever = self
             .conn
-            .prepare("SELECT record_id, modified, data, variant FROM Records WHERE key IN (SELECT record_key FROM Keys) AND variant = 0")?;
+            .prepare("SELECT canonical, modified, data, variant FROM Records WHERE rev IN (SELECT record_rev FROM Keys) AND variant = 0")?;
 
         for res in retriever.query_map([], |row| Ok(Record::from_row_unchecked(row)))? {
             f(res?).map_err(SnapshotMapErr::CallbackFailed)?;
@@ -478,7 +478,7 @@ impl RecordDatabase {
         debug!("Mapping over all active database records with canonical ID matching '{glob}'.");
         let mut retriever = self
             .conn
-            .prepare("SELECT record_id, modified, data, variant FROM Records WHERE key IN (SELECT record_key FROM Keys) AND variant = 0 AND record_id GLOB ?1")?;
+            .prepare("SELECT canonical, modified, data, variant FROM Records WHERE rev IN (SELECT record_rev FROM Keys) AND variant = 0 AND canonical GLOB ?1")?;
 
         for res in retriever.query_map([glob], |row| Ok(Record::from_row_unchecked(row)))? {
             f(res?).map_err(SnapshotMapErr::CallbackFailed)?;
@@ -501,7 +501,7 @@ impl RecordDatabase {
         debug!("Mapping over all active database records with canonical ID matching '{glob}'.");
         let mut retriever = self
             .conn
-            .prepare("SELECT name, record_id, modified, data, variant FROM Records INNER JOIN Keys ON Keys.record_key = Records.key WHERE Records.variant =0 AND Keys.name GLOB ?1")?;
+            .prepare("SELECT name, canonical, modified, data, variant FROM Records INNER JOIN Keys ON Keys.record_rev = Records.rev WHERE Records.variant = 0 AND Keys.name GLOB ?1")?;
 
         for res in retriever.query_map([glob], |row| {
             let key = row.get_unwrap("name");

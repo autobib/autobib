@@ -54,7 +54,7 @@ impl<'conn> State<'conn, IsMissing> {
     /// Set a null row, converting into the [`IsNull`] state.
     pub fn set_null(self, id: &Identifier) -> Result<State<'conn, IsNull>, rusqlite::Error> {
         let row_id: i64 = {
-            let mut setter = self.prepare_cached("INSERT OR REPLACE INTO NullRecords (record_id, attempted) values (?1, ?2) RETURNING rowid")?;
+            let mut setter = self.prepare_cached("INSERT OR REPLACE INTO NullRecords (canonical, attempted) values (?1, ?2) RETURNING rowid")?;
             let cache_time = Local::now();
             setter.query_row((id.as_key(), cache_time), |row| row.get(0))?
         };
@@ -74,7 +74,7 @@ impl<'conn> State<'conn, IsMissing> {
     ) -> Result<Updated<'conn, IsEntry>, rusqlite::Error> {
         debug!("Inserting data for canonical id '{canonical}'");
         let modified = Local::now();
-        let row_id: i64 = self.prepare_cached("INSERT OR ABORT INTO Records (record_id, data, modified) values (?1, ?2, ?3) RETURNING key")?.query_row(
+        let row_id: i64 = self.prepare_cached("INSERT OR ABORT INTO Records (canonical, data, modified) values (?1, ?2, ?3) RETURNING rev")?.query_row(
             (canonical.as_key(), data.to_byte_repr(), &modified),
             |row| row.get(0),
         )?;

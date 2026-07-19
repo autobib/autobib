@@ -134,14 +134,14 @@ impl<'tx, 'conn> Version<'tx, 'conn> {
     /// The number of children.
     pub fn num_children(&self) -> rusqlite::Result<usize> {
         self.tx
-            .prepare_cached("SELECT count(*) FROM Records WHERE parent_key = ?1")?
+            .prepare_cached("SELECT count(*) FROM Records WHERE parent_rev = ?1")?
             .query_row([self.row_id], |row| row.get(0).map(isize::unsigned_abs))
     }
 
     /// Returns whether or not the row has children.
     pub fn has_children(&self) -> rusqlite::Result<bool> {
         self.tx
-            .prepare_cached("SELECT EXISTS (SELECT 1 FROM Records WHERE parent_key = ?1);")?
+            .prepare_cached("SELECT EXISTS (SELECT 1 FROM Records WHERE parent_rev = ?1);")?
             .query_row([self.row_id], |row| row.get(0))
     }
 
@@ -158,10 +158,10 @@ impl<'tx, 'conn> Version<'tx, 'conn> {
         // vectors
         let mut stmt = self
             .tx
-            .prepare_cached("SELECT key, record_id, modified, data, variant, parent_key FROM Records WHERE parent_key = ?1")?;
+            .prepare_cached("SELECT rev, canonical, modified, data, variant, parent_rev FROM Records WHERE parent_rev = ?1")?;
 
         for r in stmt.query_map([self.row_id], |row| {
-            Ok((HistRecord::from_row_unchecked(row), row.get_unwrap("key")))
+            Ok((HistRecord::from_row_unchecked(row), row.get_unwrap("rev")))
         })? {
             let (data, row_id) = r?;
             f(data, row_id)?;

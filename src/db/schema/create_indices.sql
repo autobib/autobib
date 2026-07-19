@@ -1,4 +1,4 @@
-CREATE INDEX records_parent_key ON Records(parent_key);
-CREATE INDEX records_record_id ON Records(record_id);
+CREATE INDEX records_parent_rev ON Records(parent_rev);
+CREATE INDEX records_canonical ON Records(canonical);
 CREATE INDEX records_modified ON Records(modified);
-CREATE INDEX citation_keys_record_key ON Keys(record_key);
+CREATE INDEX keys_record_rev ON Keys(record_rev);

@@ -16,7 +16,7 @@ use crate::{AsKey, Identifier, Key, RawEntryData, error::InvalidBytesError, logg
 /// A possible fault that could occurr inside the database.
 #[derive(Debug)]
 pub enum DatabaseFault {
-    /// The `parent_key` relationship in the 'Records' table contains a cycle.
+    /// The `parent_rev` relationship in the 'Records' table contains a cycle.
     ContainsCycle(HashSet<i64>),
     /// A void record is not a root vertex.
     VoidIsNotRoot(i64),
@@ -28,7 +28,7 @@ pub enum DatabaseFault {
     OrphanedNodes(String, u64),
     /// A record-id in the 'Records' table has multiple citation keys pointing
     IncorrectActiveRowCount(String, u64),
-    /// The `parent_key` is a row which does not exist.
+    /// The `parent_rev` is a row which does not exist.
     ParentKeyMissing(i64),
     /// A row has an invalid canonical id.
     RowHasInvalidCanonicalId(i64, String),
@@ -206,8 +206,8 @@ impl<'conn> DatabaseValidator<'conn> {
 
         while let Some(row) = rows.next()? {
             // first verify that we actually get a proper canonical id
-            let row_id = row.get("key")?;
-            let name: String = row.get("record_id")?;
+            let row_id = row.get("rev")?;
+            let name: String = row.get("canonical")?;
             let canonical_id: Identifier = match Identifier::from_str(name.as_ref()) {
                 Ok(id) => id,
                 Err(_) => {
@@ -234,21 +234,21 @@ impl<'conn> DatabaseValidator<'conn> {
     ) -> rusqlite::Result<()> {
         debug!("Checking for cycles");
         let mut key_parent_pairs: HashMap<i64, Option<i64>> = HashMap::new();
-        let mut stmt = self.tx.prepare("SELECT key, parent_key FROM Records")?;
+        let mut stmt = self.tx.prepare("SELECT rev, parent_rev FROM Records")?;
 
-        for row in stmt.query_map([], |row| Ok((row.get("key")?, row.get("parent_key")?)))? {
+        for row in stmt.query_map([], |row| Ok((row.get("rev")?, row.get("parent_rev")?)))? {
             let (key, parent) = row?;
             key_parent_pairs.insert(key, parent);
         }
 
         find_cycles::detect_cycles(&key_parent_pairs, faults);
 
-        debug!("Checking that each record_id contains a unique tree");
-        let mut stmt = self.tx.prepare("SELECT record_id, count(*) as root_count FROM Records WHERE parent_key IS NULL GROUP BY record_id HAVING count(*) != 1")?;
+        debug!("Checking that each canonical contains a unique tree");
+        let mut stmt = self.tx.prepare("SELECT canonical, count(*) as root_count FROM Records WHERE parent_rev IS NULL GROUP BY canonical HAVING count(*) != 1")?;
 
         for row in stmt.query_map([], |row| {
             Ok((
-                row.get("record_id")?,
+                row.get("canonical")?,
                 row.get("root_count").map(i64::unsigned_abs)?,
             ))
         })? {
@@ -264,18 +264,18 @@ impl<'conn> DatabaseValidator<'conn> {
         let mut stmt = self.tx.prepare(
             "
 SELECT
-    record_id,
-    count(DISTINCT key) as active_row_count
+    canonical,
+    count(DISTINCT rev) as active_row_count
 FROM Records
-WHERE key IN (SELECT record_key FROM Keys)
-GROUP BY record_id
-HAVING count(DISTINCT key) != 1
+WHERE rev IN (SELECT record_rev FROM Keys)
+GROUP BY canonical
+HAVING count(DISTINCT rev) != 1
 ",
         )?;
 
         for row in stmt.query_map([], |row| {
             Ok((
-                row.get("record_id")?,
+                row.get("canonical")?,
                 row.get("active_row_count").map(i64::unsigned_abs)?,
             ))
         })? {
@@ -287,17 +287,17 @@ HAVING count(DISTINCT key) != 1
         let mut stmt = self.tx.prepare(
             "
 SELECT DISTINCT
-    record_id
+    canonical
 FROM Records
-WHERE record_id NOT IN (
-    SELECT r.record_id
+WHERE canonical NOT IN (
+    SELECT r.canonical
     FROM Records AS r
-    WHERE r.key IN (SELECT record_key FROM Keys)
+    WHERE r.rev IN (SELECT record_rev FROM Keys)
 )
 ",
         )?;
 
-        for row in stmt.query_map([], |row| row.get("record_id"))? {
+        for row in stmt.query_map([], |row| row.get("canonical"))? {
             faults.push(DatabaseFault::IncorrectActiveRowCount(row?, 0));
         }
 
@@ -308,19 +308,19 @@ WHERE record_id NOT IN (
         debug!("Checking that void records do not have parents");
         let mut stmt = self
             .tx
-            .prepare("SELECT key FROM Records WHERE variant = 2 AND parent_key IS NOT NULL")?;
+            .prepare("SELECT rev FROM Records WHERE variant = 2 AND parent_rev IS NOT NULL")?;
 
-        for row in stmt.query_map([], |row| row.get("key"))? {
+        for row in stmt.query_map([], |row| row.get("rev"))? {
             faults.push(DatabaseFault::VoidIsNotRoot(row?));
         }
 
         debug!("Checking that void records have correct timestamp");
         let mut stmt = self
             .tx
-            .prepare("SELECT key, modified FROM Records WHERE variant = 2 AND modified != ?1")?;
+            .prepare("SELECT rev, modified FROM Records WHERE variant = 2 AND modified != ?1")?;
 
         for row in stmt.query_map([DateTime::<Local>::MIN_UTC], |row| {
-            Ok((row.get("key")?, row.get("modified")?))
+            Ok((row.get("rev")?, row.get("modified")?))
         })? {
             let (id, stamp) = row?;
             faults.push(DatabaseFault::VoidHasIncorrectTimestamp(id, stamp));
@@ -332,12 +332,12 @@ WHERE record_id NOT IN (
     pub fn monotonic_timestamps(&self, fauls: &mut Vec<DatabaseFault>) -> rusqlite::Result<()> {
         let mut stmt = self.tx.prepare(
             "
-SELECT DISTINCT c.key as child_key
-FROM Records c JOIN Records p ON c.parent_key = p.key
+SELECT DISTINCT c.rev as child_rev
+FROM Records c JOIN Records p ON c.parent_rev = p.rev
 WHERE c.modified < p.modified",
         )?;
 
-        for row in stmt.query_map([], |row| row.get("child_key"))? {
+        for row in stmt.query_map([], |row| row.get("child_rev"))? {
             fauls.push(DatabaseFault::ParentHasEarlierTimestamp(row?));
         }
 
@@ -406,14 +406,14 @@ WHERE c.modified < p.modified",
         debug!("Checking binary data correctness");
         let mut retriever = self
             .tx
-            .prepare("SELECT record_id, data FROM Records WHERE variant = 0")?;
+            .prepare("SELECT canonical, data FROM Records WHERE variant = 0")?;
         let mut rows = retriever.query([])?;
 
         while let Some(row) = rows.next()? {
             if let Err(err) = RawEntryData::<Vec<u8>>::from_byte_repr(row.get("data")?) {
                 faults.push(DatabaseFault::InvalidRecordData(
-                    row.get("key")?,
-                    row.get("record_id")?,
+                    row.get("rev")?,
+                    row.get("canonical")?,
                     err,
                 ));
             }
