@@ -236,15 +236,15 @@ impl<'conn> DatabaseResponse<'conn> {
     /// identifier.
     pub fn determine<A: AliasTransform>(
         tx: Tx<'conn>,
-        record_id: Key,
+        key: Key,
         alias_transform: &A,
     ) -> Result<Self, rusqlite::Error> {
         // fast path when the identifier is in the lookup table
-        if let Some(row_id) = get_row_id(&tx, &record_id)? {
-            return Self::existent(tx, row_id, record_id);
+        if let Some(row_id) = get_row_id(&tx, &key)? {
+            return Self::existent(tx, row_id, key);
         };
 
-        match record_id.resolve(alias_transform) {
+        match key.resolve(alias_transform) {
             Ok(AliasOrId::Id(mapped_id)) => {
                 // check the normalized value, if normalized
                 if mapped_id.is_mapped()

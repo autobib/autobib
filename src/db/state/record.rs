@@ -48,7 +48,7 @@ pub struct Record<D, S = String> {
 impl<D: FromBytesAndVariant> Record<D> {
     /// Load from a row in the 'Records' table. The query which produced the row must contain the following columns:
     ///
-    /// - `record_id`,
+    /// - `canonical`
     /// - `modified`
     /// - `data`
     /// - `variant`
@@ -719,7 +719,7 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
 
         // insert a new row into Records containing:
         //
-        // - the previous value of 'record_id'
+        // - the previous value of 'key'
         // - the new data
         // - the current timestamp
         // - the correct variant

@@ -772,10 +772,10 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     let snapshot = record_db.snapshot()?;
                     snapshot.rewind_all(before)?;
                     snapshot.commit()?;
-                } else if let Some(record_id) = key {
+                } else if let Some(key) = key {
                     let cfg = config::load(&config_path, missing_ok)?;
                     if let Some((_, disambiguated)) = record_db
-                        .state_from_key(record_id, &cfg.alias_transform)?
+                        .state_from_key(key, &cfg.alias_transform)?
                         .require_record()?
                     {
                         let (_, state) = disambiguated.forget();
@@ -805,10 +805,10 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     let modified = snapshot.touch_all()?;
                     snapshot.commit()?;
                     modified
-                } else if let Some(record_id) = key {
+                } else if let Some(key) = key {
                     let modified = chrono::Local::now();
                     let cfg = config::load(&config_path, missing_ok)?;
-                    let (_, row) = get_record(&mut record_db, record_id, client, &cfg)?
+                    let (_, row) = get_record(&mut record_db, key, client, &cfg)?
                         .exists_or_commit_null("Cannot edit")?;
                     row.touch_with_timestamp(&modified)?.commit()?;
                     modified
@@ -1263,7 +1263,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         stdin_file_type,
                         &mut all_citekeys,
                         &mut scratch,
-                        |record_id| !skipped_keys.contains(record_id),
+                        |key| !skipped_keys.contains(key),
                     )?;
                 }
 
@@ -1274,7 +1274,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         &mut all_citekeys,
                         &mut scratch,
                         "--file-type",
-                        |record_id| !skipped_keys.contains(record_id),
+                        |key| !skipped_keys.contains(key),
                     )?;
                 }
 
@@ -1292,7 +1292,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         stdin_file_type,
                         &mut all_citekeys,
                         &mut scratch,
-                        |record_id| !skipped_keys.contains(record_id),
+                        |key| !skipped_keys.contains(key),
                     )?;
                 }
 
@@ -1303,7 +1303,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         &mut all_citekeys,
                         &mut scratch,
                         "--file-type",
-                        |record_id| !skipped_keys.contains(record_id),
+                        |key| !skipped_keys.contains(key),
                     )?;
                 }
 
@@ -1346,8 +1346,8 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             // routine. However, we do not determine the data in the other cases
             // at this point since we would like to defer filesystem / network
             // operations, unless they are strictly required
-            let (provided_data, tx) = if let Some(record_id) = from_record {
-                let (data, tx) = data_from_key(tx, record_id, &cfg)?;
+            let (provided_data, tx) = if let Some(key) = from_record {
+                let (data, tx) = data_from_key(tx, key, &cfg)?;
                 (Some(data), tx)
             } else if let Some(rev) = from_rev {
                 let data = data_from_rev(&tx, rev)?;

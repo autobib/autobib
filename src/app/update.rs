@@ -27,7 +27,7 @@ use crate::{
 /// new data to retrieve from remote.
 pub fn update<F>(
     on_conflict: OnConflict,
-    record_id_state: DatabaseResponse,
+    db_response: DatabaseResponse,
     provided_data: Option<MutableEntryData>,
     normalization: &Normalization,
     revive: bool,
@@ -36,7 +36,7 @@ pub fn update<F>(
 where
     F: FnOnce(Identifier) -> Result<MutableEntryData, anyhow::Error>,
 {
-    match record_id_state {
+    match db_response {
         DatabaseResponse::Entry(
             KeyedRecord {
                 key,
@@ -143,10 +143,10 @@ pub fn data_from_remote<C: Client>(
 
 pub fn data_from_key<'conn>(
     tx: Tx<'conn>,
-    record_id: Key,
+    key: Key,
     cfg: &Config,
 ) -> Result<(MutableEntryData, Tx<'conn>), anyhow::Error> {
-    match DatabaseResponse::determine(tx, record_id, &cfg.alias_transform)? {
+    match DatabaseResponse::determine(tx, key, &cfg.alias_transform)? {
         DatabaseResponse::Entry(KeyedRecord { record, .. }, state) => Ok((
             MutableEntryData::from_entry_data(&record.data),
             state.into_tx(),
