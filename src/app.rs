@@ -965,7 +965,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         }
                     }
                     InfoReportType::Preferred => {
-                        let preferred = info::get_preferred_id(&state, &cfg)?
+                        let preferred = info::get_user_preferred_id(&state, &cfg)?
                             .unwrap_or(record.canonical.into());
                         if json {
                             serde_json::to_writer(&mut writer, &preferred)?;
