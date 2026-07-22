@@ -138,14 +138,14 @@ impl<'conn> RecordResponse<'conn> {
 
 pub fn get_record_tx<'conn, C>(
     tx: Tx<'conn>,
-    record_id: Key,
+    key: Key,
     client: &C,
     config: &Config,
 ) -> Result<RecordResponse<'conn>, Error>
 where
     C: Client,
 {
-    match DatabaseResponse::determine(tx, record_id, &config.alias_transform)? {
+    match DatabaseResponse::determine(tx, key, &config.alias_transform)? {
         DatabaseResponse::Entry(record, state) => {
             info!("Found existing data for key {}", record.key);
             Ok(RecordResponse::Exists(record, state))
@@ -204,14 +204,14 @@ where
 /// recorded in the database.
 pub fn get_record<'conn, C>(
     db: &'conn mut RecordDatabase,
-    record_id: Key,
+    key: Key,
     client: &C,
     config: &Config,
 ) -> Result<RecordResponse<'conn>, Error>
 where
     C: Client,
 {
-    get_record_tx(db.transaction()?, record_id, client, config)
+    get_record_tx(db.transaction()?, key, client, config)
 }
 
 /// Destructure a [`NonEmpty`] and return the last element.

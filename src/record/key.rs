@@ -127,8 +127,8 @@ impl fmt::Display for Key {
 }
 
 impl From<Key> for String {
-    fn from(record_id: Key) -> Self {
-        record_id.full_id
+    fn from(key: Key) -> Self {
+        key.full_id
     }
 }
 
@@ -296,11 +296,11 @@ impl AsRef<str> for LegacyAlias {
 impl TryFrom<Key> for Alias {
     type Error = AliasConversionError;
 
-    fn try_from(record_id: Key) -> Result<Self, Self::Error> {
+    fn try_from(key: Key) -> Result<Self, Self::Error> {
         if let Key {
             full_id: s,
             provider_len: None,
-        } = record_id
+        } = key
         {
             if !s.is_empty() {
                 Ok(Self(s))
@@ -312,7 +312,7 @@ impl TryFrom<Key> for Alias {
             }
         } else {
             Err(AliasConversionError {
-                input: record_id.full_id,
+                input: key.full_id,
                 kind: AliasErrorKind::IsIdentifier,
             })
         }

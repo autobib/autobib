@@ -69,8 +69,8 @@ pub fn retrieve_entries_read_only<T: IntoIterator<Item = Key>>(
     ignore_null: bool,
     config: &Config,
 ) -> BTreeMap<Identifier, NonEmpty<BibtexEntry<RawEntryData>>> {
-    let valid_entries = ids.into_iter().filter_map(|record_id| {
-        retrieve_single_entry_read_only(record_db, record_id, ignore_null, config, |r, s| {
+    let valid_entries = ids.into_iter().filter_map(|key| {
+        retrieve_single_entry_read_only(record_db, key, ignore_null, config, |r, s| {
             Ok(try_data_to_entry(r, s))
         })
         .unwrap_or_else(|error| {

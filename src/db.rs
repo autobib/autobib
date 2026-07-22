@@ -59,9 +59,9 @@ pub const fn application_id() -> i32 {
 type RowId = i64;
 
 /// Determine the [`RowId`] in the `Records` table corresponding to an [`Identifier`].
-fn get_row_id<K: AsKey>(tx: &Tx, record_id: &K) -> Result<Option<RowId>, rusqlite::Error> {
+fn get_row_id<K: AsKey>(tx: &Tx, key: &K) -> Result<Option<RowId>, rusqlite::Error> {
     tx.prepare_cached("SELECT record_rev FROM Keys WHERE name = ?1")?
-        .query_row([record_id.as_key()], |row| row.get("record_rev"))
+        .query_row([key.as_key()], |row| row.get("record_rev"))
         .optional()
 }
 
@@ -307,10 +307,10 @@ impl RecordDatabase {
     #[inline]
     pub fn state_from_key<A: AliasTransform>(
         &mut self,
-        record_id: Key,
+        key: Key,
         alias_transform: &A,
     ) -> Result<DatabaseResponse<'_>, rusqlite::Error> {
-        DatabaseResponse::determine(self.transaction()?, record_id, alias_transform)
+        DatabaseResponse::determine(self.transaction()?, key, alias_transform)
     }
 
     /// Get the [`DatabaseIdResponse`] associated with an [`Identifier`].
@@ -349,7 +349,7 @@ impl RecordDatabase {
         validator.invalid_identifiers(&mut faults)?;
         validator.integrity(&mut faults)?;
         validator.binary_data(&mut faults)?;
-        validator.unique_tree_per_record_id(&mut faults)?;
+        validator.unique_tree_per_key(&mut faults)?;
         validator.monotonic_timestamps(&mut faults)?;
         validator.void_correct_formatting(&mut faults)?;
         validator.check_active_row_counts(&mut faults)?;

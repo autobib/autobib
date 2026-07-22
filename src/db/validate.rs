@@ -69,17 +69,14 @@ impl fmt::Display for DatabaseFault {
                     "Row {row_id} has a parent key with modification later than the row modification time."
                 )
             }
-            Self::OrphanedNodes(record_id, n) => {
+            Self::OrphanedNodes(key, n) => {
                 write!(
                     f,
-                    "Record id '{record_id}' contains inaccessible revisions: {n} disjoint revision-trees found."
+                    "Record id '{key}' contains inaccessible revisions: {n} disjoint revision-trees found."
                 )
             }
-            Self::IncorrectActiveRowCount(record_id, n) => {
-                write!(
-                    f,
-                    "Record id '{record_id}' contains {n} active rows; expected 1."
-                )
+            Self::IncorrectActiveRowCount(key, n) => {
+                write!(f, "Record id '{key}' contains {n} active rows; expected 1.")
             }
             Self::ParentKeyMissing(parent_row_id) => {
                 write!(
@@ -228,10 +225,7 @@ impl<'conn> DatabaseValidator<'conn> {
         Ok(())
     }
 
-    pub fn unique_tree_per_record_id(
-        &self,
-        faults: &mut Vec<DatabaseFault>,
-    ) -> rusqlite::Result<()> {
+    pub fn unique_tree_per_key(&self, faults: &mut Vec<DatabaseFault>) -> rusqlite::Result<()> {
         debug!("Checking for cycles");
         let mut key_parent_pairs: HashMap<i64, Option<i64>> = HashMap::new();
         let mut stmt = self.tx.prepare("SELECT rev, parent_rev FROM Records")?;
@@ -252,8 +246,8 @@ impl<'conn> DatabaseValidator<'conn> {
                 row.get("root_count").map(i64::unsigned_abs)?,
             ))
         })? {
-            let (record_id, n) = row?;
-            faults.push(DatabaseFault::OrphanedNodes(record_id, n));
+            let (key, n) = row?;
+            faults.push(DatabaseFault::OrphanedNodes(key, n));
         }
 
         Ok(())
@@ -279,8 +273,8 @@ HAVING count(DISTINCT rev) != 1
                 row.get("active_row_count").map(i64::unsigned_abs)?,
             ))
         })? {
-            let (record_id, n) = row?;
-            faults.push(DatabaseFault::IncorrectActiveRowCount(record_id, n));
+            let (key, n) = row?;
+            faults.push(DatabaseFault::IncorrectActiveRowCount(key, n));
         }
 
         debug!("Checking that each canonical id occurs in the Keys table");

@@ -56,12 +56,12 @@ impl<'r> ArbitraryDataRef<'r> {
 impl<'r> Record<ArbitraryDataRef<'r>, &'r str> {
     /// Load from a row in the 'Records' table. The query which produced the row must contain the following columns:
     ///
-    /// - `record_id`
+    /// - `canonical`
     /// - `modified`
     /// - `data`
     /// - `variant`
     pub(in crate::db) fn borrow_from_row_unchecked(row: &'r Row<'_>) -> Self {
-        let ValueRef::Text(record_id) = row.get_ref_unwrap("canonical") else {
+        let ValueRef::Text(canonical) = row.get_ref_unwrap("canonical") else {
             panic!("Expected 'canonical' column to be of type TEXT");
         };
         let ValueRef::Blob(data_bytes) = row.get_ref_unwrap("data") else {
@@ -72,7 +72,7 @@ impl<'r> Record<ArbitraryDataRef<'r>, &'r str> {
         };
         let modified: DateTime<Local> = row.get_unwrap("modified");
         let data = ArbitraryDataRef::from_borrowed_bytes_and_variant(data_bytes, variant);
-        let canonical = Identifier::from_string_unchecked(std::str::from_utf8(record_id).unwrap());
+        let canonical = Identifier::from_string_unchecked(std::str::from_utf8(canonical).unwrap());
         Self {
             data,
             modified,
