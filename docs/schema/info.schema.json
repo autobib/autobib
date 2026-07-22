@@ -17,7 +17,7 @@
           "description": "Whether the original key is a valid BibTeX key",
           "type": "boolean"
         },
-        "preferred": {
+        "user_preferred": {
           "description": "The preferred key, as determined from the configuration",
           "type": ["string", "null"]
         },

@@ -964,7 +964,7 @@ fn info() -> Result<()> {
                 .and(contains("\"is_valid_bibtex\":false"))
                 .and(contains("author"))
                 .and(contains("title"))
-                .and(contains("\"preferred\":null")),
+                .and(contains("\"user_preferred\":null")),
         );
 
     s.cmd()?.args(["info", "%"]).assert().success().stdout(

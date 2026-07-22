@@ -13,7 +13,7 @@ use crate::{
 pub struct KeyInfo {
     original: String,
     is_valid_bibtex: bool,
-    preferred: Option<String>,
+    user_preferred: Option<String>,
     equivalent: Vec<String>,
 }
 
@@ -31,7 +31,7 @@ impl fmt::Display for RecordInfo {
         writeln!(f, "Last modified: {}", self.record.modified)?;
         writeln!(f, "==> Key and identifier")?;
         writeln!(f, "Canonical identifier: {}", self.record.canonical)?;
-        if let Some(ref preferred) = self.key.preferred {
+        if let Some(ref preferred) = self.key.user_preferred {
             writeln!(f, "Preferred key: {preferred}")?;
         } else {
             writeln!(f, "No matching preferred key")?;
@@ -86,12 +86,12 @@ impl RecordInfo {
         config: &Config,
     ) -> anyhow::Result<Self> {
         let is_valid_bibtex = is_entry_key(&original);
-        let preferred = get_preferred_id(state, config)?;
+        let user_preferred = get_user_preferred_id(state, config)?;
         let equivalent = state.referencing_keys()?;
         let key = KeyInfo {
             original,
             is_valid_bibtex,
-            preferred,
+            user_preferred,
             equivalent,
         };
         let revision = state.rev();
@@ -105,7 +105,7 @@ impl RecordInfo {
 
 /// Get the preferred identifier associated with a record in the Records table, or `None` if no
 /// identifier matches.
-pub fn get_preferred_id<'conn, I: InRecordsTable>(
+pub fn get_user_preferred_id<'conn, I: InRecordsTable>(
     state: &State<'conn, I>,
     config: &Config,
 ) -> anyhow::Result<Option<String>> {
