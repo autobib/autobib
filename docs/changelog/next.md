@@ -1,12 +1,12 @@
 # Unreleased
 
-This version migrates the database version from `2` to `3`.
+This version migrates the database version from `2` to `4`.
 To run the migration code, report the database version, and validate your local files after updating, run
 ```sh
 autobib -v util check
 ```
 
-Supported database versions: `<= 3`
+Supported database versions: `<= 4`
 
 Changes since `v0.6.1`.
 
