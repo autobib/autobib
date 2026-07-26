@@ -53,7 +53,6 @@ where
     C: Client,
     W: io::Write + ?Sized,
 {
-    // let mut stdout = stdout_lock_wrap();
     let mut file_import_target = import_config
         .file_import_root
         .as_ref()

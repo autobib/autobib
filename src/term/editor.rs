@@ -43,7 +43,7 @@ impl Editor {
     /// Edit the object and optionally return a new object. This will repeatedly prompt the user to
     /// edit until the object is changed. If this returns `Ok(Some(object)`, the new `object` is
     /// guaranteed to be different than the old object. This returns `Ok(None)` if the user cancelled
-    /// the edit by quiting with making no changes to the text in the file.
+    /// the edit by quitting while making no changes to the text in the file.
     pub fn edit<T: ToString + FromStr + PartialEq>(&self, object: &T) -> Result<Option<T>>
     where
         <T as FromStr>::Err: Display,
