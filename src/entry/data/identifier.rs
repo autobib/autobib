@@ -51,31 +51,38 @@ impl EntryKey {
 /// 1. has length at least `1` and at most [`u8::MAX`].
 /// 2. composed only of ASCII printable characters with `{}(),= \t\n\\#%\"` and
 ///    `A..=Z` removed.
+/// 3. is not one of `comment`, `preamble`, or `string` (case-insensitive)
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct EntryType<S = String>(pub(in crate::entry) S);
 
 impl<S: AsRef<str>> EntryType<S> {
-    #[inline]
-    pub fn try_new(s: S) -> Result<Self, RecordDataError> {
-        let entry_type = s.as_ref();
-
-        // Condition 1
-        if entry_type.is_empty() || entry_type.len() > EntryTypeHeader::MAX as usize {
-            return Err(RecordDataError::EntryTypeInvalidLength(entry_type.len()));
-        }
-
-        // Condition 2
-        validate_ascii_identifier(entry_type.as_bytes())?;
-
-        Ok(Self(s))
-    }
-
     pub fn to_owned(&self) -> EntryType {
         EntryType(self.0.as_ref().to_owned())
     }
 }
 
 impl EntryType<String> {
+    /// Construct a new entry type.
+    #[inline]
+    pub fn try_new(mut s: String) -> Result<Self, RecordDataError> {
+        s.make_ascii_lowercase();
+
+        // Condition 1
+        if s.is_empty() || s.len() > EntryTypeHeader::MAX as usize {
+            return Err(RecordDataError::EntryTypeInvalidLength(s.len()));
+        }
+
+        // Condition 2
+        validate_ascii_identifier(s.as_bytes())?;
+
+        // Condition 3
+        if matches!(s.as_str(), "comment" | "preamble" | "string") {
+            return Err(RecordDataError::EntryTypeReserved);
+        }
+
+        Ok(Self(s))
+    }
+
     pub fn misc() -> Self {
         Self("misc".to_owned())
     }
@@ -106,30 +113,26 @@ impl EntryType<String> {
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct FieldKey<S = String>(pub(in crate::entry) S);
 
-impl FieldKey<String> {
-    pub fn try_new_normalize(s: &str) -> Result<Self, RecordDataError> {
-        Self::try_new(s.to_ascii_lowercase())
+impl<S: AsRef<str>> FieldKey<S> {
+    pub fn to_owned(&self) -> FieldKey {
+        FieldKey(self.0.as_ref().to_owned())
     }
 }
 
-impl<S: AsRef<str>> FieldKey<S> {
+impl FieldKey<String> {
     #[inline]
-    pub fn try_new(s: S) -> Result<Self, RecordDataError> {
-        let key = s.as_ref();
+    pub fn try_new(mut s: String) -> Result<Self, RecordDataError> {
+        s.make_ascii_lowercase();
 
         // Condition 1
-        if key.is_empty() || key.len() > KeyHeader::MAX as usize {
-            return Err(RecordDataError::KeyInvalidLength(key.len()));
+        if s.is_empty() || s.len() > KeyHeader::MAX as usize {
+            return Err(RecordDataError::KeyInvalidLength(s.len()));
         }
 
         // Condition 2
-        validate_ascii_identifier(key.as_bytes())?;
+        validate_ascii_identifier(s.as_bytes())?;
 
         Ok(Self(s))
-    }
-
-    pub fn to_owned(&self) -> FieldKey {
-        FieldKey(self.0.as_ref().to_owned())
     }
 }
 
@@ -209,9 +212,7 @@ macro_rules! identifier_impl {
             type Err = RecordDataError;
 
             fn from_str(s: &str) -> Result<Self, Self::Err> {
-                let mut inner = s.trim().to_owned();
-                inner.make_ascii_lowercase();
-                Self::try_new(inner)
+                Self::try_new(s.into())
             }
         }
     };

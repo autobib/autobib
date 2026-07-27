@@ -400,7 +400,7 @@ impl TryFrom<ProviderBibtex> for MutableEntryData {
 
     fn try_from(value: ProviderBibtex) -> Result<Self, Self::Error> {
         let ProviderBibtex { entry_type, fields } = value;
-        let mut record_data = Self::try_new(entry_type.to_lowercase())?;
+        let mut record_data = Self::try_new(entry_type)?;
         convert_field!(
             fields,
             record_data,

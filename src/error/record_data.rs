@@ -32,6 +32,9 @@ pub enum RecordDataError {
     )]
     EntryTypeInvalidLength(usize),
 
+    #[error("Entry type must not be one of the reserved names: comment, preamble, string")]
+    EntryTypeReserved,
+
     #[error("Value has invalid size {0}; must be at most {max}", max = ValueHeader::MAX)]
     ValueInvalidLength(usize),
 

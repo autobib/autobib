@@ -101,9 +101,7 @@ impl Atom {
         match token.kind {
             Kind::String(s) => Ok(Self::String(s)),
             Kind::Ident(s) => {
-                let key = FieldKey::try_new_normalize(s)
-                    .spanned(token.span)?
-                    .to_owned();
+                let key = FieldKey::from_str(s).spanned(token.span)?.to_owned();
                 Ok(if lexer.skip_if_opt().is_some() {
                     Self::FieldKeyOpt(key)
                 } else {
@@ -149,7 +147,7 @@ impl Ast<'_> for Expression {
                 let token = lexer.expect_token(MSG)?;
                 match token.kind {
                     Kind::Ident(s) => {
-                        let field_key = FieldKey::try_new_normalize(s).spanned(token.span)?;
+                        let field_key = FieldKey::from_str(s).spanned(token.span)?;
                         static MSG: &str = "whitespace and then the conditional value";
                         let token = lexer.expect_token(MSG)?;
                         match token.kind {

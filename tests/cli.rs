@@ -2055,6 +2055,41 @@ fn attachment_path(s: &TestState, id: &str) -> Result<PathBuf> {
 }
 
 #[test]
+fn disallowed_bibtex() -> Result<()> {
+    let s = TestState::init()?;
+    s.cmd()?
+        .args(["local", "first", "--with-entry-type", "comment"])
+        .assert()
+        .failure()
+        .stderr(contains("reserved"));
+
+    s.cmd()?
+        .args(["local", "first", "--with-entry-type", "StrinG"])
+        .assert()
+        .failure()
+        .stderr(contains("reserved"));
+
+    s.cmd()?
+        .args(["local", "first", "--with-entry-type", &"a".repeat(255)])
+        .assert()
+        .success();
+
+    s.cmd()?
+        .args(["local", "second", "--with-entry-type", &"a".repeat(256)])
+        .assert()
+        .failure()
+        .stderr(contains("invalid size 256"));
+
+    s.cmd()?
+        .args(["local", "second", "--with-entry-type", " a"])
+        .assert()
+        .failure()
+        .stderr(contains("contains invalid character"));
+
+    s.close()
+}
+
+#[test]
 fn replace_migrates_attachments() -> Result<()> {
     let s = TestState::init()?;
     create_replace_records(&s)?;

@@ -328,7 +328,7 @@ fn test_data_err_insert() {
     let mut record_data = MutableEntryData::try_new("a".into()).unwrap();
 
     assert_eq!(
-        record_data.check_and_insert("BAD".into(), "".into()),
+        record_data.check_and_insert("ba)".into(), "".into()),
         Err(RecordDataError::ContainsInvalidChar)
     );
 
