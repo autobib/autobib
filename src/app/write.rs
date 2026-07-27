@@ -11,7 +11,7 @@ use serde::{Serialize, ser::SerializeMap};
 
 use crate::{
     AsKey,
-    entry::{AsEntryData, BibtexEntry, EntryData, entries_to_bibtex},
+    entry::{AsEntryData, BibtexEntry, EntryDataSerializer, entries_to_bibtex},
     logger::warn,
     output::stdout_lock_wrap,
     record::Identifier,
@@ -67,7 +67,7 @@ pub fn output_entries_json<D: AsEntryData>(
             for entry in flatten_and_warn(self.0) {
                 state.serialize_entry(
                     entry.key.as_ref(),
-                    &entry.record_data.as_entry_data().serialize(),
+                    &EntryDataSerializer::new(entry.record_data.as_entry_data()),
                 )?;
             }
             state.end()

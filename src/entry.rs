@@ -5,8 +5,9 @@ use serde_bibtex::{MacroDictionary, de::Deserializer};
 use std::{fmt, io, str::FromStr};
 
 pub use self::data::{
-    AsEntryData, ConflictResolved, EntryData, EntryEditCommand, EntryKey, EntryType, FieldKey,
-    FieldValue, MutableEntryData, RawEntryData, RawRecordFieldsIter, SetFieldCommand,
+    AsEntryData, ConflictResolved, EntryData, EntryDataSerializer, EntryEditCommand, EntryKey,
+    EntryType, FieldKey, FieldValue, MutableEntryData, RawEntryData, RawRecordFieldsIter,
+    SetFieldCommand,
 };
 pub(crate) use self::data::{EntryTypeHeader, KeyHeader, ValueHeader};
 

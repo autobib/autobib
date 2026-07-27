@@ -7,7 +7,7 @@ use serde::{Serialize, ser::SerializeStruct};
 use crate::{
     Alias, Identifier, RawEntryData,
     db::{AsKey, Constraint, flatten_constraint_violation, get_row_id},
-    entry::{AsEntryData, EntryData},
+    entry::{AsEntryData, EntryDataSerializer},
     logger::{debug, info},
 };
 
@@ -349,7 +349,7 @@ impl AsRecordData for RawEntryData {
     }
 
     fn serialize_in<S: SerializeStruct>(&self, ser_struct: &mut S) -> Result<(), S::Error> {
-        ser_struct.serialize_field("data", &self.as_entry_data().serialize())
+        ser_struct.serialize_field("data", &EntryDataSerializer::new(self.as_entry_data()))
     }
 }
 

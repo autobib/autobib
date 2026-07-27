@@ -85,7 +85,15 @@ pub struct RawEntryData<T = Vec<u8>> {
 impl RawEntryData {
     /// Initialize from any [`EntryData`] implementation.
     pub fn from_entry_data<'r, D: EntryData<'r>>(entry_data: D) -> Self {
-        let mut data = Vec::with_capacity(entry_data.raw_len());
+        let raw_len = 1  // the size of the binary version header
+            + (1 + entry_data.entry_type().len()) // the entry type, plus the 1-byte header
+            + entry_data // the key value pairs, plus the 3-byte header
+                .fields()
+                .into_iter()
+                .map(|(k, v)| 3 + k.len() + v.len())
+                .sum::<usize>();
+
+        let mut data = Vec::with_capacity(raw_len);
 
         data.push(0);
 
@@ -325,10 +333,6 @@ unsafe impl<'r> EntryData<'r> for RawEntryData<&'r [u8]> {
             from_utf8(&type_block[1..]).unwrap(),
             RawRecordFieldsIter { remaining: data },
         )
-    }
-
-    fn raw_len(&self) -> usize {
-        self.data.len()
     }
 }
 
