@@ -182,9 +182,9 @@ macro_rules! identifier_impl {
             }
         }
 
-        impl<S: ::std::fmt::Display> ::std::fmt::Display for $e<S> {
+        impl<S: AsRef<str>> ::std::fmt::Display for $e<S> {
             fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-                self.0.fmt(f)
+                f.write_str(self.0.as_ref())
             }
         }
 
