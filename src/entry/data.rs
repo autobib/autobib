@@ -40,6 +40,48 @@ impl<T: AsEntryData> AsEntryData for &T {
     }
 }
 
+/// A wrapper for an [`EntryData`] implementation which implements [`Serialize`].
+pub struct EntryDataSerializer<D> {
+    data: D,
+}
+
+impl<'r, D: EntryData<'r>> EntryDataSerializer<D> {
+    pub fn new(data: D) -> Self {
+        Self { data }
+    }
+}
+
+impl<'r, D: EntryData<'r>> Serialize for EntryDataSerializer<D> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        struct FieldsWrapper<F>(F);
+
+        impl<'a, F> Serialize for FieldsWrapper<F>
+        where
+            F: IntoIterator<Item = (&'a str, &'a str)> + Clone,
+        {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: Serializer,
+            {
+                let mut state = serializer.serialize_map(None)?;
+                for (key, value) in self.0.clone() {
+                    state.serialize_entry(&key, &value)?;
+                }
+                state.end()
+            }
+        }
+
+        let mut state = serializer.serialize_struct("EntryData", 2)?;
+        let (entry_type, fields) = self.data.entry_type_and_fields();
+        state.serialize_field("entry_type", entry_type)?;
+        state.serialize_field("fields", &FieldsWrapper(fields))?;
+        state.end()
+    }
+}
+
 /// This trait represents types which encapsulate the data content of a single BibTeX entry.
 ///
 /// # Safety
@@ -51,11 +93,11 @@ impl<T: AsEntryData> AsEntryData for &T {
 ///    [`FieldKey`] and [`FieldValue`] respectively.
 /// 3. The `(key, value)` pairs are sorted by key and no key is repeated.
 pub unsafe trait EntryData<'r>: PartialEq {
-    /// Iterate over `(key, value)` pairs in order.
-    fn fields(&self) -> impl IntoIterator<Item = (&'r str, &'r str)> + Clone;
-
     /// Get the `entry_type` as a string slice.
     fn entry_type(&self) -> &'r str;
+
+    /// Iterate over `(key, value)` pairs in order.
+    fn fields(&self) -> impl IntoIterator<Item = (&'r str, &'r str)> + Clone;
 
     /// Get the fields and entry type at the same time.
     ///
@@ -67,19 +109,6 @@ pub unsafe trait EntryData<'r>: PartialEq {
         impl IntoIterator<Item = (&'r str, &'r str)> + Clone,
     ) {
         (self.entry_type(), self.fields())
-    }
-
-    /// Get the exact size (in bytes) of the binary format representation of the [`EntryData`].
-    ///
-    /// The default implementation is performed by iterating over all fields.
-    fn raw_len(&self) -> usize {
-        1  // the size of the binary version header
-            + (1 + self.entry_type().len()) // the entry type, plus the 1-byte header
-            + self // the key value pairs, plus the 3-byte header
-                .fields()
-                .into_iter()
-                .map(|(k, v)| 3 + k.len() + v.len())
-                .sum::<usize>()
     }
 
     /// Get the value of the field.
@@ -103,49 +132,6 @@ pub unsafe trait EntryData<'r>: PartialEq {
     /// The default implementation checks that `get_field` returns `Some(_)`.
     fn contains_field(&self, field_name: &str) -> bool {
         self.get_field(field_name).is_some()
-    }
-
-    /// Returns a wrapper which can be serialized.
-    fn serialize(&self) -> impl Serialize
-    where
-        Self: Sized,
-    {
-        struct EntryDataSer<'r, D> {
-            data: &'r D,
-        }
-
-        impl<'r, D: EntryData<'r>> Serialize for EntryDataSer<'_, D> {
-            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-            where
-                S: Serializer,
-            {
-                struct FieldsWrapper<F>(F);
-
-                impl<'a, F> Serialize for FieldsWrapper<F>
-                where
-                    F: IntoIterator<Item = (&'a str, &'a str)> + Clone,
-                {
-                    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-                    where
-                        S: Serializer,
-                    {
-                        let mut state = serializer.serialize_map(None)?;
-                        for (key, value) in self.0.clone() {
-                            state.serialize_entry(&key, &value)?;
-                        }
-                        state.end()
-                    }
-                }
-
-                let mut state = serializer.serialize_struct("EntryData", 2)?;
-                let (entry_type, fields) = self.data.entry_type_and_fields();
-                state.serialize_field("entry_type", entry_type)?;
-                state.serialize_field("fields", &FieldsWrapper(fields))?;
-                state.end()
-            }
-        }
-
-        EntryDataSer { data: self }
     }
 }
 
