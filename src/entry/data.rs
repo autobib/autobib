@@ -75,7 +75,8 @@ impl<'r, D: EntryData<'r>> Serialize for EntryDataSerializer<D> {
         }
 
         let mut state = serializer.serialize_struct("EntryData", 2)?;
-        let (entry_type, fields) = self.data.entry_type_and_fields();
+        let entry_type = self.data.entry_type();
+        let fields = self.data.fields();
         state.serialize_field("entry_type", entry_type)?;
         state.serialize_field("fields", &FieldsWrapper(fields))?;
         state.end()
@@ -98,18 +99,6 @@ pub unsafe trait EntryData<'r>: PartialEq {
 
     /// Iterate over `(key, value)` pairs in order.
     fn fields(&self) -> impl IntoIterator<Item = (&'r str, &'r str)> + Clone;
-
-    /// Get the fields and entry type at the same time.
-    ///
-    /// The default implementation calls the `fields` and `entry_type` functions separately.
-    fn entry_type_and_fields(
-        &self,
-    ) -> (
-        &'r str,
-        impl IntoIterator<Item = (&'r str, &'r str)> + Clone,
-    ) {
-        (self.entry_type(), self.fields())
-    }
 
     /// Get the value of the field.
     ///

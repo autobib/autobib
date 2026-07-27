@@ -72,7 +72,8 @@ impl<W: fmt::Write> EntryWrite for FmtWriteWrap<W> {
 impl<D: AsEntryData, S: AsRef<str>> BibtexEntry<D, S> {
     fn write_generic<W: EntryWrite>(&self, mut writer: W) -> Result<(), W::Error> {
         let tmp = self.record_data.as_entry_data();
-        let (entry_type, fields) = tmp.entry_type_and_fields();
+        let entry_type = tmp.entry_type();
+        let fields = tmp.fields();
         writeln!(writer, "@{}{{{},", entry_type, self.key.as_ref())?;
         for (key, value) in fields {
             writeln!(writer, "  {key} = {{{value}}},")?;

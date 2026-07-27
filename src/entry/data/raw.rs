@@ -321,19 +321,6 @@ unsafe impl<'r> EntryData<'r> for RawEntryData<&'r [u8]> {
         let (type_block, _) = self.split_blocks_borrowed();
         from_utf8(&type_block[1..]).unwrap()
     }
-
-    fn entry_type_and_fields(
-        &self,
-    ) -> (
-        &'r str,
-        impl IntoIterator<Item = (&'r str, &'r str)> + Clone,
-    ) {
-        let (type_block, data) = self.split_blocks_borrowed();
-        (
-            from_utf8(&type_block[1..]).unwrap(),
-            RawRecordFieldsIter { remaining: data },
-        )
-    }
 }
 
 impl<T: AsRef<[u8]>> AsEntryData for RawEntryData<T> {
