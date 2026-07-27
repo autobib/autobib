@@ -156,15 +156,18 @@ pub struct SetFieldCommand {
 }
 
 impl FromStr for SetFieldCommand {
-    type Err = anyhow::Error;
+    type Err = serde_bibtex::error::Error;
 
-    fn from_str(s: &str) -> anyhow::Result<Self> {
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        use serde::de::Error as _;
         let mut reader = serde_bibtex::StrReader::new(s);
         let key = reader.read_field_key()?;
         reader.skip_field_sep()?;
         let value = reader.read_text_token()?;
-        let field_key = FieldKey::from_str(key.into_inner())?;
-        let field_value = FieldValue::try_new(value)?.to_owned();
+        let field_key = FieldKey::from_str(key.into_inner()).map_err(Self::Err::custom)?;
+        let field_value = FieldValue::try_new(value)
+            .map_err(Self::Err::custom)?
+            .to_owned();
         Ok(Self {
             field_key,
             field_value,
