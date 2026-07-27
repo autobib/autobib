@@ -68,3 +68,4 @@ Changes since `v0.6.1`.
 ## Fixes
 
 - Adjust to new zbMath API format for null records.
+- Entry types `comment`, `preamble`, and `string` are now disallowed since these names are reserved by BibTeX.

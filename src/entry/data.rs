@@ -188,7 +188,7 @@ impl FromStr for SetFieldCommand {
         let key = reader.read_field_key()?;
         reader.skip_field_sep()?;
         let value = reader.read_text_token()?;
-        let field_key = FieldKey::try_new_normalize(key.into_inner())?;
+        let field_key = FieldKey::from_str(key.into_inner())?;
         let field_value = FieldValue::try_new(value)?.to_owned();
         Ok(Self {
             field_key,
