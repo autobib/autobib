@@ -29,10 +29,7 @@ pub fn replace<'conn, G>(
     root: Option<AttachmentRoot<false>>,
 ) -> Result<(), anyhow::Error>
 where
-    G: FnOnce(
-        Tx<'conn>,
-        &RawEntryData,
-    ) -> anyhow::Result<(KeyedRecord<Box<RawEntryData>>, State<'conn, IsEntry>)>,
+    G: FnOnce(Tx<'conn>, &RawEntryData) -> anyhow::Result<(KeyedRecord, State<'conn, IsEntry>)>,
 {
     // first, get the data for the identifier that will be replaced
     let (original_record, (tx, original_row_id)) = match DatabaseResponse::determine(

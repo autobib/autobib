@@ -36,7 +36,7 @@ pub trait FromBytesAndVariant: Sized {
 
 /// The data for a row in the 'Records' table, not including information about the parents.
 #[derive(Debug)]
-pub struct Record<D, S = String> {
+pub struct Record<D = Box<RawEntryData>, S = String> {
     /// The associated data.
     pub data: D,
     /// The canonical identifier.
@@ -309,7 +309,7 @@ impl_from_row_id!(IsVoid, ());
 
 /// A row in the 'Records' table, disambiguated based on what type of row it is.
 pub enum DisambiguatedRecordState<'conn> {
-    Entry(Record<Box<RawEntryData>>, State<'conn, IsEntry>),
+    Entry(Record, State<'conn, IsEntry>),
     Deleted(Record<Option<Identifier>>, State<'conn, IsDeleted>),
     Void(Record<()>, State<'conn, IsVoid>),
 }

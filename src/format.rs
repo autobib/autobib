@@ -2,7 +2,7 @@ mod parse;
 
 use std::{convert::Infallible, fmt, io, str::FromStr};
 
-use autobib_entry::{data::EntryData, ident::FieldKey, v0::LegacyEntryData as RawEntryData};
+use autobib_entry::{data::EntryData, ident::FieldKey};
 use chrono::{DateTime, Local};
 use mufmt::{Ast, Manifest, Span, SyntaxError};
 use nucleo_picker::Render;
@@ -230,7 +230,7 @@ enum DisplayedRow<'row, 'ast, 'state> {
     Row(&'row str),
     Ast(&'ast str),
     State(&'state str),
-    Json(&'row Record<Box<RawEntryData>>),
+    Json(&'row Record),
     Timestamp(&'row DateTime<Local>),
     Skip,
 }
@@ -326,13 +326,13 @@ impl<T: TemplateData> Render<T> for Template {
 }
 
 pub trait TemplateData {
-    fn row(&self) -> &Record<Box<RawEntryData>>;
+    fn row(&self) -> &Record;
 
     fn key(&self) -> &str;
 }
 
-impl TemplateData for Record<Box<RawEntryData>> {
-    fn row(&self) -> &Record<Box<RawEntryData>> {
+impl TemplateData for Record {
+    fn row(&self) -> &Record {
         self
     }
 
@@ -341,8 +341,8 @@ impl TemplateData for Record<Box<RawEntryData>> {
     }
 }
 
-impl TemplateData for KeyedRecord<Box<RawEntryData>> {
-    fn row(&self) -> &Record<Box<RawEntryData>> {
+impl TemplateData for KeyedRecord {
+    fn row(&self) -> &Record {
         &self.record
     }
 
@@ -354,7 +354,7 @@ impl TemplateData for KeyedRecord<Box<RawEntryData>> {
 #[cfg(test)]
 mod tests {
     use crate::record::Identifier;
-    use autobib_entry::data::MutableEntryData;
+    use autobib_entry::{data::MutableEntryData, v0::LegacyEntryData as RawEntryData};
 
     use chrono::Local;
 

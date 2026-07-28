@@ -26,7 +26,7 @@ pub trait Output {
     fn write_item(&mut self, item: Self::Data) -> Result<(), io::Error>;
 
     fn filter_map(
-        record: KeyedRecord<Box<RawEntryData>>,
+        record: KeyedRecord,
         row: &State<'_, IsEntry>,
     ) -> Result<Option<Self::Data>, DatabaseError>;
 
@@ -39,7 +39,7 @@ impl Output for NoOutput {
     type Data = Infallible;
 
     fn filter_map(
-        _: KeyedRecord<Box<RawEntryData>>,
+        _: KeyedRecord,
         _: &State<'_, IsEntry>,
     ) -> Result<Option<Self::Data>, DatabaseError> {
         Ok(None)
@@ -82,7 +82,7 @@ impl<'r, W: io::Write + ?Sized> Output for BibtexOutput<'r, W> {
     }
 
     fn filter_map(
-        record: KeyedRecord<Box<RawEntryData>>,
+        record: KeyedRecord,
         row: &State<'_, IsEntry>,
     ) -> Result<Option<Self::Data>, DatabaseError> {
         Ok(retrieve::try_data_to_entry(record, row))
@@ -146,14 +146,14 @@ impl<'r, W: io::Write + ?Sized> TemplateOutput<'r, W> {
 }
 
 impl<'r, W: io::Write + ?Sized> Output for TemplateOutput<'r, W> {
-    type Data = KeyedRecord<Box<RawEntryData>>;
+    type Data = KeyedRecord;
 
     fn write_item(&mut self, row: Self::Data) -> Result<(), io::Error> {
         self.0.write_item(row)
     }
 
     fn filter_map(
-        record: KeyedRecord<Box<RawEntryData>>,
+        record: KeyedRecord,
         _: &State<'_, IsEntry>,
     ) -> Result<Option<Self::Data>, DatabaseError> {
         Ok(Some(record))
@@ -173,14 +173,14 @@ impl<'r, W: io::Write + ?Sized> TemplateRowOutput<'r, W> {
 }
 
 impl<'r, W: io::Write + ?Sized> Output for TemplateRowOutput<'r, W> {
-    type Data = Record<Box<RawEntryData>>;
+    type Data = Record;
 
     fn write_item(&mut self, row: Self::Data) -> Result<(), io::Error> {
         self.0.write_item(row)
     }
 
     fn filter_map(
-        record: KeyedRecord<Box<RawEntryData>>,
+        record: KeyedRecord,
         _: &State<'_, IsEntry>,
     ) -> Result<Option<Self::Data>, DatabaseError> {
         Ok(Some(record.record))

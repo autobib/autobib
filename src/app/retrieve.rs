@@ -109,10 +109,7 @@ pub fn retrieve_single_entry_read_only<V, T>(
     validate: V,
 ) -> Result<Option<T>, Error>
 where
-    V: FnOnce(
-        KeyedRecord<Box<RawEntryData>>,
-        &State<'_, IsEntry>,
-    ) -> Result<Option<T>, DatabaseError>,
+    V: FnOnce(KeyedRecord, &State<'_, IsEntry>) -> Result<Option<T>, DatabaseError>,
 {
     match record_db.state_from_key(id, &config.alias_transform)? {
         DatabaseResponse::Entry(record, state) => {
@@ -177,10 +174,7 @@ pub fn retrieve_single_entry<C, V, T>(
 ) -> Result<Option<T>, Error>
 where
     C: Client,
-    V: FnOnce(
-        KeyedRecord<Box<RawEntryData>>,
-        &State<'_, IsEntry>,
-    ) -> Result<Option<T>, DatabaseError>,
+    V: FnOnce(KeyedRecord, &State<'_, IsEntry>) -> Result<Option<T>, DatabaseError>,
 {
     match get_record(record_db, id, client, config)? {
         RecordResponse::Exists(record_data, row) => {
@@ -225,7 +219,7 @@ pub fn try_data_to_entry(
         record: Record {
             data, canonical, ..
         },
-    }: KeyedRecord<Box<RawEntryData>>,
+    }: KeyedRecord,
     row: &State<'_, IsEntry>,
 ) -> Option<(BibtexEntry<Box<RawEntryData>>, Identifier)> {
     validate_bibtex_key(key, row).map(|key| (BibtexEntry::new(key, data), canonical))
