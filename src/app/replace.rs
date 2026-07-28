@@ -1,4 +1,5 @@
 use anyhow::bail;
+use autobib_entry::{data::MutableEntryData, v0::LegacyEntryData as RawEntryData};
 
 use crate::{
     app::cli::OnConflict,
@@ -9,7 +10,6 @@ use crate::{
             DatabaseResponse, DisambiguatedRecordState, IsEntry, State, replace_hard_unchecked,
         },
     },
-    entry::{MutableEntryData, RawEntryData},
     logger::{suggest, warn},
     path_hash::{AttachmentRenameOutcome, AttachmentRoot},
     record::{Key, KeyedRecord},
@@ -32,7 +32,7 @@ where
     G: FnOnce(
         Tx<'conn>,
         &RawEntryData,
-    ) -> anyhow::Result<(KeyedRecord<RawEntryData>, State<'conn, IsEntry>)>,
+    ) -> anyhow::Result<(KeyedRecord<Box<RawEntryData>>, State<'conn, IsEntry>)>,
 {
     // first, get the data for the identifier that will be replaced
     let (original_record, (tx, original_row_id)) = match DatabaseResponse::determine(

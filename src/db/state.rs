@@ -33,6 +33,7 @@ mod null;
 mod record;
 mod version;
 
+use autobib_entry::v0::LegacyEntryData as RawEntryData;
 use chrono::{DateTime, Local};
 use rusqlite::{CachedStatement, Error, Statement};
 
@@ -41,7 +42,6 @@ use super::{RowId, Tx, get_null_row_id, get_row_id};
 use crate::{
     Alias, AliasOrId, Identifier, Key, MappedKey,
     config::AliasTransform,
-    entry::RawEntryData,
     error::RecordError,
     logger::{debug, error, reraise},
     record::KeyedRecord,
@@ -145,7 +145,7 @@ impl Unknown<'_> {
 #[derive(Debug)]
 pub enum DatabaseResponse<'conn> {
     /// The `Records` row exists.
-    Entry(KeyedRecord<RawEntryData>, State<'conn, IsEntry>),
+    Entry(KeyedRecord<Box<RawEntryData>>, State<'conn, IsEntry>),
     /// The `Records` row was deleted.
     Deleted(KeyedRecord<Option<Identifier>>, State<'conn, IsDeleted>),
     /// The void `Records` row.
@@ -342,7 +342,7 @@ impl<'conn> DatabaseResponse<'conn> {
 #[derive(Debug)]
 pub enum DatabaseIdResponse<'conn> {
     /// The `Records` row exists.
-    Entry(Record<RawEntryData>, State<'conn, IsEntry>),
+    Entry(Record<Box<RawEntryData>>, State<'conn, IsEntry>),
     /// The `Records` row was deleted.
     Deleted(Record<Option<Identifier>>, State<'conn, IsDeleted>),
     /// The `Records` row is void.
@@ -357,7 +357,7 @@ pub enum DatabaseIdResponse<'conn> {
 #[derive(Debug)]
 pub enum ExistsOrUnknown<'conn> {
     /// The `Records` row exists.
-    Entry(Record<RawEntryData>, State<'conn, IsEntry>),
+    Entry(Record<Box<RawEntryData>>, State<'conn, IsEntry>),
     /// The `Records` row was deleted.
     Deleted(Record<Option<Identifier>>, State<'conn, IsDeleted>),
     /// The `Records` row is void.

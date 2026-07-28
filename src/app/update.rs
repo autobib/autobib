@@ -2,6 +2,10 @@ use std::{fs::read_to_string, iter::once, path::Path, str::FromStr};
 
 use anyhow::bail;
 
+use autobib_entry::{
+    Normalization, Normalize, data::MutableEntryData, v0::LegacyEntryData as RawEntryData,
+};
+
 use crate::{
     Config,
     app::{cli::OnConflict, merge_record_data},
@@ -9,10 +13,9 @@ use crate::{
         Tx,
         state::{ArbitraryData, DatabaseResponse, Record},
     },
-    entry::{BibtexEntry, MutableEntryData, RawEntryData},
+    entry::BibtexEntry,
     http::Client,
     logger::{error, suggest},
-    normalize::{Normalization, Normalize},
     record::{
         Identifier, Key, KeyedRecord, RecursiveRemoteResponse, get_remote_response_recursive,
     },

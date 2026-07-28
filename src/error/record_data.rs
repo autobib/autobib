@@ -1,7 +1,5 @@
 use thiserror::Error;
 
-use crate::entry::{EntryTypeHeader, KeyHeader, ValueHeader};
-
 #[derive(Error, Debug, PartialEq)]
 #[error("Invalid bytes: error at position `{position}`: {message}")]
 pub struct InvalidBytesError {

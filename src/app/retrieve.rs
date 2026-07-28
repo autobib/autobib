@@ -6,6 +6,7 @@ use std::{
     convert::Infallible,
 };
 
+use autobib_entry::v0::LegacyEntryData as RawEntryData;
 use nonempty::NonEmpty;
 use serde_bibtex::token::is_entry_key;
 
@@ -15,7 +16,7 @@ use crate::{
         RecordDatabase,
         state::{DatabaseResponse, IsEntry, Record, State},
     },
-    entry::{BibtexEntry, EntryKey, RawEntryData},
+    entry::{BibtexEntry, EntryKey},
     error::{DatabaseError, Error},
     http::Client,
     logger::{error, reraise, suggest},
@@ -29,7 +30,7 @@ pub fn retrieve_entries<T: IntoIterator<Item = Key>, C: Client>(
     client: &C,
     ignore_null: bool,
     config: &Config,
-) -> BTreeMap<Identifier, NonEmpty<BibtexEntry<RawEntryData>>> {
+) -> BTreeMap<Identifier, NonEmpty<BibtexEntry<Box<RawEntryData>>>> {
     let valid_entries = ids.into_iter().filter_map(|id| {
         retrieve_single_entry(record_db, id, client, ignore_null, config, |r, s| {
             Ok(try_data_to_entry(r, s))
@@ -68,7 +69,7 @@ pub fn retrieve_entries_read_only<T: IntoIterator<Item = Key>>(
     record_db: &mut RecordDatabase,
     ignore_null: bool,
     config: &Config,
-) -> BTreeMap<Identifier, NonEmpty<BibtexEntry<RawEntryData>>> {
+) -> BTreeMap<Identifier, NonEmpty<BibtexEntry<Box<RawEntryData>>>> {
     let valid_entries = ids.into_iter().filter_map(|key| {
         retrieve_single_entry_read_only(record_db, key, ignore_null, config, |r, s| {
             Ok(try_data_to_entry(r, s))
@@ -108,7 +109,10 @@ pub fn retrieve_single_entry_read_only<V, T>(
     validate: V,
 ) -> Result<Option<T>, Error>
 where
-    V: FnOnce(KeyedRecord<RawEntryData>, &State<'_, IsEntry>) -> Result<Option<T>, DatabaseError>,
+    V: FnOnce(
+        KeyedRecord<Box<RawEntryData>>,
+        &State<'_, IsEntry>,
+    ) -> Result<Option<T>, DatabaseError>,
 {
     match record_db.state_from_key(id, &config.alias_transform)? {
         DatabaseResponse::Entry(record, state) => {
@@ -173,7 +177,10 @@ pub fn retrieve_single_entry<C, V, T>(
 ) -> Result<Option<T>, Error>
 where
     C: Client,
-    V: FnOnce(KeyedRecord<RawEntryData>, &State<'_, IsEntry>) -> Result<Option<T>, DatabaseError>,
+    V: FnOnce(
+        KeyedRecord<Box<RawEntryData>>,
+        &State<'_, IsEntry>,
+    ) -> Result<Option<T>, DatabaseError>,
 {
     match get_record(record_db, id, client, config)? {
         RecordResponse::Exists(record_data, row) => {
@@ -218,9 +225,9 @@ pub fn try_data_to_entry(
         record: Record {
             data, canonical, ..
         },
-    }: KeyedRecord<RawEntryData>,
+    }: KeyedRecord<Box<RawEntryData>>,
     row: &State<'_, IsEntry>,
-) -> Option<(BibtexEntry<RawEntryData>, Identifier)> {
+) -> Option<(BibtexEntry<Box<RawEntryData>>, Identifier)> {
     validate_bibtex_key(key, row).map(|key| (BibtexEntry::new(key, data), canonical))
 }
 
@@ -257,11 +264,11 @@ fn validate_bibtex_key(key: String, row: &State<IsEntry>) -> Option<EntryKey<Str
 /// Group valid entries by their canonical id in order to catch duplicate entries.
 fn group_valid_entries_by_canonical<T>(
     valid_entries: T,
-) -> BTreeMap<Identifier, NonEmpty<BibtexEntry<RawEntryData>>>
+) -> BTreeMap<Identifier, NonEmpty<BibtexEntry<Box<RawEntryData>>>>
 where
-    T: IntoIterator<Item = (BibtexEntry<RawEntryData>, Identifier)>,
+    T: IntoIterator<Item = (BibtexEntry<Box<RawEntryData>>, Identifier)>,
 {
-    let mut grouped_entries: BTreeMap<Identifier, NonEmpty<BibtexEntry<RawEntryData>>> =
+    let mut grouped_entries: BTreeMap<Identifier, NonEmpty<BibtexEntry<Box<RawEntryData>>>> =
         BTreeMap::new();
     for (bibtex_entry, canonical) in valid_entries {
         match grouped_entries.entry(canonical) {

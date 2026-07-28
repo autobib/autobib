@@ -13,6 +13,7 @@ mod ol;
 mod zbl;
 mod zbmath;
 
+use autobib_entry::data::{EntryData, MutableEntryData};
 use serde::Deserialize;
 use ureq::http::StatusCode;
 
@@ -20,8 +21,7 @@ use ureq::http::StatusCode;
 use crate::{
     Identifier, MappedKey,
     db::AsKey,
-    entry::{AsEntryData, EntryData, EntryType, MutableEntryData},
-    error::{ProviderError, RecordDataError},
+    error::ProviderError,
     http::{BodyBytes, Client},
     logger::warn,
 };
@@ -129,8 +129,8 @@ pub enum IdCandidate {
     None,
 }
 
-pub fn determine_key_from_data<D: AsEntryData>(
-    data: D,
+pub fn determine_key_from_data<D: EntryData + ?Sized>(
+    data: &D,
     config: &crate::config::Config,
 ) -> IdCandidate {
     determine_id_candidates(data, |id| config.score_key(id.as_key()), None, None)
@@ -142,8 +142,8 @@ pub fn determine_key_from_data<D: AsEntryData>(
 ///
 /// - If a canonical identifier could be found and it received the highest score, it is returned alone.
 /// - If a reference identifier had the highest score, the canonical identifier with the highest score (if any) is returned as well.
-pub fn determine_id_candidates<K: Ord, D: AsEntryData, F: FnMut(&Identifier) -> K>(
-    container: D,
+pub fn determine_id_candidates<K: Ord, D: EntryData + ?Sized, F: FnMut(&Identifier) -> K>(
+    container: &D,
     mut score: F,
     candidate_canonical: Option<MappedKey>,
     candidate_reference: Option<MappedKey>,
@@ -202,12 +202,12 @@ pub fn determine_id_candidates<K: Ord, D: AsEntryData, F: FnMut(&Identifier) -> 
         (c, s)
     });
 
-    let data = container.as_entry_data();
+    let data = container;
 
     // first determine candidates using provider-specific fields
     for (name, value) in data.fields() {
-        if let Some(provider) = field_name_to_provider(name) {
-            update_in_place(provider, value, &mut score, &mut bc, &mut br);
+        if let Some(provider) = field_name_to_provider(name.inner()) {
+            update_in_place(provider, value.inner(), &mut score, &mut bc, &mut br);
         }
     }
 
@@ -215,16 +215,22 @@ pub fn determine_id_candidates<K: Ord, D: AsEntryData, F: FnMut(&Identifier) -> 
     if let Some(provider) = data.get_field("eprinttype")
         && let Some(sub_id) = data.get_field("eprint")
     {
-        update_in_place(provider, sub_id, &mut score, &mut bc, &mut br);
+        update_in_place(
+            provider.inner(),
+            sub_id.inner(),
+            &mut score,
+            &mut bc,
+            &mut br,
+        );
     }
 
     // special handling for arxiv
     if data
         .get_field("archiveprefix")
-        .is_some_and(|val| val == "arXiv")
+        .is_some_and(|val| &val == "arXiv")
         && let Some(sub_id) = data.get_field("eprint")
     {
-        update_in_place("arxiv", sub_id, &mut score, &mut bc, &mut br);
+        update_in_place("arxiv", sub_id.inner(), &mut score, &mut bc, &mut br);
     }
 
     match (bc, br) {
@@ -386,7 +392,7 @@ struct ProviderBibtexFields {
 macro_rules! convert_field {
     ($fields:ident, $record_data:ident, $field:ident) => {
         if let Some($field) = $fields.$field {
-            $record_data.check_and_insert(stringify!($field).into(), $field)?;
+            $record_data.try_insert(stringify!($field), $field)?;
         };
     };
     ($fields:ident, $record_data:ident, $field:ident, $($tail:ident),+) => {
@@ -396,7 +402,7 @@ macro_rules! convert_field {
 }
 
 impl TryFrom<ProviderBibtex> for MutableEntryData {
-    type Error = RecordDataError;
+    type Error = autobib_entry::error::DataError;
 
     fn try_from(value: ProviderBibtex) -> Result<Self, Self::Error> {
         let ProviderBibtex { entry_type, fields } = value;
@@ -421,7 +427,7 @@ impl TryFrom<ProviderBibtex> for MutableEntryData {
 
         // pad zeros for zbmath
         if let Some(field) = fields.zbmath {
-            record_data.check_and_insert("zbmath".to_owned(), format!("{field:0>8}"))?;
+            record_data.try_insert("zbmath", format!("{field:0>8}"))?;
         };
 
         Ok(record_data)

@@ -3,6 +3,7 @@ mod validate;
 use std::{cmp::Reverse, fs::read_to_string, io, path::Path, sync::OnceLock};
 
 use anyhow::{Error, anyhow};
+use autobib_entry::Normalization;
 use regex::Regex;
 use serde::Deserialize;
 use toml::from_str;
@@ -11,7 +12,6 @@ use crate::{
     Alias, AsKey,
     format::DEFAULT_FIND_TEMPLATE,
     logger::{debug, info, suggest, warn},
-    normalize::Normalization,
 };
 pub use validate::report_config_errors as validate;
 

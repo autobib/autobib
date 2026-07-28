@@ -1,3 +1,4 @@
+use autobib_entry::{error::DataError, ident::StandardFieldKey};
 use chrono::{DateTime, FixedOffset};
 use rsxiv::{
     id::{ArticleId, normalize},
@@ -6,8 +7,7 @@ use rsxiv::{
 use serde::Deserialize;
 
 use super::{
-    BodyBytes, Client, Ctx, EntryType, MutableEntryData, ProviderError, RecordDataError,
-    StatusCode, ValidationOutcome,
+    BodyBytes, Client, Ctx, MutableEntryData, ProviderError, StatusCode, ValidationOutcome,
 };
 
 pub fn is_valid_id(id: &str) -> ValidationOutcome {
@@ -34,10 +34,10 @@ struct Entry {
 }
 
 impl TryFrom<Entry> for MutableEntryData {
-    type Error = RecordDataError;
+    type Error = DataError;
 
     fn try_from(entry: Entry) -> Result<Self, Self::Error> {
-        let mut record_data = Self::new(EntryType::preprint());
+        let mut record_data = Self::try_new("preprint")?;
 
         let Entry {
             id,
@@ -73,20 +73,24 @@ impl TryFrom<Entry> for MutableEntryData {
 
         // TODO: capture `updated` data here in date as well as date handling, but this should wait
         // until `date` normalization exists
-        record_data.check_and_insert("arxiv".into(), id.to_string())?;
-        record_data.check_and_insert("author".into(), author_buf)?;
+        record_data.try_insert("arxiv", id.to_string())?;
+        record_data.insert_standard_key(StandardFieldKey::Author, author_buf)?;
         // record_data.check_and_insert("date".into(), updated.format("%Y-%m-%d").to_string())?;
         if let Some(s) = doi {
-            record_data.check_and_insert("doi".into(), s.trim().to_owned())?;
+            record_data.insert_standard_key(StandardFieldKey::Doi, s.trim().to_owned())?;
         }
-        record_data.check_and_insert("month".into(), updated.format("%m").to_string())?;
         record_data
-            .check_and_insert("origdate".into(), published.format("%Y-%m-%d").to_string())?;
-        record_data.check_and_insert("title".into(), title.trim().to_owned())?;
+            .insert_standard_key(StandardFieldKey::Month, updated.format("%m").to_string())?;
+        record_data.insert_standard_key(
+            StandardFieldKey::OrigDate,
+            published.format("%Y-%m-%d").to_string(),
+        )?;
+        record_data.insert_standard_key(StandardFieldKey::Title, title.trim().to_owned())?;
         if let Some(v) = id.version() {
-            record_data.check_and_insert("version".into(), v.to_string())?;
+            record_data.insert_standard_key(StandardFieldKey::Version, v.to_string())?;
         }
-        record_data.check_and_insert("year".into(), updated.format("%Y").to_string())?;
+        record_data
+            .insert_standard_key(StandardFieldKey::Year, updated.format("%Y").to_string())?;
 
         Ok(record_data)
     }

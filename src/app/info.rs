@@ -1,12 +1,12 @@
 use std::{cmp::Ordering, fmt};
 
+use autobib_entry::data::EntryData;
 use serde::Serialize;
 use serde_bibtex::token::is_entry_key;
 
 use crate::{
     config::Config,
     db::state::{ArbitraryData, InRecordsTable, Record, RevisionId, State},
-    entry::{AsEntryData, EntryData},
 };
 
 #[derive(Serialize)]
@@ -52,13 +52,9 @@ impl fmt::Display for RecordInfo {
         match &self.record.data {
             ArbitraryData::Entry(raw_entry_data) => {
                 writeln!(f, "==> Entry data",)?;
-                writeln!(
-                    f,
-                    "Entry type: {}",
-                    raw_entry_data.as_entry_data().entry_type()
-                )?;
+                writeln!(f, "Entry type: {}", raw_entry_data.entry_type())?;
                 writeln!(f, "Fields:",)?;
-                for (k, v) in raw_entry_data.as_entry_data().fields() {
+                for (k, v) in raw_entry_data.fields() {
                     writeln!(f, "  {k} = {{{v}}}")?;
                 }
             }

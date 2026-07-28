@@ -8,7 +8,6 @@ pub mod error;
 pub mod format;
 mod http;
 mod logger;
-mod normalize;
 mod output;
 mod path_hash;
 pub mod provider;
@@ -24,17 +23,10 @@ use crate::output::stdout_lock_wrap;
 
 use self::{
     app::{Cli, Command, run_cli},
-    db::AsKey,
-    entry::RawEntryData,
-    logger::{Logger, reraise},
-};
-
-pub use self::{
     config::Config,
-    entry::BibtexEntry,
-    normalize::{Normalization, Normalize},
-    record::{Alias, AliasOrId, Identifier, Key, MappedKey, get_record},
-    term::{Confirm, Editor, EditorConfig},
+    db::AsKey,
+    logger::{Logger, reraise},
+    record::{Alias, AliasOrId, Identifier, Key, MappedKey},
 };
 
 static LOGGER: Logger = Logger {};

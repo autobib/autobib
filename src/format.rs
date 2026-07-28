@@ -1,18 +1,16 @@
 mod parse;
 
-use std::{convert::Infallible, fmt, io, iter::Peekable, str::FromStr};
+use std::{convert::Infallible, fmt, io, str::FromStr};
 
+use autobib_entry::{data::EntryData, ident::FieldKey, v0::LegacyEntryData as RawEntryData};
 use chrono::{DateTime, Local};
-use mufmt::{Ast, Manifest, ManifestMut, Span, SyntaxError};
+use mufmt::{Ast, Manifest, Span, SyntaxError};
 use nucleo_picker::Render;
 
 use self::parse::{Kind, Lexer, Token};
 
 use crate::{
     db::{AsKey, state::Record},
-    entry::{
-        AsEntryData, EntryData, FieldKey, MutableEntryData, RawEntryData, RawRecordFieldsIter,
-    },
     error::{ClapTemplateError, KeyParseError, KeyParseErrorKind},
     record::KeyedRecord,
 };
@@ -176,109 +174,36 @@ impl Ast<'_> for Expression {
     }
 }
 
-/// The strategy to use in the [`Manifest`] implementation.
-///
-/// - `Sorted`: If the keys in the template are sorted, we can avoid allocating by iterating over the fields
-///   simultaneously with the template keys.
-/// - `Small`: The number of keys in the template is small (currently, <= 4 unique keys). We render
-///   using a brute-force approach.
-/// - `Large`: The number of keys in the template is large, and they are not sorted. We then
-///   allocate a temporary `RecordData<&'r str>` to hold the key-value pairs, and then search for
-///   the values from this temporary struct.
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum Strategy {
-    Sorted,
-    Small,
-    Large,
-}
-
-/// An iterator over the field keys in a template, in order of appearance.
-struct TemplateFieldKeys<'a, T> {
-    spans: std::slice::Iter<'a, Span<T, Expression>>,
-    buffered: Option<&'a FieldKey>,
-}
-
-impl<'a, T> TemplateFieldKeys<'a, T> {
-    /// Extract the field keys from a `mufmt::Template` with `Expression` as the Ast.
-    pub fn new(template: &'a mufmt::Template<T, Expression>) -> Self {
-        Self {
-            spans: template.spans().iter(),
-            buffered: None,
-        }
-    }
-}
-
-impl<'a, T> Iterator for TemplateFieldKeys<'a, T> {
-    type Item = &'a FieldKey;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if let Some(b) = self.buffered.take() {
-            return Some(b);
-        }
-
-        loop {
-            match self.spans.next()? {
-                Span::Expr(Expression::Bare(Atom::FieldKey(f) | Atom::FieldKeyOpt(f))) => {
-                    return Some(f);
-                }
-                Span::Expr(Expression::IfDefined(f, raw) | Expression::IfUndefined(f, raw)) => {
-                    if let Atom::FieldKeyOpt(field_key) | Atom::FieldKey(field_key) = raw {
-                        self.buffered = Some(field_key);
-                    }
-                    return Some(f);
-                }
-                _ => {}
-            }
-        }
-    }
-}
-
 /// A wrapper around a [`mufmt::Template`] which also pre-computes an optimal rendering strategy.
 #[derive(Debug, Clone)]
 pub struct Template {
     template: mufmt::Template<String, Expression>,
-    strategy: Strategy,
 }
 
 impl Template {
     /// Compile this template from a template string.
-    ///
-    /// At compilation time, the [`Strategy`] is also computed which is used to determine the
-    /// algorithm used when rendering.
     pub fn compile(s: &str) -> Result<Self, SyntaxError<KeyParseError>> {
         let template = mufmt::Template::<String, Expression>::compile(s)?;
 
-        let strategy = if TemplateFieldKeys::new(&template).is_sorted() {
-            Strategy::Sorted
-        } else if TemplateFieldKeys::new(&template).count() <= 6 {
-            Strategy::Small
-        } else {
-            Strategy::Large
-        };
-
-        Ok(Self { template, strategy })
+        Ok(Self { template })
     }
 
-    fn contained_impl<T>(
-        &self,
-        init: impl FnOnce() -> T,
-        mut contains: impl FnMut(&str, &mut T) -> bool,
-    ) -> bool {
-        let mut ctx = init();
+    /// Returns whether this template can be rendered by the provided row data without having
+    /// any non-optional undefined keys.
+    pub fn has_keys_contained_in<T: TemplateData>(&self, row: &T) -> bool {
+        let contains = |k| row.row().data.contains_field(k);
         for span in self.template.spans() {
             match span {
-                Span::Expr(Expression::Bare(Atom::FieldKey(k)))
-                    if !contains(k.as_ref(), &mut ctx) =>
-                {
+                Span::Expr(Expression::Bare(Atom::FieldKey(k))) if !contains(k.as_ref()) => {
                     return false;
                 }
                 Span::Expr(Expression::IfDefined(k1, Atom::FieldKey(k2)))
-                    if contains(k1.as_ref(), &mut ctx) && !contains(k2.as_ref(), &mut ctx) =>
+                    if contains(k1.as_ref()) && !contains(k2.as_ref()) =>
                 {
                     return false;
                 }
                 Span::Expr(Expression::IfUndefined(k1, Atom::FieldKey(k2)))
-                    if !contains(k1.as_ref(), &mut ctx) && !contains(k2.as_ref(), &mut ctx) =>
+                    if !contains(k1.as_ref()) && !contains(k2.as_ref()) =>
                 {
                     return false;
                 }
@@ -286,25 +211,6 @@ impl Template {
             }
         }
         true
-    }
-
-    /// Returns whether this template can be rendered by the provided row data without having
-    /// any non-optional undefined keys.
-    pub fn has_keys_contained_in<T: TemplateData>(&self, row: &T) -> bool {
-        match self.strategy {
-            Strategy::Sorted => self.contained_impl(
-                || BibtexFields::new(row.row()),
-                |k, fields| fields.get_field_ordered(k).is_some(),
-            ),
-            Strategy::Small => self.contained_impl(
-                || (),
-                |k, ()| row.row().data.as_entry_data().contains_field(k),
-            ),
-            Strategy::Large => self.contained_impl(
-                || MutableEntryData::borrow_entry_data(row.row().data.as_entry_data()),
-                |k, container| container.as_entry_data().contains_field(k),
-            ),
-        }
     }
 }
 
@@ -319,44 +225,12 @@ impl FromStr for Template {
     }
 }
 
-/// A container around a the fields of a bibtex entry, which permits subsequent field key reads at
-/// long as the keys are read in increasing order.
-///
-/// If keys are read out of order, this may fail to return a key even if it is defined in the
-/// underlying data.
-pub struct BibtexFields<'a> {
-    inner: Peekable<RawRecordFieldsIter<'a>>,
-}
-
-impl<'a> BibtexFields<'a> {
-    pub fn new(row: &'a Record<RawEntryData>) -> Self {
-        Self {
-            inner: row.data.raw_fields().peekable(),
-        }
-    }
-
-    /// Get the value of a field key.
-    ///
-    /// The caller is guaranteed to check that subsequent calls to this function pass values of
-    /// `key` in increasing order.
-    pub fn get_field_ordered(&mut self, key: &str) -> Option<&'a str> {
-        // advance the inner iterator until we either find or miss the key
-        while self.inner.next_if(|nxt| nxt.0 < key).is_some() {}
-
-        // check the next key: if it
-        match self.inner.peek() {
-            Some((k, v)) if *k == key => Some(v),
-            _ => None,
-        }
-    }
-}
-
 /// A `Display` adapter which helps the compiler reason about lifetimes.
 enum DisplayedRow<'row, 'ast, 'state> {
     Row(&'row str),
     Ast(&'ast str),
     State(&'state str),
-    Json(&'row Record<RawEntryData>),
+    Json(&'row Record<Box<RawEntryData>>),
     Timestamp(&'row DateTime<Local>),
     Skip,
 }
@@ -404,9 +278,7 @@ impl<'row, 'ast, 'state> DisplayedRow<'row, 'ast, 'state> {
             },
             Atom::String(s) => DisplayedRow::Ast(s),
             Atom::Meta(meta) => match meta {
-                Meta::EntryType => {
-                    DisplayedRow::Row(row_data.row().data.as_entry_data().entry_type())
-                }
+                Meta::EntryType => DisplayedRow::Row(row_data.row().data.entry_type().inner()),
                 Meta::Provider => DisplayedRow::Row(row_data.row().canonical.provider()),
                 Meta::SubId => DisplayedRow::Row(row_data.row().canonical.sub_id()),
                 Meta::FullId => DisplayedRow::Row(row_data.row().canonical.as_key()),
@@ -418,28 +290,6 @@ impl<'row, 'ast, 'state> DisplayedRow<'row, 'ast, 'state> {
     }
 }
 
-pub struct ManifestSorted<'r, T>(&'r T);
-
-impl<'r, T: TemplateData> ManifestMut<Expression> for ManifestSorted<'r, T> {
-    type Error = Infallible;
-
-    type State<'a> = BibtexFields<'a>;
-
-    fn init_state(&self) -> Self::State<'_> {
-        BibtexFields::new(self.0.row())
-    }
-
-    fn manifest_mut(
-        &self,
-        ast: &Expression,
-        state: &mut Self::State<'_>,
-    ) -> Result<impl fmt::Display, Self::Error> {
-        Ok(DisplayedRow::from_data(self.0, ast, |k| {
-            state.get_field_ordered(k)
-        }))
-    }
-}
-
 pub struct ManifestSmall<'r, T>(&'r T);
 
 impl<'r, T: TemplateData> Manifest<Expression> for ManifestSmall<'r, T> {
@@ -447,29 +297,7 @@ impl<'r, T: TemplateData> Manifest<Expression> for ManifestSmall<'r, T> {
 
     fn manifest(&self, ast: &Expression) -> Result<impl fmt::Display, Self::Error> {
         Ok(DisplayedRow::from_data(self.0, ast, |k| {
-            self.0.row().data.as_entry_data().get_field(k)
-        }))
-    }
-}
-
-pub struct ManifestLarge<'r, T>(&'r T);
-
-impl<'r, T: TemplateData> ManifestMut<Expression> for ManifestLarge<'r, T> {
-    type Error = Infallible;
-
-    type State<'s> = MutableEntryData<&'s str>;
-
-    fn init_state(&self) -> Self::State<'_> {
-        MutableEntryData::borrow_entry_data(self.0.row().data.as_entry_data())
-    }
-
-    fn manifest_mut(
-        &self,
-        ast: &Expression,
-        state: &mut Self::State<'_>,
-    ) -> Result<impl fmt::Display, Self::Error> {
-        Ok(DisplayedRow::from_data(self.0, ast, |k| {
-            state.as_entry_data().get_field(k)
+            self.0.row().data.get_field_str(k)
         }))
     }
 }
@@ -481,11 +309,7 @@ impl Template {
         writer: W,
         item: &T,
     ) -> Result<(), io::Error> {
-        Ok(match self.strategy {
-            Strategy::Sorted => self.template.render_io(&ManifestSorted(item), writer),
-            Strategy::Small => self.template.render_io(&ManifestSmall(item), writer),
-            Strategy::Large => self.template.render_io(&ManifestLarge(item), writer),
-        }?)
+        Ok(self.template.render_io(&ManifestSmall(item), writer)?)
     }
 }
 
@@ -496,31 +320,19 @@ impl<T: TemplateData> Render<T> for Template {
         T: 'a;
 
     fn render<'a>(&self, item: &'a T) -> Self::Str<'a> {
-        match self.strategy {
-            Strategy::Sorted => {
-                let Ok(s) = self.template.render(&ManifestSorted(item));
-                s
-            }
-            Strategy::Small => {
-                let Ok(s) = self.template.render(&ManifestSmall(item));
-                s
-            }
-            Strategy::Large => {
-                let Ok(s) = self.template.render(&ManifestLarge(item));
-                s
-            }
-        }
+        let Ok(s) = self.template.render(&ManifestSmall(item));
+        s
     }
 }
 
 pub trait TemplateData {
-    fn row(&self) -> &Record<RawEntryData>;
+    fn row(&self) -> &Record<Box<RawEntryData>>;
 
     fn key(&self) -> &str;
 }
 
-impl TemplateData for Record<RawEntryData> {
-    fn row(&self) -> &Record<RawEntryData> {
+impl TemplateData for Record<Box<RawEntryData>> {
+    fn row(&self) -> &Record<Box<RawEntryData>> {
         self
     }
 
@@ -529,8 +341,8 @@ impl TemplateData for Record<RawEntryData> {
     }
 }
 
-impl TemplateData for KeyedRecord<RawEntryData> {
-    fn row(&self) -> &Record<RawEntryData> {
+impl TemplateData for KeyedRecord<Box<RawEntryData>> {
+    fn row(&self) -> &Record<Box<RawEntryData>> {
         &self.record
     }
 
@@ -541,7 +353,8 @@ impl TemplateData for KeyedRecord<RawEntryData> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{entry::RawEntryData, record::Identifier};
+    use crate::record::Identifier;
+    use autobib_entry::data::MutableEntryData;
 
     use chrono::Local;
 
@@ -553,12 +366,12 @@ mod tests {
             println!("Testing template: {s}");
 
             let template = Template::compile(s).unwrap();
-            let mut data = MutableEntryData::<String>::default();
+            let mut data = MutableEntryData::default();
             for (k, v) in keys {
-                data.check_and_insert(k.into(), v.into()).unwrap();
+                data.try_insert(k, v).unwrap();
             }
 
-            let row_data = Record::<RawEntryData> {
+            let row_data = Record::<Box<RawEntryData>> {
                 data: RawEntryData::from_entry_data(&data),
                 canonical: Identifier::from_parts("local", "123").unwrap(),
                 modified: Local::now(),
@@ -584,93 +397,45 @@ mod tests {
     }
 
     #[test]
-    fn test_field_keys() {
-        fn check<const N: usize>(s: &str, keys: [&'static str; N]) {
-            println!("Testing: {s}");
-            let template = Template::compile(s).unwrap();
-            assert_eq!(TemplateFieldKeys::new(&template.template).count(), N);
-
-            let field_keys = TemplateFieldKeys::new(&template.template);
-            for (k, v) in field_keys.zip(keys) {
-                assert_eq!(k, v);
-            }
-        }
-
-        check("{a} {b}", ["a", "b"]);
-        check(r#"{=a b} {c} {=d "e"}"#, ["a", "b", "c", "d"]);
-        check(r#"{=c d?} {f?}"#, ["c", "d", "f"]);
-        check(r#"{=CH D?}"#, ["ch", "d"]);
-        check(r#"{!CH D?}"#, ["ch", "d"]);
-        check(r#"{E?}"#, ["e"]);
-        check(r#"{(E?)}"#, ["e?"]);
-        check(r#""#, []);
-        check(r#"Nothing"#, []);
-    }
-
-    #[test]
     fn test_render_row_data() {
         fn check<const N: usize>(
             s: &str,
             keys: [(&'static str, &'static str); N],
             provider: &str,
             sub_id: &str,
-            strategy: Strategy,
             rendered: &str,
         ) {
             println!("Testing template: {s}");
 
             let template = Template::compile(s).unwrap();
-            let mut data = MutableEntryData::<String>::default();
+            let mut data = MutableEntryData::default();
             for (k, v) in keys {
-                data.check_and_insert(k.into(), v.into()).unwrap();
+                data.try_insert(k, v).unwrap();
             }
 
-            let row_data = Record::<RawEntryData> {
+            let row_data = Record::<Box<RawEntryData>> {
                 data: RawEntryData::from_entry_data(&data),
                 canonical: Identifier::from_parts(provider, sub_id).unwrap(),
                 modified: Local::now(),
             };
 
-            println!("{:?}", row_data.data.as_entry_data().get_field("b"));
+            println!("{:?}", row_data.data.get_field("b"));
             println!("{:?}", MutableEntryData::from_entry_data(&row_data.data));
 
-            assert_eq!(template.strategy, strategy);
             assert_eq!(template.render(&row_data), rendered);
         }
 
-        check(
-            "{a} {b}",
-            [("a", "A"), ("b", "B")],
-            "local",
-            "12345",
-            Strategy::Sorted,
-            "A B",
-        );
+        check("{a} {b}", [("a", "A"), ("b", "B")], "local", "12345", "A B");
 
-        check(
-            "{b} {a}",
-            [("a", "A"), ("b", "B")],
-            "local",
-            "12345",
-            Strategy::Small,
-            "B A",
-        );
+        check("{b} {a}", [("a", "A"), ("b", "B")], "local", "12345", "B A");
 
-        check(
-            "{b} {%sub_id}",
-            [("a", "A")],
-            "local",
-            "12345",
-            Strategy::Sorted,
-            " 12345",
-        );
+        check("{b} {%sub_id}", [("a", "A")], "local", "12345", " 12345");
 
         check(
             "{=b %sub_id}{=a %provider}",
             [("a", "A")],
             "local",
             "12345",
-            Strategy::Small,
             "local",
         );
 
@@ -679,28 +444,20 @@ mod tests {
             [("a", "A")],
             "local",
             "12345",
-            Strategy::Large,
             "localA",
         );
 
-        check(
-            "{a}{=a a}{a}{a}{b}",
-            [("a", "A")],
-            "local",
-            "12345",
-            Strategy::Sorted,
-            "AAAA",
-        );
+        check("{a}{=a a}{a}{a}{b}", [("a", "A")], "local", "12345", "AAAA");
     }
 
     #[test]
     fn render_json_meta() {
         let template = Template::compile("{%json}").unwrap();
-        let mut data = MutableEntryData::<String>::default();
-        data.check_and_insert("a".into(), "A".into()).unwrap();
-        data.check_and_insert("b".into(), "B".into()).unwrap();
+        let mut data = MutableEntryData::default();
+        data.try_insert("a", "A").unwrap();
+        data.try_insert("b", "B").unwrap();
 
-        let row_data = Record::<RawEntryData> {
+        let row_data = Record::<Box<RawEntryData>> {
             data: RawEntryData::from_entry_data(&data),
             canonical: Identifier::from_parts("local", "12345").unwrap(),
             modified: Local::now(),

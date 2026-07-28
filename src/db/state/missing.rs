@@ -1,7 +1,8 @@
 use chrono::Local;
 
 use super::{IsEntry, IsNull, NotEntry, State, Updated};
-use crate::{Identifier, RawEntryData, db::AsKey, entry::EntryData, logger::debug};
+use crate::{Identifier, db::AsKey, logger::debug};
+use autobib_entry::{data::EntryData, v0::LegacyEntryData as RawEntryData};
 
 /// Types which know how to insert new data.
 ///
@@ -75,7 +76,7 @@ impl<'conn> State<'conn, IsMissing> {
         debug!("Inserting data for canonical id '{canonical}'");
         let modified = Local::now();
         let row_id: i64 = self.prepare_cached("INSERT OR ABORT INTO Records (canonical, data, modified) values (?1, ?2, ?3) RETURNING rev")?.query_row(
-            (canonical.as_key(), data.to_byte_repr(), &modified),
+            (canonical.as_key(), data.as_bytes(), &modified),
             |row| row.get(0),
         )?;
         let row = State::init(self.tx, IsEntry(row_id));
@@ -85,9 +86,9 @@ impl<'conn> State<'conn, IsMissing> {
 
     /// A convenience wrapper around [`insert`](Self::insert) which first converts any type which
     /// implements [`EntryData`] into a [`RawEntryData`].
-    pub fn insert_entry_data<'r, D: EntryData<'r>>(
+    pub fn insert_entry_data<D: EntryData>(
         self,
-        data: D,
+        data: &D,
         canonical: &Identifier,
     ) -> Result<Updated<'conn, IsEntry>, rusqlite::Error> {
         let raw_record_data = RawEntryData::from_entry_data(data);

@@ -1,6 +1,10 @@
+use autobib_entry::{
+    error::DataError,
+    ident::{EntryType, StandardEntryType, StandardFieldKey},
+};
 use serde::{Deserialize, de::Visitor};
 
-use super::super::{EntryType, MutableEntryData, RecordDataError, warn};
+use super::super::{MutableEntryData, warn};
 
 fn has_license_issue(v: &str) -> bool {
     v.contains("zbMATH Open Web Interface contents unavailable due to conflicting licenses")
@@ -29,16 +33,27 @@ impl Checked {
         self.data
     }
 
-    fn check_and_insert(
+    fn check_and_insert_standard(
         &mut self,
-        key: impl Into<String>,
+        key: StandardFieldKey,
         value: String,
-    ) -> Result<(), RecordDataError> {
+    ) -> Result<(), DataError> {
+        if has_license_issue(&value) {
+            self.sink.push(key.name().into());
+            Ok(())
+        } else {
+            self.data.insert_standard_key(key, value)?;
+            Ok(())
+        }
+    }
+
+    fn check_and_insert(&mut self, key: impl Into<String>, value: String) -> Result<(), DataError> {
         if has_license_issue(&value) {
             self.sink.push(key.into());
             Ok(())
         } else {
-            self.data.check_and_insert(key.into(), value)
+            self.data.try_insert(key, value)?;
+            Ok(())
         }
     }
 
@@ -46,7 +61,7 @@ impl Checked {
         &mut self,
         key: impl Into<String>,
         value: Option<String>,
-    ) -> Result<(), RecordDataError> {
+    ) -> Result<(), DataError> {
         if let Some(v) = value {
             self.check_and_insert(key, v)
         } else {
@@ -56,7 +71,7 @@ impl Checked {
 }
 
 impl TryFrom<Entry> for MutableEntryData {
-    type Error = RecordDataError;
+    type Error = DataError;
 
     fn try_from(value: Entry) -> Result<Self, Self::Error> {
         let Entry {
@@ -87,7 +102,7 @@ impl TryFrom<Entry> for MutableEntryData {
             }
         }
         if !author_buf.is_empty() {
-            record_data.check_and_insert("author", author_buf)?;
+            record_data.check_and_insert_standard(StandardFieldKey::Author, author_buf)?;
         }
 
         // editors
@@ -101,7 +116,7 @@ impl TryFrom<Entry> for MutableEntryData {
             }
         }
         if !editor_buf.is_empty() {
-            record_data.check_and_insert("editor", editor_buf)?;
+            record_data.check_and_insert_standard(StandardFieldKey::Editor, editor_buf)?;
         }
 
         // language
@@ -115,7 +130,7 @@ impl TryFrom<Entry> for MutableEntryData {
             }
         }
         if !lang_buf.is_empty() {
-            record_data.check_and_insert("language", lang_buf)?;
+            record_data.check_and_insert_standard(StandardFieldKey::Language, lang_buf)?;
         }
 
         // zbmath, zbl, jfm keys
@@ -245,10 +260,11 @@ pub enum Code {
 impl Code {
     fn entry_type(self) -> EntryType {
         match self {
-            Self::CollectionArticle => EntryType::in_collection(),
-            Self::Book => EntryType::book(),
-            Self::JournalArticle => EntryType::article(),
+            Self::CollectionArticle => StandardEntryType::InCollection,
+            Self::Book => StandardEntryType::Book,
+            Self::JournalArticle => StandardEntryType::Article,
         }
+        .into()
     }
 }
 

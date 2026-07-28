@@ -5,7 +5,6 @@ mod database;
 mod format;
 mod provider;
 mod record;
-mod record_data;
 
 use std::{error, fmt, ops::Range};
 
@@ -22,7 +21,6 @@ pub use self::{
         AliasConversionError, AliasErrorKind, IdConversionError, IdErrorKind, RecordError,
         RecordErrorKind,
     },
-    record_data::{InvalidBytesError, RecordDataError},
 };
 
 #[derive(Error, Debug)]
@@ -30,7 +28,7 @@ pub enum MergeError {
     #[error("Database error: {0}")]
     DatabaseError(#[from] DatabaseError),
     #[error("Error adding data: {0}")]
-    RecordError(#[from] RecordDataError),
+    RecordError(#[from] autobib_entry::error::DataError),
 }
 
 /// A trait for errors which have a representation which only depends on the variant, and not on

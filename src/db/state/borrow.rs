@@ -3,17 +3,18 @@
 //! This module implements some abstractions over data which borrows from some row. This is mainly
 //! useful when you want to do some sort of computation on a row, but you don't actually need to
 //! own all of the data, so you can save on some allocations by using the types here.
+use autobib_entry::v0::LegacyEntryData as RawEntryData;
 use chrono::{DateTime, Local};
 use rusqlite::{Row, types::ValueRef};
 
 use super::{ArbitraryData, Record};
-use crate::{Identifier, RawEntryData};
+use crate::Identifier;
 
 /// Equivalent to an [`ArbitraryData`], but borrows all of its data.
 #[derive(Debug)]
 pub enum ArbitraryDataRef<'r> {
     /// Entry data.
-    Entry(RawEntryData<&'r [u8]>),
+    Entry(&'r RawEntryData),
     /// Deleted data.
     Deleted(Option<Identifier<&'r str>>),
     /// Void data.
@@ -24,7 +25,7 @@ impl ArbitraryData {
     /// Get a reference to the data in this struct.
     pub fn as_deref(&self) -> ArbitraryDataRef<'_> {
         match self {
-            Self::Entry(raw_entry_data) => ArbitraryDataRef::Entry(raw_entry_data.as_deref()),
+            Self::Entry(raw_entry_data) => ArbitraryDataRef::Entry(raw_entry_data.as_ref()),
             Self::Deleted(replacement) => {
                 ArbitraryDataRef::Deleted(replacement.as_ref().map(Identifier::as_deref))
             }
@@ -37,7 +38,7 @@ impl<'r> ArbitraryDataRef<'r> {
     /// Borrow from bytes with the provided variant, interpreted according to the variant.
     pub(in crate::db) fn from_borrowed_bytes_and_variant(bytes: &'r [u8], variant: i64) -> Self {
         match variant {
-            0 => Self::Entry(RawEntryData::from_byte_repr_unchecked(bytes)),
+            0 => Self::Entry(RawEntryData::access(bytes).expect("Database is in invalid format!")),
             1 => Self::Deleted(if bytes.is_empty() {
                 None
             } else {

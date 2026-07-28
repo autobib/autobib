@@ -726,7 +726,7 @@ fn bibtex_key_validation() -> Result<()> {
         .args(["get", "doi:10.1016/0021-8693(89)90256-1"])
         .assert()
         .failure()
-        .stderr(contains("Identifier contains invalid character").and(contains("cst1989")));
+        .stderr(contains("contains invalid character").and(contains("cst1989")));
 
     s.cmd()?.args(["get", "cst1989"]).assert().success();
 
@@ -751,7 +751,7 @@ fn bibtex_key_validation() -> Result<()> {
         .args(["get", "has ws"])
         .assert()
         .failure()
-        .stderr(contains("Identifier contains invalid character"));
+        .stderr(contains("contains invalid character"));
 
     s.close()
 }
@@ -2073,12 +2073,6 @@ fn disallowed_bibtex() -> Result<()> {
         .args(["local", "first", "--with-entry-type", &"a".repeat(255)])
         .assert()
         .success();
-
-    s.cmd()?
-        .args(["local", "second", "--with-entry-type", &"a".repeat(256)])
-        .assert()
-        .failure()
-        .stderr(contains("invalid size 256"));
 
     s.cmd()?
         .args(["local", "second", "--with-entry-type", " a"])

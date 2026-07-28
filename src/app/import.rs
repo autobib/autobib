@@ -4,20 +4,22 @@ use std::{
 };
 
 use anyhow::anyhow;
+use autobib_entry::{
+    Normalization, Normalize, data::MutableEntryData, v0::LegacyEntryData as RawEntryData,
+};
 
 use crate::{
-    AsKey, RawEntryData,
+    AsKey,
     app::{cli::OnConflict, edit::merge_record_data},
     config::Config,
     db::{
         RecordDatabase,
         state::{DatabaseIdResponse, IsEntry, IsMissing, IsVoid, State},
     },
-    entry::{BibtexEntry, MutableEntryData, entries_from_bibtex},
+    entry::{BibtexEntry, entries_from_bibtex},
     error::{self, RecordError},
     http::Client,
     logger::{error, info, set_failed, warn},
-    normalize::{Normalization, Normalize},
     path_hash::AttachmentRoot,
     provider::{IdCandidate, determine_id_candidates, is_canonical},
     record::{

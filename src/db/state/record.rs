@@ -1,13 +1,13 @@
 use std::{cmp::Reverse, fmt, io};
 
+use autobib_entry::{data::EntryDataSerializer, v0::LegacyEntryData as RawEntryData};
 use chrono::{DateTime, Local};
 use rusqlite::{OptionalExtension, Row};
 use serde::{Serialize, ser::SerializeStruct};
 
 use crate::{
-    Alias, Identifier, RawEntryData,
+    Alias, Identifier,
     db::{AsKey, Constraint, flatten_constraint_violation, get_row_id},
-    entry::{AsEntryData, EntryDataSerializer},
     logger::{debug, info},
 };
 
@@ -196,7 +196,7 @@ pub struct IsArbitrary(pub(super) i64);
 #[derive(Debug)]
 pub enum ArbitraryData {
     /// Entry data.
-    Entry(RawEntryData),
+    Entry(Box<RawEntryData>),
     /// Deleted data.
     Deleted(Option<Identifier>),
     /// Void data.
@@ -206,8 +206,8 @@ pub enum ArbitraryData {
 impl FromBytesAndVariant for ArbitraryData {
     fn from_bytes_and_variant(bytes: Vec<u8>, variant: i64) -> Self {
         match variant {
-            0 => Self::Entry(RawEntryData::from_bytes_and_variant(bytes, variant)),
-            1 => Self::Deleted(Option::<Identifier>::from_bytes_and_variant(bytes, variant)),
+            0 => Self::Entry(Box::from_bytes_and_variant(bytes, variant)),
+            1 => Self::Deleted(Option::from_bytes_and_variant(bytes, variant)),
             2 => Self::Void,
             _ => panic!("Unexpected 'Records' table row variant: expected entry or deleted data."),
         }
@@ -225,7 +225,7 @@ pub struct IsEntryOrDeleted(pub(super) i64);
 #[derive(Debug)]
 pub enum EntryOrDeletedData {
     /// Entry data.
-    Entry(RawEntryData),
+    Entry(Box<RawEntryData>),
     /// Deleted data.
     Deleted(Option<Identifier>),
 }
@@ -233,7 +233,7 @@ pub enum EntryOrDeletedData {
 impl FromBytesAndVariant for EntryOrDeletedData {
     fn from_bytes_and_variant(bytes: Vec<u8>, variant: i64) -> Self {
         match variant {
-            0 => Self::Entry(RawEntryData::from_bytes_and_variant(bytes, variant)),
+            0 => Self::Entry(Box::<RawEntryData>::from_bytes_and_variant(bytes, variant)),
             1 => Self::Deleted(Option::<Identifier>::from_bytes_and_variant(bytes, variant)),
             _ => panic!("Unexpected 'Records' table row variant: expected entry or deleted data."),
         }
@@ -248,19 +248,19 @@ impl_from_row_id!(IsEntryOrDeleted, EntryOrDeletedData);
 #[derive(Debug)]
 pub struct IsEntry(pub(super) i64);
 
-impl FromBytesAndVariant for RawEntryData {
+impl FromBytesAndVariant for Box<RawEntryData> {
     fn from_bytes_and_variant(bytes: Vec<u8>, variant: i64) -> Self {
         assert!(
             variant == 0,
             "Unexpected 'Records' table row variant: expected entry data."
         );
-        Self::from_byte_repr_unchecked(bytes)
+        RawEntryData::load(bytes.into_boxed_slice()).unwrap()
     }
 }
 
 impl NotVoid for IsEntry {}
 
-impl_from_row_id!(IsEntry, RawEntryData);
+impl_from_row_id!(IsEntry, Box<RawEntryData>);
 
 /// A deletion marker in the 'Records' table.
 #[derive(Debug)]
@@ -309,7 +309,7 @@ impl_from_row_id!(IsVoid, ());
 
 /// A row in the 'Records' table, disambiguated based on what type of row it is.
 pub enum DisambiguatedRecordState<'conn> {
-    Entry(Record<RawEntryData>, State<'conn, IsEntry>),
+    Entry(Record<Box<RawEntryData>>, State<'conn, IsEntry>),
     Deleted(Record<Option<Identifier>>, State<'conn, IsDeleted>),
     Void(Record<()>, State<'conn, IsVoid>),
 }
@@ -325,7 +325,7 @@ impl<'conn> DisambiguatedRecordState<'conn> {
 }
 
 /// Types which can be written as the 'data' and 'variant' column in the 'Records' table.
-pub trait AsRecordData: Sized {
+pub trait AsRecordData {
     fn data_blob(&self) -> &[u8];
 
     fn variant(&self) -> i64;
@@ -337,7 +337,7 @@ pub trait AsRecordData: Sized {
 
 impl AsRecordData for RawEntryData {
     fn data_blob(&self) -> &[u8] {
-        self.to_byte_repr()
+        self.as_bytes()
     }
 
     fn variant(&self) -> i64 {
@@ -349,7 +349,29 @@ impl AsRecordData for RawEntryData {
     }
 
     fn serialize_in<S: SerializeStruct>(&self, ser_struct: &mut S) -> Result<(), S::Error> {
-        ser_struct.serialize_field("data", &EntryDataSerializer::new(self.as_entry_data()))
+        ser_struct.serialize_field("data", &EntryDataSerializer::new(self))
+    }
+}
+
+impl AsRecordData for Box<RawEntryData> {
+    #[inline]
+    fn data_blob(&self) -> &[u8] {
+        self.as_ref().data_blob()
+    }
+
+    #[inline]
+    fn variant(&self) -> i64 {
+        self.as_ref().variant()
+    }
+
+    #[inline]
+    fn serializable(&self) -> bool {
+        self.as_ref().serializable()
+    }
+
+    #[inline]
+    fn serialize_in<S: SerializeStruct>(&self, ser_struct: &mut S) -> Result<(), S::Error> {
+        self.as_ref().serialize_in(ser_struct)
     }
 }
 
@@ -372,18 +394,22 @@ impl AsRecordData for Option<&Identifier> {
 }
 
 impl AsRecordData for Option<Identifier> {
+    #[inline]
     fn data_blob(&self) -> &[u8] {
         self.as_ref().map_or(b"", |r| r.as_key().as_bytes())
     }
 
+    #[inline]
     fn variant(&self) -> i64 {
-        1
+        self.as_ref().variant()
     }
 
+    #[inline]
     fn serializable(&self) -> bool {
         self.as_ref().serializable()
     }
 
+    #[inline]
     fn serialize_in<S: SerializeStruct>(&self, ser_struct: &mut S) -> Result<(), S::Error> {
         self.as_ref().serialize_in(ser_struct)
     }
@@ -711,7 +737,7 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
     }
 
     /// Insert a new row with data, adding the previous row as the parent.
-    fn replace_impl<R: AsRecordData>(
+    fn replace_impl<R: AsRecordData + ?Sized>(
         &self,
         data: &R,
     ) -> Result<(i64, DateTime<Local>), rusqlite::Error> {
@@ -968,8 +994,8 @@ impl<D> Record<D> {
     }
 }
 
-impl From<RawEntryData> for ArbitraryData {
-    fn from(data: RawEntryData) -> Self {
+impl From<Box<RawEntryData>> for ArbitraryData {
+    fn from(data: Box<RawEntryData>) -> Self {
         Self::Entry(data)
     }
 }
@@ -999,7 +1025,7 @@ macro_rules! impl_row_from {
     };
 }
 
-impl_row_from!(RawEntryData, Option<Identifier>, ());
+impl_row_from!(Box<RawEntryData>, Option<Identifier>, ());
 
 impl<'conn> State<'conn, IsEntry> {
     /// Insert new data, preserving the old row as the parent row.
