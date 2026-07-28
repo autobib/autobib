@@ -26,7 +26,7 @@ use crate::{
 /// The fundamental record type for a record in the 'Records' table, with data depending on the
 /// data type of the row.
 #[derive(Debug)]
-pub struct KeyedRecord<D> {
+pub struct KeyedRecord<D = Box<RawEntryData>> {
     /// The original key.
     pub key: String,
     /// The record.
@@ -53,7 +53,7 @@ impl<D> From<KeyedRecord<D>> for Record<D> {
 #[derive(Debug)]
 pub enum RecordResponse<'conn> {
     /// The record exists.
-    Exists(KeyedRecord<Box<RawEntryData>>, State<'conn, IsEntry>),
+    Exists(KeyedRecord, State<'conn, IsEntry>),
     /// The record was deleted.
     Deleted(KeyedRecord<Option<Identifier>>, State<'conn, IsDeleted>),
     /// The record is null.
@@ -73,7 +73,7 @@ impl<'conn> RecordResponse<'conn> {
     pub fn exists_or_commit_null(
         self,
         err_prefix: &str,
-    ) -> Result<(KeyedRecord<Box<RawEntryData>>, State<'conn, IsEntry>), anyhow::Error> {
+    ) -> Result<(KeyedRecord, State<'conn, IsEntry>), anyhow::Error> {
         match self {
             RecordResponse::Exists(record, row) => Ok((record, row)),
             RecordResponse::Deleted(data, deleted_row) => {

@@ -1,32 +1,31 @@
 use std::io::Write;
 
 use anyhow::Result;
-use autobib_entry::v0::LegacyEntryData as RawEntryData;
 use nucleo_picker::Selection;
 
 use crate::{db::state::Record, logger::error, output::stdout_lock_wrap};
 
 pub trait FindSelection<'a> {
     fn is_empty(&self) -> bool;
-    fn iter(&'a self) -> impl Iterator<Item = &'a Record<Box<RawEntryData>>>;
+    fn iter(&'a self) -> impl Iterator<Item = &'a Record>;
 }
 
-impl<'a> FindSelection<'a> for Option<&'a Record<Box<RawEntryData>>> {
+impl<'a> FindSelection<'a> for Option<&'a Record> {
     fn is_empty(&self) -> bool {
         self.is_none()
     }
 
-    fn iter(&'a self) -> impl Iterator<Item = &'a Record<Box<RawEntryData>>> {
+    fn iter(&'a self) -> impl Iterator<Item = &'a Record> {
         (*self).into_iter()
     }
 }
 
-impl<'a> FindSelection<'a> for Selection<'a, Record<Box<RawEntryData>>> {
+impl<'a> FindSelection<'a> for Selection<'a, Record> {
     fn is_empty(&self) -> bool {
         Selection::is_empty(self)
     }
 
-    fn iter(&'a self) -> impl Iterator<Item = &'a Record<Box<RawEntryData>>> {
+    fn iter(&'a self) -> impl Iterator<Item = &'a Record> {
         Selection::iter(self)
     }
 }

@@ -21,7 +21,6 @@ mod validate;
 
 use std::path::Path;
 
-use autobib_entry::v0::LegacyEntryData as RawEntryData;
 use chrono::{Local, TimeDelta};
 use delegate::delegate;
 use functions::{AppFunction, register_application_function};
@@ -412,9 +411,9 @@ impl RecordDatabase {
     ///
     /// This is a convenience wrapper around [`Self::inject_active_records`] which simply sends all row data
     /// to the picker without filtering or mapping.
-    pub fn inject_all_active_records<R: Render<Record<Box<RawEntryData>>>>(
+    pub fn inject_all_active_records<R: Render<Record>>(
         &mut self,
-        injector: Injector<Record<Box<RawEntryData>>, R>,
+        injector: Injector<Record, R>,
     ) -> Result<(), rusqlite::Error> {
         self.inject_active_records(injector, Some)
     }
@@ -433,7 +432,7 @@ impl RecordDatabase {
         mut filter_map: F,
     ) -> Result<(), rusqlite::Error>
     where
-        F: FnMut(Record<Box<RawEntryData>>) -> Option<T>,
+        F: FnMut(Record) -> Option<T>,
         R: Render<T>,
     {
         self.map_active_records(|res| {
@@ -450,7 +449,7 @@ impl RecordDatabase {
     /// the function exits early.
     pub fn map_active_records<E, F>(&mut self, mut f: F) -> Result<(), SnapshotMapErr<E>>
     where
-        F: FnMut(Record<Box<RawEntryData>>) -> Result<(), E>,
+        F: FnMut(Record) -> Result<(), E>,
     {
         debug!("Mapping over all active database records.");
         let mut retriever = self
@@ -473,7 +472,7 @@ impl RecordDatabase {
         mut f: F,
     ) -> Result<(), SnapshotMapErr<E>>
     where
-        F: FnMut(Record<Box<RawEntryData>>) -> Result<(), E>,
+        F: FnMut(Record) -> Result<(), E>,
     {
         debug!("Mapping over all active database records with canonical ID matching '{glob}'.");
         let mut retriever = self
@@ -496,7 +495,7 @@ impl RecordDatabase {
         mut f: F,
     ) -> Result<(), SnapshotMapErr<E>>
     where
-        F: FnMut(KeyedRecord<Box<RawEntryData>>) -> Result<(), E>,
+        F: FnMut(KeyedRecord) -> Result<(), E>,
     {
         debug!("Mapping over all active database records with canonical ID matching '{glob}'.");
         let mut retriever = self
