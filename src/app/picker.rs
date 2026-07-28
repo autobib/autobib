@@ -4,13 +4,13 @@ use std::{
     thread,
 };
 
+use autobib_entry::v0::LegacyEntryData as RawEntryData;
 use nonempty::NonEmpty;
 use nucleo_picker::{Picker, PickerOptions, Render};
 use walkdir::{DirEntry, WalkDir};
 
 use crate::{
     db::{RecordDatabase, state::Record},
-    entry::RawEntryData,
     format::Template,
     path_hash::AttachmentRoot,
 };
@@ -111,7 +111,7 @@ pub fn choose_canonical_id(
     strict: bool,
     max_selection_count: Option<NonZero<u32>>,
 ) -> (
-    Picker<Record<RawEntryData>, Template>,
+    Picker<Record<Box<RawEntryData>>, Template>,
     thread::JoinHandle<Result<RecordDatabase, rusqlite::Error>>,
 ) {
     let picker = PickerOptions::new()
@@ -141,7 +141,7 @@ pub fn choose_canonical_id(
 /// A wrapper around a [`Record`] which also contains a list of attachments associated with the
 /// record.
 pub struct AttachmentData {
-    pub row_data: Record<RawEntryData>,
+    pub row_data: Record<Box<RawEntryData>>,
     pub attachments: NonEmpty<DirEntry>,
     pub attachment_root: PathBuf,
 }

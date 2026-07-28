@@ -1,13 +1,13 @@
 use std::sync::LazyLock;
 
+use autobib_entry::ident::{StandardEntryType, StandardFieldKey};
 use regex::Regex;
 use serde::Deserialize;
 
 use crate::logger::info;
 
 use super::{
-    BodyBytes, Client, Ctx, EntryType, MutableEntryData, ProviderError, StatusCode,
-    ValidationOutcome,
+    BodyBytes, Client, Ctx, MutableEntryData, ProviderError, StatusCode, ValidationOutcome,
 };
 
 static OL_IDENTIFIER_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[0-9]{7,8}M$").unwrap());
@@ -74,10 +74,10 @@ pub fn get_record<C: Client>(
             publishers,
             ..
         }) => {
-            let mut record_data = MutableEntryData::new(EntryType::book());
+            let mut record_data = MutableEntryData::new_standard(StandardEntryType::Book);
 
             if let Some(address) = publish_places.into_iter().next() {
-                record_data.check_and_insert("address".into(), address)?;
+                record_data.insert_standard_key(StandardFieldKey::Address, address)?;
             }
 
             // we need to make separate requests for the authors
@@ -113,37 +113,39 @@ pub fn get_record<C: Client>(
                     }
                 }
 
-                record_data.check_and_insert("author".into(), auth_string)?;
+                record_data.insert_standard_key(StandardFieldKey::Author, auth_string)?;
             }
 
             if let Some(date) = publish_date {
-                record_data.check_and_insert("date".into(), date)?;
+                record_data.insert_standard_key(StandardFieldKey::Date, date)?;
             }
 
             if let Some(edition) = edition_name {
-                record_data.check_and_insert("edition".into(), edition)?;
+                record_data.insert_standard_key(StandardFieldKey::Edition, edition)?;
             }
 
             if let Some(isbn) = isbn_13.into_iter().next() {
-                record_data.check_and_insert("isbn".into(), isbn)?;
+                record_data.insert_standard_key(StandardFieldKey::ISBN, isbn)?;
             }
 
-            record_data.check_and_insert("openlibrary".into(), id.into())?;
+            record_data.try_insert("openlibrary", id)?;
 
             if let Some(page_count) = number_of_pages {
-                record_data.check_and_insert("pagetotal".into(), page_count.to_string())?;
+                record_data
+                    .insert_standard_key(StandardFieldKey::PageTotal, page_count.to_string())?;
             }
 
             if !publishers.is_empty() {
-                record_data.check_and_insert("publisher".into(), publishers.join(" and "))?;
+                record_data
+                    .insert_standard_key(StandardFieldKey::Publisher, publishers.join(" and "))?;
             }
 
             if let Some(subtitle) = subtitle {
-                record_data.check_and_insert("subtitle".into(), subtitle)?;
+                record_data.insert_standard_key(StandardFieldKey::Subtitle, subtitle)?;
             }
 
             if let Some(title) = title {
-                record_data.check_and_insert("title".into(), title)?;
+                record_data.insert_standard_key(StandardFieldKey::Title, title)?;
             }
             Ok(Some(record_data))
         }

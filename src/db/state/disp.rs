@@ -4,11 +4,12 @@
 //! row in the 'Records' table.
 use std::fmt;
 
+use autobib_entry::data::EntryData;
 use chrono::{DateTime, Local};
 use crossterm::style::{ContentStyle, StyledContent, Stylize};
 
 use super::{ArbitraryDataRef, InRecordsTable, Record, RevisionId, State, Version};
-use crate::{entry::EntryData, logger::LogDisplay, record::Identifier};
+use crate::{logger::LogDisplay, record::Identifier};
 
 impl<'conn, I: InRecordsTable> LogDisplay for State<'conn, I> {
     fn log_display(&self, styled: bool, mut buf: impl std::io::Write) -> anyhow::Result<()> {
@@ -83,7 +84,7 @@ impl<'a> fmt::Display for RecordRowDisplay<'a> {
                     writeln!(
                         buf,
                         "{PREFIX}@{}{{{},",
-                        raw_entry_data.entry_type().green(),
+                        raw_entry_data.entry_type().inner().green(),
                         self.canonical
                     )?;
                 } else {
@@ -96,7 +97,7 @@ impl<'a> fmt::Display for RecordRowDisplay<'a> {
                 }
                 for (key, val) in raw_entry_data.fields() {
                     if self.styled {
-                        writeln!(buf, "{PREFIX}  {} = {{{val}}},", key.blue())?;
+                        writeln!(buf, "{PREFIX}  {} = {{{val}}},", key.inner().blue())?;
                     } else {
                         writeln!(buf, "{PREFIX}  {key} = {{{val}}},",)?;
                     }

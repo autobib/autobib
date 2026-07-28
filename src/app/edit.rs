@@ -1,6 +1,11 @@
 use std::{path::PathBuf, str::FromStr};
 
 use anyhow::Result;
+use autobib_entry::{
+    Normalization, Normalize,
+    data::{ConflictResolved, EntryData, EntryEditCommand, MutableEntryData},
+    v0::LegacyEntryData as RawEntryData,
+};
 
 use super::OnConflict;
 
@@ -10,13 +15,9 @@ use crate::{
         AsKey,
         state::{IsEntry, RecordsInsert, State},
     },
-    entry::{
-        AsEntryData, BibtexEntry, ConflictResolved, EntryEditCommand, EntryKey, MutableEntryData,
-        RawEntryData,
-    },
+    entry::{BibtexEntry, EntryKey},
     error::{MergeError, ShortError},
     logger::{error, info, reraise, set_failed, suggest, warn},
-    normalize::{Normalization, Normalize},
     record::{Alias, Identifier},
     term::{Editor, EditorConfig, Input},
 };
@@ -69,11 +70,11 @@ where
         data.edit(edit);
         missing.insert(&RawEntryData::from_entry_data(&data), id)?
     } else if no_interactive {
-        let data = MutableEntryData::<&'static str>::default();
+        let data = MutableEntryData::default();
         warn!("Inserting local data with no contents in non-interactive mode");
         missing.insert(&RawEntryData::from_entry_data(&data), id)?
     } else {
-        let record_data = MutableEntryData::<String>::default();
+        let record_data = MutableEntryData::default();
         let entry = BibtexEntry {
             key: EntryKey::try_new(id.as_key().into()).unwrap_or_else(|_| EntryKey::placeholder()),
             record_data,
@@ -104,25 +105,25 @@ where
     Ok(())
 }
 
-/// Merge an iterator of [`AsEntryData`] into existing data, using the merge rules as specified
+/// Merge an iterator of [`EntryData`] into existing data, using the merge rules as specified
 /// by the passed [`OnConflict`].
-pub fn merge_record_data<D: AsEntryData>(
+pub fn merge_record_data<'a, D: EntryData + 'a + ?Sized>(
     on_conflict: OnConflict,
     existing_record: &mut MutableEntryData,
-    new_raw_data: impl IntoIterator<Item = D>,
+    new_raw_data: impl IntoIterator<Item = &'a D>,
     id_display: impl std::fmt::Display,
 ) -> Result<(), MergeError> {
     match on_conflict {
         OnConflict::PreferCurrent => {
             info!("Updating {id_display} with new data, skipping existing fields");
             for data in new_raw_data {
-                existing_record.merge_or_skip(&data);
+                existing_record.merge_or_skip(data);
             }
         }
         OnConflict::PreferIncoming => {
             info!("Updating {id_display} with new data, overwriting existing fields");
             for data in new_raw_data {
-                existing_record.merge_or_overwrite(&data);
+                existing_record.merge_or_overwrite(data);
             }
         }
         OnConflict::Prompt => {
@@ -131,7 +132,7 @@ pub fn merge_record_data<D: AsEntryData>(
                 // FIXME: don't copy-paste here, but it is annoying to avoid this because
                 // it needs some new trait bounds for operations like `to_owned()` etc.
                 existing_record.merge_with_callback(
-                    &data,
+                    data,
                     |current, incoming| {
                         eprintln!("Conflict for the entry type:");
                         eprintln!("   Current value: {current}");
@@ -161,7 +162,7 @@ pub fn merge_record_data<D: AsEntryData>(
                         }
 
                         let editor = Editor::new(EditorConfig { suffix: ".txt" });
-                        let val = incoming.to_owned();
+                        let val = incoming.into();
                         match editor.edit(&val) {
                             Ok(new) => ConflictResolved::New(new.unwrap_or(val)),
                             Err(error) => {
@@ -200,7 +201,7 @@ pub fn merge_record_data<D: AsEntryData>(
                         }
 
                         let editor = Editor::new(EditorConfig { suffix: ".tex" });
-                        let val = incoming.to_owned();
+                        let val = incoming.into();
                         match editor.edit(&val) {
                             Ok(new) => ConflictResolved::New(new.unwrap_or(val)),
                             Err(error) => {

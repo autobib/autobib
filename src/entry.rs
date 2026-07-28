@@ -1,22 +1,76 @@
-mod data;
-mod deserialize;
-
-use serde_bibtex::{MacroDictionary, de::Deserializer};
 use std::{fmt, io, str::FromStr};
 
-pub use self::data::{
-    AsEntryData, ConflictResolved, EntryData, EntryDataSerializer, EntryEditCommand, EntryKey,
-    EntryType, FieldKey, FieldValue, MutableEntryData, RawEntryData, RawRecordFieldsIter,
-    SetFieldCommand,
+use autobib_entry::{
+    data::{EntryData, MutableEntryData},
+    error::DataError,
 };
-pub(crate) use self::data::{EntryTypeHeader, KeyHeader, ValueHeader};
+use serde::Deserialize;
+use serde_bibtex::{MacroDictionary, de::Deserializer, token::check_entry_key};
 
 use crate::error::BibtexDataError;
 
+/// A validated entry key (e.g. "key" in `@book{key, ..}`) which satisfies the following
+/// requirements:
+///
+/// 1. has length at least `1`
+/// 2. composed only of ASCII printable characters except `{}(),=\\#%\"`, or non-ASCII UTF-8.
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
+pub struct EntryKey<S = String>(pub(in crate::entry) S);
+
+impl<S: AsRef<str>> EntryKey<S> {
+    #[inline]
+    pub fn try_new(s: S) -> Result<Self, DataError> {
+        let entry_key = s.as_ref();
+
+        check_entry_key(entry_key)?;
+
+        Ok(Self(s))
+    }
+
+    pub fn is_placeholder(&self) -> bool {
+        self.0.as_ref().starts_with(':')
+    }
+}
+
+impl<T: From<&'static str>> EntryKey<T> {
+    /// A placeholder value used for displaying keys which are not valid bibtex.
+    pub fn placeholder() -> Self {
+        Self("::".into())
+    }
+}
+
+impl<S: AsRef<str>> AsRef<str> for EntryKey<S> {
+    fn as_ref(&self) -> &str {
+        self.0.as_ref()
+    }
+}
+
+impl<S: AsRef<str>> ::std::fmt::Display for EntryKey<S> {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(self.0.as_ref())
+    }
+}
+
+impl<S: AsRef<str>> PartialEq<str> for EntryKey<S> {
+    fn eq(&self, other: &str) -> bool {
+        self.0.as_ref().eq(other)
+    }
+}
+
+impl ::std::str::FromStr for EntryKey {
+    type Err = DataError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::try_new(s.into())
+    }
+}
+
 /// A single regular entry in a BibTeX bibliography.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Deserialize)]
 pub struct BibtexEntry<D, S = String> {
+    #[serde(rename = "entry_key")]
     pub key: EntryKey<S>,
+    #[serde(flatten)]
     pub record_data: D,
 }
 
@@ -69,11 +123,10 @@ impl<W: fmt::Write> EntryWrite for FmtWriteWrap<W> {
     }
 }
 
-impl<D: AsEntryData, S: AsRef<str>> BibtexEntry<D, S> {
+impl<D: EntryData, S: AsRef<str>> BibtexEntry<D, S> {
     fn write_generic<W: EntryWrite>(&self, mut writer: W) -> Result<(), W::Error> {
-        let tmp = self.record_data.as_entry_data();
-        let entry_type = tmp.entry_type();
-        let fields = tmp.fields();
+        let entry_type = self.record_data.entry_type();
+        let fields = self.record_data.fields();
         writeln!(writer, "@{}{{{},", entry_type, self.key.as_ref())?;
         for (key, value) in fields {
             writeln!(writer, "  {key} = {{{value}}},")?;
@@ -89,7 +142,7 @@ impl<D: AsEntryData, S: AsRef<str>> BibtexEntry<D, S> {
         self.write_generic(FmtWriteWrap(writer))
     }
 }
-impl<D: AsEntryData, S: AsRef<str>> fmt::Display for BibtexEntry<D, S> {
+impl<D: EntryData, S: AsRef<str>> fmt::Display for BibtexEntry<D, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.write_fmt(f)
     }
@@ -98,7 +151,7 @@ impl<D: AsEntryData, S: AsRef<str>> fmt::Display for BibtexEntry<D, S> {
 pub fn entries_to_bibtex<'a, W, E, D, S>(mut writer: W, entries: E) -> Result<(), io::Error>
 where
     W: io::Write,
-    D: AsEntryData + 'a,
+    D: EntryData + 'a,
     S: AsRef<str> + 'a,
     E: IntoIterator<Item = &'a BibtexEntry<D, S>>,
 {

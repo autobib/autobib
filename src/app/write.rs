@@ -5,13 +5,14 @@ use std::{
     path::Path,
 };
 
+use autobib_entry::data::{EntryData, EntryDataSerializer};
 use itertools::Itertools;
 use nonempty::NonEmpty;
 use serde::{Serialize, ser::SerializeMap};
 
 use crate::{
     AsKey,
-    entry::{AsEntryData, BibtexEntry, EntryDataSerializer, entries_to_bibtex},
+    entry::{BibtexEntry, entries_to_bibtex},
     logger::warn,
     output::stdout_lock_wrap,
     record::Identifier,
@@ -53,12 +54,12 @@ pub fn output_keys<'a>(keys: impl Iterator<Item = &'a crate::Key>) -> Result<(),
     Ok(())
 }
 
-pub fn output_entries_json<D: AsEntryData>(
+pub fn output_entries_json<D: EntryData>(
     grouped_entries: &BTreeMap<Identifier, NonEmpty<BibtexEntry<D>>>,
 ) -> Result<(), anyhow::Error> {
     struct Wrapper<'a, D>(&'a BTreeMap<Identifier, NonEmpty<BibtexEntry<D>>>);
 
-    impl<'a, D: AsEntryData> Serialize for Wrapper<'a, D> {
+    impl<'a, D: EntryData> Serialize for Wrapper<'a, D> {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
             S: serde::Serializer,
@@ -67,7 +68,7 @@ pub fn output_entries_json<D: AsEntryData>(
             for entry in flatten_and_warn(self.0) {
                 state.serialize_entry(
                     entry.key.as_ref(),
-                    &EntryDataSerializer::new(entry.record_data.as_entry_data()),
+                    &EntryDataSerializer::new(&entry.record_data),
                 )?;
             }
             state.end()
@@ -81,7 +82,7 @@ pub fn output_entries_json<D: AsEntryData>(
 }
 
 /// Either write records to stdout, or to a provided file.
-pub fn output_entries_bibtex<D: AsEntryData>(
+pub fn output_entries_bibtex<D: EntryData>(
     out: Option<std::fs::File>,
     append: bool,
     grouped_entries: &BTreeMap<Identifier, NonEmpty<BibtexEntry<D>>>,

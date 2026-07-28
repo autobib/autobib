@@ -21,6 +21,7 @@ mod validate;
 
 use std::path::Path;
 
+use autobib_entry::v0::LegacyEntryData as RawEntryData;
 use chrono::{Local, TimeDelta};
 use delegate::delegate;
 use functions::{AppFunction, register_application_function};
@@ -34,7 +35,6 @@ use self::{
 use crate::{
     Alias, Identifier, Key,
     config::AliasTransform,
-    entry::RawEntryData,
     error::DatabaseError,
     logger::{debug, error, info, warn},
     record::{KeyedRecord, LegacyAlias},
@@ -412,9 +412,9 @@ impl RecordDatabase {
     ///
     /// This is a convenience wrapper around [`Self::inject_active_records`] which simply sends all row data
     /// to the picker without filtering or mapping.
-    pub fn inject_all_active_records<R: Render<Record<RawEntryData>>>(
+    pub fn inject_all_active_records<R: Render<Record<Box<RawEntryData>>>>(
         &mut self,
-        injector: Injector<Record<RawEntryData>, R>,
+        injector: Injector<Record<Box<RawEntryData>>, R>,
     ) -> Result<(), rusqlite::Error> {
         self.inject_active_records(injector, Some)
     }
@@ -433,7 +433,7 @@ impl RecordDatabase {
         mut filter_map: F,
     ) -> Result<(), rusqlite::Error>
     where
-        F: FnMut(Record<RawEntryData>) -> Option<T>,
+        F: FnMut(Record<Box<RawEntryData>>) -> Option<T>,
         R: Render<T>,
     {
         self.map_active_records(|res| {
@@ -450,7 +450,7 @@ impl RecordDatabase {
     /// the function exits early.
     pub fn map_active_records<E, F>(&mut self, mut f: F) -> Result<(), SnapshotMapErr<E>>
     where
-        F: FnMut(Record<RawEntryData>) -> Result<(), E>,
+        F: FnMut(Record<Box<RawEntryData>>) -> Result<(), E>,
     {
         debug!("Mapping over all active database records.");
         let mut retriever = self
@@ -473,7 +473,7 @@ impl RecordDatabase {
         mut f: F,
     ) -> Result<(), SnapshotMapErr<E>>
     where
-        F: FnMut(Record<RawEntryData>) -> Result<(), E>,
+        F: FnMut(Record<Box<RawEntryData>>) -> Result<(), E>,
     {
         debug!("Mapping over all active database records with canonical ID matching '{glob}'.");
         let mut retriever = self
@@ -496,7 +496,7 @@ impl RecordDatabase {
         mut f: F,
     ) -> Result<(), SnapshotMapErr<E>>
     where
-        F: FnMut(KeyedRecord<RawEntryData>) -> Result<(), E>,
+        F: FnMut(KeyedRecord<Box<RawEntryData>>) -> Result<(), E>,
     {
         debug!("Mapping over all active database records with canonical ID matching '{glob}'.");
         let mut retriever = self

@@ -6,6 +6,10 @@ use std::{
 };
 
 use anyhow::Result;
+use autobib_entry::{
+    data::SetFieldCommand,
+    ident::{EntryType, FieldKey},
+};
 use chrono::{DateTime, Local};
 use clap::{
     Args, CommandFactory, Parser, Subcommand, ValueEnum, builder::ArgPredicate, error::ErrorKind,
@@ -17,7 +21,6 @@ use crossterm::style::Stylize;
 use crate::{
     cite_search::SourceFileType,
     db::state::RevisionId,
-    entry::{EntryType, FieldKey, SetFieldCommand},
     error::ShortError,
     format::Template,
     record::{Alias, Key, LegacyAlias},

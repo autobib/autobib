@@ -24,6 +24,11 @@ use std::{
 };
 
 use anyhow::{Result, bail};
+use autobib_entry::{
+    Normalization, Normalize,
+    data::{EntryEditCommand, MutableEntryData},
+    v0::LegacyEntryData as RawEntryData,
+};
 use etcetera::{AppStrategy, AppStrategyArgs, choose_app_strategy};
 
 use crate::{
@@ -43,12 +48,11 @@ use crate::{
         },
         user_version,
     },
-    entry::{BibtexEntry, EntryEditCommand, EntryKey, MutableEntryData, RawEntryData},
+    entry::{BibtexEntry, EntryKey},
     error::AliasErrorKind,
     format::Template,
     http::{BodyBytes, Client},
     logger::{LogDisplay, debug, error, info, set_failed, suggest, warn},
-    normalize::{Normalization, Normalize},
     output::{owriteln, stdout_lock_wrap},
     path_hash::AttachmentRoot,
     provider::{IdCandidate, determine_key_from_data},

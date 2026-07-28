@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use super::RecordDataError;
+use autobib_entry::error::DataError;
 
 #[derive(Error, Debug)]
 pub struct KeyParseError {
@@ -23,7 +23,7 @@ pub enum KeyParseErrorKind {
     #[error("String started with '\"' is unclosed.")]
     UnclosedString,
     #[error("Invalid field key: {0}")]
-    InvalidFieldKey(#[from] RecordDataError),
+    InvalidFieldKey(#[from] DataError),
     #[error("No closing bracket to match '('")]
     MissingBracket,
     #[error("No opening bracket to match ')'")]

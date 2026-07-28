@@ -1,6 +1,9 @@
 mod key;
 
 use anyhow::bail;
+use autobib_entry::{
+    Normalization, Normalize, data::MutableEntryData, v0::LegacyEntryData as RawEntryData,
+};
 use nonempty::NonEmpty;
 
 pub use self::key::{Alias, AliasOrId, Identifier, Key, LegacyAlias, MappedAliasOrId, MappedKey};
@@ -14,11 +17,9 @@ use crate::{
             Record, State, Unknown, Updated,
         },
     },
-    entry::{MutableEntryData, RawEntryData},
     error::{Error, ProviderError, RecordError},
     http::Client,
     logger::info,
-    normalize::{Normalization, Normalize},
     provider::{RemoteResponse, get_remote_response},
 };
 
@@ -52,7 +53,7 @@ impl<D> From<KeyedRecord<D>> for Record<D> {
 #[derive(Debug)]
 pub enum RecordResponse<'conn> {
     /// The record exists.
-    Exists(KeyedRecord<RawEntryData>, State<'conn, IsEntry>),
+    Exists(KeyedRecord<Box<RawEntryData>>, State<'conn, IsEntry>),
     /// The record was deleted.
     Deleted(KeyedRecord<Option<Identifier>>, State<'conn, IsDeleted>),
     /// The record is null.
@@ -69,46 +70,10 @@ impl<'conn> RecordResponse<'conn> {
     ///
     /// If the record is null, the corresponding transaction is automatically committed before
     /// returning the relevant error.
-    pub fn exists_or(
-        self,
-        f: impl FnOnce(Tx<'conn>) -> rusqlite::Result<()>,
-        err_prefix: impl std::fmt::Display,
-    ) -> Result<(KeyedRecord<RawEntryData>, State<'conn, IsEntry>), anyhow::Error> {
-        match self {
-            RecordResponse::Exists(record, row) => Ok((record, row)),
-            RecordResponse::Deleted(data, deleted_row) => {
-                f(deleted_row.into_tx())?;
-                if let Some(repl) = data.record.data {
-                    bail!(
-                        "{err_prefix} deleted record '{}' (replaced by key '{repl}')",
-                        data.key
-                    );
-                } else {
-                    bail!("{err_prefix} deleted record '{}'", data.key);
-                }
-            }
-            RecordResponse::NullId(id, null_row) => {
-                f(null_row.into_tx())?;
-                bail!("{err_prefix} null record '{id}'");
-            }
-            RecordResponse::InvalidId(record_error) => {
-                bail!(record_error);
-            }
-            RecordResponse::NullAlias(alias) => {
-                bail!("{err_prefix} undefined alias '{alias}'");
-            }
-        }
-    }
-
-    /// Either return the record and corresponding state transaction wrapper, or raise an error. In
-    /// order to commit the new changes, the resulting [`State`] must be committed.
-    ///
-    /// If the record is null, the corresponding transaction is automatically committed before
-    /// returning the relevant error.
     pub fn exists_or_commit_null(
         self,
         err_prefix: &str,
-    ) -> Result<(KeyedRecord<RawEntryData>, State<'conn, IsEntry>), anyhow::Error> {
+    ) -> Result<(KeyedRecord<Box<RawEntryData>>, State<'conn, IsEntry>), anyhow::Error> {
         match self {
             RecordResponse::Exists(record, row) => Ok((record, row)),
             RecordResponse::Deleted(data, deleted_row) => {
@@ -367,7 +332,7 @@ pub fn revive_void<'conn, C: Client>(
     canonical: &Identifier,
     client: &C,
     normalization: &Normalization,
-) -> Result<(RawEntryData, Updated<'conn, IsEntry>), Error> {
+) -> Result<(Box<RawEntryData>, Updated<'conn, IsEntry>), Error> {
     match get_remote_response(client, canonical)? {
         RemoteResponse::Data(mut mutable_entry_data) => {
             mutable_entry_data.normalize(normalization);

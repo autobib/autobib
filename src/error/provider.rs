@@ -1,7 +1,8 @@
+use autobib_entry::error::DataError;
 use thiserror::Error;
 use ureq::http::StatusCode;
 
-use super::{RecordDataError, RecordError};
+use super::RecordError;
 
 #[derive(Error, Debug)]
 pub enum ProviderError {
@@ -28,7 +29,7 @@ pub enum ProviderError {
     #[error("Unexpected failure: {0}")]
     Unexpected(String),
     #[error("Incompatible data format: {0}")]
-    Format(#[from] RecordDataError),
+    Format(#[from] DataError),
 }
 
 impl From<RecordError> for ProviderError {

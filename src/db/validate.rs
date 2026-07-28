@@ -7,11 +7,12 @@ use std::{
     str::FromStr,
 };
 
+use autobib_entry::v0::{InvalidBytesError, LegacyEntryData as RawEntryData};
 use chrono::{DateTime, Local};
 use rusqlite::types::ValueRef;
 
 use super::{Tx, schema};
-use crate::{AsKey, Identifier, Key, RawEntryData, error::InvalidBytesError, logger::debug};
+use crate::{AsKey, Identifier, Key, logger::debug};
 
 /// A possible fault that could occurr inside the database.
 #[derive(Debug)]
@@ -404,7 +405,7 @@ WHERE c.modified < p.modified",
         let mut rows = retriever.query([])?;
 
         while let Some(row) = rows.next()? {
-            if let Err(err) = RawEntryData::<Vec<u8>>::from_byte_repr(row.get("data")?) {
+            if let Err(err) = RawEntryData::load(row.get("data")?) {
                 faults.push(DatabaseFault::InvalidRecordData(
                     row.get("rev")?,
                     row.get("canonical")?,
