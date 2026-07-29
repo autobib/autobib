@@ -1024,11 +1024,11 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             } else {
                 let snapshot = record_db.snapshot()?;
                 if canonical {
-                    snapshot.map_canonical_identifiers(deleted, &matching, |key_str| {
+                    snapshot.access_canonical_identifiers(deleted, &matching, |key_str| {
                         writeln!(lock, "{key_str}")
                     })?;
                 } else {
-                    snapshot.map_identifiers(deleted, &matching, |key_str| {
+                    snapshot.access_identifiers(deleted, &matching, |key_str| {
                         writeln!(lock, "{key_str}")
                     })?;
                 }

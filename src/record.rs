@@ -26,15 +26,15 @@ use crate::{
 /// The fundamental record type for a record in the 'Records' table, with data depending on the
 /// data type of the row.
 #[derive(Debug)]
-pub struct KeyedRecord<D = Box<RawEntryData>> {
+pub struct KeyedRecord<D = Box<RawEntryData>, S = String> {
     /// The original key.
-    pub key: String,
+    pub key: S,
     /// The record.
-    pub record: Record<D>,
+    pub record: Record<D, S>,
 }
 
-impl<D> From<KeyedRecord<D>> for Record<D> {
-    fn from(record: KeyedRecord<D>) -> Self {
+impl<D, S> From<KeyedRecord<D, S>> for Record<D, S> {
+    fn from(record: KeyedRecord<D, S>) -> Self {
         record.record
     }
 }
