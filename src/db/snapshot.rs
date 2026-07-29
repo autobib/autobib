@@ -301,7 +301,7 @@ WHERE variant = 1
 
     /// Iterate over all active canonical identifiers and apply the fallible closure `f` to each
     /// remote id.
-    pub fn map_canonical_identifiers<E, F: FnMut(Identifier<&str>) -> Result<(), E>>(
+    pub fn access_canonical_identifiers<E, F: FnMut(Identifier<&str>) -> Result<(), E>>(
         &self,
         deleted: bool,
         pattern: &str,
@@ -326,7 +326,7 @@ WHERE variant = 1
     /// Iterate over all names in the Keys table and apply the fallible closure
     /// `f` to each key. If an error is returned by the closure, it is immediately propagated and
     /// the function exits early.
-    pub fn map_identifiers<E, F: FnMut(&str) -> Result<(), E>>(
+    pub fn access_identifiers<E, F: FnMut(&str) -> Result<(), E>>(
         &self,
         deleted: bool,
         pattern: &str,
@@ -338,11 +338,11 @@ WHERE variant = 1
 
         let mut rows = selector.query((variant, pattern))?;
         while let Some(row) = rows.next()? {
-            if let ValueRef::Text(bytes) = row.get_ref_unwrap(0) {
-                f(from_utf8(bytes).unwrap()).map_err(SnapshotMapErr::CallbackFailed)?;
-            } else {
+            let ValueRef::Text(bytes) = row.get_ref_unwrap(0) else {
                 panic!("Keys table has unexpected schema: column 'name' is not a TEXT!");
-            }
+            };
+            let key = from_utf8(bytes).unwrap();
+            f(key).map_err(SnapshotMapErr::CallbackFailed)?;
         }
 
         Ok(())
