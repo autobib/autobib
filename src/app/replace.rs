@@ -1,5 +1,5 @@
 use anyhow::bail;
-use autobib_entry::{Archive, data::MutableEntryData, v0::ArchivedEntryData};
+use autobib_entry::{Archive, data::MutableEntryData, v1::ArchivedEntryData};
 
 use crate::{
     app::cli::OnConflict,

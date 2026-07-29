@@ -27,7 +27,7 @@ use anyhow::{Result, bail};
 use autobib_entry::{
     Archive,
     data::{EntryEditCommand, MutableEntryData, Normalization, Normalize},
-    v0::ArchivedEntryData,
+    v1::ArchivedEntryData,
 };
 use etcetera::{AppStrategy, AppStrategyArgs, choose_app_strategy};
 

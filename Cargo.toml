@@ -23,7 +23,7 @@ write_response_cache = ["dep:bincode", "in_memory_database"]
 
 [dependencies]
 anyhow = "1.0"
-autobib-entry = { version = "0.7.0", features = ["v0"] }
+autobib-entry = { version = "0.8.0", features = ["v0", "v1"] }
 bincode = { version = "2.0", optional = true }
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4.5", features = ["derive", "env"] }

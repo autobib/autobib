@@ -4,7 +4,7 @@ use anyhow::bail;
 use autobib_entry::{
     Archive,
     data::{MutableEntryData, Normalization, Normalize},
-    v0::ArchivedEntryData,
+    v1::ArchivedEntryData,
 };
 use nonempty::NonEmpty;
 

@@ -6,7 +6,7 @@ use autobib_entry::{
     data::{
         ConflictResolved, EntryData, EntryEditCommand, MutableEntryData, Normalization, Normalize,
     },
-    v0::ArchivedEntryData,
+    v1::ArchivedEntryData,
 };
 
 use super::OnConflict;

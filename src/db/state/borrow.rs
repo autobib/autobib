@@ -3,7 +3,7 @@
 //! This module implements some abstractions over data which borrows from some row. This is mainly
 //! useful when you want to do some sort of computation on a row, but you don't actually need to
 //! own all of the data, so you can save on some allocations by using the types here.
-use autobib_entry::{Archive, v0::ArchivedEntryData};
+use autobib_entry::{Archive, v1::ArchivedEntryData};
 use chrono::{DateTime, Local};
 use rusqlite::{Row, types::ValueRef};
 

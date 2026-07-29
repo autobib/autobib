@@ -1,4 +1,4 @@
-use autobib_entry::{Archive, data::EntryData, v0};
+use autobib_entry::{Archive, data::EntryData, v1};
 use rusqlite::{Connection, Error::UserFunctionError, functions::FunctionFlags};
 
 /// The available application functions.
@@ -88,7 +88,7 @@ fn add_contains_field_function(conn: &Connection) -> Result<(), rusqlite::Error>
                     .as_blob()
                     .map_err(|e| UserFunctionError(e.into()))?;
 
-                v0::ArchivedEntryData::access(data)
+                v1::ArchivedEntryData::access(data)
                     .map_err(|e| UserFunctionError(e.into()))?
                     .contains_field(field_name)
             };
@@ -119,7 +119,7 @@ fn add_get_field_function(conn: &Connection) -> Result<(), rusqlite::Error> {
                     .as_blob()
                     .map_err(|e| UserFunctionError(e.into()))?;
 
-                v0::ArchivedEntryData::access(data)
+                v1::ArchivedEntryData::access(data)
                     .map_err(|e| UserFunctionError(e.into()))?
                     .get_field_str(field_name)
             };
