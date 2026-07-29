@@ -1,5 +1,5 @@
 use autobib_entry::{Archive, data::EntryData, v0};
-use rusqlite::{Connection, functions::FunctionFlags};
+use rusqlite::{Connection, Error::UserFunctionError, functions::FunctionFlags};
 
 /// The available application functions.
 #[derive(Debug)]
@@ -42,7 +42,9 @@ fn add_regexp_function(conn: &Connection) -> Result<(), rusqlite::Error> {
     conn.create_scalar_function(
         AppFunction::Regexp.name(),
         2,
-        FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+        FunctionFlags::SQLITE_UTF8
+            | FunctionFlags::SQLITE_DETERMINISTIC
+            | FunctionFlags::SQLITE_INNOCUOUS,
         move |ctx| {
             assert_eq!(ctx.len(), 2, "called with unexpected number of arguments");
             let regexp: Arc<Regex> = ctx.get_or_create_aux(
@@ -55,7 +57,7 @@ fn add_regexp_function(conn: &Connection) -> Result<(), rusqlite::Error> {
                 let text = ctx
                     .get_raw(1)
                     .as_str()
-                    .map_err(|e| rusqlite::Error::UserFunctionError(e.into()))?;
+                    .map_err(|e| UserFunctionError(e.into()))?;
 
                 regexp.is_match(text)
             };
@@ -70,22 +72,24 @@ fn add_contains_field_function(conn: &Connection) -> Result<(), rusqlite::Error>
     conn.create_scalar_function(
         AppFunction::ContainsField.name(),
         2,
-        FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+        FunctionFlags::SQLITE_UTF8
+            | FunctionFlags::SQLITE_DETERMINISTIC
+            | FunctionFlags::SQLITE_INNOCUOUS,
         move |ctx| {
             assert_eq!(ctx.len(), 2, "called with unexpected number of arguments");
             let field_name = ctx
                 .get_raw(1)
                 .as_str()
-                .map_err(|e| rusqlite::Error::UserFunctionError(e.into()))?;
+                .map_err(|e| UserFunctionError(e.into()))?;
 
             let is_match = {
                 let data = ctx
                     .get_raw(0)
                     .as_blob()
-                    .map_err(|e| rusqlite::Error::UserFunctionError(e.into()))?;
+                    .map_err(|e| UserFunctionError(e.into()))?;
 
                 v0::ArchivedEntryData::access(data)
-                    .map_err(|e| rusqlite::Error::UserFunctionError(e.into()))?
+                    .map_err(|e| UserFunctionError(e.into()))?
                     .contains_field(field_name)
             };
 
@@ -99,22 +103,24 @@ fn add_get_field_function(conn: &Connection) -> Result<(), rusqlite::Error> {
     conn.create_scalar_function(
         AppFunction::GetField.name(),
         2,
-        FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+        FunctionFlags::SQLITE_UTF8
+            | FunctionFlags::SQLITE_DETERMINISTIC
+            | FunctionFlags::SQLITE_INNOCUOUS,
         move |ctx| {
             assert_eq!(ctx.len(), 2, "called with unexpected number of arguments");
             let field_name = ctx
                 .get_raw(1)
                 .as_str()
-                .map_err(|e| rusqlite::Error::UserFunctionError(e.into()))?;
+                .map_err(|e| UserFunctionError(e.into()))?;
 
             let field_value = {
                 let data = ctx
                     .get_raw(0)
                     .as_blob()
-                    .map_err(|e| rusqlite::Error::UserFunctionError(e.into()))?;
+                    .map_err(|e| UserFunctionError(e.into()))?;
 
                 v0::ArchivedEntryData::access(data)
-                    .map_err(|e| rusqlite::Error::UserFunctionError(e.into()))?
+                    .map_err(|e| UserFunctionError(e.into()))?
                     .get_field_str(field_name)
             };
 

@@ -196,6 +196,47 @@ ALTER TABLE Keys RENAME COLUMN record_key TO record_rev;
 
             tx.commit()?;
         }
+        4 => {
+            use autobib_entry::{Archive, data::archive, error::AccessError, v0, v1};
+            use rusqlite::{Error::UserFunctionError, functions::FunctionFlags};
+
+            // register a function which will perform the data update
+            // function `autobib_update_entry_data_v0_v1(BLOB) -> BLOB` accepts a BLOB in `v0` or
+            // `v1` format and returns a blob in `v1` format
+            conn.create_scalar_function(
+                "autobib_update_entry_data_v0_v1",
+                1,
+                FunctionFlags::SQLITE_DETERMINISTIC,
+                move |ctx| {
+                    assert_eq!(ctx.len(), 1, "called with unexpected number of arguments");
+                    let data = ctx
+                        .get_raw(0)
+                        .as_blob()
+                        .map_err(|e| UserFunctionError(e.into()))?;
+
+                    let new_data = match data.first() {
+                        Some(0) => {
+                            let v0_data = v0::ArchivedEntryData::access(data)
+                                .map_err(|e| UserFunctionError(e.into()))?;
+                            archive::<v1::ArchivedEntryData, _>(&v0_data)
+                        }
+                        Some(1) => data.into(),
+                        _ => {
+                            return Err(UserFunctionError(AccessError::Unrecognized.into()));
+                        }
+                    };
+
+                    Ok(new_data)
+                },
+            )?;
+
+            let tx = conn.transaction()?;
+            tx.execute(
+                "UPDATE Records SET data = autobib_update_entry_data_v0_v1(data) WHERE variant = 0",
+                [],
+            )?;
+            tx.commit()?;
+        }
         // this is only reachable if the user_version was set by a different program
         _ => return Err(DatabaseError::InvalidDatabase),
     }
