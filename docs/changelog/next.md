@@ -29,9 +29,10 @@ Changes since `v0.6.1`.
   - `preferred_keys` is more general and can contain a list of regexes to match keys
   - Migrate `preferred_providers` to `preferred_keys` by replacing each `provider` with the corresponding regex `^provider:.*`
 - `autobib info` format with `--report all` has changed.
-  Note that `autobib info` is not intended to be machine-readable; use `autobib info --json` isntead.
+  Note that `autobib info` is not intended to be machine-readable; use `autobib info --json` instead.
 - Aliases can no longer contain control characters (such as tab `\t` or newline `\n`).
   - Existing aliases containing control characters can still be accessed and renamed.
+- Entry types `comment`, `preamble`, and `string` are now disallowed since these names are reserved by BibTeX.
 
 ## Deprecations and future breaking changes
 
@@ -68,4 +69,3 @@ Changes since `v0.6.1`.
 ## Fixes
 
 - Adjust to new zbMath API format for null records.
-- Entry types `comment`, `preamble`, and `string` are now disallowed since these names are reserved by BibTeX.
