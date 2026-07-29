@@ -4,8 +4,8 @@ Some Autobib commands can output JSON.
 This page documents the corresponding schemas.
 
 - `autobib source --json`: [`$source`](#source-autobib-source-output)
-- The `%json` meta key in templates: [`$record_entry`](record-entry-record-of-type-entry)
-- `autobib info -r all`: [`$info`](#info-autobib-info-output)
+- The `%json` meta key in templates: [`$record_entry`](#record_entry-record-of-type-entry)
+- `autobib info -r all --json`: [`$info`](#info-autobib-info-output)
 
 ## Schemas
 
@@ -16,7 +16,7 @@ The basic schemas are:
 - `$string`: a JSON string
 - `$boolean`: a JSON boolean
 - `$hex`: a lowercase hexadecimal string
-- `$date_time`: an [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) datetime in local timezone, like `YYYY-MM-DDTHH:MM:SS.SSSSSS+HH:MM`
+- `$date_time`: a date-time in the local time zone, represented as per [IETF RFC 3339](https://datatracker.ietf.org/doc/html/rfc3339#section-5.6) (it often looks like `YYYY-MM-DDTHH:MM:SS.SSSSSSSSS+HH:MM`)
 
 The `|` modifier is used to represent an alternative.
 For example, `$string | null` is either a string or a JSON null.
@@ -55,7 +55,7 @@ For example,
 
 ### `$record_entry`: Record (of type entry)
 
-Schema: [`record_deleted.schema.json`](/docs/schema/record_deleted.schema.json).
+Schema: [`record_entry.schema.json`](/docs/schema/record_entry.schema.json).
 
 An *entry record* contains all of the information associated with a record which exists in the database and is not deleted or voided.
 This includes the entry data, as well as the canonical identifier and a modification timestamp.
@@ -67,8 +67,6 @@ The JSON looks like:
   "modified": "$date_time"
 }
 ```
-
-The schema is defined precisely in [`record_entry.schema.json`](/docs/schema/record_entry.schema.json).
 
 ### `$record_deleted`: Record (of type deleted)
 
@@ -94,7 +92,7 @@ The JSON looks like:
 ```json
 {
   "canonical": "$string",
-  "modified": "$date_time
+  "modified": "$date_time"
 }
 ```
 
@@ -102,14 +100,14 @@ The JSON looks like:
 
 Schema: [`source.schema.json`](/docs/schema/source.schema.json).
 
-The command `autobib source --json` outputs a dictionary mapping keys to record data.
-The schema is defined in [`source.schema.json`](/docs/schema/source.schema.json).
+The command `autobib source --json` outputs a dictionary mapping keys to entry data.
 
-Each key is a string corresponding to a citation key found in the input and the values are JSON objects containing the entry data.
+Each key is a string corresponding to a citation key found in the input, and each value is the [entry data](#data-data) associated with that key.
+Note that the values are bare entry data: unlike [`$record_entry`](#record_entry-record-of-type-entry), they do not contain the canonical identifier or the modification timestamp.
 The JSON looks like:
 ```json
 {
-  "$string": "$entry_record"
+  "$string": "$data"
 }
 ```
 For example, the output might look something like
@@ -147,12 +145,13 @@ The JSON looks like:
 {
   "key": {
     "original": "$string",
-    "is_valid_bibtex: "$boolean",
-    "preferred": "$string | null",
+    "is_valid_bibtex": "$boolean",
+    "user_preferred": "$string | null",
     "equivalent": ["$string"]
   },
   "revision": "$hex",
   "record": "$record_entry | $record_deleted | $record_void"
+}
 ```
 The `equivalent` array contain other keys which map to the same record.
-The `preferred` string is the preferred key, as determined by your configuration.
+The `user_preferred` value is the preferred key, as determined by your configuration, or `null` if no keys match.
