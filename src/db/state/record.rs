@@ -126,7 +126,7 @@ impl<D: AsRecordData, T: AsRef<str>> Serialize for Record<D, T> {
     where
         S: serde::Serializer,
     {
-        let field_count = if self.data.serializable() { 2 } else { 3 };
+        let field_count = if self.data.serializable() { 3 } else { 2 };
 
         let mut state = serializer.serialize_struct("Record", field_count)?;
         self.data.serialize_in(&mut state)?;
@@ -332,6 +332,7 @@ pub trait AsRecordData: Sized {
 
     fn serializable(&self) -> bool;
 
+    /// Serialize the data if serializable; otherwise, do nothing.
     fn serialize_in<S: SerializeStruct>(&self, ser_struct: &mut S) -> Result<(), S::Error>;
 }
 
