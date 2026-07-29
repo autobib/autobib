@@ -15,6 +15,7 @@
     "fields": {
       "title": "Entry fields",
       "description": "The fields in the bibliographic data",
+      "type": "object",
       "additionalProperties": false,
       "patternProperties": {
         "^[^\\x00-\\x20{}(),=\\#%\"]+$": {
