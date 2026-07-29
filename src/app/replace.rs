@@ -1,5 +1,5 @@
 use anyhow::bail;
-use autobib_entry::{data::MutableEntryData, v0::LegacyEntryData as RawEntryData};
+use autobib_entry::{Archive, data::MutableEntryData, v0::ArchivedEntryData};
 
 use crate::{
     app::cli::OnConflict,
@@ -29,7 +29,10 @@ pub fn replace<'conn, G>(
     root: Option<AttachmentRoot<false>>,
 ) -> Result<(), anyhow::Error>
 where
-    G: FnOnce(Tx<'conn>, &RawEntryData) -> anyhow::Result<(KeyedRecord, State<'conn, IsEntry>)>,
+    G: FnOnce(
+        Tx<'conn>,
+        &ArchivedEntryData,
+    ) -> anyhow::Result<(KeyedRecord, State<'conn, IsEntry>)>,
 {
     // first, get the data for the identifier that will be replaced
     let (original_record, (tx, original_row_id)) = match DatabaseResponse::determine(
@@ -80,7 +83,7 @@ where
         &original_record.canonical,
     )?;
     let replacement_row =
-        replacement_row.modify(&RawEntryData::from_entry_data(&incoming_record))?;
+        replacement_row.modify(&ArchivedEntryData::from_entry_data(&incoming_record))?;
 
     let (tx, replacement_row_id) = replacement_row.state.into_parts();
 

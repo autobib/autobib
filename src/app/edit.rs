@@ -2,9 +2,11 @@ use std::{path::PathBuf, str::FromStr};
 
 use anyhow::Result;
 use autobib_entry::{
-    Normalization, Normalize,
-    data::{ConflictResolved, EntryData, EntryEditCommand, MutableEntryData},
-    v0::LegacyEntryData as RawEntryData,
+    Archive,
+    data::{
+        ConflictResolved, EntryData, EntryEditCommand, MutableEntryData, Normalization, Normalize,
+    },
+    v0::ArchivedEntryData,
 };
 
 use super::OnConflict;
@@ -64,15 +66,15 @@ where
     let exists = if let Some(path) = from_bibtex {
         let mut data = data_from_path(path)?;
         data.normalize(normalization);
-        missing.insert(&RawEntryData::from_entry_data(&data), id)?
+        missing.insert(&ArchivedEntryData::from_entry_data(&data), id)?
     } else if !edit.is_identity() {
         let mut data = MutableEntryData::default();
         data.edit(edit);
-        missing.insert(&RawEntryData::from_entry_data(&data), id)?
+        missing.insert(&ArchivedEntryData::from_entry_data(&data), id)?
     } else if no_interactive {
         let data = MutableEntryData::default();
         warn!("Inserting local data with no contents in non-interactive mode");
-        missing.insert(&RawEntryData::from_entry_data(&data), id)?
+        missing.insert(&ArchivedEntryData::from_entry_data(&data), id)?
     } else {
         let record_data = MutableEntryData::default();
         let entry = BibtexEntry {
@@ -82,7 +84,7 @@ where
 
         if let Some(BibtexEntry { key, record_data }) = Editor::new_bibtex().edit(&entry)? {
             let row = missing
-                .insert(&RawEntryData::from_entry_data(&record_data), id)?
+                .insert(&ArchivedEntryData::from_entry_data(&record_data), id)?
                 .state;
             if key.as_ref() != id.as_key() && !key.is_placeholder() {
                 create_alias_if_valid(key.as_ref(), &row)?;

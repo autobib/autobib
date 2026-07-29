@@ -1,3 +1,4 @@
+use autobib_entry::{Archive, data::EntryData, v0};
 use rusqlite::{Connection, functions::FunctionFlags};
 
 /// The available application functions.
@@ -66,8 +67,6 @@ fn add_regexp_function(conn: &Connection) -> Result<(), rusqlite::Error> {
 
 /// Register `contains_field` callback.
 fn add_contains_field_function(conn: &Connection) -> Result<(), rusqlite::Error> {
-    use autobib_entry::{data::EntryData, v0::LegacyEntryData as RawEntryData};
-
     conn.create_scalar_function(
         AppFunction::ContainsField.name(),
         2,
@@ -85,8 +84,8 @@ fn add_contains_field_function(conn: &Connection) -> Result<(), rusqlite::Error>
                     .as_blob()
                     .map_err(|e| rusqlite::Error::UserFunctionError(e.into()))?;
 
-                RawEntryData::access(data)
-                    .expect("Invalid data")
+                v0::ArchivedEntryData::access(data)
+                    .map_err(|e| rusqlite::Error::UserFunctionError(e.into()))?
                     .contains_field(field_name)
             };
 
@@ -97,8 +96,6 @@ fn add_contains_field_function(conn: &Connection) -> Result<(), rusqlite::Error>
 
 /// Register `get_field` callback.
 fn add_get_field_function(conn: &Connection) -> Result<(), rusqlite::Error> {
-    use autobib_entry::{data::EntryData, v0::LegacyEntryData as RawEntryData};
-
     conn.create_scalar_function(
         AppFunction::GetField.name(),
         2,
@@ -116,8 +113,8 @@ fn add_get_field_function(conn: &Connection) -> Result<(), rusqlite::Error> {
                     .as_blob()
                     .map_err(|e| rusqlite::Error::UserFunctionError(e.into()))?;
 
-                RawEntryData::access(data)
-                    .expect("Invalid data")
+                v0::ArchivedEntryData::access(data)
+                    .map_err(|e| rusqlite::Error::UserFunctionError(e.into()))?
                     .get_field_str(field_name)
             };
 

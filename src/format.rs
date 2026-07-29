@@ -354,7 +354,7 @@ impl TemplateData for KeyedRecord {
 #[cfg(test)]
 mod tests {
     use crate::record::Identifier;
-    use autobib_entry::{data::MutableEntryData, v0::LegacyEntryData as RawEntryData};
+    use autobib_entry::{Archive, data::MutableEntryData, v0::ArchivedEntryData};
 
     use chrono::Local;
 
@@ -371,8 +371,8 @@ mod tests {
                 data.try_insert(k, v).unwrap();
             }
 
-            let row_data = Record::<Box<RawEntryData>> {
-                data: RawEntryData::from_entry_data(&data),
+            let row_data = Record {
+                data: ArchivedEntryData::from_entry_data(&data),
                 canonical: Identifier::from_parts("local", "123").unwrap(),
                 modified: Local::now(),
             };
@@ -413,8 +413,8 @@ mod tests {
                 data.try_insert(k, v).unwrap();
             }
 
-            let row_data = Record::<Box<RawEntryData>> {
-                data: RawEntryData::from_entry_data(&data),
+            let row_data = Record::<Box<ArchivedEntryData>> {
+                data: ArchivedEntryData::from_entry_data(&data),
                 canonical: Identifier::from_parts(provider, sub_id).unwrap(),
                 modified: Local::now(),
             };
@@ -457,8 +457,8 @@ mod tests {
         data.try_insert("a", "A").unwrap();
         data.try_insert("b", "B").unwrap();
 
-        let row_data = Record::<Box<RawEntryData>> {
-            data: RawEntryData::from_entry_data(&data),
+        let row_data = Record::<Box<ArchivedEntryData>> {
+            data: ArchivedEntryData::from_entry_data(&data),
             canonical: Identifier::from_parts("local", "12345").unwrap(),
             modified: Local::now(),
         };

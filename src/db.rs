@@ -21,7 +21,6 @@ mod validate;
 
 use std::path::Path;
 
-use autobib_entry::v0::LegacyEntryData as RawEntryData;
 use chrono::{Local, TimeDelta};
 use delegate::delegate;
 use functions::{AppFunction, register_application_function};
@@ -464,27 +463,6 @@ impl RecordDatabase {
     /// Iterate over all active entries in the Records table and apply the fallible closure
     /// `f` to each row. If an error is returned by the closure, it is immediately propagated and
     /// the function exits early.
-    fn access_impl<E, F>(
-        &mut self,
-        mut f: F,
-        stmt: &'static str,
-        params: impl rusqlite::Params,
-    ) -> Result<(), SnapshotMapErr<E>>
-    where
-        F: FnMut(Record<&RawEntryData, &str>) -> Result<(), E>,
-    {
-        let mut retriever = self.conn.prepare(stmt)?;
-        let mut rows = retriever.query(params)?;
-        while let Some(row) = rows.next()? {
-            let record = Record::access_row_unchecked(row);
-            f(record).map_err(SnapshotMapErr::CallbackFailed)?;
-        }
-        Ok(())
-    }
-
-    /// Iterate over all active entries in the Records table and apply the fallible closure
-    /// `f` to each row. If an error is returned by the closure, it is immediately propagated and
-    /// the function exits early.
     pub fn map_active_records<E, F>(&mut self, f: F) -> Result<(), SnapshotMapErr<E>>
     where
         F: FnMut(Record) -> Result<(), E>,
@@ -501,23 +479,6 @@ impl RecordDatabase {
     /// Iterate over all active entries in the Records table and apply the fallible closure
     /// `f` to each row. If an error is returned by the closure, it is immediately propagated and
     /// the function exits early.
-    pub fn access_active_records<E, F>(&mut self, f: F) -> Result<(), SnapshotMapErr<E>>
-    where
-        F: FnMut(Record<&RawEntryData, &str>) -> Result<(), E>,
-    {
-        self.access_impl(
-            f,
-            "SELECT canonical, modified, data, variant \
-            FROM Records WHERE \
-              rev IN (SELECT record_rev FROM Keys) \
-              AND variant = 0",
-            [],
-        )
-    }
-
-    /// Iterate over all active entries in the Records table and apply the fallible closure
-    /// `f` to each row. If an error is returned by the closure, it is immediately propagated and
-    /// the function exits early.
     pub fn map_matching_canonical_active_records<E, F>(
         &mut self,
         glob: &str,
@@ -527,28 +488,6 @@ impl RecordDatabase {
         F: FnMut(Record) -> Result<(), E>,
     {
         self.map_impl(
-            f,
-            "SELECT canonical, modified, data, variant \
-            FROM Records WHERE \
-              rev IN (SELECT record_rev FROM Keys) \
-              AND variant = 0 \
-              AND canonical GLOB ?1",
-            [glob],
-        )
-    }
-
-    /// Iterate over all active entries in the Records table and apply the fallible closure
-    /// `f` to each row. If an error is returned by the closure, it is immediately propagated and
-    /// the function exits early.
-    pub fn access_matching_canonical_active_records<E, F>(
-        &mut self,
-        glob: &str,
-        f: F,
-    ) -> Result<(), SnapshotMapErr<E>>
-    where
-        F: FnMut(Record<&RawEntryData, &str>) -> Result<(), E>,
-    {
-        self.access_impl(
             f,
             "SELECT canonical, modified, data, variant \
             FROM Records WHERE \
@@ -580,31 +519,6 @@ impl RecordDatabase {
             f(res?).map_err(SnapshotMapErr::CallbackFailed)?;
         }
 
-        Ok(())
-    }
-
-    /// Iterate over all keys and apply the fallible closure `f` to each row.
-    pub fn access_matching_active_records<E, F>(
-        &mut self,
-        glob: &str,
-        mut f: F,
-    ) -> Result<(), SnapshotMapErr<E>>
-    where
-        F: FnMut(KeyedRecord<&RawEntryData, &str>) -> Result<(), E>,
-    {
-        let mut retriever = self
-            .conn
-            .prepare("SELECT name, canonical, modified, data, variant FROM Records INNER JOIN Keys ON Keys.record_rev = Records.rev WHERE Records.variant = 0 AND Keys.name GLOB ?1")?;
-
-        let mut rows = retriever.query([glob])?;
-        while let Some(row) = rows.next()? {
-            let record = Record::access_row_unchecked(row);
-            let rusqlite::types::ValueRef::Text(key) = row.get_ref_unwrap("name") else {
-                panic!("Keys table has unexpected schema: column 'name' is not a TEXT!");
-            };
-            let key = std::str::from_utf8(key).unwrap();
-            f(KeyedRecord { key, record }).map_err(SnapshotMapErr::CallbackFailed)?;
-        }
         Ok(())
     }
 

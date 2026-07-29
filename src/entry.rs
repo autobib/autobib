@@ -3,6 +3,7 @@ use std::{fmt, io, str::FromStr};
 use autobib_entry::{
     data::{EntryData, MutableEntryData},
     error::DataError,
+    v0::ArchivedEntryData,
 };
 use serde::Deserialize;
 use serde_bibtex::{MacroDictionary, de::Deserializer, token::check_entry_key};
@@ -67,7 +68,7 @@ impl ::std::str::FromStr for EntryKey {
 
 /// A single regular entry in a BibTeX bibliography.
 #[derive(Debug, PartialEq, Deserialize)]
-pub struct BibtexEntry<D, S = String> {
+pub struct BibtexEntry<D = Box<ArchivedEntryData>, S = String> {
     #[serde(rename = "entry_key")]
     pub key: EntryKey<S>,
     #[serde(flatten)]

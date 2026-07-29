@@ -25,9 +25,9 @@ use std::{
 
 use anyhow::{Result, bail};
 use autobib_entry::{
-    Normalization, Normalize,
-    data::{EntryEditCommand, MutableEntryData},
-    v0::LegacyEntryData as RawEntryData,
+    Archive,
+    data::{EntryEditCommand, MutableEntryData, Normalization, Normalize},
+    v0::ArchivedEntryData,
 };
 use etcetera::{AppStrategy, AppStrategyArgs, choose_app_strategy};
 
@@ -420,7 +420,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
 
                         if changed {
                             state
-                                .modify(&RawEntryData::from_entry_data(&editable_data))?
+                                .modify(&ArchivedEntryData::from_entry_data(&editable_data))?
                                 .state
                                 .commit()?;
                         } else {
@@ -440,7 +440,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                             Editor::new_bibtex().edit(&entry)?
                         {
                             let new_row = state
-                                .modify(&RawEntryData::from_entry_data(&record_data))?
+                                .modify(&ArchivedEntryData::from_entry_data(&record_data))?
                                 .state;
                             if key.as_ref() != entry.key.as_ref() && !key.is_placeholder() {
                                 create_alias_if_valid(key.as_ref(), &new_row)?;

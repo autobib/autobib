@@ -3,7 +3,9 @@ use std::{fs::read_to_string, iter::once, path::Path, str::FromStr};
 use anyhow::bail;
 
 use autobib_entry::{
-    Normalization, Normalize, data::MutableEntryData, v0::LegacyEntryData as RawEntryData,
+    Archive,
+    data::{MutableEntryData, Normalization, Normalize},
+    v0::ArchivedEntryData,
 };
 
 use crate::{
@@ -71,7 +73,7 @@ where
                 merge_record_data(on_conflict, &mut existing_record, once(&new_raw_data), &key)?;
 
                 state
-                    .modify(&RawEntryData::from_entry_data(&existing_record))?
+                    .modify(&ArchivedEntryData::from_entry_data(&existing_record))?
                     .commit()?;
             }
         }
@@ -91,7 +93,7 @@ where
 
                 raw_data.normalize(normalization);
                 state
-                    .reinsert(&RawEntryData::from_entry_data(&raw_data))?
+                    .reinsert(&ArchivedEntryData::from_entry_data(&raw_data))?
                     .commit()?;
             } else {
                 state.commit()?;

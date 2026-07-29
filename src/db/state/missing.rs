@@ -2,7 +2,7 @@ use chrono::Local;
 
 use super::{IsEntry, IsNull, NotEntry, State, Updated};
 use crate::{Identifier, db::AsKey, logger::debug};
-use autobib_entry::{data::EntryData, v0::LegacyEntryData as RawEntryData};
+use autobib_entry::{Archive, data::EntryData, v0::ArchivedEntryData};
 
 /// Types which know how to insert new data.
 ///
@@ -12,7 +12,7 @@ use autobib_entry::{data::EntryData, v0::LegacyEntryData as RawEntryData};
 pub trait RecordsInsert<'conn> {
     fn insert(
         self,
-        data: &RawEntryData,
+        data: &ArchivedEntryData,
         canonical: &Identifier,
     ) -> Result<Updated<'conn, IsEntry>, rusqlite::Error>;
 }
@@ -20,7 +20,7 @@ pub trait RecordsInsert<'conn> {
 impl<'conn> RecordsInsert<'conn> for State<'conn, IsMissing> {
     fn insert(
         self,
-        data: &RawEntryData,
+        data: &ArchivedEntryData,
         canonical: &Identifier,
     ) -> Result<Updated<'conn, IsEntry>, rusqlite::Error> {
         self.insert_new(data, canonical)
@@ -30,7 +30,7 @@ impl<'conn> RecordsInsert<'conn> for State<'conn, IsMissing> {
 impl<'conn, I: NotEntry> RecordsInsert<'conn> for State<'conn, I> {
     fn insert(
         self,
-        data: &RawEntryData,
+        data: &ArchivedEntryData,
         _: &Identifier,
     ) -> Result<Updated<'conn, IsEntry>, rusqlite::Error> {
         self.reinsert(data)
@@ -40,7 +40,7 @@ impl<'conn, I: NotEntry> RecordsInsert<'conn> for State<'conn, I> {
 impl<'conn> RecordsInsert<'conn> for State<'conn, IsEntry> {
     fn insert(
         self,
-        data: &RawEntryData,
+        data: &ArchivedEntryData,
         _: &Identifier,
     ) -> Result<Updated<'conn, IsEntry>, rusqlite::Error> {
         self.modify(data)
@@ -69,7 +69,7 @@ impl<'conn> State<'conn, IsMissing> {
     /// The 'canonical' remote id must be present in the provided `refs` iterator.
     pub(crate) fn insert_with_refs<'a, R: Iterator<Item = &'a Identifier>>(
         self,
-        data: &RawEntryData,
+        data: &ArchivedEntryData,
         canonical: &Identifier,
         refs: R,
     ) -> Result<Updated<'conn, IsEntry>, rusqlite::Error> {
@@ -85,20 +85,20 @@ impl<'conn> State<'conn, IsMissing> {
     }
 
     /// A convenience wrapper around [`insert`](Self::insert) which first converts any type which
-    /// implements [`EntryData`] into a [`RawEntryData`].
+    /// implements [`EntryData`] into a [`ArchivedEntryData`].
     pub fn insert_entry_data<D: EntryData>(
         self,
-        data: &D,
+        data: D,
         canonical: &Identifier,
     ) -> Result<Updated<'conn, IsEntry>, rusqlite::Error> {
-        let raw_record_data = RawEntryData::from_entry_data(data);
+        let raw_record_data = ArchivedEntryData::from_entry_data(&data);
         self.insert_new(&raw_record_data, canonical)
     }
 
     /// Create the row and also insert a link in the `Keys` table.
     pub fn insert_new(
         self,
-        data: &RawEntryData,
+        data: &ArchivedEntryData,
         canonical: &Identifier,
     ) -> Result<Updated<'conn, IsEntry>, rusqlite::Error> {
         // SAFETY: 'canonical' is passed as a ref.
