@@ -5,7 +5,7 @@ This page documents the corresponding schemas.
 
 - `autobib source --json`: [`$source`](#source-autobib-source-output)
 - The `%json` meta key in templates: [`$record_entry`](#record_entry-record-of-type-entry)
-- `autobib info -r all --json`: [`$info`](#info-autobib-info-output)
+- `autobib info --json`: [`$info`](#info-autobib-info-output) for the `all` report type
 
 ## Schemas
 
@@ -138,7 +138,8 @@ By default, `autobib source` prints warnings if there are undefined keys.
 
 Schema: [`info.schema.json`](/docs/schema/info.schema.json).
 
-The *info* schema contains all information which can be obtained from a key which matches  a record in the database.
+The `$info` schema describes the output of `autobib info --json` with report type `--report all`.
+It contains all information which can be obtained from a key which matches a record in the database.
 This contains information about the key itself, the revision (used to identify the exact version in the revision tree), and the record, which may be an entry, deleted, or void.
 The JSON looks like:
 ```json
@@ -155,3 +156,21 @@ The JSON looks like:
 ```
 The `equivalent` array contain other keys which map to the same record.
 The `user_preferred` value is the preferred key, as determined by your configuration, or `null` if no keys match.
+
+### Other report types
+
+The other report types also accept `--json`.
+
+| Report type  | JSON output   |
+| ------------ | ------------- |
+| `all`        | `$info`       |
+| `canonical`  | `$string`     |
+| `bibtex`     | `$boolean`    |
+| `equivalent` | `["$string"]` |
+| `preferred`  | `$string`     |
+| `modified`   | `$date_time`  |
+| `revision`   | `$hex`        |
+
+> [!NOTE]
+> The `preferred` report type falls back to the canonical identifier if no keys match.
+> Unlike the `user_preferred` field of `$info`, it is never `null`.
