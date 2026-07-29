@@ -21,7 +21,7 @@ mod validate;
 
 use std::path::Path;
 
-use autobib_entry::v0::ArchivedEntryData;
+use autobib_entry::v1::ArchivedEntryData;
 use chrono::{Local, TimeDelta};
 use delegate::delegate;
 use functions::{AppFunction, register_application_function};
@@ -43,7 +43,7 @@ pub use snapshot::{Snapshot, SnapshotMapErr};
 
 /// The current database version expected by the application.
 pub const fn user_version() -> i32 {
-    4
+    5
 }
 
 /// The unique application id used to determine if the opened database matches one used by this

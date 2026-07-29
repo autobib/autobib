@@ -2,7 +2,7 @@ use chrono::Local;
 
 use super::{IsEntry, IsNull, NotEntry, State, Updated};
 use crate::{Identifier, db::AsKey, logger::debug};
-use autobib_entry::{Archive, data::EntryData, v0::ArchivedEntryData};
+use autobib_entry::{Archive, data::EntryData, v1::ArchivedEntryData};
 
 /// Types which know how to insert new data.
 ///

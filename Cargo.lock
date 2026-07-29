@@ -176,9 +176,9 @@ dependencies = [
 
 [[package]]
 name = "autobib-entry"
-version = "0.7.0"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8bec44941d34f31b1040f32702ed4ac91a5176677acdb2eb54be795a8c02ca2e"
+checksum = "ea89662a0259231753589403d8be42c10727a78e0ca8c8f1efba45eae270d352"
 dependencies = [
  "phf",
  "regex",

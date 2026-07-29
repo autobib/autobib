@@ -5,7 +5,7 @@ use std::{fmt, io, str::FromStr};
 use autobib_entry::{
     data::{EntryData, MutableEntryData},
     error::DataError,
-    v0::ArchivedEntryData,
+    v1::ArchivedEntryData,
 };
 use serde::Deserialize;
 use serde_bibtex::{MacroDictionary, de::Deserializer, token::check_entry_key};

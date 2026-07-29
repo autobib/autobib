@@ -235,6 +235,15 @@ ALTER TABLE Keys RENAME COLUMN record_key TO record_rev;
                 "UPDATE Records SET data = autobib_update_entry_data_v0_v1(data) WHERE variant = 0",
                 [],
             )?;
+
+            tx.pragma_update(None, "writable_schema", "ON")?;
+            // same as the v0->v1 migration, this uniformizes all of the table schema strings
+            tx.execute(
+                "UPDATE sqlite_schema SET sql=?1 WHERE type='table' AND name='NullRecords'",
+                (include_str!("migrate/v4/null_records_new.sql"),),
+            )?;
+
+            tx.pragma_update(None, "writable_schema", "OFF")?;
             tx.commit()?;
         }
         // this is only reachable if the user_version was set by a different program

@@ -1,18 +1,20 @@
 # Unreleased
 
-This version migrates the database version from `2` to `4`.
+This version migrates the database version from `2` to `5`.
 To run the migration code, report the database version, and validate your local files after updating, run
 ```sh
 autobib -v util check
 ```
 
-Supported database versions: `<= 4`
+Supported database versions: `<= 5`
 
 Changes since `v0.6.1`.
 
 ## Breaking changes
 
 - `zbmath` identifiers are now stored internally without 0-padding to length 8
+- The binary data format of the `data` column in the Records table has changed from the `v0` format to a new `v1` format.
+  Visit the [new entry data repository](https://github.com/autobib/autobib-entry) for detail on the new format.
 - SQLite is now only bundled when the Cargo feature `bundled-sqlite` is enabled.
   This feature is enabled by default, but this may cause breakage with builds using `--no-default-features`.
   Disabling this feature will cause the compiled binary to link to your SQLite system library instead.

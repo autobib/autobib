@@ -1,6 +1,6 @@
 use std::{cmp::Reverse, fmt, io};
 
-use autobib_entry::{Archive, data::EntryDataSerializer, v0::ArchivedEntryData};
+use autobib_entry::{Archive, data::EntryDataSerializer, v1::ArchivedEntryData};
 use chrono::{DateTime, Local};
 use rusqlite::{OptionalExtension, Row};
 use serde::{Serialize, ser::SerializeStruct};

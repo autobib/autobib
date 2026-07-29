@@ -7,7 +7,7 @@ use std::{
     str::FromStr,
 };
 
-use autobib_entry::{AccessError, Archive, v0::ArchivedEntryData};
+use autobib_entry::{AccessError, Archive, DataError, v1::ArchivedEntryData};
 use chrono::{DateTime, Local};
 use rusqlite::types::ValueRef;
 
@@ -44,7 +44,9 @@ pub enum DatabaseFault {
     /// There was an underlying SQLite integrity error.
     IntegrityError(String),
     /// A row in the `Records` table contains invalid binary data.
-    InvalidRecordData(i64, String, AccessError),
+    InvalidRecordDataFormat(i64, String, AccessError),
+    /// A row in the `Records` table contains invalid binary data.
+    InvalidRecordData(i64, String, DataError),
     /// A table is missing.
     MissingTable(String),
     /// A table has the incorrect schema.
@@ -132,9 +134,13 @@ impl fmt::Display for DatabaseFault {
                 }
             }
             Self::IntegrityError(err) => write!(f, "Database integrity error: {err}"),
-            Self::InvalidRecordData(row_id, name, err) => write!(
+            Self::InvalidRecordDataFormat(row_id, name, err) => write!(
                 f,
                 "Record row '{row_id}' with record id '{name}' has invalid binary data: {err}"
+            ),
+            Self::InvalidRecordData(row_id, name, err) => write!(
+                f,
+                "Record row '{row_id}' with record id '{name}' has data not in the standard format: {err}"
             ),
             Self::MissingTable(table_name) => write!(f, "Missing table '{table_name}'"),
             Self::InvalidTableSchema(table_name, table_schema) => write!(
@@ -405,12 +411,22 @@ WHERE c.modified < p.modified",
         let mut rows = retriever.query([])?;
 
         while let Some(row) = rows.next()? {
-            if let Err(err) = ArchivedEntryData::load(row.get("data")?) {
-                faults.push(DatabaseFault::InvalidRecordData(
+            match ArchivedEntryData::load(row.get("data")?) {
+                Ok(data) => {
+                    use autobib_entry::EntryData;
+                    if let Err(err) = data.validate_untrusted() {
+                        faults.push(DatabaseFault::InvalidRecordData(
+                            row.get("rev")?,
+                            row.get("canonical")?,
+                            err,
+                        ));
+                    }
+                }
+                Err(err) => faults.push(DatabaseFault::InvalidRecordDataFormat(
                     row.get("rev")?,
                     row.get("canonical")?,
                     err,
-                ));
+                )),
             }
         }
 
