@@ -2,12 +2,15 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Database information",
   "description": "A complete report about the information corresponding to a record in the database",
+  "type": "object",
   "additionalProperties": false,
   "required": ["key", "revision", "record"],
   "properties": {
     "key": {
       "description": "Record key information",
       "type": "object",
+      "additionalProperties": false,
+      "required": ["original", "is_valid_bibtex", "user_preferred", "equivalent"],
       "properties": {
         "original": {
           "description": "The original key used to refer to this record.",
