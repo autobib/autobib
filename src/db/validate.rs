@@ -7,7 +7,7 @@ use std::{
     str::FromStr,
 };
 
-use autobib_entry::v0::{InvalidBytesError, LegacyEntryData as RawEntryData};
+use autobib_entry::{AccessError, Archive, v0::ArchivedEntryData};
 use chrono::{DateTime, Local};
 use rusqlite::types::ValueRef;
 
@@ -44,7 +44,7 @@ pub enum DatabaseFault {
     /// There was an underlying SQLite integrity error.
     IntegrityError(String),
     /// A row in the `Records` table contains invalid binary data.
-    InvalidRecordData(i64, String, InvalidBytesError),
+    InvalidRecordData(i64, String, AccessError),
     /// A table is missing.
     MissingTable(String),
     /// A table has the incorrect schema.
@@ -405,7 +405,7 @@ WHERE c.modified < p.modified",
         let mut rows = retriever.query([])?;
 
         while let Some(row) = rows.next()? {
-            if let Err(err) = RawEntryData::load(row.get("data")?) {
+            if let Err(err) = ArchivedEntryData::load(row.get("data")?) {
                 faults.push(DatabaseFault::InvalidRecordData(
                     row.get("rev")?,
                     row.get("canonical")?,

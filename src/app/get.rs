@@ -4,8 +4,6 @@ use std::{
     io::{self, BufRead},
 };
 
-use autobib_entry::v0::LegacyEntryData as RawEntryData;
-
 use crate::{
     app::retrieve::{self, retrieve_single_entry, retrieve_single_entry_read_only},
     config::Config,
@@ -69,7 +67,7 @@ impl<'r, W: io::Write + ?Sized> BibtexOutput<'r, W> {
 }
 
 impl<'r, W: io::Write + ?Sized> Output for BibtexOutput<'r, W> {
-    type Data = (BibtexEntry<Box<RawEntryData>>, Identifier);
+    type Data = (BibtexEntry, Identifier);
 
     fn write_item(&mut self, (entry, _): Self::Data) -> Result<(), io::Error> {
         if self.first {

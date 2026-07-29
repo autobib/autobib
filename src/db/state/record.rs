@@ -1,6 +1,6 @@
 use std::{cmp::Reverse, fmt, io};
 
-use autobib_entry::{data::EntryDataSerializer, v0::LegacyEntryData as RawEntryData};
+use autobib_entry::{Archive, data::EntryDataSerializer, v0::ArchivedEntryData};
 use chrono::{DateTime, Local};
 use rusqlite::{OptionalExtension, Row};
 use serde::{Serialize, ser::SerializeStruct};
@@ -36,7 +36,7 @@ pub trait FromBytesAndVariant: Sized {
 
 /// The data for a row in the 'Records' table, not including information about the parents.
 #[derive(Debug)]
-pub struct Record<D = Box<RawEntryData>, S = String> {
+pub struct Record<D = Box<ArchivedEntryData>, S = String> {
     /// The associated data.
     pub data: D,
     /// The canonical identifier.
@@ -196,7 +196,7 @@ pub struct IsArbitrary(pub(super) i64);
 #[derive(Debug)]
 pub enum ArbitraryData {
     /// Entry data.
-    Entry(Box<RawEntryData>),
+    Entry(Box<ArchivedEntryData>),
     /// Deleted data.
     Deleted(Option<Identifier>),
     /// Void data.
@@ -225,7 +225,7 @@ pub struct IsEntryOrDeleted(pub(super) i64);
 #[derive(Debug)]
 pub enum EntryOrDeletedData {
     /// Entry data.
-    Entry(Box<RawEntryData>),
+    Entry(Box<ArchivedEntryData>),
     /// Deleted data.
     Deleted(Option<Identifier>),
 }
@@ -233,7 +233,9 @@ pub enum EntryOrDeletedData {
 impl FromBytesAndVariant for EntryOrDeletedData {
     fn from_bytes_and_variant(bytes: Vec<u8>, variant: i64) -> Self {
         match variant {
-            0 => Self::Entry(Box::<RawEntryData>::from_bytes_and_variant(bytes, variant)),
+            0 => Self::Entry(Box::<ArchivedEntryData>::from_bytes_and_variant(
+                bytes, variant,
+            )),
             1 => Self::Deleted(Option::<Identifier>::from_bytes_and_variant(bytes, variant)),
             _ => panic!("Unexpected 'Records' table row variant: expected entry or deleted data."),
         }
@@ -248,19 +250,19 @@ impl_from_row_id!(IsEntryOrDeleted, EntryOrDeletedData);
 #[derive(Debug)]
 pub struct IsEntry(pub(super) i64);
 
-impl FromBytesAndVariant for Box<RawEntryData> {
+impl FromBytesAndVariant for Box<ArchivedEntryData> {
     fn from_bytes_and_variant(bytes: Vec<u8>, variant: i64) -> Self {
         assert!(
             variant == 0,
             "Unexpected 'Records' table row variant: expected entry data."
         );
-        RawEntryData::load(bytes.into_boxed_slice()).unwrap()
+        ArchivedEntryData::load(bytes.into_boxed_slice()).unwrap()
     }
 }
 
 impl NotVoid for IsEntry {}
 
-impl_from_row_id!(IsEntry, Box<RawEntryData>);
+impl_from_row_id!(IsEntry, Box<ArchivedEntryData>);
 
 /// A deletion marker in the 'Records' table.
 #[derive(Debug)]
@@ -335,7 +337,7 @@ pub trait AsRecordData {
     fn serialize_in<S: SerializeStruct>(&self, ser_struct: &mut S) -> Result<(), S::Error>;
 }
 
-impl AsRecordData for RawEntryData {
+impl AsRecordData for ArchivedEntryData {
     fn data_blob(&self) -> &[u8] {
         self.as_bytes()
     }
@@ -353,7 +355,7 @@ impl AsRecordData for RawEntryData {
     }
 }
 
-impl AsRecordData for Box<RawEntryData> {
+impl AsRecordData for Box<ArchivedEntryData> {
     #[inline]
     fn data_blob(&self) -> &[u8] {
         self.as_ref().data_blob()
@@ -994,8 +996,8 @@ impl<D> Record<D> {
     }
 }
 
-impl From<Box<RawEntryData>> for ArbitraryData {
-    fn from(data: Box<RawEntryData>) -> Self {
+impl From<Box<ArchivedEntryData>> for ArbitraryData {
+    fn from(data: Box<ArchivedEntryData>) -> Self {
         Self::Entry(data)
     }
 }
@@ -1025,11 +1027,14 @@ macro_rules! impl_row_from {
     };
 }
 
-impl_row_from!(Box<RawEntryData>, Option<Identifier>, ());
+impl_row_from!(Box<ArchivedEntryData>, Option<Identifier>, ());
 
 impl<'conn> State<'conn, IsEntry> {
     /// Insert new data, preserving the old row as the parent row.
-    pub fn modify(self, data: &RawEntryData) -> Result<Updated<'conn, IsEntry>, rusqlite::Error> {
+    pub fn modify(
+        self,
+        data: &ArchivedEntryData,
+    ) -> Result<Updated<'conn, IsEntry>, rusqlite::Error> {
         let (new_key, modified) = self.replace_impl(data)?;
         Ok(Self::init(self.tx, IsEntry(new_key)).with_timestamp(modified))
     }
@@ -1134,7 +1139,7 @@ RETURNING rev",
 
 impl<'conn, I: NotEntry> State<'conn, I> {
     /// Insert data for the void row, creating a new child row.
-    pub fn reinsert(self, data: &RawEntryData) -> rusqlite::Result<Updated<'conn, IsEntry>> {
+    pub fn reinsert(self, data: &ArchivedEntryData) -> rusqlite::Result<Updated<'conn, IsEntry>> {
         let (new_key, modified) = self.replace_impl(data)?;
         Ok(State::init(self.tx, IsEntry(new_key)).with_timestamp(modified))
     }

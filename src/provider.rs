@@ -129,8 +129,8 @@ pub enum IdCandidate {
     None,
 }
 
-pub fn determine_key_from_data<D: EntryData + ?Sized>(
-    data: &D,
+pub fn determine_key_from_data<D: EntryData>(
+    data: D,
     config: &crate::config::Config,
 ) -> IdCandidate {
     determine_id_candidates(data, |id| config.score_key(id.as_key()), None, None)
@@ -142,8 +142,8 @@ pub fn determine_key_from_data<D: EntryData + ?Sized>(
 ///
 /// - If a canonical identifier could be found and it received the highest score, it is returned alone.
 /// - If a reference identifier had the highest score, the canonical identifier with the highest score (if any) is returned as well.
-pub fn determine_id_candidates<K: Ord, D: EntryData + ?Sized, F: FnMut(&Identifier) -> K>(
-    container: &D,
+pub fn determine_id_candidates<K: Ord, D: EntryData, F: FnMut(&Identifier) -> K>(
+    container: D,
     mut score: F,
     candidate_canonical: Option<MappedKey>,
     candidate_reference: Option<MappedKey>,

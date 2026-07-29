@@ -2,7 +2,9 @@ mod key;
 
 use anyhow::bail;
 use autobib_entry::{
-    Normalization, Normalize, data::MutableEntryData, v0::LegacyEntryData as RawEntryData,
+    Archive,
+    data::{MutableEntryData, Normalization, Normalize},
+    v0::ArchivedEntryData,
 };
 use nonempty::NonEmpty;
 
@@ -26,7 +28,7 @@ use crate::{
 /// The fundamental record type for a record in the 'Records' table, with data depending on the
 /// data type of the row.
 #[derive(Debug)]
-pub struct KeyedRecord<D = Box<RawEntryData>, S = String> {
+pub struct KeyedRecord<D = Box<ArchivedEntryData>, S = String> {
     /// The original key.
     pub key: S,
     /// The record.
@@ -215,7 +217,7 @@ fn get_record_recursive<'conn, O, C: Client>(
         missing = match get_remote_response(client, history.last())? {
             RemoteResponse::Data(mut data) => {
                 data.normalize(normalization);
-                let raw_record_data = RawEntryData::from_entry_data(&data);
+                let raw_record_data = ArchivedEntryData::from_entry_data(&data);
 
                 // SAFETY: the provided canonical identifier is present in the provided references
                 let row =
@@ -234,7 +236,7 @@ fn get_record_recursive<'conn, O, C: Client>(
                     KeyedRecord {
                         key,
                         record: Record {
-                            data: RawEntryData::from_entry_data(&data),
+                            data: ArchivedEntryData::from_entry_data(&data),
                             canonical,
                             modified: row.modified,
                         },
@@ -332,11 +334,11 @@ pub fn revive_void<'conn, C: Client>(
     canonical: &Identifier,
     client: &C,
     normalization: &Normalization,
-) -> Result<(Box<RawEntryData>, Updated<'conn, IsEntry>), Error> {
+) -> Result<(Box<ArchivedEntryData>, Updated<'conn, IsEntry>), Error> {
     match get_remote_response(client, canonical)? {
         RemoteResponse::Data(mut mutable_entry_data) => {
             mutable_entry_data.normalize(normalization);
-            let data = RawEntryData::from_entry_data(&mutable_entry_data);
+            let data = ArchivedEntryData::from_entry_data(&mutable_entry_data);
             let entry = void.reinsert(&data)?;
             Ok((data, entry))
         }

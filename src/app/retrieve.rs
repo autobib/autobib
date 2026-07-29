@@ -6,7 +6,6 @@ use std::{
     convert::Infallible,
 };
 
-use autobib_entry::v0::LegacyEntryData as RawEntryData;
 use nonempty::NonEmpty;
 use serde_bibtex::token::is_entry_key;
 
@@ -30,7 +29,7 @@ pub fn retrieve_entries<T: IntoIterator<Item = Key>, C: Client>(
     client: &C,
     ignore_null: bool,
     config: &Config,
-) -> BTreeMap<Identifier, NonEmpty<BibtexEntry<Box<RawEntryData>>>> {
+) -> BTreeMap<Identifier, NonEmpty<BibtexEntry>> {
     let valid_entries = ids.into_iter().filter_map(|id| {
         retrieve_single_entry(record_db, id, client, ignore_null, config, |r, s| {
             Ok(try_data_to_entry(r, s))
@@ -69,7 +68,7 @@ pub fn retrieve_entries_read_only<T: IntoIterator<Item = Key>>(
     record_db: &mut RecordDatabase,
     ignore_null: bool,
     config: &Config,
-) -> BTreeMap<Identifier, NonEmpty<BibtexEntry<Box<RawEntryData>>>> {
+) -> BTreeMap<Identifier, NonEmpty<BibtexEntry>> {
     let valid_entries = ids.into_iter().filter_map(|key| {
         retrieve_single_entry_read_only(record_db, key, ignore_null, config, |r, s| {
             Ok(try_data_to_entry(r, s))
@@ -213,20 +212,20 @@ where
 }
 
 /// Helper function for converting data to an entry with validation.
-pub fn try_data_to_entry(
+pub fn try_data_to_entry<D, S: AsRef<str>>(
     KeyedRecord {
         key,
         record: Record {
             data, canonical, ..
         },
-    }: KeyedRecord,
+    }: KeyedRecord<D, S>,
     row: &State<'_, IsEntry>,
-) -> Option<(BibtexEntry<Box<RawEntryData>>, Identifier)> {
+) -> Option<(BibtexEntry<D, S>, Identifier<S>)> {
     validate_bibtex_key(key, row).map(|key| (BibtexEntry::new(key, data), canonical))
 }
 
 /// Validate a BibTeX key, logging errors and suggesting fixes.
-fn validate_bibtex_key(key: String, row: &State<IsEntry>) -> Option<EntryKey<String>> {
+fn validate_bibtex_key<S: AsRef<str>>(key: S, row: &State<IsEntry>) -> Option<EntryKey<S>> {
     match EntryKey::try_new(key) {
         Ok(bibtex_key) => Some(bibtex_key),
         Err(parse_result) => {
@@ -256,14 +255,13 @@ fn validate_bibtex_key(key: String, row: &State<IsEntry>) -> Option<EntryKey<Str
 }
 
 /// Group valid entries by their canonical id in order to catch duplicate entries.
-fn group_valid_entries_by_canonical<T>(
+fn group_valid_entries_by_canonical<T, D, S, I: Ord>(
     valid_entries: T,
-) -> BTreeMap<Identifier, NonEmpty<BibtexEntry<Box<RawEntryData>>>>
+) -> BTreeMap<Identifier<I>, NonEmpty<BibtexEntry<D, S>>>
 where
-    T: IntoIterator<Item = (BibtexEntry<Box<RawEntryData>>, Identifier)>,
+    T: IntoIterator<Item = (BibtexEntry<D, S>, Identifier<I>)>,
 {
-    let mut grouped_entries: BTreeMap<Identifier, NonEmpty<BibtexEntry<Box<RawEntryData>>>> =
-        BTreeMap::new();
+    let mut grouped_entries: BTreeMap<Identifier<I>, NonEmpty<BibtexEntry<D, S>>> = BTreeMap::new();
     for (bibtex_entry, canonical) in valid_entries {
         match grouped_entries.entry(canonical) {
             Occupied(e) => e.into_mut().push(bibtex_entry),

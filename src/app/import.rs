@@ -5,7 +5,9 @@ use std::{
 
 use anyhow::anyhow;
 use autobib_entry::{
-    Normalization, Normalize, data::MutableEntryData, v0::LegacyEntryData as RawEntryData,
+    Archive,
+    data::{MutableEntryData, Normalization, Normalize},
+    v0::ArchivedEntryData,
 };
 
 use crate::{
@@ -375,7 +377,7 @@ where
                     &id,
                 )?;
 
-                let new_data = RawEntryData::from_entry_data(&existing_record);
+                let new_data = ArchivedEntryData::from_entry_data(&existing_record);
 
                 info!("Updating data for record with identifier '{id}'");
                 let new_row = row.modify(&new_data)?.state;
@@ -417,7 +419,7 @@ where
 
             info!("Re-inserting record with canonical id '{id}'");
             let row = void
-                .reinsert(&RawEntryData::from_entry_data(&entry.record_data))?
+                .reinsert(&ArchivedEntryData::from_entry_data(&entry.record_data))?
                 .state;
             create_alias_and_commit(row, id.as_key(), import_config.no_alias, maybe_alias)?;
             Ok(ImportOutcome::Success)

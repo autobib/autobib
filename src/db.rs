@@ -21,7 +21,7 @@ mod validate;
 
 use std::path::Path;
 
-use autobib_entry::v0::LegacyEntryData as RawEntryData;
+use autobib_entry::v0::ArchivedEntryData;
 use chrono::{Local, TimeDelta};
 use delegate::delegate;
 use functions::{AppFunction, register_application_function};
@@ -471,7 +471,7 @@ impl RecordDatabase {
         params: impl rusqlite::Params,
     ) -> Result<(), SnapshotMapErr<E>>
     where
-        F: FnMut(Record<&RawEntryData, &str>) -> Result<(), E>,
+        F: FnMut(Record<&ArchivedEntryData, &str>) -> Result<(), E>,
     {
         let mut retriever = self.conn.prepare(stmt)?;
         let mut rows = retriever.query(params)?;
@@ -503,7 +503,7 @@ impl RecordDatabase {
     /// the function exits early.
     pub fn access_active_records<E, F>(&mut self, f: F) -> Result<(), SnapshotMapErr<E>>
     where
-        F: FnMut(Record<&RawEntryData, &str>) -> Result<(), E>,
+        F: FnMut(Record<&ArchivedEntryData, &str>) -> Result<(), E>,
     {
         self.access_impl(
             f,
@@ -546,7 +546,7 @@ impl RecordDatabase {
         f: F,
     ) -> Result<(), SnapshotMapErr<E>>
     where
-        F: FnMut(Record<&RawEntryData, &str>) -> Result<(), E>,
+        F: FnMut(Record<&ArchivedEntryData, &str>) -> Result<(), E>,
     {
         self.access_impl(
             f,
@@ -590,7 +590,7 @@ impl RecordDatabase {
         mut f: F,
     ) -> Result<(), SnapshotMapErr<E>>
     where
-        F: FnMut(KeyedRecord<&RawEntryData, &str>) -> Result<(), E>,
+        F: FnMut(KeyedRecord<&ArchivedEntryData, &str>) -> Result<(), E>,
     {
         let mut retriever = self
             .conn
