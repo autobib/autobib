@@ -986,7 +986,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         if json {
                             serde_json::to_writer(&mut writer, &rev)?;
                         } else {
-                            writeln!(writer, "{}", state.rev())?;
+                            writeln!(writer, "{rev}")?;
                         }
                     }
                 }
