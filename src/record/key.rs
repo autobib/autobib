@@ -149,7 +149,6 @@ impl From<&str> for Key {
 /// The implementation is very cheap and does no validation.
 impl From<String> for Key {
     fn from(full_id: String) -> Self {
-        // let full_id: String = s.trim().into();
         let provider_len = full_id.find(':');
         Self {
             full_id,
@@ -413,6 +412,15 @@ impl Identifier {
     pub fn as_deref(&self) -> Identifier<&str> {
         Identifier {
             full_id: &self.full_id,
+            provider_len: self.provider_len,
+        }
+    }
+}
+
+impl Identifier<&str> {
+    pub fn as_owned(&self) -> Identifier {
+        Identifier {
+            full_id: self.full_id.into(),
             provider_len: self.provider_len,
         }
     }

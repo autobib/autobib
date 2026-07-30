@@ -5,11 +5,10 @@
 use std::fmt;
 
 use autobib_entry::data::EntryData;
-use chrono::{DateTime, Local};
 use crossterm::style::{ContentStyle, StyledContent, Stylize};
 
-use super::{ArbitraryDataRef, InRecordsTable, Record, RevisionId, State, Version};
-use crate::{logger::LogDisplay, record::Identifier};
+use super::{ArbitraryDataRef, InRecordsTable, Record, State, Tagged, Version};
+use crate::logger::LogDisplay;
 
 impl<'conn, I: InRecordsTable> LogDisplay for State<'conn, I> {
     fn log_display(&self, styled: bool, mut buf: impl std::io::Write) -> anyhow::Result<()> {
@@ -23,37 +22,31 @@ impl<'conn, I: InRecordsTable> LogDisplay for State<'conn, I> {
 pub struct RecordRowDisplay<'a> {
     /// Whether or not the display should be 'styled' (using colours, bold, etc.)
     pub styled: bool,
-    pub(super) data: ArbitraryDataRef<'a>,
-    pub(super) modified: DateTime<Local>,
-    rev_id: RevisionId,
-    canonical: Identifier<&'a str>,
+    pub(super) tagged: Tagged<Record<ArbitraryDataRef<'a>, &'a str>>,
 }
 
 impl<'a> RecordRowDisplay<'a> {
     /// Construct this display adapter by borrowing data from a [`Version`].
     pub fn from_version(version: &'a Version<'_, '_>, styled: bool) -> Self {
-        Self {
-            data: version.row.data.as_deref(),
-            modified: version.row.modified,
-            rev_id: version.rev_id(),
-            canonical: version.row.canonical.as_deref(),
-            styled,
-        }
+        let inner = Record {
+            data: version.hist.record.data.as_deref(),
+            modified: version.hist.record.modified,
+            canonical: version.hist.record.canonical.as_deref(),
+        };
+
+        let tagged = Tagged {
+            rev: version.rev_id(),
+            inner,
+        };
+        Self { tagged, styled }
     }
 
     /// Construct this display adapter by borrowing data the components of a row.
     pub fn from_borrowed_row(
-        record_row: Record<ArbitraryDataRef<'a>, &'a str>,
-        rev_id: RevisionId,
+        tagged: Tagged<Record<ArbitraryDataRef<'a>, &'a str>>,
         styled: bool,
     ) -> Self {
-        Self {
-            data: record_row.data,
-            canonical: record_row.canonical,
-            modified: record_row.modified,
-            rev_id,
-            styled,
-        }
+        Self { tagged, styled }
     }
 }
 
@@ -65,7 +58,7 @@ impl<'a> fmt::Display for RecordRowDisplay<'a> {
             ContentStyle::default()
         };
 
-        let hex = StyledContent::new(style, self.rev_id.fmt_pretty());
+        let hex = StyledContent::new(style, self.tagged.rev.fmt_pretty());
 
         let style = if self.styled {
             ContentStyle::default().italic().grey()
@@ -73,26 +66,27 @@ impl<'a> fmt::Display for RecordRowDisplay<'a> {
             ContentStyle::default()
         };
 
-        let datestamp = StyledContent::new(style, self.modified.format("on %b %d %Y at %X%Z"));
+        let datestamp = StyledContent::new(
+            style,
+            self.tagged.inner.modified.format("on %b %d %Y at %X%Z"),
+        );
 
         static PREFIX: &str = "  ";
-
-        match &self.data {
+        let canonical = &self.tagged.inner.canonical;
+        match &self.tagged.inner.data {
             ArbitraryDataRef::Entry(raw_entry_data) => {
                 writeln!(buf, "{hex} {datestamp}\n")?;
                 if self.styled {
                     writeln!(
                         buf,
-                        "{PREFIX}@{}{{{},",
+                        "{PREFIX}@{}{{{canonical},",
                         raw_entry_data.entry_type().inner().green(),
-                        self.canonical
                     )?;
                 } else {
                     writeln!(
                         buf,
-                        "{PREFIX}@{}{{{},",
+                        "{PREFIX}@{}{{{canonical},",
                         raw_entry_data.entry_type(),
-                        self.canonical
                     )?;
                 }
                 for (key, val) in raw_entry_data.fields() {
@@ -109,15 +103,15 @@ impl<'a> fmt::Display for RecordRowDisplay<'a> {
             ArbitraryDataRef::Deleted(replacement) => {
                 writeln!(buf, "{hex} {datestamp}\n")?;
                 if let Some(id) = replacement {
-                    write!(buf, "{PREFIX}Replaced '{}' with '{id}'", self.canonical)?;
+                    write!(buf, "{PREFIX}Replaced '{canonical}' with '{id}'")?;
                 } else {
-                    write!(buf, "{PREFIX}Deleted '{}'", self.canonical)?;
+                    write!(buf, "{PREFIX}Deleted '{canonical}'")?;
                 }
                 Ok(())
             }
             ArbitraryDataRef::Void => {
                 writeln!(buf, "{hex}\n")?;
-                write!(buf, "{PREFIX}Void '{}'", self.canonical)
+                write!(buf, "{PREFIX}Void '{canonical}'")
             }
         }
     }

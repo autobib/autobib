@@ -9,6 +9,7 @@ use crate::{
     config::Config,
     db::{
         RecordDatabase,
+        select::{MapRow, col},
         state::{IsEntry, Record, State},
     },
     entry::BibtexEntry,
@@ -162,7 +163,35 @@ impl<'r, W: io::Write + ?Sized> Output for TemplateOutput<'r, W> {
     }
 }
 
+impl<'a, Q, W> MapRow<Q> for TemplateOutput<'a, W>
+where
+    Q: col::Name + col::DataArbitrary + col::Canonical + col::Modified + col::DataEntry,
+    W: io::Write + ?Sized,
+{
+    type Access<'r> = KeyedRecord;
+
+    type Error = io::Error;
+
+    fn map<'r>(&mut self, access: Self::Access<'r>) -> Result<(), Self::Error> {
+        self.write_item(access)
+    }
+}
+
 pub struct TemplateRowOutput<'r, W: ?Sized>(TemplateOutputInner<'r, W>);
+
+impl<'a, Q, W> MapRow<Q> for TemplateRowOutput<'a, W>
+where
+    Q: col::DataArbitrary + col::Canonical + col::Modified + col::DataEntry,
+    W: io::Write + ?Sized,
+{
+    type Access<'r> = Record;
+
+    type Error = io::Error;
+
+    fn map<'r>(&mut self, access: Self::Access<'r>) -> Result<(), Self::Error> {
+        self.write_item(access)
+    }
+}
 
 impl<'r, W: io::Write + ?Sized> TemplateRowOutput<'r, W> {
     pub fn new(strict: bool, template: Template, writer: &'r mut W, sep: &'r str) -> Self {

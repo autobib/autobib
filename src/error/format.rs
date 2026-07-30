@@ -42,8 +42,4 @@ pub enum KeyParseErrorKind {
     Trailing(String),
     #[error("Expected {0}, but reached the end of the expression")]
     UnexpectedEof(&'static str),
-    #[error("Must be non-empty.")]
-    Empty,
-    #[error("{0}")]
-    Custom(&'static str),
 }

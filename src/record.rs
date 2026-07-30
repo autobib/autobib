@@ -28,16 +28,16 @@ use crate::{
 /// The fundamental record type for a record in the 'Records' table, with data depending on the
 /// data type of the row.
 #[derive(Debug)]
-pub struct KeyedRecord<D = Box<ArchivedEntryData>, S = String> {
+pub struct KeyedRecord<R = Record, K = String> {
     /// The original key.
-    pub key: S,
+    pub key: K,
     /// The record.
-    pub record: Record<D, S>,
+    pub record: R,
 }
 
-impl<D, S> From<KeyedRecord<D, S>> for Record<D, S> {
-    fn from(record: KeyedRecord<D, S>) -> Self {
-        record.record
+impl<D, S, K> From<KeyedRecord<Self, K>> for Record<D, S> {
+    fn from(value: KeyedRecord<Self, K>) -> Self {
+        value.record
     }
 }
 
@@ -57,7 +57,10 @@ pub enum RecordResponse<'conn> {
     /// The record exists.
     Exists(KeyedRecord, State<'conn, IsEntry>),
     /// The record was deleted.
-    Deleted(KeyedRecord<Option<Identifier>>, State<'conn, IsDeleted>),
+    Deleted(
+        KeyedRecord<Record<Option<Identifier>>>,
+        State<'conn, IsDeleted>,
+    ),
     /// The record is null.
     NullId(Identifier, State<'conn, IsNull>),
     /// The identifier has an invalid form.

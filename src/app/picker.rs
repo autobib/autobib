@@ -9,7 +9,7 @@ use nucleo_picker::{Picker, PickerOptions, Render};
 use walkdir::{DirEntry, WalkDir};
 
 use crate::{
-    db::{RecordDatabase, state::Record},
+    db::{RecordDatabase, select::Select, state::Record},
     format::Template,
     path_hash::AttachmentRoot,
 };
@@ -44,7 +44,7 @@ pub fn choose_attachment(att_data: &AttachmentData) -> Picker<DirEntry, DirEntry
 
 /// Returns a picker which returns the record attachment data associated with the picked item.
 pub fn choose_attachment_path<F: FnMut(&Path) -> bool + Send + 'static>(
-    mut record_db: RecordDatabase,
+    record_db: RecordDatabase,
     template: Template,
     strict: bool,
     attachment_root: AttachmentRoot<false>,
@@ -105,7 +105,7 @@ pub fn choose_attachment_path<F: FnMut(&Path) -> bool + Send + 'static>(
 /// handle for the thread which is populating the picker.
 #[allow(clippy::type_complexity)]
 pub fn choose_canonical_id(
-    mut record_db: RecordDatabase,
+    record_db: RecordDatabase,
     template: Template,
     strict: bool,
     max_selection_count: Option<NonZero<u32>>,

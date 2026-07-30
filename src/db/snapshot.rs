@@ -1,79 +1,20 @@
-use std::{convert::Infallible, error, fmt, str::from_utf8};
+use chrono::{DateTime, Local, TimeDelta};
 
-use chrono::{DateTime, Local};
-use rusqlite::types::ValueRef;
-
+use super::{Tx, state::RevisionId};
 use crate::{
     db::{AsKey, state::create_rewind_target},
     logger::info,
-    record::Identifier,
-};
-
-use super::{
-    Tx,
-    state::{ArbitraryDataRef, Record, RevisionId},
+    record::{Alias, LegacyAlias},
 };
 
 pub struct Snapshot<'conn> {
     pub(super) tx: Tx<'conn>,
 }
 
-#[derive(Debug)]
-pub enum SnapshotMapErr<E> {
-    CallbackFailed(E),
-    DatabaseError(rusqlite::Error),
-}
-
-impl From<SnapshotMapErr<Infallible>> for rusqlite::Error {
-    fn from(value: SnapshotMapErr<Infallible>) -> Self {
-        let SnapshotMapErr::DatabaseError(err) = value;
-        err
-    }
-}
-
-impl<E> From<rusqlite::Error> for SnapshotMapErr<E> {
-    fn from(err: rusqlite::Error) -> Self {
-        Self::DatabaseError(err)
-    }
-}
-
-impl<E: fmt::Display> fmt::Display for SnapshotMapErr<E> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::CallbackFailed(error) => error.fmt(f),
-            Self::DatabaseError(error) => error.fmt(f),
-        }
-    }
-}
-
-impl<E: error::Error> error::Error for SnapshotMapErr<E> {}
-
 impl<'conn> Snapshot<'conn> {
     /// Commit the changes made in this snapshot.
     pub fn commit(self) -> rusqlite::Result<()> {
         self.tx.commit()
-    }
-
-    /// Iterate over all entries in the Records table and apply the fallible closure to the data
-    /// for each key. If an error is returned by the closure, it is immediately propagated and
-    /// the function exits early.
-    pub fn map_history<E, F>(&self, limit: Option<u32>, mut f: F) -> Result<(), SnapshotMapErr<E>>
-    where
-        F: FnMut(Record<ArbitraryDataRef<'_>, &'_ str>, RevisionId) -> Result<(), E>,
-    {
-        // SQLite uses `-1` to indicate no limit
-        let limit: i64 = limit.map(Into::into).unwrap_or(-1);
-        let mut retriever = self
-            .tx
-            .prepare("SELECT rev, canonical, modified, data, variant FROM Records WHERE variant != 2 ORDER BY modified DESC LIMIT ?1")?;
-
-        let mut rows = retriever.query([limit])?;
-        while let Some(row) = rows.next()? {
-            let record_row = Record::borrow_from_row_unchecked(row);
-            let rev_id = row.get_unwrap("rev");
-            f(record_row, rev_id).map_err(SnapshotMapErr::CallbackFailed)?;
-        }
-        Ok(())
     }
 
     /// Delete all 'orphaned' records.
@@ -274,90 +215,88 @@ WHERE variant = 1
         Ok(())
     }
 
-    /// Iterate over all active entries in the Records table, adding the revisions to the list
-    /// for which the provided closure returns true.
-    pub fn filter_active_keys<F, T>(&self, mut f: F, buffer: &mut T) -> rusqlite::Result<()>
-    where
-        F: FnMut(Record<ArbitraryDataRef<'_>, &'_ str>) -> bool,
-        T: Extend<RevisionId>,
-    {
-        let mut retriever = self
+    /// Rename an alias, returning the status of the renaming.
+    pub fn rename_alias(
+        &mut self,
+        old: &LegacyAlias,
+        new: &Alias,
+    ) -> Result<RenameAliasResult, rusqlite::Error> {
+        let mut updater = self
             .tx
-            .prepare("SELECT rev, canonical, modified, data, variant FROM Records WHERE rev IN (SELECT record_rev FROM Keys)")?;
-
-        let rows = retriever.query_map([], move |row| {
-            let record_row = Record::borrow_from_row_unchecked(row);
-            let rev_id: RevisionId = row.get_unwrap("rev");
-            Ok(if f(record_row) { Some(rev_id) } else { None })
-        })?;
-        buffer.extend(rows.filter_map(|row| match row {
-            Ok(Some(t)) => Some(t),
-            // err is unreachable here because of the implementation in
-            // query_map above, which panics immediately if there is an issue
-            _ => None,
-        }));
-        Ok(())
-    }
-
-    /// Iterate over all active canonical identifiers and apply the fallible closure `f` to each
-    /// remote id.
-    pub fn access_canonical_identifiers<E, F: FnMut(Identifier<&str>) -> Result<(), E>>(
-        &self,
-        deleted: bool,
-        pattern: &str,
-        mut f: F,
-    ) -> Result<(), SnapshotMapErr<E>> {
-        let mut selector = self.tx.prepare("SELECT canonical FROM Records WHERE rev IN (SELECT record_rev FROM Keys) AND variant = ?1  AND canonical GLOB ?2")?;
-        let variant = if deleted { 1 } else { 0 };
-
-        let mut rows = selector.query((variant, pattern))?;
-        while let Some(row) = rows.next()? {
-            if let ValueRef::Text(bytes) = row.get_ref_unwrap(0) {
-                f(Identifier::from_string_unchecked(from_utf8(bytes).unwrap()))
-                    .map_err(SnapshotMapErr::CallbackFailed)?;
-            } else {
-                panic!("Keys table has unexpected schema: column 'name' is not TEXT!");
-            }
+            .prepare("UPDATE Keys SET name = ?1 WHERE name = ?2")?;
+        match flatten_constraint_violation(updater.execute((new.as_key(), old.as_ref())))? {
+            Constraint::Satisfied(_) => Ok(RenameAliasResult::Renamed),
+            Constraint::Violated => Ok(RenameAliasResult::TargetExists),
         }
-
-        Ok(())
     }
 
-    /// Iterate over all names in the Keys table and apply the fallible closure
-    /// `f` to each key. If an error is returned by the closure, it is immediately propagated and
-    /// the function exits early.
-    pub fn access_identifiers<E, F: FnMut(&str) -> Result<(), E>>(
-        &self,
-        deleted: bool,
-        pattern: &str,
-        mut f: F,
-    ) -> Result<(), SnapshotMapErr<E>> {
-        let mut selector =
-            self.tx.prepare("SELECT name FROM Keys INNER JOIN Records ON Keys.record_rev = Records.rev WHERE Records.variant = ?1 AND Keys.name GLOB ?2")?;
-        let variant = if deleted { 1 } else { 0 };
-
-        let mut rows = selector.query((variant, pattern))?;
-        while let Some(row) = rows.next()? {
-            let ValueRef::Text(bytes) = row.get_ref_unwrap(0) else {
-                panic!("Keys table has unexpected schema: column 'name' is not a TEXT!");
-            };
-            let key = from_utf8(bytes).unwrap();
-            f(key).map_err(SnapshotMapErr::CallbackFailed)?;
+    /// Delete an alias, returning the status of the deletion.
+    pub fn delete_alias(
+        &mut self,
+        alias: &LegacyAlias,
+    ) -> Result<DeleteAliasResult, rusqlite::Error> {
+        let mut deleter = self.tx.prepare("DELETE FROM Keys WHERE name = ?1")?;
+        if deleter.execute((alias.as_ref(),))? == 0 {
+            Ok(DeleteAliasResult::Missing)
+        } else {
+            Ok(DeleteAliasResult::Deleted)
         }
+    }
 
+    /// Delete all rows from `NullRecords`.
+    pub fn evict_cache(&mut self) -> Result<(), rusqlite::Error> {
+        let num_deleted = self.tx.prepare("DELETE FROM NullRecords")?.execute(())?;
+        info!("Removed {num_deleted} cached null records.");
         Ok(())
     }
 
-    pub fn equivalent_ids<I: AsKey, F>(&self, id: &I, mut f: F) -> rusqlite::Result<()>
-    where
-        F: FnMut(Identifier),
-    {
-        for id in self.tx.prepare("SELECT name FROM Keys WHERE record_rev = (SELECT record_rev FROM Keys WHERE name = ?1) AND instr(name, ':') != 0")?.query_map([id.as_key()], |row| {
-            Ok(Identifier::from_string_unchecked(row.get(0)?))
-        })? {
-            f(id?);
-        }
-
+    /// Delete all rows from `NullRecords` which are at least a given age (in seconds)
+    pub fn evict_cache_max_age(&mut self, seconds: u32) -> Result<(), rusqlite::Error> {
+        let threshold = Local::now() - TimeDelta::seconds(seconds.into());
+        let num_deleted = self
+            .tx
+            .prepare("DELETE FROM NullRecords WHERE attempted <= ?1")?
+            .execute((threshold,))?;
+        info!("Removed {num_deleted} cached null records.");
         Ok(())
     }
+}
+
+/// Take the result of a SQLite operation and extract a constraint violation.
+pub fn flatten_constraint_violation<T>(
+    res: Result<T, rusqlite::Error>,
+) -> Result<Constraint<T>, rusqlite::Error> {
+    match res {
+        Ok(t) => Ok(Constraint::Satisfied(t)),
+        Err(err) => match err.sqlite_error_code() {
+            Some(rusqlite::ErrorCode::ConstraintViolation) => Ok(Constraint::Violated),
+            _ => Err(err),
+        },
+    }
+}
+
+/// The outcome of flattening a constraint violation error.
+pub enum Constraint<T> {
+    /// All constraints were satisfied during the database operation; result of the operation.
+    Satisfied(T),
+    /// A constraint was not satisfied.
+    Violated,
+}
+
+/// The result of renaming an alias.
+#[must_use]
+pub enum RenameAliasResult {
+    /// The alias was successfully renamed.
+    Renamed,
+    /// The new alias name already exists.
+    TargetExists,
+}
+
+/// The result of renaming an alias.
+#[must_use]
+pub enum DeleteAliasResult {
+    /// The alias was successfully renamed.
+    Deleted,
+    /// The alias did not exist.
+    Missing,
 }
