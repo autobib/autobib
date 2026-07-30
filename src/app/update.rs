@@ -13,6 +13,7 @@ use crate::{
     app::{cli::OnConflict, merge_record_data},
     db::{
         Tx,
+        select::{SelectOne, stmt},
         state::{ArbitraryData, DatabaseResponse, Record},
     },
     entry::BibtexEntry,
@@ -185,11 +186,11 @@ pub fn data_from_rev(
     tx: &Tx<'_>,
     rev: crate::db::state::RevisionId,
 ) -> Result<MutableEntryData, anyhow::Error> {
-    let Some(row) = Record::load(tx, rev)? else {
+    let Some(data) = stmt::GetArbitraryRecord::select_one(tx, rev)? else {
         bail!("Revision '{rev}' does not exist in the database!");
     };
 
-    match row.data {
+    match data {
         ArbitraryData::Entry(raw_entry_data) => {
             Ok(MutableEntryData::from_entry_data(&raw_entry_data))
         }

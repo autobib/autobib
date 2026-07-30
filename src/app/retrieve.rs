@@ -218,7 +218,7 @@ pub fn try_data_to_entry<D, S: AsRef<str>>(
         record: Record {
             data, canonical, ..
         },
-    }: KeyedRecord<D, S>,
+    }: KeyedRecord<Record<D, S>, S>,
     row: &State<'_, IsEntry>,
 ) -> Option<(BibtexEntry<D, S>, Identifier<S>)> {
     validate_bibtex_key(key, row).map(|key| (BibtexEntry::new(key, data), canonical))

@@ -2,12 +2,15 @@ use std::{cmp::Reverse, fmt, io};
 
 use autobib_entry::{Archive, data::EntryDataSerializer, v1::ArchivedEntryData};
 use chrono::{DateTime, Local};
-use rusqlite::{OptionalExtension, Row};
+use rusqlite::OptionalExtension;
 use serde::{Serialize, ser::SerializeStruct};
 
 use crate::{
     Alias, Identifier,
-    db::{AsKey, Constraint, flatten_constraint_violation, get_row_id},
+    db::{
+        AsKey, Constraint, flatten_constraint_violation, get_row_id,
+        select::{AccessRowUnchecked, SelectOneUnchecked, stmt},
+    },
     logger::{debug, info},
 };
 
@@ -16,7 +19,7 @@ use super::{IsMissing, State, Tx, Updated, version::RevisionId};
 /// Any state which represents a row in the 'Records' table.
 pub trait InRecordsTable {
     /// The data associated with the row.
-    type Data: AsRecordData + FromBytesAndVariant;
+    type Data: AsRecordData + for<'a> AccessRowUnchecked<'a>;
 
     /// Convert to a row id.
     fn row_id(&self) -> i64;
@@ -28,12 +31,6 @@ pub trait NotVoid: InRecordsTable {}
 /// Any state which represents a row in the 'Records' table which is not an entry.
 pub trait NotEntry: InRecordsTable {}
 
-/// A wrapper trait for data which can be read from the 'data' and 'variant' columns of the
-/// 'Records' table.
-pub trait FromBytesAndVariant: Sized {
-    fn from_bytes_and_variant(bytes: Vec<u8>, variant: i64) -> Self;
-}
-
 /// The data for a row in the 'Records' table, not including information about the parents.
 #[derive(Debug)]
 pub struct Record<D = Box<ArchivedEntryData>, S = String> {
@@ -43,33 +40,6 @@ pub struct Record<D = Box<ArchivedEntryData>, S = String> {
     pub canonical: Identifier<S>,
     /// When the record was modified.
     pub modified: DateTime<Local>,
-}
-
-impl<D: FromBytesAndVariant> Record<D> {
-    /// Load from a row in the 'Records' table. The query which produced the row must contain the following columns:
-    ///
-    /// - `canonical`
-    /// - `modified`
-    /// - `data`
-    /// - `variant`
-    pub(in crate::db) fn from_row_unchecked(row: &Row<'_>) -> Self {
-        let data = D::from_bytes_and_variant(row.get_unwrap("data"), row.get_unwrap("variant"));
-        let canonical = Identifier::from_string_unchecked(row.get_unwrap("canonical"));
-        let modified = row.get_unwrap("modified");
-
-        Self {
-            data,
-            modified,
-            canonical,
-        }
-    }
-
-    /// Load from a row id, which the caller promises is a valid row ID in the 'Records' table and
-    /// moreover has type `D`.
-    pub(super) fn load_unchecked(tx: &Tx<'_>, row_id: i64) -> rusqlite::Result<Self> {
-        tx.prepare_cached("SELECT canonical, modified, data, variant FROM Records WHERE rev = ?1")?
-            .query_row((row_id,), |row| Ok(Self::from_row_unchecked(row)))
-    }
 }
 
 impl<D: AsRecordData> Record<D> {
@@ -113,14 +83,6 @@ impl<D: AsRecordData> Record<D> {
     }
 }
 
-impl Record<ArbitraryData> {
-    /// Load data from a revision id, returning `None` if the ID does not correspond to a row in
-    /// the 'Records' table.
-    pub fn load(tx: &Tx<'_>, rev: RevisionId) -> rusqlite::Result<Option<Self>> {
-        Self::load_unchecked(tx, rev.0).optional()
-    }
-}
-
 impl<D: AsRecordData, T: AsRef<str>> Serialize for Record<D, T> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -136,26 +98,25 @@ impl<D: AsRecordData, T: AsRef<str>> Serialize for Record<D, T> {
     }
 }
 
-/// The data for a row in the 'Records' table, also including information about the parents.
-pub struct HistRecord<D> {
-    pub record: Record<D>,
-    pub(super) parent: Option<i64>,
+/// An inner type along with its revision id.
+#[derive(Debug)]
+pub struct Tagged<I> {
+    pub inner: I,
+    pub rev: RevisionId,
 }
 
-impl<D: FromBytesAndVariant> HistRecord<D> {
-    pub(super) fn from_row_unchecked(row: &Row<'_>) -> Self {
-        let parent = row.get_unwrap("parent_rev");
-        let record = Record::from_row_unchecked(row);
+/// One of the three states that an entry can be in.
+pub enum Variant {
+    Entry,
+    Deleted,
+    Void,
+}
 
-        Self { record, parent }
-    }
-
-    pub(super) fn load_unchecked(tx: &Tx<'_>, row_id: i64) -> rusqlite::Result<Self> {
-        tx.prepare_cached(
-            "SELECT canonical, modified, data, variant, parent_rev FROM Records WHERE rev = ?1",
-        )?
-        .query_row((row_id,), |row| Ok(Self::from_row_unchecked(row)))
-    }
+/// The data for a row in the 'Records' table, also including information about the parents.
+#[derive(Debug)]
+pub struct HistRecord<D = ArbitraryData, S = String> {
+    pub record: Record<D, S>,
+    pub(in crate::db) parent: Option<i64>,
 }
 
 trait FromRowId: InRecordsTable {
@@ -203,18 +164,45 @@ pub enum ArbitraryData {
     Void,
 }
 
-impl FromBytesAndVariant for ArbitraryData {
-    fn from_bytes_and_variant(bytes: Vec<u8>, variant: i64) -> Self {
-        match variant {
-            0 => Self::Entry(Box::from_bytes_and_variant(bytes, variant)),
-            1 => Self::Deleted(Option::from_bytes_and_variant(bytes, variant)),
-            2 => Self::Void,
-            _ => panic!("Unexpected 'Records' table row variant: expected entry or deleted data."),
+impl ArbitraryData {
+    /// Get a reference to the data in this struct.
+    pub fn as_deref(&self) -> ArbitraryDataRef<'_> {
+        match self {
+            Self::Entry(raw_entry_data) => ArbitraryDataRef::Entry(raw_entry_data.as_ref()),
+            Self::Deleted(replacement) => {
+                ArbitraryDataRef::Deleted(replacement.as_ref().map(Identifier::as_deref))
+            }
+            Self::Void => ArbitraryDataRef::Void,
         }
     }
 }
 
 impl_from_row_id!(IsArbitrary, ArbitraryData);
+
+/// Equivalent to an [`ArbitraryData`], but borrows all of its data.
+#[derive(Debug)]
+pub enum ArbitraryDataRef<'r> {
+    /// Entry data.
+    Entry(&'r ArchivedEntryData),
+    /// Deleted data.
+    Deleted(Option<Identifier<&'r str>>),
+    /// Void data.
+    Void,
+}
+
+impl<'r> ArbitraryDataRef<'r> {
+    pub fn as_owned(&self) -> ArbitraryData {
+        match self {
+            Self::Entry(archived_entry_data) => {
+                ArbitraryData::Entry((*archived_entry_data).to_owned())
+            }
+            Self::Deleted(identifier) => {
+                ArbitraryData::Deleted(identifier.as_ref().map(Identifier::as_owned))
+            }
+            Self::Void => ArbitraryData::Void,
+        }
+    }
+}
 
 /// The `key` of a row in the 'Records' table which is either an `entry` or `deleted`.
 #[derive(Debug)]
@@ -223,42 +211,20 @@ pub struct IsEntryOrDeleted(pub(super) i64);
 /// The row data associated with a row in the `Records` table. The precise value depends on the
 /// `variant` column.
 #[derive(Debug)]
-pub enum EntryOrDeletedData {
+pub enum NotVoidData {
     /// Entry data.
     Entry(Box<ArchivedEntryData>),
     /// Deleted data.
     Deleted(Option<Identifier>),
 }
 
-impl FromBytesAndVariant for EntryOrDeletedData {
-    fn from_bytes_and_variant(bytes: Vec<u8>, variant: i64) -> Self {
-        match variant {
-            0 => Self::Entry(Box::<ArchivedEntryData>::from_bytes_and_variant(
-                bytes, variant,
-            )),
-            1 => Self::Deleted(Option::<Identifier>::from_bytes_and_variant(bytes, variant)),
-            _ => panic!("Unexpected 'Records' table row variant: expected entry or deleted data."),
-        }
-    }
-}
-
 impl NotVoid for IsEntryOrDeleted {}
 
-impl_from_row_id!(IsEntryOrDeleted, EntryOrDeletedData);
+impl_from_row_id!(IsEntryOrDeleted, NotVoidData);
 
 /// An entry in the 'Records' table.
 #[derive(Debug)]
 pub struct IsEntry(pub(super) i64);
-
-impl FromBytesAndVariant for Box<ArchivedEntryData> {
-    fn from_bytes_and_variant(bytes: Vec<u8>, variant: i64) -> Self {
-        assert!(
-            variant == 0,
-            "Unexpected 'Records' table row variant: expected entry data."
-        );
-        ArchivedEntryData::load(bytes.into_boxed_slice()).unwrap()
-    }
-}
 
 impl NotVoid for IsEntry {}
 
@@ -267,22 +233,6 @@ impl_from_row_id!(IsEntry, Box<ArchivedEntryData>);
 /// A deletion marker in the 'Records' table.
 #[derive(Debug)]
 pub struct IsDeleted(i64);
-
-impl FromBytesAndVariant for Option<Identifier> {
-    fn from_bytes_and_variant(bytes: Vec<u8>, variant: i64) -> Self {
-        assert!(
-            variant == 1,
-            "Unexpected 'Records' table row variant: expected deletion marker."
-        );
-        if bytes.is_empty() {
-            None
-        } else {
-            Some(Identifier::from_string_unchecked(bytes.try_into().expect(
-                "Invalid database: 'data' column for deleted row contains non-UTF8 blob data.",
-            )))
-        }
-    }
-}
 
 impl NotVoid for IsDeleted {}
 impl NotEntry for IsDeleted {}
@@ -295,15 +245,6 @@ impl_from_row_id!(IsDeleted, Option<Identifier>);
 /// is created when required to undo into the deleted state which precedes all record of the data.
 #[derive(Debug)]
 pub struct IsVoid(pub(super) i64);
-
-impl FromBytesAndVariant for () {
-    fn from_bytes_and_variant(_: Vec<u8>, variant: i64) -> Self {
-        assert!(
-            variant == 2,
-            "Unexpected 'Records' table row variant: expected void marker"
-        );
-    }
-}
 
 impl NotEntry for IsVoid {}
 
@@ -435,7 +376,7 @@ impl AsRecordData for () {
     }
 }
 
-impl AsRecordData for EntryOrDeletedData {
+impl AsRecordData for NotVoidData {
     fn data_blob(&self) -> &[u8] {
         match self {
             Self::Entry(raw_entry_data) => raw_entry_data.data_blob(),
@@ -573,7 +514,8 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
             "Retrieving 'Records' data associated with row '{}'",
             self.row_id()
         );
-        Record::load_unchecked(&self.tx, self.row_id())
+        use crate::db::select::SelectOneUnchecked;
+        stmt::GetArbitraryRecord::select_one_unchecked_cast(&self.tx, self.row_id())
     }
 
     /// Get the canonical [`Identifier`].
@@ -596,12 +538,12 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
     }
 
     /// Obtain the complete data for this row.
-    pub fn get_complete_data(&self) -> rusqlite::Result<HistRecord<I::Data>> {
+    pub fn get_complete_data(&self) -> rusqlite::Result<HistRecord<I::Data, String>> {
         debug!(
             "Retrieving 'Records' data associated with row '{}'",
             self.row_id()
         );
-        HistRecord::load_unchecked(&self.tx, self.row_id())
+        stmt::GetHist::select_one_unchecked_cast(&self.tx, self.row_id())
     }
 
     /// Forget the specific type of row that this is.
@@ -770,10 +712,14 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
     ) -> Result<RecordRowMoveResult<'conn, IsArbitrary, I, RedoError>, rusqlite::Error> {
         let version = self.current()?;
         let mut children = Vec::new();
-        version.map_children(|data, row_id| {
-            children.push((data.record.modified, row_id));
-            Ok(())
-        })?;
+        version.map_children(
+            |Tagged {
+                 inner: data,
+                 rev: row_id,
+             }| {
+                children.push((data.record.modified, row_id.0));
+            },
+        )?;
 
         if idx >= 0 {
             children.sort_unstable_by_key(|c| c.0);
@@ -813,7 +759,7 @@ impl<'conn, I: NotVoid> State<'conn, I> {
     /// Update the active row to be the parent of this row, if it exists and is an entry.
     pub fn undo(self) -> rusqlite::Result<RecordRowMoveResult<'conn, IsEntry, I, UndoError>> {
         let row_id_or_err = match self.current()?.parent()? {
-            Some(parent) => match parent.row.data {
+            Some(parent) => match parent.hist.record.data {
                 ArbitraryData::Entry(_) => Ok(parent.row_id),
                 ArbitraryData::Deleted(_) => Err(UndoError::ParentDeleted),
                 ArbitraryData::Void => Err(UndoError::ParentVoidExists),
@@ -829,7 +775,7 @@ impl<'conn, I: NotVoid> State<'conn, I> {
         self,
     ) -> rusqlite::Result<RecordRowMoveResult<'conn, IsDeleted, I, UndoError>> {
         let row_id_or_err = match self.current()?.parent()? {
-            Some(parent) => match parent.row.data {
+            Some(parent) => match parent.hist.record.data {
                 ArbitraryData::Entry(_) => Err(UndoError::ParentEntry),
                 ArbitraryData::Deleted(_) => Ok(parent.row_id),
                 ArbitraryData::Void => Err(UndoError::ParentVoidExists),
@@ -845,9 +791,9 @@ impl<'conn, I: NotVoid> State<'conn, I> {
         let root = self.current()?.root(true)?;
         let root_row_id = root.row_id;
 
-        let new_row_id = match root.row.data {
+        let new_row_id = match root.hist.record.data {
             ArbitraryData::Deleted(_) | ArbitraryData::Entry(_) => {
-                create_void_parent(root.tx, root.row_id, root.row.canonical.as_key())?
+                create_void_parent(root.tx, root.row_id, root.hist.record.canonical.as_key())?
             }
             ArbitraryData::Void => root_row_id,
         };

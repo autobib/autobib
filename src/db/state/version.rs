@@ -1,44 +1,33 @@
 use std::{fmt, str::FromStr};
 
-use rusqlite::types::{FromSql, FromSqlError, ValueRef};
+use rusqlite::{
+    ToSql,
+    types::{FromSql, FromSqlError, ToSqlOutput, ValueRef},
+};
 use serde::Serialize;
 
-use super::{ArbitraryData, HistRecord, InRecordsTable, Record, RecordRowDisplay, State, Tx};
+use super::{ArbitraryData, HistRecord, InRecordsTable, RecordRowDisplay, State, Tx};
+use crate::db::{
+    select::{FnMutMap, SelectOneUnchecked, SelectStatement, stmt},
+    state::Tagged,
+};
 
 /// A specific version of a record row.
 ///
 /// The lifetime is tied to the transaction in which the version is guaranteed to be valid.
 #[derive(Debug)]
 pub struct Version<'tx, 'conn> {
-    pub row: Record<ArbitraryData>,
+    pub hist: HistRecord,
     pub(in crate::db) row_id: i64,
     pub(super) tx: &'tx Tx<'conn>,
-    parent_row_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct RevisionId(pub(in crate::db) i64);
 
-impl Serialize for RevisionId {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serializer.collect_str(&self)
-    }
-}
-
-struct RevIdPretty<'a>(&'a RevisionId);
-
-impl fmt::Display for RevIdPretty<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "rev {}", self.0)
-    }
-}
-
-impl RevisionId {
-    pub fn fmt_pretty(&self) -> impl fmt::Display {
-        RevIdPretty(self)
+impl ToSql for RevisionId {
+    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+        self.0.to_sql()
     }
 }
 
@@ -49,6 +38,15 @@ impl FromSql for RevisionId {
         } else {
             Err(FromSqlError::InvalidType)
         }
+    }
+}
+
+impl Serialize for RevisionId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.collect_str(&self)
     }
 }
 
@@ -66,6 +64,20 @@ impl FromStr for RevisionId {
     }
 }
 
+impl RevisionId {
+    pub fn fmt_pretty(&self) -> impl fmt::Display {
+        RevIdPretty(self)
+    }
+}
+
+struct RevIdPretty<'a>(&'a RevisionId);
+
+impl fmt::Display for RevIdPretty<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "rev {}", self.0)
+    }
+}
+
 /// Changelog implementation
 impl<'conn, I: InRecordsTable> State<'conn, I> {
     /// Get the version associated with the row.
@@ -76,39 +88,29 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
 
 impl<'tx, 'conn> Version<'tx, 'conn> {
     fn init(tx: &'tx Tx<'conn>, row_id: i64) -> rusqlite::Result<Self> {
-        let row = HistRecord::load_unchecked(tx, row_id)?;
-        Ok(Self {
-            row: row.record,
-            parent_row_id: row.parent,
-            tx,
-            row_id,
-        })
+        let hist = stmt::GetHist::select_one_unchecked(tx, row_id)?;
+        Ok(Self { hist, tx, row_id })
     }
 
-    fn new(tx: &'tx Tx<'conn>, row_id: i64, row: HistRecord<super::ArbitraryData>) -> Self {
-        Self {
-            row: row.record,
-            parent_row_id: row.parent,
-            tx,
-            row_id,
-        }
+    fn new(tx: &'tx Tx<'conn>, row_id: i64, hist: HistRecord) -> Self {
+        Self { hist, tx, row_id }
     }
 
     pub fn is_deleted(&self) -> bool {
-        matches!(self.row.data, ArbitraryData::Deleted(_))
+        matches!(self.hist.record.data, ArbitraryData::Deleted(_))
     }
 
     pub fn is_entry(&self) -> bool {
-        matches!(self.row.data, ArbitraryData::Entry(_))
+        matches!(self.hist.record.data, ArbitraryData::Entry(_))
     }
 
     pub fn is_void(&self) -> bool {
-        matches!(self.row.data, ArbitraryData::Void)
+        matches!(self.hist.record.data, ArbitraryData::Void)
     }
 
     /// Returns the parent row, if any.
     pub fn parent(&self) -> rusqlite::Result<Option<Self>> {
-        match self.parent_row_id {
+        match self.hist.parent {
             Some(row_id) => Version::init(self.tx, row_id).map(Some),
             None => Ok(None),
         }
@@ -150,33 +152,28 @@ impl<'tx, 'conn> Version<'tx, 'conn> {
     /// The order in which the closure is applied is unspecified.
     pub(super) fn map_children<F>(&self, mut f: F) -> rusqlite::Result<()>
     where
-        F: FnMut(HistRecord<ArbitraryData>, i64) -> rusqlite::Result<()>,
+        F: FnMut(Tagged<HistRecord>),
     {
-        // it is better to not use an ORDER BY clause here
-        // since the number of results is in the majority of cases extremely
-        // low anyway, and vec sorting methods are ultra-optimized for small
-        // vectors
-        let mut stmt = self
-            .tx
-            .prepare_cached("SELECT rev, canonical, modified, data, variant, parent_rev FROM Records WHERE parent_rev = ?1")?;
-
-        for r in stmt.query_map([self.row_id], |row| {
-            Ok((HistRecord::from_row_unchecked(row), row.get_unwrap("rev")))
-        })? {
-            let (data, row_id) = r?;
-            f(data, row_id)?;
-        }
-
+        stmt::SelectChildren::select_map(
+            self.tx,
+            #[allow(clippy::unit_arg)]
+            FnMutMap::new(|r| Ok(f(r))),
+            RevisionId(self.row_id),
+        )?;
         Ok(())
     }
 
     /// Returns the children in an unspecified order.
     pub fn children(&self) -> rusqlite::Result<Vec<Self>> {
         let mut children = Vec::new();
-        self.map_children(|ch, row_id| {
-            children.push(Version::new(self.tx, row_id, ch));
-            Ok(())
-        })?;
+        self.map_children(
+            |Tagged {
+                 inner: ch,
+                 rev: row_id,
+             }| {
+                children.push(Version::new(self.tx, row_id.0, ch));
+            },
+        )?;
 
         Ok(children)
     }

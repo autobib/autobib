@@ -14,6 +14,7 @@
 mod functions;
 mod migrate;
 mod schema;
+pub mod select;
 mod snapshot;
 pub mod state;
 pub mod tree;
@@ -21,11 +22,8 @@ mod validate;
 
 use std::path::Path;
 
-use autobib_entry::v1::ArchivedEntryData;
-use chrono::{Local, TimeDelta};
 use delegate::delegate;
 use functions::{AppFunction, register_application_function};
-use nucleo_picker::{Injector, Render};
 use rusqlite::{Connection, DropBehavior, OpenFlags, OptionalExtension};
 
 use self::{
@@ -33,13 +31,14 @@ use self::{
     validate::{DatabaseFault, DatabaseValidator},
 };
 use crate::{
-    Alias, Identifier, Key,
+    Identifier, Key,
     config::AliasTransform,
     error::DatabaseError,
     logger::{debug, error, info, warn},
-    record::{KeyedRecord, LegacyAlias},
 };
-pub use snapshot::{Snapshot, SnapshotMapErr};
+pub use snapshot::{
+    Constraint, DeleteAliasResult, RenameAliasResult, Snapshot, flatten_constraint_violation,
+};
 
 /// The current database version expected by the application.
 pub const fn user_version() -> i32 {
@@ -110,7 +109,7 @@ mod private {
 ///
 /// This distinction is not currently enforced by types, but it may be in the future.
 ///
-/// The two identifier types, [`Alias`] and [`Identifier`], with the "Canonical" and "Reference"
+/// The two identifier types, [`Alias`](crate::record::Alias) and [`Identifier`], with the "Canonical" and "Reference"
 /// for [`Identifier`], are stored according to the following table.
 ///
 /// |            | Stored in Records | Stored in NullRecords | Stored in Keys |
@@ -168,6 +167,15 @@ impl RecordDatabase {
         Self::initialize(&mut conn, read_only)?;
 
         Ok(Self { conn })
+    }
+
+    /// Obtain a [`Snapshot`], which provides options to modify the database within a transaction.
+    /// Note that the database can be accessed immutably either through a snapshot or through this type
+    /// directly; see [`Select`](select::Select).
+    pub fn snapshot(&mut self) -> rusqlite::Result<Snapshot<'_>> {
+        Ok(Snapshot {
+            tx: self.conn.transaction()?.into(),
+        })
     }
 
     /// Enable an application function for use in subsequent SQL queries.
@@ -400,304 +408,12 @@ impl RecordDatabase {
             _ => Ok(false),
         }
     }
-
-    pub fn snapshot(&mut self) -> rusqlite::Result<Snapshot<'_>> {
-        Ok(Snapshot {
-            tx: self.conn.transaction()?.into(),
-        })
-    }
-
-    /// Send the contents of the `Records` table to a [`Picker`](`nucleo_picker::Picker`)
-    /// via its [`Injector`].
-    ///
-    /// This is a convenience wrapper around [`Self::inject_active_records`] which simply sends all row data
-    /// to the picker without filtering or mapping.
-    pub fn inject_all_active_records<R: Render<Record>>(
-        &mut self,
-        injector: Injector<Record, R>,
-    ) -> Result<(), rusqlite::Error> {
-        self.inject_active_records(injector, Some)
-    }
-
-    /// Send the active rows in the `Records` table to a [`Picker`](`nucleo_picker::Picker`)
-    /// via its [`Injector`].
-    ///
-    /// The provided `filter_map` closure plays a similar role to [`Iterator::filter_map`]
-    /// by transforming a [`Record`] into the picker item type, with the option to exclude
-    /// the item from being sent to the matcher entirely by returning [`None`].
-    ///
-    /// This is a wrapper around [`map_active_records`](Self::map_active_records).
-    pub fn inject_active_records<T, F, R>(
-        &mut self,
-        injector: Injector<T, R>,
-        mut filter_map: F,
-    ) -> Result<(), rusqlite::Error>
-    where
-        F: FnMut(Record) -> Option<T>,
-        R: Render<T>,
-    {
-        self.map_active_records(|res| {
-            if let Some(data) = filter_map(res) {
-                injector.push(data);
-            }
-            Ok(())
-        })?;
-        Ok(())
-    }
-
-    fn map_impl<E, F>(
-        &mut self,
-        mut f: F,
-        stmt: &'static str,
-        params: impl rusqlite::Params,
-    ) -> Result<(), SnapshotMapErr<E>>
-    where
-        F: FnMut(Record) -> Result<(), E>,
-    {
-        let mut retriever = self.conn.prepare(stmt)?;
-        for res in retriever.query_map(params, |row| Ok(Record::from_row_unchecked(row)))? {
-            f(res?).map_err(SnapshotMapErr::CallbackFailed)?;
-        }
-        Ok(())
-    }
-
-    /// Iterate over all active entries in the Records table and apply the fallible closure
-    /// `f` to each row. If an error is returned by the closure, it is immediately propagated and
-    /// the function exits early.
-    fn access_impl<E, F>(
-        &mut self,
-        mut f: F,
-        stmt: &'static str,
-        params: impl rusqlite::Params,
-    ) -> Result<(), SnapshotMapErr<E>>
-    where
-        F: FnMut(Record<&ArchivedEntryData, &str>) -> Result<(), E>,
-    {
-        let mut retriever = self.conn.prepare(stmt)?;
-        let mut rows = retriever.query(params)?;
-        while let Some(row) = rows.next()? {
-            let record = Record::access_row_unchecked(row);
-            f(record).map_err(SnapshotMapErr::CallbackFailed)?;
-        }
-        Ok(())
-    }
-
-    /// Iterate over all active entries in the Records table and apply the fallible closure
-    /// `f` to each row. If an error is returned by the closure, it is immediately propagated and
-    /// the function exits early.
-    pub fn map_active_records<E, F>(&mut self, f: F) -> Result<(), SnapshotMapErr<E>>
-    where
-        F: FnMut(Record) -> Result<(), E>,
-    {
-        self.map_impl(
-            f,
-            "SELECT canonical, modified, data, variant
-            FROM Records
-            WHERE rev IN (SELECT record_rev FROM Keys) AND variant = 0",
-            [],
-        )
-    }
-
-    /// Iterate over all active entries in the Records table and apply the fallible closure
-    /// `f` to each row. If an error is returned by the closure, it is immediately propagated and
-    /// the function exits early.
-    pub fn access_active_records<E, F>(&mut self, f: F) -> Result<(), SnapshotMapErr<E>>
-    where
-        F: FnMut(Record<&ArchivedEntryData, &str>) -> Result<(), E>,
-    {
-        self.access_impl(
-            f,
-            "SELECT canonical, modified, data, variant \
-            FROM Records WHERE \
-              rev IN (SELECT record_rev FROM Keys) \
-              AND variant = 0",
-            [],
-        )
-    }
-
-    /// Iterate over all active entries in the Records table and apply the fallible closure
-    /// `f` to each row. If an error is returned by the closure, it is immediately propagated and
-    /// the function exits early.
-    pub fn map_matching_canonical_active_records<E, F>(
-        &mut self,
-        glob: &str,
-        f: F,
-    ) -> Result<(), SnapshotMapErr<E>>
-    where
-        F: FnMut(Record) -> Result<(), E>,
-    {
-        self.map_impl(
-            f,
-            "SELECT canonical, modified, data, variant \
-            FROM Records WHERE \
-              rev IN (SELECT record_rev FROM Keys) \
-              AND variant = 0 \
-              AND canonical GLOB ?1",
-            [glob],
-        )
-    }
-
-    /// Iterate over all active entries in the Records table and apply the fallible closure
-    /// `f` to each row. If an error is returned by the closure, it is immediately propagated and
-    /// the function exits early.
-    pub fn access_matching_canonical_active_records<E, F>(
-        &mut self,
-        glob: &str,
-        f: F,
-    ) -> Result<(), SnapshotMapErr<E>>
-    where
-        F: FnMut(Record<&ArchivedEntryData, &str>) -> Result<(), E>,
-    {
-        self.access_impl(
-            f,
-            "SELECT canonical, modified, data, variant \
-            FROM Records WHERE \
-              rev IN (SELECT record_rev FROM Keys) \
-              AND variant = 0 \
-              AND canonical GLOB ?1",
-            [glob],
-        )
-    }
-
-    /// Iterate over all keys and apply the fallible closure `f` to each row.
-    pub fn map_matching_active_records<E, F>(
-        &mut self,
-        glob: &str,
-        mut f: F,
-    ) -> Result<(), SnapshotMapErr<E>>
-    where
-        F: FnMut(KeyedRecord) -> Result<(), E>,
-    {
-        let mut retriever = self
-            .conn
-            .prepare("SELECT name, canonical, modified, data, variant FROM Records INNER JOIN Keys ON Keys.record_rev = Records.rev WHERE Records.variant = 0 AND Keys.name GLOB ?1")?;
-
-        for res in retriever.query_map([glob], |row| {
-            let key = row.get_unwrap("name");
-            let record = Record::from_row_unchecked(row);
-            Ok(KeyedRecord { key, record })
-        })? {
-            f(res?).map_err(SnapshotMapErr::CallbackFailed)?;
-        }
-
-        Ok(())
-    }
-
-    /// Iterate over all keys and apply the fallible closure `f` to each row.
-    pub fn access_matching_active_records<E, F>(
-        &mut self,
-        glob: &str,
-        mut f: F,
-    ) -> Result<(), SnapshotMapErr<E>>
-    where
-        F: FnMut(KeyedRecord<&ArchivedEntryData, &str>) -> Result<(), E>,
-    {
-        let mut retriever = self
-            .conn
-            .prepare("SELECT name, canonical, modified, data, variant FROM Records INNER JOIN Keys ON Keys.record_rev = Records.rev WHERE Records.variant = 0 AND Keys.name GLOB ?1")?;
-
-        let mut rows = retriever.query([glob])?;
-        while let Some(row) = rows.next()? {
-            let record = Record::access_row_unchecked(row);
-            let rusqlite::types::ValueRef::Text(key) = row.get_ref_unwrap("name") else {
-                panic!("Keys table has unexpected schema: column 'name' is not a TEXT!");
-            };
-            let key = std::str::from_utf8(key).unwrap();
-            f(KeyedRecord { key, record }).map_err(SnapshotMapErr::CallbackFailed)?;
-        }
-        Ok(())
-    }
-
-    /// Rename an alias, returning the status of the renaming.
-    pub fn rename_alias(
-        &mut self,
-        old: &LegacyAlias,
-        new: &Alias,
-    ) -> Result<RenameAliasResult, rusqlite::Error> {
-        let mut updater = self
-            .conn
-            .prepare("UPDATE Keys SET name = ?1 WHERE name = ?2")?;
-        match flatten_constraint_violation(updater.execute((new.as_key(), old.as_ref())))? {
-            Constraint::Satisfied(_) => Ok(RenameAliasResult::Renamed),
-            Constraint::Violated => Ok(RenameAliasResult::TargetExists),
-        }
-    }
-
-    /// Delete an alias, returning the status of the deletion.
-    pub fn delete_alias(
-        &mut self,
-        alias: &LegacyAlias,
-    ) -> Result<DeleteAliasResult, rusqlite::Error> {
-        let mut deleter = self.conn.prepare("DELETE FROM Keys WHERE name = ?1")?;
-        if deleter.execute((alias.as_ref(),))? == 0 {
-            Ok(DeleteAliasResult::Missing)
-        } else {
-            Ok(DeleteAliasResult::Deleted)
-        }
-    }
-
-    /// Delete all rows from `NullRecords`.
-    pub fn evict_cache(&mut self) -> Result<(), rusqlite::Error> {
-        let num_deleted = self.conn.prepare("DELETE FROM NullRecords")?.execute(())?;
-        info!("Removed {num_deleted} cached null records.");
-        Ok(())
-    }
-
-    /// Delete all rows from `NullRecords` which are at least a given age (in seconds)
-    pub fn evict_cache_max_age(&mut self, seconds: u32) -> Result<(), rusqlite::Error> {
-        let threshold = Local::now() - TimeDelta::seconds(seconds.into());
-        let num_deleted = self
-            .conn
-            .prepare("DELETE FROM NullRecords WHERE attempted <= ?1")?
-            .execute((threshold,))?;
-        info!("Removed {num_deleted} cached null records.");
-        Ok(())
-    }
 }
 
 impl Drop for RecordDatabase {
     fn drop(&mut self) {
         let _ = self.optimize();
     }
-}
-
-/// Take the result of a SQLite operation and extract a constraint violation.
-pub fn flatten_constraint_violation<T>(
-    res: Result<T, rusqlite::Error>,
-) -> Result<Constraint<T>, rusqlite::Error> {
-    match res {
-        Ok(t) => Ok(Constraint::Satisfied(t)),
-        Err(err) => match err.sqlite_error_code() {
-            Some(rusqlite::ErrorCode::ConstraintViolation) => Ok(Constraint::Violated),
-            _ => Err(err),
-        },
-    }
-}
-
-/// The outcome of flattening a constraint violation error.
-pub enum Constraint<T> {
-    /// All constraints were satisfied during the database operation; result of the operation.
-    Satisfied(T),
-    /// A constraint was not satisfied.
-    Violated,
-}
-
-/// The result of renaming an alias.
-#[must_use]
-pub enum RenameAliasResult {
-    /// The alias was successfully renamed.
-    Renamed,
-    /// The new alias name already exists.
-    TargetExists,
-}
-
-/// The result of renaming an alias.
-#[must_use]
-pub enum DeleteAliasResult {
-    /// The alias was successfully renamed.
-    Deleted,
-    /// The alias did not exist.
-    Missing,
 }
 
 /// A wrapper around a [`rusqlite::Transaction`] which provides additional logging and exposes
@@ -707,6 +423,14 @@ pub struct Tx<'conn> {
     tx: rusqlite::Transaction<'conn>,
 }
 
+impl core::ops::Deref for Tx<'_> {
+    type Target = Connection;
+
+    fn deref(&self) -> &Self::Target {
+        self.tx.deref()
+    }
+}
+
 impl<'conn> From<rusqlite::Transaction<'conn>> for Tx<'conn> {
     fn from(tx: rusqlite::Transaction<'conn>) -> Self {
         Self { tx }
@@ -714,6 +438,10 @@ impl<'conn> From<rusqlite::Transaction<'conn>> for Tx<'conn> {
 }
 
 impl Tx<'_> {
+    pub fn inner_connection(&self) -> &Connection {
+        &self.tx
+    }
+
     /// Commit the transaction.
     ///
     /// This method sets the transaction's drop behaviour to [`rusqlite::DropBehavior::Commit`] and then drops it.

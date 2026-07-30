@@ -22,7 +22,7 @@ pub struct FullHistoryRamifier<'tx> {
 
 impl<'tx, 'conn> Version<'tx, 'conn> {
     fn marker(&self, row_id: i64) -> char {
-        match self.row.data {
+        match self.hist.record.data {
             ArbitraryData::Entry(_) => {
                 if self.row_id == row_id {
                     '◉'
@@ -52,7 +52,7 @@ impl<'tx, 'conn> TryRamify<Version<'tx, 'conn>> for FullHistoryRamifier<'tx> {
         // we always iterate over children if we are on an entry; otherwise, only iterate if 'all'
         if vtx.is_entry() || self.config.all {
             let mut children = vtx.children()?;
-            children.sort_unstable_by_key(|v| v.row.modified);
+            children.sort_unstable_by_key(|v| v.hist.record.modified);
             Ok(children)
         } else {
             Ok(Vec::new())
@@ -60,7 +60,7 @@ impl<'tx, 'conn> TryRamify<Version<'tx, 'conn>> for FullHistoryRamifier<'tx> {
     }
 
     fn sort_key(&self, vtx: &Version<'tx, 'conn>) -> impl Ord {
-        &vtx.row.modified
+        &vtx.hist.record.modified
     }
 
     fn marker(&self, vtx: &Version<'tx, 'conn>) -> char {
@@ -112,7 +112,7 @@ impl<'tx, 'conn> TryRamify<Version<'tx, 'conn>> for AncestorRamifier<'tx> {
     }
 
     fn sort_key(&self, vtx: &Version<'tx, 'conn>) -> impl Ord {
-        &vtx.row.modified
+        &vtx.hist.record.modified
     }
 
     fn marker(&self, vtx: &Version<'tx, 'conn>) -> char {

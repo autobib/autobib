@@ -18,7 +18,7 @@ mod write;
 use std::{
     collections::{BTreeSet, HashSet},
     fs::{File, OpenOptions, create_dir_all, exists},
-    io::{IsTerminal, Read, Seek, Write, copy},
+    io::{self, IsTerminal, Read, Seek, Write, copy},
     path::{Path, PathBuf},
     str::FromStr,
 };
@@ -42,8 +42,9 @@ use crate::{
     config,
     db::{
         DeleteAliasResult, RecordDatabase, RenameAliasResult,
+        select::{MapRow, Select, col, stmt},
         state::{
-            DatabaseResponse, DisambiguatedRecordState, ExistsOrUnknown, RecordRowDisplay,
+            self, DatabaseResponse, DisambiguatedRecordState, ExistsOrUnknown, RecordRowDisplay,
             RecordRowMoveResult, SetActiveError,
         },
         user_version,
@@ -182,8 +183,9 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             }
             AliasCommand::Delete { alias } => {
                 info!("Deleting alias '{alias}'");
-                match record_db.delete_alias(&alias)? {
-                    DeleteAliasResult::Deleted => {}
+                let mut snapshot = record_db.snapshot()?;
+                match snapshot.delete_alias(&alias)? {
+                    DeleteAliasResult::Deleted => snapshot.commit()?,
                     DeleteAliasResult::Missing => {
                         bail!("Could not delete alias which does not exist: '{alias}'")
                     }
@@ -191,8 +193,9 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             }
             AliasCommand::Rename { alias, new } => {
                 info!("Rename alias '{alias}' to '{new}'");
-                match record_db.rename_alias(&alias, &new)? {
-                    RenameAliasResult::Renamed => {}
+                let mut snapshot = record_db.snapshot()?;
+                match snapshot.rename_alias(&alias, &new)? {
+                    RenameAliasResult::Renamed => snapshot.commit()?,
                     RenameAliasResult::TargetExists => {
                         bail!("Alias already exists: '{new}'");
                     }
@@ -551,11 +554,13 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 evict,
                 evict_all,
             } => {
+                let mut snapshot = record_db.snapshot()?;
                 if let Some(seconds) = evict {
-                    record_db.evict_cache_max_age(seconds)?;
+                    snapshot.evict_cache_max_age(seconds)?;
                 } else if evict_all {
-                    record_db.evict_cache()?;
+                    snapshot.evict_cache()?;
                 }
+                snapshot.commit()?;
 
                 if compact {
                     record_db.vacuum()?;
@@ -792,14 +797,40 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 }
             }
             HistCommand::Show { limit } => {
-                let snapshot = record_db.snapshot()?;
+                struct WriteHistory<'a, W> {
+                    writer: &'a mut W,
+                    styled: bool,
+                }
+
+                impl<
+                    'a,
+                    Q: col::Rev + col::Modified + col::Canonical + col::DataArbitrary,
+                    W: io::Write,
+                > MapRow<Q> for WriteHistory<'a, W>
+                {
+                    type Access<'r> =
+                        state::Tagged<state::Record<state::ArbitraryDataRef<'r>, &'r str>>;
+
+                    type Error = io::Error;
+
+                    fn map<'r>(
+                        &mut self,
+                        tagged: Self::Access<'r>,
+                    ) -> std::prelude::v1::Result<(), Self::Error> {
+                        let disp = RecordRowDisplay::from_borrowed_row(tagged, self.styled);
+                        writeln!(self.writer, "{disp}\n")
+                    }
+                }
+
                 let mut stdout = stdout_lock_wrap();
                 let styled = stdout.supports_styled_output();
-                snapshot.map_history(limit, |record_row, rev_id| {
-                    let disp = RecordRowDisplay::from_borrowed_row(record_row, rev_id, styled);
-                    writeln!(&mut stdout, "{disp}\n")
-                })?;
-                snapshot.commit()?;
+                record_db.select_ref::<stmt::LogBounded, _>(
+                    WriteHistory {
+                        writer: &mut stdout,
+                        styled,
+                    },
+                    limit,
+                )?;
             }
             HistCommand::Touch {
                 target: KeyTarget { key, all },
@@ -1010,29 +1041,47 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 use get::Output as _;
                 if canonical {
                     let mut writer = get::TemplateRowOutput::new(strict, template, &mut lock, &sep);
-                    record_db.map_matching_canonical_active_records(&matching, |row_data| {
-                        writer.write_item(row_data)
-                    })?;
+                    record_db.select_ref::<stmt::SelectMatchingCanonicalActiveRecords, _>(
+                        &mut writer,
+                        &matching,
+                    )?;
                     writer.finish()?;
                 } else {
                     let mut writer = get::TemplateOutput::new(strict, template, &mut lock, &sep);
-                    record_db.map_matching_active_records(&matching, |row_data| {
-                        writer.write_item(row_data)
-                    })?;
+                    record_db.select_ref::<stmt::SelectMatchingActiveRecords, _>(
+                        &mut writer,
+                        &matching,
+                    )?;
                     writer.finish()?;
                 }
             } else {
-                let snapshot = record_db.snapshot()?;
                 if canonical {
-                    snapshot.access_canonical_identifiers(deleted, &matching, |key_str| {
-                        writeln!(lock, "{key_str}")
-                    })?;
+                    struct Map<'a, W>(&'a mut W);
+                    impl<'a, W: io::Write, Q: col::Canonical> MapRow<Q> for Map<'a, W> {
+                        type Access<'r> = Identifier<&'r str>;
+                        type Error = io::Error;
+                        fn map<'r>(&mut self, access: Self::Access<'r>) -> io::Result<()> {
+                            writeln!(self.0, "{access}")
+                        }
+                    }
+                    record_db.select_ref::<stmt::SelectMatchingCanonical, _>(
+                        Map(&mut lock),
+                        (deleted, &matching),
+                    )?;
                 } else {
-                    snapshot.access_identifiers(deleted, &matching, |key_str| {
-                        writeln!(lock, "{key_str}")
-                    })?;
+                    struct Map<'a, W>(&'a mut W);
+                    impl<'a, W: io::Write, Q: col::Name> MapRow<Q> for Map<'a, W> {
+                        type Access<'r> = &'r str;
+                        type Error = io::Error;
+                        fn map<'r>(&mut self, access: Self::Access<'r>) -> io::Result<()> {
+                            writeln!(self.0, "{access}")
+                        }
+                    }
+                    record_db.select_ref::<stmt::SelectMatchingKeys, _>(
+                        Map(&mut lock),
+                        (deleted, &matching),
+                    )?;
                 }
-                snapshot.commit()?;
             }
         }
         Command::Local {
@@ -1227,7 +1276,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             let mut outfile = init_outfile(out, append)?;
             let mut scratch = Vec::new();
 
-            if paths.is_empty() && stdin.is_none() && !std::io::stdin().is_terminal() {
+            if paths.is_empty() && stdin.is_none() && !io::stdin().is_terminal() {
                 warn!("Text written to standard input is being ignored");
                 suggest!("Use `--stdin FILE_TYPE` to search for identifiers in standard input.");
             }

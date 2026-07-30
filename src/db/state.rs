@@ -26,7 +26,6 @@
 //!
 //! The different states can be converted to each other, and support a variety of other operations.
 //! See the implementation docs for the individual states for more detail.
-mod borrow;
 mod disp;
 mod missing;
 mod null;
@@ -36,7 +35,7 @@ mod version;
 use chrono::{DateTime, Local};
 use rusqlite::{CachedStatement, Error, Statement};
 
-pub use self::{borrow::ArbitraryDataRef, disp::*, missing::*, null::*, record::*, version::*};
+pub use self::{disp::*, missing::*, null::*, record::*, version::*};
 use super::{RowId, Tx, get_null_row_id, get_row_id};
 use crate::{
     Alias, AliasOrId, Identifier, Key, MappedKey,
@@ -146,9 +145,12 @@ pub enum DatabaseResponse<'conn> {
     /// The `Records` row exists.
     Entry(KeyedRecord, State<'conn, IsEntry>),
     /// The `Records` row was deleted.
-    Deleted(KeyedRecord<Option<Identifier>>, State<'conn, IsDeleted>),
+    Deleted(
+        KeyedRecord<Record<Option<Identifier>>>,
+        State<'conn, IsDeleted>,
+    ),
     /// The void `Records` row.
-    Void(KeyedRecord<()>, State<'conn, IsVoid>),
+    Void(KeyedRecord<Record<()>>, State<'conn, IsVoid>),
     /// The `Records` row does not exist and the `NullRecords` row exists.
     NullId(MappedKey, State<'conn, IsNull>),
     /// The `Records` and `NullRecords` rows do not exist.
