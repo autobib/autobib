@@ -4,6 +4,8 @@ use std::{
     io::{self, BufRead},
 };
 
+use autobib_entry::v1::ArchivedEntryData;
+
 use crate::{
     app::retrieve::{self, retrieve_single_entry, retrieve_single_entry_read_only},
     config::Config,
@@ -19,38 +21,68 @@ use crate::{
     record::{Identifier, Key, KeyedRecord},
 };
 
-pub trait Output {
-    type Data;
-
-    fn write_item(&mut self, item: Self::Data) -> Result<(), io::Error>;
-
+/// Types which can be obtained from a [`KeyedRecord`] after potentially retrieving additional data the
+/// provided entry row.
+pub trait TryFromDbState: Sized {
     fn filter_map(
         record: KeyedRecord,
         row: &State<'_, IsEntry>,
-    ) -> Result<Option<Self::Data>, DatabaseError>;
+    ) -> Result<Option<Self>, DatabaseError>;
+}
 
-    fn finish(&mut self) -> Result<(), io::Error>;
+impl TryFromDbState for Infallible {
+    fn filter_map(_: KeyedRecord, _: &State<'_, IsEntry>) -> Result<Option<Self>, DatabaseError> {
+        Ok(None)
+    }
+}
+
+impl TryFromDbState for KeyedRecord {
+    fn filter_map(
+        record: KeyedRecord,
+        _: &State<'_, IsEntry>,
+    ) -> Result<Option<Self>, DatabaseError> {
+        Ok(Some(record))
+    }
+}
+
+impl TryFromDbState for (BibtexEntry, Identifier) {
+    fn filter_map(
+        record: KeyedRecord,
+        row: &State<'_, IsEntry>,
+    ) -> Result<Option<Self>, DatabaseError> {
+        Ok(retrieve::try_data_to_entry(record, row))
+    }
+}
+
+/// Writers which know how to write certain items into an IO stream.
+pub trait Output<D: ?Sized> {
+    /// Write a single item.
+    fn write_item(&mut self, item: &D) -> Result<(), io::Error>;
+
+    /// Called after all of the items have been written.
+    fn finish(self) -> Result<(), io::Error>;
+}
+
+/// A retriever which has an associated data type which can be read from a database record and
+/// state, and which can output that data.
+pub trait Get: Output<Self::Data> {
+    type Data: TryFromDbState + ?Sized;
 }
 
 pub struct NoOutput;
 
-impl Output for NoOutput {
-    type Data = Infallible;
-
-    fn filter_map(
-        _: KeyedRecord,
-        _: &State<'_, IsEntry>,
-    ) -> Result<Option<Self::Data>, DatabaseError> {
-        Ok(None)
+impl Output<Infallible> for NoOutput {
+    fn write_item(&mut self, data: &Infallible) -> Result<(), io::Error> {
+        match *data {}
     }
 
-    fn write_item(&mut self, data: Self::Data) -> Result<(), io::Error> {
-        match data {}
-    }
-
-    fn finish(&mut self) -> Result<(), io::Error> {
+    fn finish(self) -> Result<(), io::Error> {
         Ok(())
     }
+}
+
+impl Get for NoOutput {
+    type Data = Infallible;
 }
 
 pub struct BibtexOutput<'r, W: ?Sized> {
@@ -67,10 +99,8 @@ impl<'r, W: io::Write + ?Sized> BibtexOutput<'r, W> {
     }
 }
 
-impl<'r, W: io::Write + ?Sized> Output for BibtexOutput<'r, W> {
-    type Data = (BibtexEntry, Identifier);
-
-    fn write_item(&mut self, (entry, _): Self::Data) -> Result<(), io::Error> {
+impl<'r, W: io::Write + ?Sized> Output<(BibtexEntry, Identifier)> for BibtexOutput<'r, W> {
+    fn write_item(&mut self, (entry, _): &(BibtexEntry, Identifier)) -> Result<(), io::Error> {
         if self.first {
             self.first = false;
         } else {
@@ -80,14 +110,7 @@ impl<'r, W: io::Write + ?Sized> Output for BibtexOutput<'r, W> {
         entry.write_io(&mut self.writer)
     }
 
-    fn filter_map(
-        record: KeyedRecord,
-        row: &State<'_, IsEntry>,
-    ) -> Result<Option<Self::Data>, DatabaseError> {
-        Ok(retrieve::try_data_to_entry(record, row))
-    }
-
-    fn finish(&mut self) -> Result<(), io::Error> {
+    fn finish(self) -> Result<(), io::Error> {
         if self.first {
             Ok(())
         } else {
@@ -96,7 +119,11 @@ impl<'r, W: io::Write + ?Sized> Output for BibtexOutput<'r, W> {
     }
 }
 
-struct TemplateOutputInner<'r, W: ?Sized> {
+impl<'r, W: io::Write + ?Sized> Get for BibtexOutput<'r, W> {
+    type Data = (BibtexEntry, Identifier);
+}
+
+pub struct TemplateOutput<'r, W: ?Sized, const CANONICAL: bool> {
     first: bool,
     strict: bool,
     template: Template,
@@ -104,8 +131,8 @@ struct TemplateOutputInner<'r, W: ?Sized> {
     sep: &'r str,
 }
 
-impl<'r, W: io::Write + ?Sized> TemplateOutputInner<'r, W> {
-    fn new(strict: bool, template: Template, writer: &'r mut W, sep: &'r str) -> Self {
+impl<'r, W: io::Write + ?Sized, const CANONICAL: bool> TemplateOutput<'r, W, CANONICAL> {
+    pub fn new(strict: bool, template: Template, writer: &'r mut W, sep: &'r str) -> Self {
         Self {
             first: true,
             strict,
@@ -115,19 +142,7 @@ impl<'r, W: io::Write + ?Sized> TemplateOutputInner<'r, W> {
         }
     }
 
-    fn write_item<T: TemplateData>(&mut self, row: T) -> Result<(), io::Error> {
-        if self.strict && !self.template.has_keys_contained_in(&row) {
-            return Ok(());
-        }
-        if self.first {
-            self.first = false;
-        } else {
-            write!(self.writer, "{}", self.sep)?;
-        }
-        self.template.render_io(&mut self.writer, &row)
-    }
-
-    fn finish(&mut self) -> Result<(), io::Error> {
+    pub fn write_terminating_newline(&mut self) -> Result<(), io::Error> {
         if self.first {
             Ok(())
         } else {
@@ -136,90 +151,60 @@ impl<'r, W: io::Write + ?Sized> TemplateOutputInner<'r, W> {
     }
 }
 
-pub struct TemplateOutput<'r, W: ?Sized>(TemplateOutputInner<'r, W>);
+impl<'r, W: io::Write + ?Sized, T: TemplateData, const CANONICAL: bool> Output<T>
+    for TemplateOutput<'r, W, CANONICAL>
+{
+    fn write_item(&mut self, row: &T) -> Result<(), io::Error> {
+        if self.strict && !self.template.has_keys_contained_in(row) {
+            return Ok(());
+        }
+        if self.first {
+            self.first = false;
+        } else {
+            write!(self.writer, "{}", self.sep)?;
+        }
+        self.template.render_io(&mut self.writer, row)
+    }
 
-impl<'r, W: io::Write + ?Sized> TemplateOutput<'r, W> {
-    pub fn new(strict: bool, template: Template, writer: &'r mut W, sep: &'r str) -> Self {
-        Self(TemplateOutputInner::new(strict, template, writer, sep))
+    fn finish(mut self) -> Result<(), io::Error> {
+        self.write_terminating_newline()
     }
 }
 
-impl<'r, W: io::Write + ?Sized> Output for TemplateOutput<'r, W> {
-    type Data = KeyedRecord;
-
-    fn write_item(&mut self, row: Self::Data) -> Result<(), io::Error> {
-        self.0.write_item(row)
-    }
-
-    fn filter_map(
-        record: KeyedRecord,
-        _: &State<'_, IsEntry>,
-    ) -> Result<Option<Self::Data>, DatabaseError> {
-        Ok(Some(record))
-    }
-
-    fn finish(&mut self) -> Result<(), io::Error> {
-        self.0.finish()
-    }
-}
-
-impl<'a, Q, W> MapRow<Q> for TemplateOutput<'a, W>
+impl<'a, Q, W> MapRow<Q> for TemplateOutput<'a, W, false>
 where
     Q: col::Name + col::DataArbitrary + col::Canonical + col::Modified + col::DataEntry,
     W: io::Write + ?Sized,
 {
-    type Access<'r> = KeyedRecord;
+    type Access<'r> = KeyedRecord<Record<&'r ArchivedEntryData, &'r str>, &'r str>;
 
     type Error = io::Error;
 
     fn map<'r>(&mut self, access: Self::Access<'r>) -> Result<(), Self::Error> {
-        self.write_item(access)
+        self.write_item(&access)
     }
 }
 
-pub struct TemplateRowOutput<'r, W: ?Sized>(TemplateOutputInner<'r, W>);
+impl<'r, W: io::Write + ?Sized> Get for TemplateOutput<'r, W, false> {
+    type Data = KeyedRecord;
+}
 
-impl<'a, Q, W> MapRow<Q> for TemplateRowOutput<'a, W>
+impl<'a, Q, W> MapRow<Q> for TemplateOutput<'a, W, true>
 where
     Q: col::DataArbitrary + col::Canonical + col::Modified + col::DataEntry,
     W: io::Write + ?Sized,
 {
-    type Access<'r> = Record;
+    type Access<'r> = Record<&'r ArchivedEntryData, &'r str>;
 
     type Error = io::Error;
 
     fn map<'r>(&mut self, access: Self::Access<'r>) -> Result<(), Self::Error> {
-        self.write_item(access)
+        self.write_item(&access)
     }
 }
 
-impl<'r, W: io::Write + ?Sized> TemplateRowOutput<'r, W> {
-    pub fn new(strict: bool, template: Template, writer: &'r mut W, sep: &'r str) -> Self {
-        Self(TemplateOutputInner::new(strict, template, writer, sep))
-    }
-}
-
-impl<'r, W: io::Write + ?Sized> Output for TemplateRowOutput<'r, W> {
-    type Data = Record;
-
-    fn write_item(&mut self, row: Self::Data) -> Result<(), io::Error> {
-        self.0.write_item(row)
-    }
-
-    fn filter_map(
-        record: KeyedRecord,
-        _: &State<'_, IsEntry>,
-    ) -> Result<Option<Self::Data>, DatabaseError> {
-        Ok(Some(record.record))
-    }
-
-    fn finish(&mut self) -> Result<(), io::Error> {
-        self.0.finish()
-    }
-}
-
-pub fn retrieve_all<W, C>(
-    mut writer: W,
+pub fn retrieve_all<G, C>(
+    mut writer: G,
     cfg: &Config,
     client: &C,
     record_db: &mut RecordDatabase,
@@ -227,15 +212,15 @@ pub fn retrieve_all<W, C>(
     ignore_null: bool,
 ) -> anyhow::Result<()>
 where
-    W: Output,
+    G: Get,
     C: Client,
 {
     // then explicit arguments
     for id in identifiers {
         if let Some(item) =
-            retrieve_single_entry(record_db, id, client, ignore_null, cfg, W::filter_map)?
+            retrieve_single_entry(record_db, id, client, ignore_null, cfg, G::Data::filter_map)?
         {
-            writer.write_item(item)?;
+            writer.write_item(&item)?;
         }
     }
 
@@ -245,9 +230,9 @@ where
         for line in stdin.lines() {
             let id = Key::from(line?);
             if let Some(item) =
-                retrieve_single_entry(record_db, id, client, ignore_null, cfg, W::filter_map)?
+                retrieve_single_entry(record_db, id, client, ignore_null, cfg, G::Data::filter_map)?
             {
-                writer.write_item(item)?;
+                writer.write_item(&item)?;
             }
         }
     }
@@ -256,22 +241,19 @@ where
     Ok(())
 }
 
-pub fn retrieve_all_read_only<W>(
-    mut writer: W,
+pub fn retrieve_all_read_only<G: Get>(
+    mut writer: G,
     cfg: &Config,
     record_db: &mut RecordDatabase,
     identifiers: Vec<Key>,
     ignore_null: bool,
-) -> anyhow::Result<()>
-where
-    W: Output,
-{
+) -> anyhow::Result<()> {
     // explicit arguments
     for id in identifiers {
         if let Some(item) =
-            retrieve_single_entry_read_only(record_db, id, ignore_null, cfg, W::filter_map)?
+            retrieve_single_entry_read_only(record_db, id, ignore_null, cfg, G::Data::filter_map)?
         {
-            writer.write_item(item)?;
+            writer.write_item(&item)?;
         }
     }
 
@@ -279,10 +261,14 @@ where
     if !stdin.is_terminal() {
         for line in stdin.lines() {
             let id = Key::from(line?);
-            if let Some(item) =
-                retrieve_single_entry_read_only(record_db, id, ignore_null, cfg, W::filter_map)?
-            {
-                writer.write_item(item)?;
+            if let Some(item) = retrieve_single_entry_read_only(
+                record_db,
+                id,
+                ignore_null,
+                cfg,
+                G::Data::filter_map,
+            )? {
+                writer.write_item(&item)?;
             }
         }
     }

@@ -335,6 +335,13 @@ impl<S: AsRef<str>> Identifier<S> {
         }
     }
 
+    pub fn as_deref(&self) -> Identifier<&str> {
+        Identifier {
+            full_id: self.full_id.as_ref(),
+            provider_len: self.provider_len,
+        }
+    }
+
     /// Construct a new [`Identifier`] from the given full_id.
     ///
     /// # Safety
@@ -407,13 +414,6 @@ impl Identifier {
         full_id.push(':');
         full_id.push_str(alias.0.as_str());
         Self::new_unchecked(full_id, PROVIDER_LEN)
-    }
-
-    pub fn as_deref(&self) -> Identifier<&str> {
-        Identifier {
-            full_id: &self.full_id,
-            provider_len: self.provider_len,
-        }
     }
 }
 

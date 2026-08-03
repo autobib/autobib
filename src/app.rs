@@ -581,7 +581,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             if cli.read_only {
                 if let Some(template) = template {
                     get::retrieve_all_read_only(
-                        get::TemplateOutput::new(strict, template, &mut lock, &sep),
+                        get::TemplateOutput::<_, false>::new(strict, template, &mut lock, &sep),
                         &cfg,
                         &mut record_db,
                         keys,
@@ -607,7 +607,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             } else {
                 if let Some(template) = template {
                     get::retrieve_all(
-                        get::TemplateOutput::new(strict, template, &mut lock, &sep),
+                        get::TemplateOutput::<_, false>::new(strict, template, &mut lock, &sep),
                         &cfg,
                         client,
                         &mut record_db,
@@ -1038,21 +1038,22 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
         } => {
             let mut lock = stdout_lock_wrap();
             if let Some(template) = template {
-                use get::Output as _;
                 if canonical {
-                    let mut writer = get::TemplateRowOutput::new(strict, template, &mut lock, &sep);
+                    let mut writer =
+                        get::TemplateOutput::<_, true>::new(strict, template, &mut lock, &sep);
                     record_db.select_ref::<stmt::SelectMatchingCanonicalActiveRecords, _>(
                         &mut writer,
                         &matching,
                     )?;
-                    writer.finish()?;
+                    writer.write_terminating_newline()?;
                 } else {
-                    let mut writer = get::TemplateOutput::new(strict, template, &mut lock, &sep);
+                    let mut writer =
+                        get::TemplateOutput::<_, false>::new(strict, template, &mut lock, &sep);
                     record_db.select_ref::<stmt::SelectMatchingActiveRecords, _>(
                         &mut writer,
                         &matching,
                     )?;
-                    writer.finish()?;
+                    writer.write_terminating_newline()?;
                 }
             } else {
                 if canonical {

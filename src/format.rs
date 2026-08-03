@@ -2,7 +2,7 @@ mod parse;
 
 use std::{convert::Infallible, fmt, io, str::FromStr};
 
-use autobib_entry::{data::EntryData, ident::FieldKey};
+use autobib_entry::{data::EntryData, ident::FieldKey, v1::ArchivedEntryData};
 use chrono::{DateTime, Local};
 use mufmt::{Ast, Manifest, Span, SyntaxError};
 use nucleo_picker::Render;
@@ -12,7 +12,7 @@ use self::parse::{Kind, Lexer, Token};
 use crate::{
     db::{AsKey, state::Record},
     error::{ClapTemplateError, KeyParseError, KeyParseErrorKind},
-    record::KeyedRecord,
+    record::{Identifier, KeyedRecord},
 };
 
 /// A `{%meta}` token.
@@ -191,7 +191,7 @@ impl Template {
     /// Returns whether this template can be rendered by the provided row data without having
     /// any non-optional undefined keys.
     pub fn has_keys_contained_in<T: TemplateData>(&self, row: &T) -> bool {
-        let contains = |k| row.row().data.contains_field(k);
+        let contains = |k| row.data().contains_field(k);
         for span in self.template.spans() {
             match span {
                 Span::Expr(Expression::Bare(Atom::FieldKey(k))) if !contains(k.as_ref()) => {
@@ -225,66 +225,43 @@ impl FromStr for Template {
     }
 }
 
-/// A `Display` adapter which helps the compiler reason about lifetimes.
-enum DisplayedRow<'row, 'ast, 'state> {
-    Row(&'row str),
-    Ast(&'ast str),
-    State(&'state str),
-    Json(&'row Record),
-    Timestamp(&'row DateTime<Local>),
-    Skip,
+/// A display wrapper for template data and the expression.
+struct DataAst<'row, 'ast, T> {
+    row: &'row T,
+    ast: &'ast Expression,
 }
 
-impl<'r, 'ast, 'state> fmt::Display for DisplayedRow<'r, 'ast, 'state> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Row(s) => f.write_str(s),
-            Self::Ast(s) => f.write_str(s),
-            Self::State(s) => f.write_str(s),
-            Self::Json(data) => data.write_json_fmt(f),
-            Self::Timestamp(modified) => modified.fmt(f),
-            Self::Skip => Ok(()),
-        }
+impl<'row, 'ast, T: TemplateData> DataAst<'row, 'ast, T> {
+    fn contains_field(&self, k: &FieldKey) -> bool {
+        self.row.data().contains_field(k.as_ref())
     }
 }
 
-impl<'row, 'ast, 'state> DisplayedRow<'row, 'ast, 'state> {
-    fn from_data<F, T: TemplateData>(row_data: &'row T, ast: &'ast Expression, mut f: F) -> Self
-    where
-        F: FnMut(&str) -> Option<&'state str>,
-    {
-        let token = match ast {
-            Expression::IfDefined(field_key, token) => {
-                if f(field_key.as_ref()).is_some() {
-                    token
-                } else {
-                    return Self::Skip;
-                }
-            }
-            Expression::IfUndefined(field_key, token) => {
-                if f(field_key.as_ref()).is_none() {
-                    token
-                } else {
-                    return Self::Skip;
-                }
-            }
+impl<T: TemplateData> fmt::Display for DataAst<'_, '_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let token = match self.ast {
             Expression::Bare(token) => token,
+            Expression::IfDefined(field_key, token) if self.contains_field(field_key) => token,
+            Expression::IfUndefined(field_key, token) if !self.contains_field(field_key) => token,
+            _ => return Ok(()),
         };
 
         match token {
-            Atom::FieldKey(key) | Atom::FieldKeyOpt(key) => match f(key.as_ref()) {
-                Some(val) => DisplayedRow::State(val),
-                None => DisplayedRow::Skip,
-            },
-            Atom::String(s) => DisplayedRow::Ast(s),
+            Atom::FieldKey(key) | Atom::FieldKeyOpt(key) => {
+                match self.row.data().get_field_str(key.as_ref()) {
+                    Some(val) => f.write_str(val),
+                    None => Ok(()),
+                }
+            }
+            Atom::String(s) => f.write_str(s),
             Atom::Meta(meta) => match meta {
-                Meta::EntryType => DisplayedRow::Row(row_data.row().data.entry_type().inner()),
-                Meta::Provider => DisplayedRow::Row(row_data.row().canonical.provider()),
-                Meta::SubId => DisplayedRow::Row(row_data.row().canonical.sub_id()),
-                Meta::FullId => DisplayedRow::Row(row_data.row().canonical.as_key()),
-                Meta::Key => DisplayedRow::Row(row_data.key()),
-                Meta::Modified => DisplayedRow::Timestamp(&row_data.row().modified),
-                Meta::Json => DisplayedRow::Json(row_data.row()),
+                Meta::EntryType => f.write_str(self.row.data().entry_type().inner()),
+                Meta::Provider => f.write_str(self.row.canonical().provider()),
+                Meta::SubId => f.write_str(self.row.canonical().sub_id()),
+                Meta::FullId => f.write_str(self.row.canonical().as_key()),
+                Meta::Key => f.write_str(self.row.key()),
+                Meta::Modified => self.row.modified().fmt(f),
+                Meta::Json => self.row.record().write_json_fmt(f),
             },
         }
     }
@@ -296,9 +273,7 @@ impl<'r, T: TemplateData> Manifest<Expression> for ManifestSmall<'r, T> {
     type Error = Infallible;
 
     fn manifest(&self, ast: &Expression) -> Result<impl fmt::Display, Self::Error> {
-        Ok(DisplayedRow::from_data(self.0, ast, |k| {
-            self.0.row().data.get_field_str(k)
-        }))
+        Ok(DataAst { row: self.0, ast })
     }
 }
 
@@ -326,35 +301,99 @@ impl<T: TemplateData> Render<T> for Template {
 }
 
 pub trait TemplateData {
-    fn row(&self) -> &Record;
-
     fn key(&self) -> &str;
+
+    fn data(&self) -> &ArchivedEntryData;
+
+    fn canonical(&self) -> Identifier<&str>;
+
+    fn modified(&self) -> DateTime<Local>;
+
+    fn record(&self) -> Record<&ArchivedEntryData, &str> {
+        Record {
+            data: self.data(),
+            canonical: self.canonical(),
+            modified: self.modified(),
+        }
+    }
 }
 
 impl TemplateData for Record {
-    fn row(&self) -> &Record {
-        self
-    }
-
     fn key(&self) -> &str {
         self.canonical.as_key()
+    }
+
+    fn data(&self) -> &ArchivedEntryData {
+        &self.data
+    }
+
+    fn canonical(&self) -> Identifier<&str> {
+        self.canonical.as_deref()
+    }
+
+    fn modified(&self) -> DateTime<Local> {
+        self.modified
+    }
+}
+
+impl<'r> TemplateData for Record<&'r ArchivedEntryData, &'r str> {
+    fn key(&self) -> &str {
+        self.canonical.as_key()
+    }
+
+    fn data(&self) -> &ArchivedEntryData {
+        self.data
+    }
+
+    fn canonical(&self) -> Identifier<&str> {
+        self.canonical.as_deref()
+    }
+
+    fn modified(&self) -> DateTime<Local> {
+        self.modified
+    }
+}
+
+impl<'r> TemplateData for KeyedRecord<Record<&'r ArchivedEntryData, &'r str>, &'r str> {
+    fn key(&self) -> &str {
+        self.key
+    }
+
+    fn data(&self) -> &ArchivedEntryData {
+        self.record.data
+    }
+
+    fn canonical(&self) -> Identifier<&str> {
+        self.record.canonical.as_deref()
+    }
+
+    fn modified(&self) -> DateTime<Local> {
+        self.record.modified
     }
 }
 
 impl TemplateData for KeyedRecord {
-    fn row(&self) -> &Record {
-        &self.record
-    }
-
     fn key(&self) -> &str {
         &self.key
+    }
+
+    fn data(&self) -> &ArchivedEntryData {
+        &self.record.data
+    }
+
+    fn canonical(&self) -> Identifier<&str> {
+        self.record.canonical.as_deref()
+    }
+
+    fn modified(&self) -> DateTime<Local> {
+        self.record.modified
     }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::record::Identifier;
-    use autobib_entry::{Archive, data::MutableEntryData, v1::ArchivedEntryData};
+    use autobib_entry::{Archive, data::MutableEntryData};
 
     use chrono::Local;
 
