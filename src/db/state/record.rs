@@ -42,7 +42,7 @@ pub struct Record<D = Box<ArchivedEntryData>, S = String> {
     pub modified: DateTime<Local>,
 }
 
-impl<D: AsRecordData> Record<D> {
+impl<D: AsRecordData, S: AsRef<str>> Record<D, S> {
     pub fn write_json_io<W: io::Write>(&self, writer: W) -> Result<(), io::Error> {
         Ok(serde_json::to_writer(writer, &self)?)
     }
@@ -277,6 +277,24 @@ pub trait AsRecordData {
 
     /// Serialize the data if serializable; otherwise, do nothing.
     fn serialize_in<S: SerializeStruct>(&self, ser_struct: &mut S) -> Result<(), S::Error>;
+}
+
+impl<T: AsRecordData + ?Sized> AsRecordData for &T {
+    fn data_blob(&self) -> &[u8] {
+        (*self).data_blob()
+    }
+
+    fn variant(&self) -> i64 {
+        (*self).variant()
+    }
+
+    fn serializable(&self) -> bool {
+        (*self).serializable()
+    }
+
+    fn serialize_in<S: SerializeStruct>(&self, ser_struct: &mut S) -> Result<(), S::Error> {
+        (*self).serialize_in(ser_struct)
+    }
 }
 
 impl AsRecordData for ArchivedEntryData {
