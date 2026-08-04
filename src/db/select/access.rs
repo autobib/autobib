@@ -8,7 +8,7 @@ use crate::{
     db::{
         Record,
         state::{
-            ArbitraryData, ArbitraryDataRef, HistRecord, NotVoidData, RevisionId, Tagged, Variant,
+            ArbitraryData, ArbitraryDataRef, HistRecord, NotVoidData, RevisionId, Variant, WithRev,
         },
     },
     record::Key,
@@ -234,7 +234,7 @@ where
 {
 }
 
-impl<'r, R> AccessRowUnchecked<'r> for Tagged<R>
+impl<'r, R> AccessRowUnchecked<'r> for WithRev<R>
 where
     R: AccessRowUnchecked<'r>,
 {
@@ -244,4 +244,4 @@ where
         Self { inner, rev }
     }
 }
-impl<'r, R, Q: col::Rev> AccessRow<'r, Q> for Tagged<R> where R: AccessRow<'r, Q> {}
+impl<'r, R, Q: col::Rev> AccessRow<'r, Q> for WithRev<R> where R: AccessRow<'r, Q> {}

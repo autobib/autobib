@@ -100,7 +100,7 @@ impl<D: AsRecordData, T: AsRef<str>> Serialize for Record<D, T> {
 
 /// An inner type along with its revision id.
 #[derive(Debug)]
-pub struct Tagged<I> {
+pub struct WithRev<I> {
     pub inner: I,
     pub rev: RevisionId,
 }
@@ -732,7 +732,7 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
         let version = self.current()?;
         let mut children = Vec::new();
         version.map_children(
-            |Tagged {
+            |WithRev {
                  inner: data,
                  rev: row_id,
              }| {

@@ -9,7 +9,7 @@ use serde::Serialize;
 use super::{ArbitraryData, HistRecord, InRecordsTable, RecordRowDisplay, State, Tx};
 use crate::db::{
     select::{FnMutMap, SelectOneUnchecked, SelectStatement, stmt},
-    state::Tagged,
+    state::WithRev,
 };
 
 /// A specific version of a record row.
@@ -152,7 +152,7 @@ impl<'tx, 'conn> Version<'tx, 'conn> {
     /// The order in which the closure is applied is unspecified.
     pub(super) fn map_children<F>(&self, mut f: F) -> rusqlite::Result<()>
     where
-        F: FnMut(Tagged<HistRecord>),
+        F: FnMut(WithRev<HistRecord>),
     {
         stmt::SelectChildren::select_map(
             self.tx,
@@ -167,7 +167,7 @@ impl<'tx, 'conn> Version<'tx, 'conn> {
     pub fn children(&self) -> rusqlite::Result<Vec<Self>> {
         let mut children = Vec::new();
         self.map_children(
-            |Tagged {
+            |WithRev {
                  inner: ch,
                  rev: row_id,
              }| {

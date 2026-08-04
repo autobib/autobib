@@ -7,7 +7,7 @@ use std::fmt;
 use autobib_entry::data::EntryData;
 use crossterm::style::{ContentStyle, StyledContent, Stylize};
 
-use super::{ArbitraryDataRef, InRecordsTable, Record, State, Tagged, Version};
+use super::{ArbitraryDataRef, InRecordsTable, Record, State, Version, WithRev};
 use crate::logger::LogDisplay;
 
 impl<'conn, I: InRecordsTable> LogDisplay for State<'conn, I> {
@@ -22,7 +22,7 @@ impl<'conn, I: InRecordsTable> LogDisplay for State<'conn, I> {
 pub struct RecordRowDisplay<'a> {
     /// Whether or not the display should be 'styled' (using colours, bold, etc.)
     pub styled: bool,
-    pub(super) tagged: Tagged<Record<ArbitraryDataRef<'a>, &'a str>>,
+    pub(super) tagged: WithRev<Record<ArbitraryDataRef<'a>, &'a str>>,
 }
 
 impl<'a> RecordRowDisplay<'a> {
@@ -34,7 +34,7 @@ impl<'a> RecordRowDisplay<'a> {
             canonical: version.hist.record.canonical.as_deref(),
         };
 
-        let tagged = Tagged {
+        let tagged = WithRev {
             rev: version.rev_id(),
             inner,
         };
@@ -43,7 +43,7 @@ impl<'a> RecordRowDisplay<'a> {
 
     /// Construct this display adapter by borrowing data the components of a row.
     pub fn from_borrowed_row(
-        tagged: Tagged<Record<ArbitraryDataRef<'a>, &'a str>>,
+        tagged: WithRev<Record<ArbitraryDataRef<'a>, &'a str>>,
         styled: bool,
     ) -> Self {
         Self { tagged, styled }

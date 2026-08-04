@@ -809,7 +809,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 > MapRow<Q> for WriteHistory<'a, W>
                 {
                     type Access<'r> =
-                        state::Tagged<state::Record<state::ArbitraryDataRef<'r>, &'r str>>;
+                        state::WithRev<state::Record<state::ArbitraryDataRef<'r>, &'r str>>;
 
                     type Error = io::Error;
 
