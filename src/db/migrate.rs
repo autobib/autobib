@@ -232,6 +232,18 @@ ALTER TABLE Keys RENAME COLUMN record_key TO record_rev;
 
             let tx = conn.transaction()?;
             tx.execute(
+                "\
+                CREATE VIEW ActiveRecords \
+                AS \
+                  SELECT canonical, modified, data as entry_data \
+                  FROM Records \
+                  WHERE \
+                    rev in (SELECT record_rev FROM Keys) \
+                    AND variant = 0",
+                [],
+            )?;
+
+            tx.execute(
                 "UPDATE Records SET data = autobib_update_entry_data_v0_v1(data) WHERE variant = 0",
                 [],
             )?;

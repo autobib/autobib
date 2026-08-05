@@ -21,3 +21,5 @@ schema!(records, "The table which stores record data.");
 schema!(null_records, "The table which caches null records.");
 
 schema!(create_indices, "Create indices for the tables.");
+
+schema!(create_views, "Create views for the tables.");

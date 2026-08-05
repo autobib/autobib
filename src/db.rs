@@ -234,6 +234,9 @@ impl RecordDatabase {
                 debug!("Initializing indices");
                 tx.execute_batch(schema::create_indices())?;
 
+                debug!("Initializing views");
+                tx.execute_batch(schema::create_views())?;
+
                 tx.commit()?;
 
                 debug!("Enabling write-ahead log");
