@@ -176,8 +176,8 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 let cfg = config::load(&config_path, missing_ok)?;
                 let (_, row) = get_record(&mut record_db, target, client, &cfg)?
                     .exists_or_commit_null("Cannot create alias for")?;
-                if !row.add_alias(&alias)? {
-                    error!("Alias already exists: '{alias}'");
+                if let state::AddAliasResult::AlreadyExists(other_id) = row.add_alias(&alias)? {
+                    error!("Alias '{alias}' already exists and refers to '{other_id}'.");
                 }
                 row.commit()?;
             }

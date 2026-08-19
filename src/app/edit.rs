@@ -98,9 +98,10 @@ where
     };
 
     if let Some(alias) = add_alias
-        && !exists.state.add_alias(alias)?
+        && let crate::db::state::AddAliasResult::AlreadyExists(other_id) =
+            exists.state.add_alias(alias)?
     {
-        error!("Alias '{alias}' already exists and references a different record.");
+        error!("Alias '{alias}' already exists and refers to '{other_id}'.");
     }
 
     exists.commit()?;

@@ -1057,12 +1057,17 @@ RETURNING rev",
         .with_timestamp(modified))
     }
 
-    /// Add a new alias for this row.
-    ///
-    /// The return value is `false` if the alias already exists, and otherwise `true`.
+    /// Add a new alias for this row, returning if the alias was newly created or returning the
+    /// canonical id of the existing value of the alias.
     #[inline]
-    pub fn add_alias(&self, alias: &Alias) -> Result<bool, rusqlite::Error> {
-        self.add_refs_impl(std::iter::once(alias), IdentifierInsertMode::FailIfExists)
+    pub fn add_alias(&self, alias: &Alias) -> Result<AddAliasResult, rusqlite::Error> {
+        if self.add_refs_impl(std::iter::once(alias), IdentifierInsertMode::FailIfExists)? {
+            Ok(AddAliasResult::Added)
+        } else {
+            let existing_row_id = get_row_id(&self.tx, alias)?
+                .expect("Alias must exist after its insertion violated the unique constraint");
+            get_canonical(&self.tx, existing_row_id).map(AddAliasResult::AlreadyExists)
+        }
     }
 
     /// Update an existing alias to point to this row.
@@ -1090,7 +1095,7 @@ RETURNING rev",
                 if existing_row_id == self.row_id() {
                     Ok(None)
                 } else {
-                    Ok(Some(self.canonical()?))
+                    get_canonical(&self.tx, existing_row_id).map(Some)
                 }
             }
             None => {
@@ -1100,6 +1105,11 @@ RETURNING rev",
             }
         }
     }
+}
+
+pub enum AddAliasResult {
+    Added,
+    AlreadyExists(Identifier),
 }
 
 impl<'conn, I: NotEntry> State<'conn, I> {

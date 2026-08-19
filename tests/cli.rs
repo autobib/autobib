@@ -587,7 +587,10 @@ fn alias() -> Result<()> {
         .args(["alias", "add", "my_alias", "local:second"])
         .assert()
         .failure()
-        .stderr(contains("Alias already exists"));
+        .stderr(
+            contains("Alias 'my_alias' already exists and refers to 'local:first'")
+                .and(contains("refers to 'local:second'").not()),
+        );
 
     let predicate_file = predicate::path::eq_file(Path::new("tests/resources/alias/stdout.txt"))
         .utf8()
