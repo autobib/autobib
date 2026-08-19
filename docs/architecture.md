@@ -88,7 +88,7 @@ The following invariants must be upheld at all times.
 
 1. The `parent_rev` row indicates a directed edge leading from a given row to its *parent* row.
    The set of rows for a given value of `key` must form exactly one tree.
-2. The `modified` column must be sorted in descending order down the tree: that is, each parent must have `modified` time which is greater than the `modified` time of the child node.
+2. The `modified` column must be sorted in descending order down the tree: that is, each parent must have `modified` time which is greater than or equal to the `modified` time of the child node.
 3. If a void node exists, its `parent_rev` must be null.
 4. The modification time of the void node must be exactly `-262143-01-01 00:00:00+00:00`.
 5. A row in the 'Records' table with a key that is present in the `Keys` table is called *active*.
