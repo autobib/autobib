@@ -149,10 +149,12 @@ impl col::Name for SelectMatchingKeys {}
 pub struct LogBounded;
 impl SelectStatement for LogBounded {
     type Args<'a> = Option<u32>;
-    // TODO: WHERE variant != 2
+    // void is always UTC_MIN and only a 'structural root' so we
+    // don't show it
     const STATEMENT: &str = "
     SELECT rev, canonical, modified, data, variant \
       FROM Records \
+      WHERE variant != 2 \
       ORDER BY modified \
       DESC LIMIT ?1";
     fn args_to_params(limit: Self::Args<'_>) -> impl rusqlite::Params {

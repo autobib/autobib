@@ -2354,6 +2354,32 @@ fn changelog() -> Result<()> {
 }
 
 #[test]
+fn void_visibility() -> Result<()> {
+    let s = TestState::init()?;
+    s.create_test_db()?;
+
+    s.cmd()?
+        .args(["hist", "show"])
+        .assert()
+        .success()
+        .stdout(contains("local:first").and(contains("Void").not()));
+
+    s.cmd()?
+        .args(["log", "local:first"])
+        .assert()
+        .success()
+        .stdout(contains("Void").not());
+
+    s.cmd()?
+        .args(["log", "local:first", "--all"])
+        .assert()
+        .success()
+        .stdout(contains("Void"));
+
+    s.close()
+}
+
+#[test]
 fn prune() -> Result<()> {
     fn init() -> Result<(TestState, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)> {
         let s = TestState::init()?;
