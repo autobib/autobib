@@ -72,3 +72,4 @@ Changes since `v0.6.1`.
 ## Fixes
 
 - Adjust to new zbMath API format for null records.
+- SQLite commit failure is no longer suppressed.

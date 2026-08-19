@@ -24,7 +24,7 @@ use std::path::Path;
 
 use delegate::delegate;
 use functions::{AppFunction, register_application_function};
-use rusqlite::{Connection, DropBehavior, OpenFlags, OptionalExtension};
+use rusqlite::{Connection, OpenFlags, OptionalExtension};
 
 use self::{
     state::{DatabaseIdResponse, DatabaseResponse, Record},
@@ -424,6 +424,17 @@ impl Drop for RecordDatabase {
 #[derive(Debug)]
 pub struct Tx<'conn> {
     tx: rusqlite::Transaction<'conn>,
+    _drop_log: TxDropLog,
+}
+
+#[derive(Debug)]
+struct TxDropLog;
+
+/// A drop guard which writes a debug message on implicit rollback.
+impl Drop for TxDropLog {
+    fn drop(&mut self) {
+        debug!("Implicitly rolling back transaction");
+    }
 }
 
 impl core::ops::Deref for Tx<'_> {
@@ -436,7 +447,10 @@ impl core::ops::Deref for Tx<'_> {
 
 impl<'conn> From<rusqlite::Transaction<'conn>> for Tx<'conn> {
     fn from(tx: rusqlite::Transaction<'conn>) -> Self {
-        Self { tx }
+        Self {
+            tx,
+            _drop_log: TxDropLog,
+        }
     }
 }
 
@@ -446,21 +460,21 @@ impl Tx<'_> {
     }
 
     /// Commit the transaction.
-    ///
-    /// This method sets the transaction's drop behaviour to [`rusqlite::DropBehavior::Commit`] and then drops it.
-    pub fn commit(mut self) -> rusqlite::Result<()> {
-        self.tx.set_drop_behavior(DropBehavior::Commit);
-        drop(self);
-        Ok(())
+    pub fn commit(self) -> rusqlite::Result<()> {
+        let Self { tx, _drop_log } = self;
+        // suppress drop guard rollback message.
+        std::mem::forget(_drop_log);
+        debug!("Committing transaction");
+        tx.commit()
     }
 
     /// Roll back the transaction.
-    ///
-    /// This method sets the transaction's drop behaviour to [`rusqlite::DropBehavior::Rollback`] and then drops it.
-    pub fn rollback(mut self) -> rusqlite::Result<()> {
-        self.tx.set_drop_behavior(DropBehavior::Rollback);
-        drop(self);
-        Ok(())
+    pub fn rollback(self) -> rusqlite::Result<()> {
+        let Self { tx, _drop_log } = self;
+        // suppress drop guard rollback message.
+        std::mem::forget(_drop_log);
+        debug!("Rolling back transaction");
+        tx.rollback()
     }
 
     // only expose internal methods privately
@@ -473,19 +487,6 @@ impl Tx<'_> {
             fn prepare(&self, sql: &str) -> rusqlite::Result<rusqlite::Statement<'_>>;
 
             fn prepare_cached(&self, sql: &str) -> rusqlite::Result<rusqlite::CachedStatement<'_>>;
-        }
-    }
-}
-
-impl Drop for Tx<'_> {
-    #[inline]
-    fn drop(&mut self) {
-        match self.tx.drop_behavior() {
-            DropBehavior::Rollback => debug!("Rolling back transaction"),
-            DropBehavior::Commit => debug!("Committing transaction"),
-            DropBehavior::Ignore => debug!("Ignoring transaction"),
-            DropBehavior::Panic => debug!("Dropping transaction and panicking"),
-            _ => debug!("Dropping transaction with unknown drop behaviour"),
         }
     }
 }
