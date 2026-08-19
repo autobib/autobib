@@ -20,9 +20,9 @@ CACHE_DIR="${CACHE_ROOT}/test-cache-${HASH}"
 export AUTOBIB_RESPONSE_CACHE_PATH="${CACHE_DIR}/responses.dat"
 
 if [[ "${LIBSQLITE3_SYS_USE_PKG_CONFIG:-0}" != "0" ]]; then
-    FEATURE_ARGS=(--no-default-features)
+    FEATURE_ARGS=(--no-default-features --features typst)
 else
-    FEATURE_ARGS=()
+    FEATURE_ARGS=(--features typst)
 fi
 
 if [[ ! -f "${AUTOBIB_RESPONSE_CACHE_PATH}" ]]; then
