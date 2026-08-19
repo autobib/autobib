@@ -407,7 +407,7 @@ WHERE c.modified < p.modified",
         debug!("Checking binary data correctness");
         let mut retriever = self
             .tx
-            .prepare("SELECT canonical, data FROM Records WHERE variant = 0")?;
+            .prepare("SELECT rev, canonical, data FROM Records WHERE variant = 0")?;
         let mut rows = retriever.query([])?;
 
         while let Some(row) = rows.next()? {
