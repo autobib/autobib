@@ -1,3 +1,9 @@
+//! # ISBN provider
+//!
+//! ISBN is surprisingly complex. References:
+//!
+//! - [ISBN FAQs](https://www.isbn.org/faqs_general_questions)
+//! - [ISBN User's Manual Appendix 1](https://www.isbn-international.org/sites/default/files/ISBN%20International%20Users%20Manual%20-%207th%20edition_absolutely_final.docx)
 use serde::Deserialize;
 
 use super::{BodyBytes, Client, Ctx, Identifier, ProviderError, StatusCode, ValidationOutcome};
@@ -13,13 +19,13 @@ fn ascii_digit_to_u8(b: u8) -> Option<u8> {
 
 /// Convert an ISBN10 checksum to the the corresponding ascii byte.
 fn checksum_10_to_ascii(ck: u8) -> u8 {
-    let ck = 11 - (ck % 11);
+    let ck = (11 - (ck % 11)) % 11;
     if ck == 10 { b'X' } else { ck + b'0' }
 }
 
 /// Convert an ISBN13 checksum to the the corresponding ascii byte.
 fn checksum_13_to_ascii(ck: u8) -> u8 {
-    b'0' + 10 - (ck % 10)
+    b'0' + (10 - (ck % 10)) % 10
 }
 
 /// Compute the ISBN13 checksum, assuming that the hyphens have already been removed and `id`
@@ -181,9 +187,18 @@ mod tests {
     #[test]
     fn is_valid() {
         assert_eq!(is_valid_id("9781119942399"), ValidationOutcome::Valid);
+        assert_eq!(is_valid_id("9781000000030"), ValidationOutcome::Valid);
         assert_eq!(
             is_valid_id("111994239X"),
             ValidationOutcome::Normalize("9781119942399".to_owned())
+        );
+        assert_eq!(
+            is_valid_id("1000000060"),
+            ValidationOutcome::Normalize("9781000000061".to_owned())
+        );
+        assert_eq!(
+            is_valid_id("1000000036"),
+            ValidationOutcome::Normalize("9781000000030".to_owned())
         );
         assert_eq!(
             is_valid_id("978-0-596-52068-7"),
