@@ -38,7 +38,7 @@ VERSION_TAG="v${VERSION}"
 DATE_FORMATTED="$(date +"%Y-%m-%d")"
 NEW_TITLE="# Version ${VERSION} (${DATE_FORMATTED})"
 
-echo "Renaming 'docs/changelog/next.md' to 'docs/changelog/${VERSION_TAG}.md'" and updating title
+echo "Renaming 'docs/changelog/next.md' to 'docs/changelog/${VERSION_TAG}.md' and updating title"
 sed -z 's/^[[:space:]]*# Unreleased/'"${NEW_TITLE}"'/g' docs/changelog/next.md > "docs/changelog/${VERSION_TAG}.md"
 echo "# Unreleased" > docs/changelog/next.md
 
