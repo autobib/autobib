@@ -1488,6 +1488,13 @@ fn config() -> Result<()> {
     s.set_config(Path::new("tests/resources/config/extra.toml"))?;
     s.cmd()?.arg("get").assert().failure();
 
+    s.set_config(Path::new("tests/resources/config/invalid_alias_rules.toml"))?;
+    s.cmd()?.args(["get", "alias"]).assert().failure().stderr(
+        contains("failed to compile 'alias_transform.rules' transformation")
+            .and(contains("regex does not contain any capture groups"))
+            .and(contains("panicked").not()),
+    );
+
     s.close()
 }
 

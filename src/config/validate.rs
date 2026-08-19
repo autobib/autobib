@@ -27,6 +27,15 @@ fn validate_find_default_template(s: &str) {
     }
 }
 
+pub(super) fn check_alias_transform_captures(regex: &Regex) -> Result<(), &'static str> {
+    match regex.static_captures_len() {
+        Some(2) => Ok(()),
+        Some(1) => Err("regex does not contain any capture groups"),
+        Some(_) => Err("regex contains too many capture groups"),
+        None => Err("some alternatives are either missing or have too many capture groups"),
+    }
+}
+
 /// Validate alias transform rules for correctness; namely regexes compile, providers are valid,
 /// and the regex rules satisfy the 'every alternative contains exactly one capture group' rule
 fn validate_alias_transform_rules<S: AsRef<str>, T: AsRef<str>>(
@@ -41,24 +50,11 @@ fn validate_alias_transform_rules<S: AsRef<str>, T: AsRef<str>>(
             );
         }
         match Regex::new(re) {
-            Ok(regex) => match regex.static_captures_len() {
-                Some(1) => {
-                    error!(
-                        "Config 'alias_transform.rules' rule [\"{re}\", \"{provider}\"]: regex does not contain any capture groups"
-                    );
+            Ok(regex) => {
+                if let Err(err) = check_alias_transform_captures(&regex) {
+                    error!("Config 'alias_transform.rules' rule [\"{re}\", \"{provider}\"]: {err}");
                 }
-                Some(2) => {}
-                Some(_) => {
-                    error!(
-                        "Config 'alias_transform.rules' rule [\"{re}\", \"{provider}\"]: regex contains too many capture groups"
-                    );
-                }
-                None => {
-                    error!(
-                        "Config 'alias_transform.rules' rule [\"{re}\", \"{provider}\"]: some alternatives are either missing or have too many capture groups"
-                    );
-                }
-            },
+            }
             Err(e) => {
                 error!("Config 'alias_transform.rules' rule [\"{re}\", \"{provider}\"]: {e}");
             }

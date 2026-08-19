@@ -68,6 +68,8 @@ Changes since `v0.6.1`.
   - `delete` warns on orphaned attachment directories
   - This behaviour can be disabled with the `-A` or `--ignore-attachments` option
 - `autobib get` now also reads keys from standard input, one per line (with whitespace stripped)
+- Alias transform rules which fail to compile or are otherwise invalid now result in an error when loaded.
+  Note that alias transform rules are lazy-loaded, so the error will only occur if alias transform rules are actually used.
 
 ## Fixes
 

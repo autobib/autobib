@@ -11,8 +11,9 @@ use toml::from_str;
 use crate::{
     Alias, AsKey,
     format::DEFAULT_FIND_TEMPLATE,
-    logger::{debug, info, suggest, warn},
+    logger::{debug, error, info, suggest, warn},
 };
+use validate::check_alias_transform_captures;
 pub use validate::report_config_errors as validate;
 
 /// A direct representation of the default configuration used by library, for easy deserialization
@@ -158,22 +159,37 @@ impl Config {
 
 #[derive(Debug)]
 pub struct LazyAliasTransform {
-    compiled: OnceLock<Vec<Regex>>,
+    // we hold `Option<Regex>` so that the length of the compiled
+    // vec lines up with the length of the rules vec; invalid rules
+    // are `None` (skipped)
+    compiled: OnceLock<Vec<Option<Regex>>>,
     rules: Vec<(String, String)>,
     create_alias: bool,
 }
 
 impl LazyAliasTransform {
-    fn compiled_rules(&self) -> &[Regex] {
+    fn compiled_rules(&self) -> &[Option<Regex>] {
         self.compiled.get_or_init(|| {
             self.rules
                 .iter()
-             .filter_map(|(re, s)| {
-                Regex::new(re)
-                    .inspect_err(|err| warn!("Invalid config: failed to compile 'alias_transform.rules' transformation\nrule with provider '{s}': {err}"))
-                    .ok()
-            })
-            .collect()
+                .map(|(re, provider)| match Regex::new(re) {
+                    Ok(regex) => match check_alias_transform_captures(&regex) {
+                        Err(err) => {
+                            error!(
+                                "Invalid config: 'alias_transform.rules' transformation\nrule with provider '{provider}': {err}"
+                            );
+                            None
+                        }
+                        Ok(()) => Some(regex),
+                    },
+                    Err(err) => {
+                        error!(
+                            "Invalid config: failed to compile 'alias_transform.rules' transformation\nrule with provider '{provider}': {err}"
+                        );
+                        None
+                    }
+                })
+                .collect()
         })
     }
 
@@ -181,6 +197,7 @@ impl LazyAliasTransform {
         self.compiled_rules()
             .iter()
             .zip(self.rules.iter().map(|(_, provider)| provider.as_ref()))
+            .filter_map(|(regex, provider)| regex.as_ref().map(|regex| (regex, provider)))
     }
 }
 
