@@ -34,7 +34,7 @@ use crate::{
     Identifier, Key,
     config::AliasTransform,
     error::DatabaseError,
-    logger::{debug, error, info, warn},
+    logger::{debug, info, warn},
 };
 pub use snapshot::{
     Constraint, DeleteAliasResult, RenameAliasResult, Snapshot, flatten_constraint_violation,
@@ -368,13 +368,13 @@ impl RecordDatabase {
         let tx = validator.into_tx();
 
         if fix {
-            faults.retain(|fault| match Self::fix_fault_tx(&tx, fault) {
-                Ok(b) => !b,
-                Err(err) => {
-                    error!("While fixing the error {fault}, another error occurred:\n  {err}");
-                    false
+            let mut unresolved = Vec::with_capacity(faults.len());
+            for fault in faults {
+                if !Self::fix_fault_tx(&tx, &fault)? {
+                    unresolved.push(fault);
                 }
-            });
+            }
+            faults = unresolved;
         }
 
         tx.commit()?;
@@ -387,7 +387,6 @@ impl RecordDatabase {
     /// If the fault is fixed, return `true`, and return `false` otherwise.
     fn fix_fault_tx(tx: &Tx, fault: &DatabaseFault) -> Result<bool, rusqlite::Error> {
         match fault {
-            DatabaseFault::RowHasInvalidCanonicalId(_, _) => Ok(false),
             DatabaseFault::NullKeys(_) => {
                 let mut invalid_keys: Vec<String> = Vec::new();
                 {
