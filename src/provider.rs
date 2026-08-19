@@ -193,11 +193,11 @@ pub fn determine_id_candidates<K: Ord, D: EntryData, F: FnMut(&Identifier) -> K>
         }
     }
 
-    let mut br = candidate_canonical.map(|c| {
+    let mut best_canonical = candidate_canonical.map(|c| {
         let s = score(&c.mapped);
         (c, s)
     });
-    let mut bc = candidate_reference.map(|c| {
+    let mut best_reference = candidate_reference.map(|c| {
         let s = score(&c.mapped);
         (c, s)
     });
@@ -207,7 +207,13 @@ pub fn determine_id_candidates<K: Ord, D: EntryData, F: FnMut(&Identifier) -> K>
     // first determine candidates using provider-specific fields
     for (name, value) in data.fields() {
         if let Some(provider) = field_name_to_provider(name.inner()) {
-            update_in_place(provider, value.inner(), &mut score, &mut bc, &mut br);
+            update_in_place(
+                provider,
+                value.inner(),
+                &mut score,
+                &mut best_canonical,
+                &mut best_reference,
+            );
         }
     }
 
@@ -219,8 +225,8 @@ pub fn determine_id_candidates<K: Ord, D: EntryData, F: FnMut(&Identifier) -> K>
             provider.inner(),
             sub_id.inner(),
             &mut score,
-            &mut bc,
-            &mut br,
+            &mut best_canonical,
+            &mut best_reference,
         );
     }
 
@@ -230,10 +236,16 @@ pub fn determine_id_candidates<K: Ord, D: EntryData, F: FnMut(&Identifier) -> K>
         .is_some_and(|val| &val == "arXiv")
         && let Some(sub_id) = data.get_field("eprint")
     {
-        update_in_place("arxiv", sub_id.inner(), &mut score, &mut bc, &mut br);
+        update_in_place(
+            "arxiv",
+            sub_id.inner(),
+            &mut score,
+            &mut best_canonical,
+            &mut best_reference,
+        );
     }
 
-    match (bc, br) {
+    match (best_canonical, best_reference) {
         (Some((c, score_c)), Some((r, score_r))) => {
             if score_c >= score_r {
                 IdCandidate::OptimalCanonical(c)

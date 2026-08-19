@@ -1685,6 +1685,19 @@ fn import_basic() -> Result<()> {
         .success()
         .stdout(contains("doi = {10.4007/annals.2014.180.2.7}"));
 
+    let bibtex = NamedTempFile::new("canonical-key.bib")?;
+    bibtex.write_str(
+        "@article{doi:10.1000/test,\n  title = {Canonical identifier from entry key},\n}",
+    )?;
+
+    s.cmd()?.arg("import").arg(bibtex.path()).assert().success();
+
+    s.cmd()?
+        .args(["info", "doi:10.1000/test", "--report", "canonical"])
+        .assert()
+        .success()
+        .stdout("doi:10.1000/test\n");
+
     s.close()
 }
 
