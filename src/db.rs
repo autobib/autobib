@@ -22,6 +22,7 @@ mod validate;
 
 use std::path::Path;
 
+use autobib_entry::{Archive, data::MutableEntryData, v1::ArchivedEntryData};
 use delegate::delegate;
 use functions::{AppFunction, register_application_function};
 use rusqlite::{Connection, OpenFlags, OptionalExtension};
@@ -386,7 +387,78 @@ impl RecordDatabase {
     ///
     /// If the fault is fixed, return `true`, and return `false` otherwise.
     fn fix_fault_tx(tx: &Tx, fault: &DatabaseFault) -> Result<bool, rusqlite::Error> {
+        // Notes for improving:
+        // - Many changes require interactivity because the user should see the
+        //   change and confirm it.
+        // - Keys identified by `InvalidKey` can still be accessed, so they shouldn't
+        //   be deleted / renamed without confirmation.
+        // - Invalid revision tree structure (multiple disjoint trees; non-root voids), should
+        //   be fixed as follows:
+        //   - remove internal voids, connecting the child to the parent (if any)
+        //   - check if there are disjoint trees, and merge them all to share the same
+        //     void root, creating it if required
+        //   - set the timestamp of the void root to UTC_MIN
         match fault {
+            DatabaseFault::NonNormalizedId(current, normalized) => {
+                let target_rev = tx
+                    .prepare("SELECT record_rev FROM Keys WHERE name = ?1")?
+                    .query_row([normalized], |row| row.get::<_, i64>(0))
+                    .optional()?;
+                let current_rev = tx
+                    .prepare("SELECT record_rev FROM Keys WHERE name = ?1")?
+                    .query_row([current], |row| row.get::<_, i64>(0))?;
+
+                match target_rev {
+                    None => {
+                        warn!("Normalizing key '{current}' to '{normalized}'");
+                        tx.prepare("UPDATE Keys SET name = ?1 WHERE name = ?2")?
+                            .execute((normalized, current))?;
+                        Ok(true)
+                    }
+                    Some(target_rev) if target_rev == current_rev => {
+                        warn!(
+                            "Deleting non-normalized key '{current}'; normalized key '{normalized}' already exists and references the same record"
+                        );
+                        tx.prepare("DELETE FROM Keys WHERE name = ?1")?
+                            .execute([current])?;
+                        Ok(true)
+                    }
+                    Some(_) => {
+                        warn!(
+                            "Cannot normalize identifier '{current}' to '{normalized}': the normalized identifier already exists"
+                        );
+                        Ok(false)
+                    }
+                }
+            }
+            DatabaseFault::InvalidRecordData(rev, _, _)
+            | DatabaseFault::InvalidRecordDataFormat(rev, _, _) => {
+                // 'from_archive_universal' reads from v0 or v1, and also fixes sorting errors.
+                // these are the most likely data problems. other errors cannot be fixed
+                let data = match tx
+                    .prepare("SELECT data FROM Records WHERE rev = ?1 AND variant = 0")?
+                    .query_row([rev], |row| {
+                        let bytes = row.get_ref(0)?.as_blob()?;
+                        MutableEntryData::from_archive_universal(bytes).map_err(|err| {
+                            rusqlite::Error::FromSqlConversionFailure(
+                                0,
+                                rusqlite::types::Type::Blob,
+                                Box::new(err),
+                            )
+                        })
+                    }) {
+                    Ok(data) => data,
+                    Err(err) => {
+                        warn!("Binary data format could not be repaired: {err}");
+                        return Ok(false);
+                    }
+                };
+                let repaired = ArchivedEntryData::from_entry_data(&data);
+
+                tx.prepare("UPDATE Records SET data = ?1 WHERE rev = ?2 AND variant = 0")?
+                    .execute((repaired.as_bytes(), rev))?;
+                Ok(true)
+            }
             DatabaseFault::NullKeys(_) => {
                 let mut invalid_keys: Vec<String> = Vec::new();
                 {
@@ -405,6 +477,10 @@ impl RecordDatabase {
                 }
                 tx.prepare("DELETE FROM Keys WHERE record_rev NOT IN (SELECT rev FROM Records)")?
                     .execute(())?;
+                Ok(true)
+            }
+            DatabaseFault::MissingTable(name) if name == "NullRecords" => {
+                tx.execute(schema::null_records(), ())?;
                 Ok(true)
             }
             _ => Ok(false),

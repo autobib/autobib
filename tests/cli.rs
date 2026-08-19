@@ -1426,30 +1426,55 @@ fn consistency() -> Result<()> {
         .assert()
         .success();
 
-    // perform some destructive changes to the database
+    // Simulate a failed data migration by leaving most records in v1 while
+    // replacing one with unsorted v0 data.
+    let failed_migration_data = b"\0\x07article\x05\x05\0titleTitle\x06\x06\0authorAuthor";
+
+    // Perform some destructive changes to the database.
     let conn = Connection::open(s.database.path())?;
     conn.pragma_update(None, "foreign_keys", 0)?;
-    conn.prepare("DELETE FROM Records WHERE canonical = 'zbmath:6346461'")?
-        .execute(())?;
-    conn.prepare("DELETE FROM Keys WHERE name = 'mr:3224722'")?
-        .execute(())?;
+    conn.prepare(
+        "UPDATE Records SET data = ?1
+        WHERE rev = (SELECT record_rev FROM Keys WHERE name = 'mr:3224722')",
+    )?
+    .execute([failed_migration_data.as_slice()])?;
+    conn.prepare(
+        "INSERT INTO Keys (name, record_rev) VALUES
+            ('zbmath:06346461', (SELECT record_rev FROM Keys WHERE name = 'zbmath:6346461')),
+            ('zbmath:096346461', (SELECT record_rev FROM Keys WHERE name = 'zbl:1337.28015')),
+            ('local:dangling', 1000000)",
+    )?
+    .execute(())?;
     drop(conn);
 
-    // check that things are broken
-    s.cmd()?
-        .args(["get", "zbmath:6346461"])
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains(
-            "Database error: SQLite error: Query returned no rows",
-        ));
-
-    // check that the error report is correct
+    // Check that the failed migration and key faults are detected.
     s.cmd()?.args(["util", "check"]).assert().failure().stderr(
-        predicate::str::contains("Record id 'mr:3224722' contains 0 active rows").and(
-            predicate::str::contains("2 identifiers which reference records which do not exist"),
-        ),
+        contains("record id 'mr:3224722' has invalid binary data")
+            .and(contains("Keys table contains record id 'zbmath:06346461'"))
+            .and(contains("Keys table contains record id 'zbmath:096346461'"))
+            .and(contains(
+                "An identifier references a record which does not exist",
+            )),
     );
+
+    // Repair the major recoverable routes.
+    s.cmd()?
+        .args(["util", "check", "--fix"])
+        .assert()
+        .success()
+        .stderr(
+            contains("Deleting identifiers which do not reference records")
+                .and(contains("Deleting non-normalized key 'zbmath:06346461'"))
+                .and(contains(
+                    "Normalizing key 'zbmath:096346461' to 'zbmath:96346461'",
+                )),
+        );
+
+    s.cmd()?.args(["util", "check"]).assert().success();
+    s.cmd()?
+        .args(["get", "--retrieve-only", "mr:3224722", "zbmath:96346461"])
+        .assert()
+        .success();
 
     s.close()
 }
