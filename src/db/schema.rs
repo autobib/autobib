@@ -20,6 +20,33 @@ schema!(records, "The table which stores record data.");
 
 schema!(null_records, "The table which caches null records.");
 
-schema!(create_indices, "Create indices for the tables.");
+/// The indices created when initializing a database.
+pub const INDICES: &[(&str, &str)] = &[
+    (
+        "records_parent_rev",
+        "CREATE INDEX records_parent_rev ON Records(parent_rev)",
+    ),
+    (
+        "records_canonical",
+        "CREATE INDEX records_canonical ON Records(canonical)",
+    ),
+    (
+        "records_modified",
+        "CREATE INDEX records_modified ON Records(modified)",
+    ),
+    (
+        "keys_record_rev",
+        "CREATE INDEX keys_record_rev ON Keys(record_rev)",
+    ),
+];
 
-schema!(create_views, "Create views for the tables.");
+/// The views created when initializing a database.
+pub const VIEWS: &[(&str, &str)] = &[(
+    "ActiveRecords",
+    "CREATE VIEW ActiveRecords AS
+SELECT canonical, modified, data as entry_data
+FROM Records
+WHERE
+  rev in (SELECT record_rev FROM Keys)
+  AND variant = 0",
+)];

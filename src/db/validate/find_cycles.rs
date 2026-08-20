@@ -2,19 +2,21 @@ use std::collections::{HashMap, HashSet};
 
 use super::DatabaseFault;
 
-/// Detects cycles in a parent-key graph structure.
+/// Detect cycles in a parent-revision graph structure.
 ///
-/// Each element in `records` is a `(key, parent_rev)` pair, where `parent_rev = None`
-/// indicates a root node. Returns a vector of cycles, where each cycle is represented
-/// as a vector of keys forming the cycle.
+/// Each element in `parent_map` is a `(revision, parent_revision)` pair, where a missing parent
+/// revision indicates a root node. Any detected faults are appended to `faults`.
 ///
 /// # Example
 ///
 /// ```
-/// // Tree structure: 1 -> 2 -> 3 -> 2 (cycle between 2 and 3)
-/// let records = vec![(1, None), (2, Some(1)), (3, Some(2)), (2, Some(3))];
-/// let cycles = detect_cycles(&records);
-/// assert!(!cycles.is_empty());
+/// use std::collections::HashMap;
+///
+/// // Revision 1 is a root; revisions 2 and 3 form a cycle.
+/// let records = HashMap::from([(1, None), (2, Some(3)), (3, Some(2))]);
+/// let mut faults = Vec::new();
+/// detect_cycles(&records, &mut faults);
+/// assert!(!faults.is_empty());
 /// ```
 pub fn detect_cycles(parent_map: &HashMap<i64, Option<i64>>, faults: &mut Vec<DatabaseFault>) {
     // the row-ids we have already visited
@@ -26,29 +28,27 @@ pub fn detect_cycles(parent_map: &HashMap<i64, Option<i64>>, faults: &mut Vec<Da
             continue;
         }
 
-        let mut path_set: HashSet<i64> = HashSet::new();
+        let mut path = Vec::new();
+        let mut path_indices = HashMap::new();
         let mut current = key;
 
         loop {
             // this is a cycle
-            if path_set.contains(current) {
-                for node in &path_set {
-                    visited.insert(*node);
-                }
-                faults.push(DatabaseFault::ContainsCycle(path_set));
+            if let Some(&cycle_start) = path_indices.get(current) {
+                visited.extend(path.iter().copied());
+                faults.push(DatabaseFault::ContainsCycle(path[cycle_start..].to_vec()));
                 break;
             }
 
             // part of an existing tree
             if visited.contains(current) {
-                for node in path_set {
-                    visited.insert(node);
-                }
+                visited.extend(path);
                 break;
             }
 
             // extend the path and follow the parent
-            path_set.insert(*current);
+            path_indices.insert(*current, path.len());
+            path.push(*current);
 
             match parent_map.get(current) {
                 Some(Some(parent_rev)) => {
@@ -56,18 +56,14 @@ pub fn detect_cycles(parent_map: &HashMap<i64, Option<i64>>, faults: &mut Vec<Da
                 }
                 Some(None) => {
                     // reached a root node; ok
-                    for node in path_set {
-                        visited.insert(node);
-                    }
+                    visited.extend(path);
                     break;
                 }
                 None => {
                     // parent undefined
-                    faults.push(DatabaseFault::ParentKeyMissing(*current));
+                    faults.push(DatabaseFault::MissingParentRevision(*current));
 
-                    for node in path_set {
-                        visited.insert(node);
-                    }
+                    visited.extend(path);
                     break;
                 }
             }

@@ -1449,9 +1449,13 @@ fn consistency() -> Result<()> {
 
     // Check that the failed migration and key faults are detected.
     s.cmd()?.args(["util", "check"]).assert().failure().stderr(
-        contains("record id 'mr:3224722' has invalid binary data")
-            .and(contains("Keys table contains record id 'zbmath:06346461'"))
-            .and(contains("Keys table contains record id 'zbmath:096346461'"))
+        contains("record id 'mr:3224722' has malformed binary data")
+            .and(contains(
+                "Keys table contains key 'zbmath:06346461' which is not normalized",
+            ))
+            .and(contains(
+                "Keys table contains key 'zbmath:096346461' which is not normalized",
+            ))
             .and(contains(
                 "An identifier references a record which does not exist",
             )),

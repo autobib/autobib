@@ -131,7 +131,7 @@ impl<'r> AccessRowUnchecked<'r> for &'r ArchivedEntryData {
             panic!("Expected 'data' column to be of type BLOB");
         };
         ArchivedEntryData::access(data_bytes)
-            .expect("Database containins invalid binary data in the 'data' column.")
+            .expect("Database contains malformed binary data in the 'data' column.")
     }
 }
 impl<'r, Q: col::DataEntry> AccessRow<'r, Q> for &'r ArchivedEntryData {}

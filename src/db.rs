@@ -242,10 +242,14 @@ impl RecordDatabase {
                 tx.execute(schema::null_records(), ())?;
 
                 debug!("Initializing indices");
-                tx.execute_batch(schema::create_indices())?;
+                for &(_, sql) in schema::INDICES {
+                    tx.execute(sql, ())?;
+                }
 
                 debug!("Initializing views");
-                tx.execute_batch(schema::create_views())?;
+                for &(_, sql) in schema::VIEWS {
+                    tx.execute(sql, ())?;
+                }
 
                 tx.commit()?;
 
@@ -356,15 +360,31 @@ impl RecordDatabase {
         };
         let mut faults = Vec::new();
 
-        validator.table_schema(&mut faults)?;
-        validator.record_indexing(&mut faults)?;
-        validator.invalid_identifiers(&mut faults)?;
+        validator.schema(&mut faults)?;
+
+        let table_is_valid = |table_name: &str| {
+            !faults.iter().any(|fault| match fault {
+                DatabaseFault::MissingTable(name) | DatabaseFault::InvalidTableSchema(name, _) => {
+                    name == table_name
+                }
+                _ => false,
+            })
+        };
+        let records_valid = table_is_valid("Records");
+        let keys_valid = table_is_valid("Keys");
+
         validator.integrity(&mut faults)?;
-        validator.binary_data(&mut faults)?;
-        validator.unique_tree_per_key(&mut faults)?;
-        validator.monotonic_timestamps(&mut faults)?;
-        validator.void_correct_formatting(&mut faults)?;
-        validator.check_active_row_counts(&mut faults)?;
+        if records_valid {
+            validator.record_indexing(&mut faults)?;
+            validator.binary_data(&mut faults)?;
+            validator.unique_tree_per_key(&mut faults)?;
+            validator.monotonic_timestamps(&mut faults)?;
+            validator.void_correct_formatting(&mut faults)?;
+        }
+        if records_valid && keys_valid {
+            validator.invalid_identifiers(&mut faults)?;
+            validator.check_active_row_counts(&mut faults)?;
+        }
 
         let tx = validator.into_tx();
 
@@ -399,7 +419,7 @@ impl RecordDatabase {
         //     void root, creating it if required
         //   - set the timestamp of the void root to UTC_MIN
         match fault {
-            DatabaseFault::NonNormalizedId(current, normalized) => {
+            DatabaseFault::NonNormalizedKey(current, normalized) => {
                 let target_rev = tx
                     .prepare("SELECT record_rev FROM Keys WHERE name = ?1")?
                     .query_row([normalized], |row| row.get::<_, i64>(0))
@@ -431,8 +451,8 @@ impl RecordDatabase {
                     }
                 }
             }
-            DatabaseFault::InvalidRecordData(rev, _, _)
-            | DatabaseFault::InvalidRecordDataFormat(rev, _, _) => {
+            DatabaseFault::InvalidEntryData(rev, _, _)
+            | DatabaseFault::MalformedRecordData(rev, _, _) => {
                 // 'from_archive_universal' reads from v0 or v1, and also fixes sorting errors.
                 // these are the most likely data problems. other errors cannot be fixed
                 let data = match tx
@@ -459,7 +479,7 @@ impl RecordDatabase {
                     .execute((repaired.as_bytes(), rev))?;
                 Ok(true)
             }
-            DatabaseFault::NullKeys(_) => {
+            DatabaseFault::DanglingKeys(_) => {
                 let mut invalid_keys: Vec<String> = Vec::new();
                 {
                     let mut stmt = tx.prepare(
@@ -481,6 +501,24 @@ impl RecordDatabase {
             }
             DatabaseFault::MissingTable(name) if name == "NullRecords" => {
                 tx.execute(schema::null_records(), ())?;
+                Ok(true)
+            }
+            DatabaseFault::MissingIndex(name) => {
+                let Some((_, sql)) = schema::INDICES
+                    .iter()
+                    .find(|(expected, _)| expected == name)
+                else {
+                    return Ok(false);
+                };
+                tx.execute(sql, ())?;
+                Ok(true)
+            }
+            DatabaseFault::MissingView(name) => {
+                let Some((_, sql)) = schema::VIEWS.iter().find(|(expected, _)| expected == name)
+                else {
+                    return Ok(false);
+                };
+                tx.execute(sql, ())?;
                 Ok(true)
             }
             _ => Ok(false),

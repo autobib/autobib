@@ -1,56 +1,55 @@
 mod find_cycles;
 
-use std::{
-    collections::{HashMap, HashSet},
-    fmt,
-    num::NonZero,
-    str::FromStr,
-};
+use std::{collections::HashMap, fmt, num::NonZero, str::FromStr};
 
 use autobib_entry::{AccessError, Archive, DataError, v1::ArchivedEntryData};
 use chrono::{DateTime, Local};
 use rusqlite::types::ValueRef;
 
 use super::{Tx, schema};
-use crate::{AsKey, Identifier, Key, logger::debug};
+use crate::{Alias, AsKey, Identifier, logger::debug};
 
-/// A possible fault that could occurr inside the database.
+/// A possible fault that could occur inside the database.
 #[derive(Debug)]
 pub enum DatabaseFault {
     /// The `parent_rev` relationship in the 'Records' table contains a cycle.
-    ContainsCycle(HashSet<i64>),
+    ContainsCycle(Vec<i64>),
     /// A void record is not a root vertex.
     VoidIsNotRoot(i64),
     /// A void record does not have the minimal timestamp.
     VoidHasIncorrectTimestamp(i64, DateTime<Local>),
-    /// A row has a parent key with modification later than the row modification time.
-    ParentHasEarlierTimestamp(i64),
+    /// A row has a parent revision with a modification time later than its own.
+    ParentHasLaterTimestamp(i64),
     /// A record-id in the 'Records' table has multiple corresponding trees.
     OrphanedNodes(String, u64),
     /// A record-id in the 'Records' table has multiple citation keys pointing
     IncorrectActiveRowCount(String, u64),
-    /// The `parent_rev` is a row which does not exist.
-    ParentKeyMissing(i64),
+    /// The `parent_rev` refers to a revision which does not exist.
+    MissingParentRevision(i64),
     /// A row has an invalid canonical id.
     RowHasInvalidCanonicalId(i64, String),
     /// A row has a canonical id which has not been normalized.
     RowHasNonNormalizedCanonicalId(i64, String, String),
-    /// A row has an invalid canonical id.
+    /// The `Keys` table contains an invalid key.
     InvalidKey(String),
-    /// A row has a canonical id which has not been normalized.
-    NonNormalizedId(String, String),
+    /// The `Keys` table contains a key which has not been normalized.
+    NonNormalizedKey(String, String),
     /// There are `NonZero<usize>` rows in the `Keys` table which point to a `Records` row which does not exist.
-    NullKeys(NonZero<usize>),
+    DanglingKeys(NonZero<usize>),
     /// There was an underlying SQLite integrity error.
     IntegrityError(String),
-    /// A row in the `Records` table contains invalid binary data.
-    InvalidRecordDataFormat(i64, String, AccessError),
-    /// A row in the `Records` table contains invalid binary data.
-    InvalidRecordData(i64, String, DataError),
+    /// A row in the `Records` table contains malformed binary data.
+    MalformedRecordData(i64, String, AccessError),
+    /// A row in the `Records` table contains semantically invalid entry data.
+    InvalidEntryData(i64, String, DataError),
     /// A table is missing.
     MissingTable(String),
     /// A table has the incorrect schema.
     InvalidTableSchema(String, String),
+    /// An expected index is missing.
+    MissingIndex(String),
+    /// An expected view is missing.
+    MissingView(String),
 }
 
 impl fmt::Display for DatabaseFault {
@@ -66,10 +65,10 @@ impl fmt::Display for DatabaseFault {
                 }
                 Ok(())
             }
-            Self::ParentHasEarlierTimestamp(row_id) => {
+            Self::ParentHasLaterTimestamp(row_id) => {
                 write!(
                     f,
-                    "Row {row_id} has a parent key with modification later than the row modification time."
+                    "Record row '{row_id}' has a parent revision with a later modification time."
                 )
             }
             Self::OrphanedNodes(key, n) => {
@@ -81,10 +80,10 @@ impl fmt::Display for DatabaseFault {
             Self::IncorrectActiveRowCount(key, n) => {
                 write!(f, "Record id '{key}' contains {n} active rows; expected 1.")
             }
-            Self::ParentKeyMissing(parent_row_id) => {
+            Self::MissingParentRevision(parent_row_id) => {
                 write!(
                     f,
-                    "Parent key '{parent_row_id}' is not a row in the Records table"
+                    "Parent revision '{parent_row_id}' is not a row in the Records table"
                 )
             }
             Self::VoidIsNotRoot(id) => {
@@ -109,18 +108,15 @@ impl fmt::Display for DatabaseFault {
                 )
             }
             Self::InvalidKey(name) => {
+                write!(f, "Keys table contains invalid key '{name}'")
+            }
+            Self::NonNormalizedKey(name, expected) => {
                 write!(
                     f,
-                    "Keys table contains record id '{name}' which is not a valid canonical id"
+                    "Keys table contains key '{name}' which is not normalized: expected '{expected}'"
                 )
             }
-            Self::NonNormalizedId(name, expected) => {
-                write!(
-                    f,
-                    "Keys table contains record id '{name}' which is not normalized: expected '{expected}'"
-                )
-            }
-            Self::NullKeys(count) => {
+            Self::DanglingKeys(count) => {
                 if count.get() == 1 {
                     write!(
                         f,
@@ -134,19 +130,21 @@ impl fmt::Display for DatabaseFault {
                 }
             }
             Self::IntegrityError(err) => write!(f, "Database integrity error: {err}"),
-            Self::InvalidRecordDataFormat(row_id, name, err) => write!(
+            Self::MalformedRecordData(row_id, name, err) => write!(
                 f,
-                "Record row '{row_id}' with record id '{name}' has invalid binary data: {err}"
+                "Record row '{row_id}' with record id '{name}' has malformed binary data: {err}"
             ),
-            Self::InvalidRecordData(row_id, name, err) => write!(
+            Self::InvalidEntryData(row_id, name, err) => write!(
                 f,
-                "Record row '{row_id}' with record id '{name}' has data not in the standard format: {err}"
+                "Record row '{row_id}' with record id '{name}' has invalid entry data: {err}"
             ),
             Self::MissingTable(table_name) => write!(f, "Missing table '{table_name}'"),
             Self::InvalidTableSchema(table_name, table_schema) => write!(
                 f,
                 "Table '{table_name}' has invalid schema:\n{table_schema}",
             ),
+            Self::MissingIndex(index_name) => write!(f, "Missing index '{index_name}'"),
+            Self::MissingView(view_name) => write!(f, "Missing view '{view_name}'"),
         }
     }
 }
@@ -175,6 +173,20 @@ pub fn check_table_schema(
     }
 }
 
+/// Check whether a schema object with the expected type and name exists.
+fn schema_object_exists(
+    tx: &Tx,
+    object_type: &str,
+    object_name: &str,
+) -> Result<bool, rusqlite::Error> {
+    tx.prepare(
+        "SELECT EXISTS(
+            SELECT 1 FROM sqlite_schema WHERE type = ?1 AND name = ?2
+        )",
+    )?
+    .query_row((object_type, object_name), |row| row.get(0))
+}
+
 pub struct DatabaseValidator<'conn> {
     pub tx: Tx<'conn>,
 }
@@ -184,8 +196,9 @@ impl<'conn> DatabaseValidator<'conn> {
         self.tx
     }
 
-    /// Check that all of the expected tables exist and have the correct schema.
-    pub fn table_schema(&self, faults: &mut Vec<DatabaseFault>) -> Result<(), rusqlite::Error> {
+    /// Check that all expected tables, indices, and views exist, and that tables have the correct
+    /// schema.
+    pub fn schema(&self, faults: &mut Vec<DatabaseFault>) -> Result<(), rusqlite::Error> {
         for (tbl_name, schema) in [
             ("Records", schema::records()),
             ("Keys", schema::keys()),
@@ -194,6 +207,20 @@ impl<'conn> DatabaseValidator<'conn> {
             debug!("Checking schema for table '{tbl_name}'.");
             if let Some(fault) = check_table_schema(&self.tx, tbl_name, schema)? {
                 faults.push(fault);
+            }
+        }
+
+        for &(index_name, _) in schema::INDICES {
+            debug!("Checking for index '{index_name}'.");
+            if !schema_object_exists(&self.tx, "index", index_name)? {
+                faults.push(DatabaseFault::MissingIndex(index_name.into()));
+            }
+        }
+
+        for &(view_name, _) in schema::VIEWS {
+            debug!("Checking for view '{view_name}'.");
+            if !schema_object_exists(&self.tx, "view", view_name)? {
+                faults.push(DatabaseFault::MissingView(view_name.into()));
             }
         }
 
@@ -330,7 +357,7 @@ WHERE canonical NOT IN (
         Ok(())
     }
 
-    pub fn monotonic_timestamps(&self, fauls: &mut Vec<DatabaseFault>) -> rusqlite::Result<()> {
+    pub fn monotonic_timestamps(&self, faults: &mut Vec<DatabaseFault>) -> rusqlite::Result<()> {
         let mut stmt = self.tx.prepare(
             "
 SELECT DISTINCT c.rev as child_rev
@@ -339,7 +366,7 @@ WHERE c.modified < p.modified",
         )?;
 
         for row in stmt.query_map([], |row| row.get("child_rev"))? {
-            fauls.push(DatabaseFault::ParentHasEarlierTimestamp(row?));
+            faults.push(DatabaseFault::ParentHasLaterTimestamp(row?));
         }
 
         Ok(())
@@ -369,13 +396,14 @@ WHERE c.modified < p.modified",
         // return meaningful information since it cannot provide a rowid for which the foreign key
         // constraint is violated. As a result, the best way for us to handle this is just to
         // return the number of violations.
-        self.tx.pragma_query(None, "foreign_key_check", |_| {
+        let mut stmt = self.tx.prepare("PRAGMA foreign_key_check('Keys')")?;
+        let mut rows = stmt.query(())?;
+        while rows.next()?.is_some() {
             num_faults += 1;
-            Ok(())
-        })?;
+        }
 
         if let Some(nz) = NonZero::new(num_faults) {
-            faults.push(DatabaseFault::NullKeys(nz));
+            faults.push(DatabaseFault::DanglingKeys(nz));
         }
 
         debug!("Checking 'Keys' table for non-normalized identifiers");
@@ -385,16 +413,24 @@ WHERE c.modified < p.modified",
         while let Some(row) = rows.next()? {
             let name: String = row.get("name")?;
 
-            let id: String = match Key::from(name.as_ref()).resolve(&()) {
-                Ok(alias_or_id) => alias_or_id.into(),
-                Err(_) => {
+            let normalized = match name.find(':') {
+                Some(_) => Identifier::from_str(&name)
+                    .ok()
+                    .map(|id| id.as_key().to_owned()),
+                None => Alias::from_str(&name)
+                    .ok()
+                    .map(|alias| alias.as_key().to_owned()),
+            };
+            let normalized = match normalized {
+                Some(normalized) => normalized,
+                None => {
                     faults.push(DatabaseFault::InvalidKey(name));
                     continue;
                 }
             };
 
-            if name != id {
-                faults.push(DatabaseFault::NonNormalizedId(name, id));
+            if name != normalized {
+                faults.push(DatabaseFault::NonNormalizedKey(name, normalized));
                 continue;
             }
         }
@@ -415,14 +451,14 @@ WHERE c.modified < p.modified",
                 Ok(data) => {
                     use autobib_entry::EntryData;
                     if let Err(err) = data.validate_untrusted() {
-                        faults.push(DatabaseFault::InvalidRecordData(
+                        faults.push(DatabaseFault::InvalidEntryData(
                             row.get("rev")?,
                             row.get("canonical")?,
                             err,
                         ));
                     }
                 }
-                Err(err) => faults.push(DatabaseFault::InvalidRecordDataFormat(
+                Err(err) => faults.push(DatabaseFault::MalformedRecordData(
                     row.get("rev")?,
                     row.get("canonical")?,
                     err,
