@@ -27,7 +27,7 @@ use crate::{
 /// Given a candidate alias string, check if it is a valid alias, and if it is, try to add it as an
 /// alias for the given row. If the alias does not exist, or it exists and points to the row, this
 /// does not result in an error.
-pub fn create_alias_if_valid(key: &str, row: &State<IsEntry>) -> Result<(), rusqlite::Error> {
+pub fn create_alias_if_valid(key: &str, row: &mut State<IsEntry>) -> Result<(), rusqlite::Error> {
     match Alias::from_str(key) {
         Ok(alias) => {
             if let Some(other_id) = row.ensure_alias(&alias)? {
@@ -63,7 +63,7 @@ pub fn insert<'conn, I>(
 where
     State<'conn, I>: RecordsInsert<'conn>,
 {
-    let exists = if let Some(path) = from_bibtex {
+    let mut exists = if let Some(path) = from_bibtex {
         let mut data = data_from_path(path)?;
         data.normalize(normalization);
         data.edit(edit);
@@ -84,11 +84,11 @@ where
         };
 
         if let Some(BibtexEntry { key, record_data }) = Editor::new_bibtex().edit(&entry)? {
-            let row = missing
+            let mut row = missing
                 .insert(&ArchivedEntryData::from_entry_data(&record_data), id)?
                 .state;
             if key.as_ref() != id.as_key() && !key.is_placeholder() {
-                create_alias_if_valid(key.as_ref(), &row)?;
+                create_alias_if_valid(key.as_ref(), &mut row)?;
             }
             row.commit()?;
         } else {
@@ -99,8 +99,7 @@ where
     };
 
     if let Some(alias) = add_alias
-        && let crate::db::state::AddAliasResult::AlreadyExists(other_id) =
-            exists.state.add_alias(alias)?
+        && let Some(other_id) = exists.state.add_alias(alias)?
     {
         error!("Alias '{alias}' already exists and refers to '{other_id}'.");
     }

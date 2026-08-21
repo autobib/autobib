@@ -185,15 +185,15 @@ impl<'conn> DatabaseResponse<'conn> {
     fn existent_with_callback<K>(
         tx: Tx<'conn>,
         row_id: RowId,
-        produce_key_entry: impl FnOnce(&State<'conn, IsEntry>, K) -> Result<String, rusqlite::Error>,
+        produce_key_entry: impl FnOnce(&mut State<'conn, IsEntry>, K) -> Result<String, rusqlite::Error>,
         produce_key_deleted: impl FnOnce(&State<'conn, IsDeleted>, K) -> Result<String, rusqlite::Error>,
         produce_key_void: impl FnOnce(&State<'conn, IsVoid>, K) -> Result<String, rusqlite::Error>,
         key: K,
     ) -> Result<Self, rusqlite::Error> {
         debug!("Beginning new transaction for row '{row_id}' in the `Records` table.");
         match State::init(tx, IsArbitrary(row_id)).disambiguate()? {
-            DisambiguatedRecordState::Entry(record, state) => {
-                let key = produce_key_entry(&state, key)?;
+            DisambiguatedRecordState::Entry(record, mut state) => {
+                let key = produce_key_entry(&mut state, key)?;
                 Ok(Self::Entry(KeyedRecord { key, record }, state))
             }
             DisambiguatedRecordState::Deleted(record, state) => {
@@ -272,7 +272,8 @@ impl<'conn> DatabaseResponse<'conn> {
                                 row_id,
                                 |row, alias| {
                                     if alias_transform.create() {
-                                        row.add_alias(&alias)?;
+                                        let existing = row.add_alias(&alias)?;
+                                        debug_assert!(existing.is_none());
                                     }
                                     Ok(alias.into())
                                 },

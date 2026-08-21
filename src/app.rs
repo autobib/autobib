@@ -41,7 +41,7 @@ use crate::{
     cite_search::{SourceFileType, get_citekeys},
     config,
     db::{
-        DeleteAliasResult, RecordDatabase, RenameAliasResult,
+        RecordDatabase, RenameAliasResult,
         select::{MapRow, Select, col, stmt},
         state::{
             self, DatabaseResponse, DisambiguatedRecordState, ExistsOrUnknown, RecordRowDisplay,
@@ -174,9 +174,9 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             AliasCommand::Add { alias, target } => {
                 info!("Creating alias '{alias}' for '{target}'");
                 let cfg = config::load(&config_path, missing_ok)?;
-                let (_, row) = get_record(&mut record_db, target, client, &cfg)?
+                let (_, mut row) = get_record(&mut record_db, target, client, &cfg)?
                     .exists_or_commit_null("Cannot create alias for")?;
-                if let state::AddAliasResult::AlreadyExists(other_id) = row.add_alias(&alias)? {
+                if let Some(other_id) = row.add_alias(&alias)? {
                     error!("Alias '{alias}' already exists and refers to '{other_id}'.");
                 }
                 row.commit()?;
@@ -184,11 +184,10 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             AliasCommand::Delete { alias } => {
                 info!("Deleting alias '{alias}'");
                 let mut snapshot = record_db.snapshot()?;
-                match snapshot.delete_alias(&alias)? {
-                    DeleteAliasResult::Deleted => snapshot.commit()?,
-                    DeleteAliasResult::Missing => {
-                        bail!("Could not delete alias which does not exist: '{alias}'")
-                    }
+                if snapshot.delete_alias(&alias)? {
+                    snapshot.commit()?;
+                } else {
+                    bail!("Could not delete alias which does not exist: '{alias}'")
                 }
             }
             AliasCommand::Rename { alias, new } => {
@@ -199,16 +198,22 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     RenameAliasResult::TargetExists => {
                         bail!("Alias already exists: '{new}'");
                     }
+                    RenameAliasResult::SourceMissing => {
+                        bail!("Could not rename alias which does not exist: '{alias}'");
+                    }
                 }
             }
             AliasCommand::Reassign { alias, target } => {
                 info!("Updating alias '{alias}' to point to '{target}'");
                 let cfg = config::load(&config_path, missing_ok)?;
-                let (_, row) = get_record(&mut record_db, target, client, &cfg)?
+                let (_, mut row) = get_record(&mut record_db, target, client, &cfg)?
                     .exists_or_commit_null("Cannot create alias for")?;
-                if !row.update_alias(&alias)? {
-                    error!("Alias does not exist!");
-                    suggest!("Use `autobib alias add` to insert a new alias.");
+                match row.reassign_alias(&alias)? {
+                    state::ReassignAliasResult::Reassigned => {}
+                    state::ReassignAliasResult::Missing => {
+                        error!("Alias does not exist!");
+                        suggest!("Use `autobib alias add` to insert a new alias.");
+                    }
                 }
                 row.commit()?;
             }
@@ -446,11 +451,11 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         if let Some(BibtexEntry { key, record_data }) =
                             Editor::new_bibtex().edit(&entry)?
                         {
-                            let new_row = state
+                            let mut new_row = state
                                 .modify(&ArchivedEntryData::from_entry_data(&record_data))?
                                 .state;
                             if key.as_ref() != entry.key.as_ref() && !key.is_placeholder() {
-                                create_alias_if_valid(key.as_ref(), &new_row)?;
+                                create_alias_if_valid(key.as_ref(), &mut new_row)?;
                             }
                             new_row.commit()?;
                         } else {

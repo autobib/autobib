@@ -1057,35 +1057,42 @@ RETURNING rev",
         .with_timestamp(modified))
     }
 
-    /// Add a new alias for this row, returning if the alias was newly created or returning the
-    /// canonical id of the existing value of the alias.
+    /// Add a new alias for this row.
+    ///
+    /// This method returns `None` if the alias was newly cretaed, or `Some(canonical_identifier)`
+    /// if an alias already exists, containing the canonical id of the existing alias.
     #[inline]
-    pub fn add_alias(&self, alias: &Alias) -> Result<AddAliasResult, rusqlite::Error> {
+    pub fn add_alias(&mut self, alias: &Alias) -> Result<Option<Identifier>, rusqlite::Error> {
         if self.add_refs_impl(std::iter::once(alias), IdentifierInsertMode::FailIfExists)? {
-            Ok(AddAliasResult::Added)
+            Ok(None)
         } else {
             let existing_row_id = get_row_id(&self.tx, alias)?
                 .expect("Alias must exist after its insertion violated the unique constraint");
-            get_canonical(&self.tx, existing_row_id).map(AddAliasResult::AlreadyExists)
+            get_canonical(&self.tx, existing_row_id).map(Some)
         }
     }
 
-    /// Update an existing alias to point to this row.
-    ///
-    /// The return value is `false` if the alias already exists, and otherwise `true`.
+    /// Reassign an existing alias to point to this row.
     #[inline]
-    pub fn update_alias(&self, alias: &Alias) -> Result<bool, rusqlite::Error> {
+    pub fn reassign_alias(
+        &mut self,
+        alias: &Alias,
+    ) -> Result<ReassignAliasResult, rusqlite::Error> {
         let rows_changed = self
             .prepare("UPDATE Keys SET record_rev = ?1 WHERE name = ?2")?
             .execute((self.row_id(), alias.as_key()))?;
-        Ok(rows_changed == 1)
+        if rows_changed == 0 {
+            Ok(ReassignAliasResult::Missing)
+        } else {
+            Ok(ReassignAliasResult::Reassigned)
+        }
     }
 
     /// Ensure that the given alias exists for this row.
     ///
     /// If the alias already exists and points to a different row, the canonical id of the other row is returned.
     #[inline]
-    pub fn ensure_alias(&self, alias: &Alias) -> Result<Option<Identifier>, rusqlite::Error> {
+    pub fn ensure_alias(&mut self, alias: &Alias) -> Result<Option<Identifier>, rusqlite::Error> {
         debug!(
             "Ensuring alias '{alias}' refers to row_id '{}'",
             self.row_id()
@@ -1107,9 +1114,12 @@ RETURNING rev",
     }
 }
 
-pub enum AddAliasResult {
-    Added,
-    AlreadyExists(Identifier),
+#[must_use]
+pub enum ReassignAliasResult {
+    /// The alias was successfuly reassigned to a new value.
+    Reassigned,
+    /// The alias was missing and could not be reassigned.
+    Missing,
 }
 
 impl<'conn, I: NotEntry> State<'conn, I> {

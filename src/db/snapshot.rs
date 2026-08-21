@@ -225,22 +225,18 @@ WHERE variant = 1
             .tx
             .prepare("UPDATE Keys SET name = ?1 WHERE name = ?2")?;
         match flatten_constraint_violation(updater.execute((new.as_key(), old.as_ref())))? {
+            Constraint::Satisfied(0) => Ok(RenameAliasResult::SourceMissing),
             Constraint::Satisfied(_) => Ok(RenameAliasResult::Renamed),
             Constraint::Violated => Ok(RenameAliasResult::TargetExists),
         }
     }
 
     /// Delete an alias, returning the status of the deletion.
-    pub fn delete_alias(
-        &mut self,
-        alias: &LegacyAlias,
-    ) -> Result<DeleteAliasResult, rusqlite::Error> {
+    ///
+    /// This method returns `true` if the alias was deleted, and `false` otherwise.
+    pub fn delete_alias(&mut self, alias: &LegacyAlias) -> Result<bool, rusqlite::Error> {
         let mut deleter = self.tx.prepare("DELETE FROM Keys WHERE name = ?1")?;
-        if deleter.execute((alias.as_ref(),))? == 0 {
-            Ok(DeleteAliasResult::Missing)
-        } else {
-            Ok(DeleteAliasResult::Deleted)
-        }
+        Ok(deleter.execute((alias.as_ref(),))? != 0)
     }
 
     /// Delete all rows from `NullRecords`.
@@ -290,13 +286,6 @@ pub enum RenameAliasResult {
     Renamed,
     /// The new alias name already exists.
     TargetExists,
-}
-
-/// The result of renaming an alias.
-#[must_use]
-pub enum DeleteAliasResult {
-    /// The alias was successfully renamed.
-    Deleted,
-    /// The alias did not exist.
-    Missing,
+    /// The existing alias name did not exist.
+    SourceMissing,
 }

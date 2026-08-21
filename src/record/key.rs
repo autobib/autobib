@@ -81,33 +81,26 @@ impl Key {
                 .map(AliasOrId::Id)
                 .map_err(Into::into),
             None => {
-                if self.full_id.is_empty() {
-                    Err(RecordError {
-                        input: self.full_id,
-                        kind: RecordErrorKind::Alias(AliasErrorKind::Empty),
-                    })
+                let alias = Alias::try_from_owned(self.full_id)?;
+                if let Some((provider, sub_id)) = alias_transform.map_alias(&alias) {
+                    let mut full_id = String::with_capacity(provider.len() + sub_id.len() + 1);
+                    full_id.push_str(provider);
+                    full_id.push(':');
+                    full_id.push_str(sub_id);
+                    let resolved = match resolve_provider_sub_id(full_id, provider.len()) {
+                        Ok(resolved) => resolved,
+                        Err(e) => {
+                            // instead of calling `e.into()`, we preserve the original unmapped
+                            // alias as the input
+                            return Err(RecordError {
+                                input: alias.into(),
+                                kind: RecordErrorKind::InvalidMappedAlias(e.kind),
+                            });
+                        }
+                    };
+                    Ok(AliasOrId::Alias(alias, Some(resolved.mapped)))
                 } else {
-                    let alias = Alias(self.full_id);
-                    if let Some((provider, sub_id)) = alias_transform.map_alias(&alias) {
-                        let mut full_id = String::with_capacity(provider.len() + sub_id.len() + 1);
-                        full_id.push_str(provider);
-                        full_id.push(':');
-                        full_id.push_str(sub_id);
-                        let resolved = match resolve_provider_sub_id(full_id, provider.len()) {
-                            Ok(resolved) => resolved,
-                            Err(e) => {
-                                // instead of calling `e.into()`, we preserve the original unmapped
-                                // alias as the input
-                                return Err(RecordError {
-                                    input: alias.into(),
-                                    kind: RecordErrorKind::InvalidMappedAlias(e.kind),
-                                });
-                            }
-                        };
-                        Ok(AliasOrId::Alias(alias, Some(resolved.mapped)))
-                    } else {
-                        Ok(AliasOrId::Alias(alias, None))
-                    }
+                    Ok(AliasOrId::Alias(alias, None))
                 }
             }
         }
@@ -203,24 +196,8 @@ impl TryFrom<AliasOrId> for Identifier {
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct Alias(String);
 
-impl From<Alias> for String {
-    fn from(alias: Alias) -> Self {
-        alias.0
-    }
-}
-
-impl AsKey for Alias {
-    fn as_key(&self) -> &str {
-        &self.0
-    }
-}
-
-impl FromStr for Alias {
-    type Err = AliasConversionError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let input = s.trim().to_owned();
-
+impl Alias {
+    fn try_from_owned(input: String) -> Result<Self, AliasConversionError> {
         if input.is_empty() {
             return Err(AliasConversionError {
                 input,
@@ -243,6 +220,26 @@ impl FromStr for Alias {
         }
 
         Ok(Self(input))
+    }
+}
+
+impl From<Alias> for String {
+    fn from(alias: Alias) -> Self {
+        alias.0
+    }
+}
+
+impl AsKey for Alias {
+    fn as_key(&self) -> &str {
+        &self.0
+    }
+}
+
+impl FromStr for Alias {
+    type Err = AliasConversionError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::try_from_owned(s.trim().to_owned())
     }
 }
 
@@ -296,25 +293,7 @@ impl TryFrom<Key> for Alias {
     type Error = AliasConversionError;
 
     fn try_from(key: Key) -> Result<Self, Self::Error> {
-        if let Key {
-            full_id: s,
-            provider_len: None,
-        } = key
-        {
-            if !s.is_empty() {
-                Ok(Self(s))
-            } else {
-                Err(AliasConversionError {
-                    input: s,
-                    kind: AliasErrorKind::Empty,
-                })
-            }
-        } else {
-            Err(AliasConversionError {
-                input: key.full_id,
-                kind: AliasErrorKind::IsIdentifier,
-            })
-        }
+        Self::try_from_owned(key.full_id)
     }
 }
 

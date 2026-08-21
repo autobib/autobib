@@ -255,7 +255,7 @@ enum ImportAction<'conn> {
 
 /// A helper function to create a new alias, with logging.
 fn create_alias_and_commit(
-    row: State<'_, IsEntry>,
+    mut row: State<'_, IsEntry>,
     id: &str,
     no_alias: bool,
     maybe_alias: Option<Alias>,

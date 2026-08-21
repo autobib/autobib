@@ -630,6 +630,54 @@ fn alias() -> Result<()> {
         .stdout(predicate_file);
 
     s.cmd()?
+        .args(["alias", "reassign", "my_alias", "local:second"])
+        .assert()
+        .success();
+
+    s.cmd()?
+        .args(["get", "my_alias"])
+        .assert()
+        .success()
+        .stdout(contains("@misc{my_alias"));
+
+    s.cmd()?
+        .args(["alias", "reassign", "missing", "local:first"])
+        .assert()
+        .failure()
+        .stderr(contains("Alias does not exist"));
+
+    s.cmd()?
+        .args(["alias", "reassign", "my_alias", "local:first"])
+        .assert()
+        .success();
+
+    s.cmd()?
+        .args(["alias", "add", "occupied", "local:second"])
+        .assert()
+        .success();
+
+    s.cmd()?
+        .args(["alias", "rename", "my_alias", "occupied"])
+        .assert()
+        .failure()
+        .stderr(contains("Alias already exists: 'occupied'"));
+
+    let predicate_file = predicate::path::eq_file(Path::new("tests/resources/alias/stdout.txt"))
+        .utf8()
+        .unwrap();
+    s.cmd()?
+        .args(["get", "my_alias"])
+        .assert()
+        .success()
+        .stdout(predicate_file);
+
+    s.cmd()?
+        .args(["get", "occupied"])
+        .assert()
+        .success()
+        .stdout(contains("@misc{occupied"));
+
+    s.cmd()?
         .args(["alias", "rename", "my_alias", "new_alias"])
         .assert()
         .success();
@@ -670,6 +718,12 @@ fn alias() -> Result<()> {
         .stderr(contains("Could not delete alias which does not exist"));
 
     s.cmd()?
+        .args(["alias", "rename", "missing", "replacement"])
+        .assert()
+        .failure()
+        .stderr(contains("does not exist"));
+
+    s.cmd()?
         .args(["alias", "add", "  ", "not_an_alias"])
         .assert()
         .failure()
@@ -692,6 +746,12 @@ fn alias() -> Result<()> {
         .assert()
         .failure()
         .stderr(contains("Cannot create alias for undefined alias"));
+
+    s.cmd()?
+        .args(["get", "has\ncontrol"])
+        .assert()
+        .failure()
+        .stderr(contains("alias must not contain control characters"));
 
     s.close()
 }

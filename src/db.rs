@@ -37,9 +37,7 @@ use crate::{
     error::DatabaseError,
     logger::{debug, info, warn},
 };
-pub use snapshot::{
-    Constraint, DeleteAliasResult, RenameAliasResult, Snapshot, flatten_constraint_violation,
-};
+pub use snapshot::{Constraint, RenameAliasResult, Snapshot, flatten_constraint_violation};
 
 /// The current database version expected by the application.
 pub const fn user_version() -> i32 {

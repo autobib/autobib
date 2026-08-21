@@ -148,7 +148,8 @@ where
                 |row, alias| {
                     // create the new alias
                     if config.alias_transform.create() {
-                        row.add_alias(&alias)?;
+                        let existing = row.add_alias(&alias)?;
+                        debug_assert!(existing.is_none());
                     }
                     Ok(Some(alias.into()))
                 },
@@ -207,7 +208,10 @@ fn get_record_recursive<'conn, O, C: Client>(
     id: Identifier,
     client: &C,
     normalization: &Normalization,
-    exists_callback: impl FnOnce(&State<'conn, IsEntry>, O) -> Result<Option<String>, rusqlite::Error>,
+    exists_callback: impl FnOnce(
+        &mut State<'conn, IsEntry>,
+        O,
+    ) -> Result<Option<String>, rusqlite::Error>,
     deleted_callback: impl FnOnce(
         &State<'conn, IsDeleted>,
         O,
@@ -223,9 +227,9 @@ fn get_record_recursive<'conn, O, C: Client>(
                 let raw_record_data = ArchivedEntryData::from_entry_data(&data);
 
                 // SAFETY: the provided canonical identifier is present in the provided references
-                let row =
+                let mut row =
                     missing.insert_with_refs(&raw_record_data, history.last(), history.iter())?;
-                let maybe_key = exists_callback(&row.state, original)?;
+                let maybe_key = exists_callback(&mut row.state, original)?;
 
                 let NonEmpty { head, mut tail } = history;
                 let (key, canonical) = match (maybe_key, tail.pop()) {
@@ -249,11 +253,11 @@ fn get_record_recursive<'conn, O, C: Client>(
             }
             RemoteResponse::Reference(new_id) => {
                 match DatabaseIdResponse::determine(missing.into_tx(), &new_id)? {
-                    DatabaseIdResponse::Entry(record, state) => {
+                    DatabaseIdResponse::Entry(record, mut state) => {
                         // not necessary to insert `new_id` since we just saw that it
                         // is present in the database
                         state.add_refs(history.iter())?;
-                        let maybe_key = exists_callback(&state, original)?;
+                        let maybe_key = exists_callback(&mut state, original)?;
                         break Ok(RecordResponse::Exists(
                             KeyedRecord {
                                 key: maybe_key.unwrap_or(history.head.into()),
@@ -286,12 +290,12 @@ fn get_record_recursive<'conn, O, C: Client>(
                     }
                     DatabaseIdResponse::Void(record_row, void) => {
                         // use the special 'lookup and reinsert' method
-                        let (data, entry) =
+                        let (data, mut entry) =
                             revive_void(void, &record_row.canonical, client, normalization)?;
                         // add the new references
                         entry.state.add_refs(history.iter())?;
-                        let key =
-                            exists_callback(&entry.state, original)?.unwrap_or(history.head.into());
+                        let key = exists_callback(&mut entry.state, original)?
+                            .unwrap_or(history.head.into());
 
                         break Ok(RecordResponse::Exists(
                             KeyedRecord {
