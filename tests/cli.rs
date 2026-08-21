@@ -1038,6 +1038,27 @@ fn attach() -> Result<()> {
     s.cmd()?
         .args(["attach", "zbl:1337.28015"])
         .arg(temp.as_ref())
+        .args(["--rename", "attach3.txt", "--force"])
+        .assert()
+        .success();
+
+    s.attachment("zbmath/JX/TT/CT/GA3DGNBWGQ3DC===/attach3.txt")
+        .assert(predicate::eq(temp_contents));
+
+    temp.write_str("short")?;
+
+    s.cmd()?
+        .args(["attach", "zbl:1337.28015"])
+        .arg(temp.as_ref())
+        .arg("--force")
+        .assert()
+        .success();
+
+    attachment_file.assert(predicate::eq("short"));
+
+    s.cmd()?
+        .args(["attach", "zbl:1337.28015"])
+        .arg(temp.as_ref())
         .args(["--rename", ".."])
         .assert()
         .failure();

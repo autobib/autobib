@@ -258,7 +258,9 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
 
             let mut opts = OpenOptions::new();
             opts.write(true);
-            if !force {
+            if force {
+                opts.create(true).truncate(true);
+            } else {
                 opts.create_new(true);
             }
 
