@@ -351,6 +351,22 @@ fn source_append() -> Result<()> {
 
     assert!(predicate_file.eval(output.as_ref()));
 
+    s.cmd()?
+        .args([
+            "source",
+            "--stdin",
+            "txt",
+            "--out",
+            &output.to_string_lossy(),
+            "--append",
+        ])
+        .write_stdin("")
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty());
+
+    assert!(predicate_file.eval(output.as_ref()));
+
     s.close()
 }
 

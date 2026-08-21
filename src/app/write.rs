@@ -89,8 +89,12 @@ pub fn output_entries_bibtex<D: EntryData>(
 ) -> Result<(), serde_bibtex::Error> {
     match out {
         Some(file) => {
+            if append && grouped_entries.is_empty() {
+                return Ok(());
+            }
+
             let mut writer = io::BufWriter::new(file);
-            if append && !grouped_entries.is_empty() {
+            if append {
                 writer.write_all(b"\n")?;
             }
             entries_to_bibtex(writer, flatten_and_warn(grouped_entries))?;
