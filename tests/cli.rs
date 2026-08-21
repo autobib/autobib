@@ -295,6 +295,12 @@ fn get() -> Result<()> {
         .stderr(predicate::str::is_empty());
 
     s.cmd()?
+        .args(["get", "zbl:1285.28011", "--template", r#"{"\\"}"#])
+        .assert()
+        .success()
+        .stdout("\\\n");
+
+    s.cmd()?
         .args(["alias", "add", "my_alias", "zbmath:6245248"])
         .assert()
         .success();

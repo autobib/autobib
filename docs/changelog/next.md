@@ -81,3 +81,4 @@ Changes since `v0.6.1`.
 - When new aliases conflict with existing aliases, the correct canonical identifier is now printed.
 - Fixed `autobib edit` and `autobib local` not correctly applying headless edit methods.
 - Fixed attach --force failing to create new files and fully truncate overwritten attachments.
+- Fixed quotation escaping in template JSON strings.

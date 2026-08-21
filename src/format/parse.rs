@@ -175,7 +175,12 @@ impl<'a> Lexer<'a> {
             '"' => {
                 let tail = chars.as_str().as_bytes();
                 for idx in memchr::memchr_iter(b'"', tail) {
-                    if idx == 0 || tail[idx - 1] != b'\\' {
+                    let preceding_backslashes = tail[..idx]
+                        .iter()
+                        .rev()
+                        .take_while(|&&byte| byte == b'\\')
+                        .count();
+                    if preceding_backslashes.is_multiple_of(2) {
                         let cutoff = idx + 2;
                         let s = match serde_json::from_str(&self.remainder()[..cutoff]) {
                             Ok(s) => s,
