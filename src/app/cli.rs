@@ -106,7 +106,7 @@ pub enum OnConflict {
     /// Overwrite current values.
     #[value(aliases(["i", "incoming"]))]
     PreferIncoming,
-    /// Prompt if the there is a conflict.
+    /// Prompt if there is a conflict.
     #[value(alias("p"))]
     Prompt,
 }
@@ -459,7 +459,7 @@ pub enum Command {
     /// This is essentially a call to `autobib get`, except with a custom search which attempts
     /// to find keys inside the provided file(s), typically as citation keys.
     /// The search method depends on the file type, which is determined purely based
-    /// on the extension. File type detection can be overrided manually.
+    /// on the extension. File type detection can be overridden manually.
     Source {
         /// The files in which to search.
         paths: Vec<PathBuf>,
@@ -499,12 +499,9 @@ pub enum Command {
     },
     /// Update record data associated with a key.
     ///
-    /// By default, you will be prompted if there is a conflict between the current and incoming
-    /// records.
-    ///
-    /// To override this behaviour, use `-n prefer-current` or `-n prefer-incoming`.
-    /// If the terminal is not interactive or the `--no-interactive` global option is set, this
-    /// will result in an error if the `-n prefer-current` or `-n prefer-incoming` is not explicitly set.
+    /// By default, if the terminal is interactive you will be prompted if there is a conflict
+    /// between the current and incoming records. If the terminal is not interactive, existing data
+    /// will be preserved.
     Update {
         /// The key for the update operation.
         key: Key,

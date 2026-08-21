@@ -35,16 +35,16 @@ fn main() {
     #[cfg(not(debug_assertions))]
     std::panic::set_hook(Box::new(|panic_info| {
         eprintln!(
-            "An unexpected error occured while running the program:
+            "An unexpected error occurred while running the program:
   1. Your database file could be malformed or has been edited by another program.
      Run `autobib util check` to see if this is the case.
   2. If you have ruled out 1. or believe that the database has become malformed
      through normal usage, this is a bug in Autobib. Please report it at
      > https://github.com/autobib/autobib/issues
      including the error message below and any other information you can provide
-     about the context in which it occured.
+     about the context in which it occurred.
 
-The following is a description of the error which occured:
+The following is a description of the error which occurred:
 "
         );
         eprintln!("{panic_info}");

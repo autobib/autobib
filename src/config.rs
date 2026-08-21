@@ -88,7 +88,10 @@ impl RawConfig {
                     );
                     Ok(Self::default())
                 } else {
-                    Err(anyhow!("Failed to load configuration file: {err}"))
+                    Err(anyhow!(
+                        "Failed to load configuration file at path '{}'\n      {err}",
+                        path.as_ref().display()
+                    ))
                 }
             }
         }

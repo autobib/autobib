@@ -1,6 +1,6 @@
 # Architecture
 
-This documentation is for **database version 2**.
+This documentation is for **database version 5**.
 Please see older copies of this file for different database versions.
 
 ## SQLite database format
@@ -9,7 +9,7 @@ The Autobib command-line tool stores data locally in a [SQLite](https://sqlite.o
 
 - at the location specified by the `--database` command line option
 - as set by the `$AUTOBIB_DATABASE_PATH` environment variable
-- by default at `$XDG_CONFIG_HOME/autobib/records.db`
+- by default at `$XDG_DATA_HOME/autobib/records.db`
 
 The goal of this section is to give a full, detailed description of the database format in order to read data from the database without using the Autobib program.
 
@@ -51,7 +51,7 @@ The `data` column contains the raw data associated with the record, with interpr
 on the `variant`.
 
 - `variant = 0`: This is a regular entry which contains some data.
-  The data is encoded according to the rules [documented below](#internal-binary-data-format).
+  The data is encoded according to the v1 format [documented in the `autobib-entry` crate](https://docs.rs/autobib-entry/latest/autobib_entry/v1/index.html).
 - `variant = 1`: This is a deleted entry.
   Either `data` is a non-empty UTF-8 string (indicating a replacement record), or it is empty.
   The replacement record may not exist in the database, though it is checked to exist at the time of creation.

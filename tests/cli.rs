@@ -301,6 +301,14 @@ fn get() -> Result<()> {
         .stdout("\\\n");
 
     s.cmd()?
+        .args(["get", "zbl:1285.28011", "--template", "{title?abcdef}"])
+        .assert()
+        .failure()
+        .stderr(contains(
+            "Parsed successfully, but has trailing characters 'abcd..'.",
+        ));
+
+    s.cmd()?
         .args(["alias", "add", "my_alias", "zbmath:6245248"])
         .assert()
         .success();
@@ -2681,7 +2689,7 @@ fn prune() -> Result<()> {
         ])
         .assert()
         .failure()
-        .stderr(contains("Revision does not exist"));
+        .stderr(contains("does not exist"));
 
     s.cmd()?
         .args([
@@ -2692,7 +2700,7 @@ fn prune() -> Result<()> {
         ])
         .assert()
         .failure()
-        .stderr(contains("Revision does not exist"));
+        .stderr(contains("does not exist"));
 
     s.cmd()?
         .args([
@@ -2703,7 +2711,7 @@ fn prune() -> Result<()> {
         ])
         .assert()
         .failure()
-        .stderr(contains("Revision does not exist"));
+        .stderr(contains("does not exist"));
 
     // pruning outdated does not delete future states
     let (s, rev_1, rev_2, rev_3, _) = init()?;
@@ -2722,7 +2730,7 @@ fn prune() -> Result<()> {
         ])
         .assert()
         .failure()
-        .stderr(contains("Revision does not exist"));
+        .stderr(contains("does not exist"));
 
     s.cmd()?
         .args([
@@ -2733,7 +2741,7 @@ fn prune() -> Result<()> {
         ])
         .assert()
         .failure()
-        .stderr(contains("Revision does not exist"));
+        .stderr(contains("does not exist"));
 
     s.cmd()?
         .args([
@@ -2774,7 +2782,7 @@ fn prune() -> Result<()> {
         ])
         .assert()
         .failure()
-        .stderr(contains("Revision does not exist"));
+        .stderr(contains("does not exist"));
 
     s.cmd()?
         .args([
@@ -2874,7 +2882,7 @@ fn prune() -> Result<()> {
             std::str::from_utf8(&rev_4).unwrap().trim_end(),
         ])
         .assert()
-        .stderr(contains("Revision does not exist"));
+        .stderr(contains("does not exist"));
 
     s.close()?;
 

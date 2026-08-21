@@ -14,7 +14,7 @@ More complicated operations involving attachments should be done using a separat
 The attachment directory is determined by the first of the following which matches:
 
 1. An explicit argument passed to `--attachments-dir`.
-2. The value of `$AUTOBIB_ATTACHMENTS_DIR`.
+2. The value of `$AUTOBIB_ATTACHMENTS_DIRECTORY`.
 3. The value of `$XDG_DATA_HOME/autobib/attachments`
 4. `$HOME/.local/share/autobib/attachments`
 

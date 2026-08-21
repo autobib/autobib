@@ -98,7 +98,7 @@ where
                     .commit()?;
             } else {
                 state.commit()?;
-                error!("Cannot update soft-deleted row '{key}'.");
+                error!("Cannot update soft-deleted record corresponding to key '{key}'.");
                 suggest!("Undo first, or use `autobib update --revive` to insert new data.");
             }
         }
@@ -157,24 +157,24 @@ pub fn data_from_key<'conn>(
             MutableEntryData::from_entry_data(&record.data),
             state.into_tx(),
         )),
-        DatabaseResponse::Deleted(_, state) => {
+        DatabaseResponse::Deleted(KeyedRecord { key, .. }, state) => {
             state.commit()?;
-            bail!("Cannot read update data from deleted row");
+            bail!("Cannot read update data from deleted record with key '{key}'");
         }
-        DatabaseResponse::Void(_, state) => {
+        DatabaseResponse::Void(KeyedRecord { key, .. }, state) => {
             state.commit()?;
-            bail!("Cannot read update data from voided row");
+            bail!("Cannot read update data from voided record with key '{key}'");
         }
-        DatabaseResponse::NullId(_, state) => {
+        DatabaseResponse::NullId(key, state) => {
             state.commit()?;
-            bail!("Cannot read update data from null record");
+            bail!("Cannot read update data from null record (requested by '{key}')");
         }
         DatabaseResponse::Unknown(unknown) => {
             unknown.combine_and_commit()?;
             bail!("Cannot read update data from record not present in database");
         }
-        DatabaseResponse::UndefinedAlias(_) => {
-            bail!("Cannot read update data from undefined alias");
+        DatabaseResponse::UndefinedAlias(alias) => {
+            bail!("Cannot read update data from undefined alias '{alias}'");
         }
         DatabaseResponse::InvalidId(record_error) => {
             bail!("Cannot read update data: {record_error}");
@@ -194,8 +194,8 @@ pub fn data_from_rev(
         ArbitraryData::Entry(raw_entry_data) => {
             Ok(MutableEntryData::from_entry_data(&raw_entry_data))
         }
-        ArbitraryData::Deleted(_) => bail!("Cannot read update data from deleted row"),
-        ArbitraryData::Void => bail!("Cannot read update data from voided row"),
+        ArbitraryData::Deleted(_) => bail!("Cannot read update data from deleted record"),
+        ArbitraryData::Void => bail!("Cannot read update data from voided record"),
     }
 }
 

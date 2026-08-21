@@ -51,12 +51,12 @@ pub fn handle_redo_result<'conn, I>(
                     error!("No changes to redo");
                 }
                 RedoError::OutOfBounds(child_count) => {
-                    error!("Index out of range: there only {child_count} divergent changes");
+                    error!("Index out of range: there are only {child_count} divergent changes");
                 }
                 RedoError::ChildNotUnique(child_count) => {
                     error!("There are {child_count} divergent changes");
                     suggest!(
-                        "Review the changes with `autobib log --all` and choose a specific change using the INDEX argument."
+                        "Review the changes with `autobib log --tree` and choose a specific change using the INDEX argument."
                     );
                 }
             }

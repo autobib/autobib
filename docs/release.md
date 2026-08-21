@@ -17,7 +17,7 @@
 ## Automation
 
 A convenience script has been created to automate steps 1-5.
-The script can be found in [`scripts/release.sh`](scripts/release.sh) and can be run with
+The script can be found in [`scripts/release.sh`](../scripts/release.sh) and can be run with
 ```sh
 ./scripts/release.sh {major, minor, patch, rc, beta, alpha}
 ```

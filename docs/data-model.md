@@ -76,7 +76,7 @@ There are three states that a record can be in.
    This state is created with `autobib delete` or `autobib delete --replace`.
 3. `void`: This is a special state which is similar to there being no record present in the database.
    For example, this will cause `autobib get` to automatically retrieve new data for the row.
-   It is uncommon for a record to be in this state, but this can be attained manually with `autobib hist void`, or is created automatically with `autobib hist rewind-all` or `autobib hist reset --before` when the threshold time precedes the existence of the record in the database.
+   It is uncommon for a record to be in this state, but this can be attained manually with `autobib hist void`, or is created automatically with `autobib hist rewind` when the threshold time precedes the existence of the record in the database.
 
 Note that `void` entries still contain some state: it preserves aliases, and still tracks the *canonical id* which can be used to more efficiently look-up new data.
 
@@ -92,7 +92,7 @@ This prints a branch diagram showing the relationship between all of the states 
 The active state is also highlighted.
 
 The branch diagram also includes special hexadecimal *revisions*, which can be used to refer to specific versions.
-You can change to a specific revision using `autobib hist reset --rev`.
+You can change to a specific revision using `autobib hist reset`.
 
 ### Lifetimes
 
@@ -105,7 +105,7 @@ For example, attempting to edit or update a deletion marker will result in an er
 In particular, the default state of the edit-tree is that it forms a *lifetime*: a special tree where any non-leaf node contains entry data, and the leaf nodes may additionally be deleted.
 
 However, it is possible to edit beyond a deleted state if desired: this is called *reviving* a deletion marker.
-This is achieved either using `autobib revive` (which you must provide with new data) or with `autobib update --revive`, which inserts new data read from the data provider.
+This is achieved either using `autobib hist revive` (which you must provide with new data) or with `autobib update --revive`, which inserts new data read from the data provider.
 
 Operations involving multiple lifetimes often require special flags.
 

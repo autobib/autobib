@@ -23,7 +23,7 @@ use std::{
     str::FromStr,
 };
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use autobib_entry::{
     Archive,
     data::{EntryEditCommand, MutableEntryData, Normalization, Normalize},
@@ -297,7 +297,12 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         ureq::http::StatusCode::OK => response.into_body(),
                         c => bail!("Failed to download file: {c}"),
                     };
-                    let mut target_file = opts.open(&target)?;
+                    let mut target_file = opts.open(&target).with_context(|| {
+                        format!(
+                            "Failed to open or create attachment target '{}' for writing",
+                            target.display()
+                        )
+                    })?;
                     if let Err(e) = copy(&mut body.as_reader(), &mut target_file) {
                         error!("{e}");
                         // check if there is a file at the target location; if there is one, it
@@ -319,7 +324,12 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
 
                     // Try to open the source file first, since this will reduce the number of redundant
                     // errors.
-                    let mut source_file = File::open(&file)?;
+                    let mut source_file = File::open(&file).with_context(|| {
+                        format!(
+                            "Failed to open attachment source '{}' for reading",
+                            file.display()
+                        )
+                    })?;
 
                     use_rename_or_fallback(&mut target, rename, file.file_name())?;
 
@@ -725,7 +735,9 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                             state.commit()?;
                             match err {
                                 SetActiveError::RowIdUndefined => {
-                                    error!("Revision does not exist in the 'Records' table");
+                                    error!(
+                                        "Revision '{rev}' does not exist in the 'Records' table"
+                                    );
                                 }
                                 SetActiveError::DifferentCanonical(id) => {
                                     error!(
@@ -1430,7 +1442,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         Ok(data_from_path(path)?)
                     } else if canonical.is_local() {
                         bail!(
-                            "Cannot update local record using remote data: use `autobib edit` or the `--from-bibtex` or `--from-key` options."
+                            "Cannot update local record using remote data: use `autobib edit` or the `--from-bibtex` or `--from-record` options."
                         );
                     } else {
                         Ok(update::data_from_remote(canonical, client)?.0)

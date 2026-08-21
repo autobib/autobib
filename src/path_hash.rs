@@ -140,7 +140,7 @@ impl AttachmentRootLock<false> {
 
 impl AttachmentRootLock<true> {
     fn set_format(&mut self, new: AttachmentFormat) -> Result<(), io::Error> {
-        info!("Setting attachment root format to '{}", new.as_fmt_str());
+        info!("Setting attachment root format to '{}'", new.as_fmt_str());
         let f = self
             .fmt
             .as_mut()
