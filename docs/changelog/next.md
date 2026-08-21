@@ -79,3 +79,4 @@ Changes since `v0.6.1`.
 - Fixed DOI and ISBN validation and normalization.
   Some DOIs or ISBNs may now be accepted; some previously accepted DOIs (which would almost surely be null records) are now rejected without a network request.
 - When new aliases conflict with existing aliases, the correct canonical identifier is now printed.
+- Fixed `autobib edit` and `autobib local` not correctly applying headless edit methods.

@@ -66,6 +66,7 @@ where
     let exists = if let Some(path) = from_bibtex {
         let mut data = data_from_path(path)?;
         data.normalize(normalization);
+        data.edit(edit);
         missing.insert(&ArchivedEntryData::from_entry_data(&data), id)?
     } else if !edit.is_identity() {
         let mut data = MutableEntryData::default();

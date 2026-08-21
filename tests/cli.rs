@@ -532,6 +532,33 @@ fn local() -> Result<()> {
 
     s.cmd()?.args(["local", "second"]).assert().success();
 
+    let bibtex = NamedTempFile::new("record.bib")?;
+    bibtex.write_str("@book{ignored,\n  title = {Original title},\n}\n")?;
+    s.cmd()?
+        .arg("local")
+        .arg("override")
+        .arg("--from-bibtex")
+        .arg(bibtex.path())
+        .args([
+            "--with-entry-type",
+            "article",
+            "--with-field",
+            "title = {Replacement title}",
+        ])
+        .assert()
+        .success();
+
+    s.cmd()?
+        .args([
+            "get",
+            "local:override",
+            "--template",
+            "{%entry_type}|{title}",
+        ])
+        .assert()
+        .success()
+        .stdout("article|Replacement title\n");
+
     let predicate_file =
         predicate::path::eq_file(Path::new("tests/resources/local/stdout_short.txt"))
             .utf8()
