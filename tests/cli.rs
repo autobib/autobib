@@ -1357,7 +1357,13 @@ fn edit() -> Result<()> {
         .success();
 
     s.cmd()?
-        .args(["edit", "mr:3224722", "--normalize-whitespace"])
+        .args([
+            "edit",
+            "mr:3224722",
+            "--normalize-whitespace",
+            "--set-field",
+            "note = {Expected note}",
+        ])
         .assert()
         .success();
 

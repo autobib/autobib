@@ -419,7 +419,9 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         let mut editable_data =
                             MutableEntryData::from_entry_data(&record.record.data);
 
-                        let changed = editable_data.normalize(&nl) || editable_data.edit(&edit_cmd);
+                        let normalized = editable_data.normalize(&nl);
+                        let edited = editable_data.edit(&edit_cmd);
+                        let changed = normalized || edited;
 
                         if changed {
                             state

@@ -5,6 +5,7 @@
   eprinttype = {doi},
   journal = {Ann. of Math. (2)},
   mrnumber = {3224722},
+  note = {Expected note},
   pages = {773--822},
   title = {On self-similar sets with overlaps and inverse theorems for entropy},
   volume = {180},
