@@ -37,7 +37,7 @@ impl<'row> AccessRowUnchecked<'row> for Variant {
             1 => Self::Deleted,
             2 => Self::Void,
             _ => panic!(
-                "Unexpected 'Records' table row variant: expected 0 (entry), 1 (deleted), or 2 (void)."
+                "Unexpected 'Records' table record variant: expected 0 (entry), 1 (deleted), or 2 (void)."
             ),
         }
     }

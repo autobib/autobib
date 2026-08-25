@@ -396,7 +396,7 @@ pub enum Command {
         /// Set specific field values using BibTeX `key = {value}` syntax
         #[arg(long, value_name = "FIELD_KEY={VALUE}")]
         with_field: Vec<SetFieldCommand>,
-        /// Also create the alias from the ID name.
+        /// Also create the alias from the new local identifier.
         #[arg(short = 'a', long)]
         create_alias: bool,
     },
@@ -729,7 +729,7 @@ pub enum HistCommand {
     },
     /// Move record data back in time.
     ///
-    /// Rewind specific records with `-i/--id`, or rewind all records with `-a/--all`.
+    /// Rewind specific records with `--key`, or rewind all records with `-a/--all`.
     ///
     /// Use caution! The modification time may not correspond to the database state at the provided
     /// date-time if you have used `autobib hist (undo|redo|reset)`, since these methods only change the

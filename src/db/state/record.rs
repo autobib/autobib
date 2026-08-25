@@ -510,7 +510,7 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
     /// identifier as the current row.
     pub fn delete_hard(self) -> Result<State<'conn, IsMissing>, rusqlite::Error> {
         debug!(
-            "Permanently deleting all rows in the edit-tree associated with the id '{}'",
+            "Permanently deleting all revisions in the edit-tree associated with the revision '{}'",
             self.row_id()
         );
         self.prepare(
@@ -530,7 +530,7 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
     /// Obtain the data for this row.
     pub fn get_data(&self) -> rusqlite::Result<Record<I::Data>> {
         debug!(
-            "Retrieving 'Records' data associated with row '{}'",
+            "Retrieving record data associated with revision '{}'",
             self.row_id()
         );
         use crate::db::select::SelectOneUnchecked;
@@ -552,14 +552,17 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
     /// Get last modified time.
     #[inline]
     pub fn last_modified(&self) -> Result<DateTime<Local>, rusqlite::Error> {
-        debug!("Getting last modified time for row '{}'.", self.row_id());
+        debug!(
+            "Getting last modified time for revision '{}'.",
+            self.row_id()
+        );
         get_last_modified(&self.tx, self.row_id())
     }
 
     /// Obtain the complete data for this row.
     pub fn get_complete_data(&self) -> rusqlite::Result<HistRecord<I::Data, String>> {
         debug!(
-            "Retrieving 'Records' data associated with row '{}'",
+            "Retrieving record data associated with revision '{}'",
             self.row_id()
         );
         stmt::GetHist::select_one_unchecked_cast(&self.tx, self.row_id())
@@ -580,7 +583,7 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
         RevisionId(row_id): RevisionId,
     ) -> Result<RecordRowMoveResult<'conn, IsArbitrary, I, SetActiveError>, rusqlite::Error> {
         debug!(
-            "Updating the active row for '{}' to '{}'.",
+            "Updating the active revision for '{}' to '{}'.",
             self.row_id(),
             row_id
         );
@@ -600,7 +603,7 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
     /// Repeatedly undo until arriving at a first state precedes the provided time.
     pub fn rewind(self, before: DateTime<Local>) -> rusqlite::Result<State<'conn, IsArbitrary>> {
         debug!(
-            "Rewinding row id '{}' to how it looked at {}",
+            "Rewinding from revision '{}' to how it looked at {}",
             self.row_id(),
             before
         );
@@ -677,7 +680,7 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
         refs: R,
         mode: IdentifierInsertMode,
     ) -> Result<bool, rusqlite::Error> {
-        debug!("Inserting references to row_id '{}'", self.row_id());
+        debug!("Inserting references to revision '{}'", self.row_id());
         for id in refs {
             let stmt = match mode {
                 IdentifierInsertMode::Overwrite => {
@@ -935,7 +938,7 @@ impl<'conn> State<'conn, IsEntry> {
                         .prepare("SELECT canonical FROM Records WHERE rev = ?1")?
                         .query_row([row_id], |row| row.get("canonical"))?;
                     let id = Identifier::from_string_unchecked(repl);
-                    info!("Replacing row with new canonical id '{id}'");
+                    info!("Replacing record with new canonical id '{id}'");
                     let deleted = self.delete_soft(Some(&id), update_aliases)?.state;
                     Ok(RecordRowMoveResult::Updated(deleted))
                 }
@@ -1094,7 +1097,7 @@ RETURNING rev",
     #[inline]
     pub fn ensure_alias(&mut self, alias: &Alias) -> Result<Option<Identifier>, rusqlite::Error> {
         debug!(
-            "Ensuring alias '{alias}' refers to row_id '{}'",
+            "Ensuring alias '{alias}' refers to revision '{}'",
             self.row_id()
         );
         match get_row_id(&self.tx, alias)? {

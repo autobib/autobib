@@ -1,5 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
+use crate::db::state::RevisionId;
+
 use super::DatabaseFault;
 
 /// Detect cycles in a parent-revision graph structure.
@@ -61,7 +63,7 @@ pub fn detect_cycles(parent_map: &HashMap<i64, Option<i64>>, faults: &mut Vec<Da
                 }
                 None => {
                     // parent undefined
-                    faults.push(DatabaseFault::MissingParentRevision(*current));
+                    faults.push(DatabaseFault::MissingParentRevision(RevisionId(*current)));
 
                     visited.extend(path);
                     break;

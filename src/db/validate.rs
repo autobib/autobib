@@ -7,7 +7,7 @@ use chrono::{DateTime, Local};
 use rusqlite::types::ValueRef;
 
 use super::{Tx, schema};
-use crate::{Alias, AsKey, Identifier, logger::debug};
+use crate::{Alias, AsKey, Identifier, db::state::RevisionId, logger::debug};
 
 /// A possible fault that could occur inside the database.
 #[derive(Debug)]
@@ -15,21 +15,21 @@ pub enum DatabaseFault {
     /// The `parent_rev` relationship in the 'Records' table contains a cycle.
     ContainsCycle(Vec<i64>),
     /// A void record is not a root vertex.
-    VoidIsNotRoot(i64),
+    VoidIsNotRoot(RevisionId),
     /// A void record does not have the minimal timestamp.
-    VoidHasIncorrectTimestamp(i64, DateTime<Local>),
+    VoidHasIncorrectTimestamp(RevisionId, DateTime<Local>),
     /// A row has a parent revision with a modification time later than its own.
-    ParentHasLaterTimestamp(i64),
+    ParentHasLaterTimestamp(RevisionId),
     /// A record-id in the 'Records' table has multiple corresponding trees.
     OrphanedNodes(String, u64),
     /// A record-id in the 'Records' table has multiple citation keys pointing
     IncorrectActiveRowCount(String, u64),
     /// The `parent_rev` refers to a revision which does not exist.
-    MissingParentRevision(i64),
+    MissingParentRevision(RevisionId),
     /// A row has an invalid canonical id.
-    RowHasInvalidCanonicalId(i64, String),
+    RowHasInvalidCanonicalId(RevisionId, String),
     /// A row has a canonical id which has not been normalized.
-    RowHasNonNormalizedCanonicalId(i64, String, String),
+    RowHasNonNormalizedCanonicalId(RevisionId, String, String),
     /// The `Keys` table contains an invalid key.
     InvalidKey(String),
     /// The `Keys` table contains a key which has not been normalized.
@@ -39,9 +39,9 @@ pub enum DatabaseFault {
     /// There was an underlying SQLite integrity error.
     IntegrityError(String),
     /// A row in the `Records` table contains malformed binary data.
-    MalformedRecordData(i64, String, AccessError),
+    MalformedRecordData(RevisionId, String, AccessError),
     /// A row in the `Records` table contains semantically invalid entry data.
-    InvalidEntryData(i64, String, DataError),
+    InvalidEntryData(RevisionId, String, DataError),
     /// A table is missing.
     MissingTable(String),
     /// A table has the incorrect schema.
@@ -58,7 +58,7 @@ impl fmt::Display for DatabaseFault {
             Self::ContainsCycle(cycle) => {
                 write!(
                     f,
-                    "Records table contains a cycle! This cycle uses the following row-ids:"
+                    "Records table contains a cycle! This cycle uses the following revisions:"
                 )?;
                 for key in cycle {
                     write!(f, " -> ({key})")?;
@@ -68,23 +68,23 @@ impl fmt::Display for DatabaseFault {
             Self::ParentHasLaterTimestamp(row_id) => {
                 write!(
                     f,
-                    "Record row '{row_id}' has a parent revision with a later modification time."
+                    "Record revision '{row_id}' has a parent revision with a later modification time."
                 )
             }
             Self::OrphanedNodes(key, n) => {
                 write!(
                     f,
-                    "Record id '{key}' contains inaccessible revisions: {n} disjoint revision-trees found."
+                    "Canonical id '{key}' contains inaccessible revisions: {n} disjoint revision-trees found."
                 )
             }
             Self::IncorrectActiveRowCount(key, n) => {
-                write!(f, "Record id '{key}' contains {n} active rows; expected 1.")
-            }
-            Self::MissingParentRevision(parent_row_id) => {
                 write!(
                     f,
-                    "Parent revision '{parent_row_id}' is not a row in the Records table"
+                    "Canonidal id '{key}' contains {n} active records; expected 1."
                 )
+            }
+            Self::MissingParentRevision(parent_row_id) => {
+                write!(f, "Parent revision '{parent_row_id}' does not exist")
             }
             Self::VoidIsNotRoot(id) => {
                 write!(f, "Void record '{id}' is not a root vertex")
@@ -98,13 +98,13 @@ impl fmt::Display for DatabaseFault {
             Self::RowHasInvalidCanonicalId(row_id, name) => {
                 write!(
                     f,
-                    "Record row '{row_id}' contains record id '{name}' which is not a valid canonical id"
+                    "Revision '{row_id}' contains canonical id '{name}' which is not a valid canonical id",
                 )
             }
             Self::RowHasNonNormalizedCanonicalId(row_id, name, expected) => {
                 write!(
                     f,
-                    "Record row '{row_id}' contains record id '{name}' which is not normalized: expected '{expected}'"
+                    "Revision '{row_id}' contains canonical id '{name}' which is not normalized: expected '{expected}'"
                 )
             }
             Self::InvalidKey(name) => {
@@ -132,11 +132,11 @@ impl fmt::Display for DatabaseFault {
             Self::IntegrityError(err) => write!(f, "Database integrity error: {err}"),
             Self::MalformedRecordData(row_id, name, err) => write!(
                 f,
-                "Record row '{row_id}' with record id '{name}' has malformed binary data: {err}"
+                "Revision '{row_id}' with canonical id '{name}' has malformed binary data: {err}"
             ),
             Self::InvalidEntryData(row_id, name, err) => write!(
                 f,
-                "Record row '{row_id}' with record id '{name}' has invalid entry data: {err}"
+                "Revision '{row_id}' with canonical id '{name}' has invalid entry data: {err}"
             ),
             Self::MissingTable(table_name) => write!(f, "Missing table '{table_name}'"),
             Self::InvalidTableSchema(table_name, table_schema) => write!(

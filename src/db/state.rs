@@ -190,7 +190,7 @@ impl<'conn> DatabaseResponse<'conn> {
         produce_key_void: impl FnOnce(&State<'conn, IsVoid>, K) -> Result<String, rusqlite::Error>,
         key: K,
     ) -> Result<Self, rusqlite::Error> {
-        debug!("Beginning new transaction for row '{row_id}' in the `Records` table.");
+        debug!("Beginning new transaction for revision '{row_id}' in the `Records` table.");
         match State::init(tx, IsArbitrary(row_id)).disambiguate()? {
             DisambiguatedRecordState::Entry(record, mut state) => {
                 let key = produce_key_entry(&mut state, key)?;
@@ -220,7 +220,7 @@ impl<'conn> DatabaseResponse<'conn> {
     ) -> Result<Self, rusqlite::Error> {
         match get_null_row_id(&tx, id_from_context(&context))? {
             Some(row_id) => {
-                debug!("Beginning new transaction for row '{row_id}' in the `NullRecords` table.");
+                debug!("Beginning new transaction for cached null record with id '{row_id}' in the `NullRecords` table.");
                 Ok(Self::NullId(
                     produce_null(context),
                     State::init(tx, IsNull(row_id)),
@@ -386,7 +386,7 @@ impl<'conn> DatabaseIdResponse<'conn> {
     pub fn determine(tx: Tx<'conn>, id: &Identifier) -> Result<Self, rusqlite::Error> {
         Ok(match get_row_id(&tx, id)? {
             Some(row_id) => {
-                debug!("Beginning new transaction for row '{row_id}' in the `Records` table.");
+                debug!("Beginning new transaction for revision '{row_id}' in the `Records` table.");
                 match State::init(tx, IsArbitrary(row_id)).disambiguate()? {
                     DisambiguatedRecordState::Entry(entry_row_data, state) => {
                         DatabaseIdResponse::Entry(entry_row_data, state)
@@ -402,7 +402,7 @@ impl<'conn> DatabaseIdResponse<'conn> {
             None => match get_null_row_id(&tx, id)? {
                 Some(row_id) => {
                     debug!(
-                        "Beginning new transaction for row '{row_id}' in the `NullRecords` table."
+                        "Beginning new transaction for cached null record with id '{row_id}' in the `NullRecords` table."
                     );
                     Self::Null(State::init(tx, IsNull(row_id)))
                 }

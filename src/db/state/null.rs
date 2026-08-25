@@ -30,7 +30,7 @@ impl<'conn> State<'conn, IsNull> {
 
     /// Delete the null record.
     pub fn delete(self) -> Result<State<'conn, IsMissing>, rusqlite::Error> {
-        debug!("Deleting 'NullRecords' row '{}'", self.row_id());
+        debug!("Deleting cached null record with id '{}'", self.row_id());
         self.prepare("DELETE FROM NullRecords WHERE rowid = ?1")?
             .execute((self.row_id(),))?;
         let Self { tx, .. } = self;
@@ -39,14 +39,14 @@ impl<'conn> State<'conn, IsNull> {
 
     /// Get the data associated with the row.
     pub fn get_data(&self) -> Result<NullRowData, rusqlite::Error> {
-        debug!("Retrieving 'NullRecords' row '{}'", self.row_id());
+        debug!("Retrieving cached null record with id '{}'", self.row_id());
         self.prepare_cached("SELECT attempted FROM NullRecords WHERE rowid = ?1")?
             .query_row([self.row_id()], |row| row.try_into())
     }
 
     /// Get the time when the null was cached.
     pub fn get_null_attempted(&self) -> Result<DateTime<Local>, rusqlite::Error> {
-        debug!("Getting attempted time for null row '{}'.", self.row_id());
+        debug!("Getting attempted time for cached null record with id '{}'.", self.row_id());
         let NullRowData { attempted, .. } = self.get_data()?;
         Ok(attempted)
     }
