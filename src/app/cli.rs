@@ -20,7 +20,7 @@ use crossterm::style::Stylize;
 
 use crate::{
     cite_search::SourceFileType,
-    db::state::RevisionId,
+    db::state::RevId,
     error::ShortError,
     format::Template,
     record::{Alias, Key, LegacyAlias},
@@ -513,7 +513,7 @@ pub enum Command {
         from_record: Option<Key>,
         /// Read update data from record data in a specific revision.
         #[arg(long, value_name = "REV", group = "update_from")]
-        from_rev: Option<RevisionId>,
+        from_rev: Option<RevId>,
         /// How to resolve conflicting field values.
         #[arg(
             short = 'n',
@@ -698,7 +698,7 @@ pub enum HistCommand {
         /// The key for the reset operation.
         key: Key,
         /// The target active revision.
-        rev: RevisionId,
+        rev: RevId,
     },
     /// Insert new data for a deleted record, concealing any prior changes.
     ///

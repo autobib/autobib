@@ -1,11 +1,11 @@
 use chrono::{DateTime, Local};
 
 use super::{IsMissing, State};
-use crate::{db::RowId, logger::debug};
+use crate::{db::NullRowId, logger::debug};
 
 /// An identifier for a row in the `NullRecords` table.
 #[derive(Debug)]
-pub struct IsNull(pub(in crate::db::state) RowId);
+pub struct IsNull(pub(in crate::db::state) NullRowId);
 
 /// The contents of a row in the `Records` table.
 pub struct NullRowData {
@@ -24,7 +24,7 @@ impl TryFrom<&rusqlite::Row<'_>> for NullRowData {
 }
 
 impl<'conn> State<'conn, IsNull> {
-    pub(in crate::db) fn row_id(&self) -> RowId {
+    pub(in crate::db) fn row_id(&self) -> NullRowId {
         self.id.0
     }
 
@@ -46,7 +46,10 @@ impl<'conn> State<'conn, IsNull> {
 
     /// Get the time when the null was cached.
     pub fn get_null_attempted(&self) -> Result<DateTime<Local>, rusqlite::Error> {
-        debug!("Getting attempted time for cached null record with id '{}'.", self.row_id());
+        debug!(
+            "Getting attempted time for cached null record with id '{}'.",
+            self.row_id()
+        );
         let NullRowData { attempted, .. } = self.get_data()?;
         Ok(attempted)
     }

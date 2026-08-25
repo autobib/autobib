@@ -7,29 +7,29 @@ use chrono::{DateTime, Local};
 use rusqlite::types::ValueRef;
 
 use super::{Tx, schema};
-use crate::{Alias, AsKey, Identifier, db::state::RevisionId, logger::debug};
+use crate::{Alias, AsKey, Identifier, db::state::RevId, logger::debug};
 
 /// A possible fault that could occur inside the database.
 #[derive(Debug)]
 pub enum DatabaseFault {
     /// The `parent_rev` relationship in the 'Records' table contains a cycle.
-    ContainsCycle(Vec<i64>),
+    ContainsCycle(Vec<RevId>),
     /// A void record is not a root vertex.
-    VoidIsNotRoot(RevisionId),
+    VoidIsNotRoot(RevId),
     /// A void record does not have the minimal timestamp.
-    VoidHasIncorrectTimestamp(RevisionId, DateTime<Local>),
+    VoidHasIncorrectTimestamp(RevId, DateTime<Local>),
     /// A row has a parent revision with a modification time later than its own.
-    ParentHasLaterTimestamp(RevisionId),
+    ParentHasLaterTimestamp(RevId),
     /// A record-id in the 'Records' table has multiple corresponding trees.
     OrphanedNodes(String, u64),
     /// A record-id in the 'Records' table has multiple citation keys pointing
     IncorrectActiveRowCount(String, u64),
     /// The `parent_rev` refers to a revision which does not exist.
-    MissingParentRevision(RevisionId),
+    MissingParentRevision(RevId),
     /// A row has an invalid canonical id.
-    RowHasInvalidCanonicalId(RevisionId, String),
+    RowHasInvalidCanonicalId(RevId, String),
     /// A row has a canonical id which has not been normalized.
-    RowHasNonNormalizedCanonicalId(RevisionId, String, String),
+    RowHasNonNormalizedCanonicalId(RevId, String, String),
     /// The `Keys` table contains an invalid key.
     InvalidKey(String),
     /// The `Keys` table contains a key which has not been normalized.
@@ -39,9 +39,9 @@ pub enum DatabaseFault {
     /// There was an underlying SQLite integrity error.
     IntegrityError(String),
     /// A row in the `Records` table contains malformed binary data.
-    MalformedRecordData(RevisionId, String, AccessError),
+    MalformedRecordData(RevId, String, AccessError),
     /// A row in the `Records` table contains semantically invalid entry data.
-    InvalidEntryData(RevisionId, String, DataError),
+    InvalidEntryData(RevId, String, DataError),
     /// A table is missing.
     MissingTable(String),
     /// A table has the incorrect schema.
@@ -261,7 +261,7 @@ impl<'conn> DatabaseValidator<'conn> {
 
     pub fn unique_tree_per_key(&self, faults: &mut Vec<DatabaseFault>) -> rusqlite::Result<()> {
         debug!("Checking for cycles");
-        let mut key_parent_pairs: HashMap<i64, Option<i64>> = HashMap::new();
+        let mut key_parent_pairs: HashMap<RevId, Option<RevId>> = HashMap::new();
         let mut stmt = self.tx.prepare("SELECT rev, parent_rev FROM Records")?;
 
         for row in stmt.query_map([], |row| Ok((row.get("rev")?, row.get("parent_rev")?)))? {

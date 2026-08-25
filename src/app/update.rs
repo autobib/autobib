@@ -14,7 +14,7 @@ use crate::{
     db::{
         Tx,
         select::{SelectOne, stmt},
-        state::{ArbitraryData, DatabaseResponse, Record},
+        state::{ArbitraryData, DatabaseResponse, Record, RevId},
     },
     entry::BibtexEntry,
     http::Client,
@@ -182,10 +182,7 @@ pub fn data_from_key<'conn>(
     }
 }
 
-pub fn data_from_rev(
-    tx: &Tx<'_>,
-    rev: crate::db::state::RevisionId,
-) -> Result<MutableEntryData, anyhow::Error> {
+pub fn data_from_rev(tx: &Tx<'_>, rev: RevId) -> Result<MutableEntryData, anyhow::Error> {
     let Some(data) = stmt::GetArbitraryRecord::select_one(tx, rev)? else {
         bail!("Revision '{rev}' does not exist in the database!");
     };

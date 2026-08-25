@@ -5,7 +5,7 @@ use ramify::TryRamify;
 
 use crate::db::state::ArbitraryData;
 
-use super::state::{InRecordsTable, RecordRowDisplay, State, Version};
+use super::state::{InRecordsTable, RecordRowDisplay, State, TxRevId, Version};
 
 pub struct RamifierConfig {
     pub all: bool,
@@ -15,23 +15,23 @@ pub struct RamifierConfig {
 
 /// A ramifier designed for version history.
 pub struct FullHistoryRamifier<'tx> {
-    active_row_id: i64,
+    active_row_id: TxRevId,
     config: RamifierConfig,
     _marker: PhantomData<&'tx ()>,
 }
 
 impl<'tx, 'conn> Version<'tx, 'conn> {
-    fn marker(&self, row_id: i64) -> char {
+    fn marker(&self, row_id: TxRevId) -> char {
         match self.hist.record.data {
             ArbitraryData::Entry(_) => {
-                if self.row_id == row_id {
+                if self.tx_rev_id() == row_id {
                     '◉'
                 } else {
                     '○'
                 }
             }
             ArbitraryData::Deleted(_) => {
-                if self.row_id == row_id {
+                if self.tx_rev_id() == row_id {
                     '⊗'
                 } else {
                     '✕'
@@ -73,7 +73,7 @@ impl<'tx, 'conn> TryRamify<Version<'tx, 'conn>> for FullHistoryRamifier<'tx> {
             RecordRowDisplay::from_version(vtx, self.config.styled),
         );
 
-        let disp = if self.config.styled && vtx.row_id == self.active_row_id {
+        let disp = if self.config.styled && vtx.tx_rev_id() == self.active_row_id {
             disp.bold()
         } else {
             disp
@@ -85,7 +85,7 @@ impl<'tx, 'conn> TryRamify<Version<'tx, 'conn>> for FullHistoryRamifier<'tx> {
 
 /// A ramifier which iterates over the immediate history.
 pub struct AncestorRamifier<'tx> {
-    active_row_id: i64,
+    active_row_id: TxRevId,
     config: RamifierConfig,
     _marker: PhantomData<&'tx ()>,
 }
@@ -125,7 +125,7 @@ impl<'tx, 'conn> TryRamify<Version<'tx, 'conn>> for AncestorRamifier<'tx> {
             RecordRowDisplay::from_version(vtx, self.config.styled),
         );
 
-        let disp = if self.config.styled && vtx.row_id == self.active_row_id {
+        let disp = if self.config.styled && vtx.tx_rev_id() == self.active_row_id {
             disp.bold()
         } else {
             disp

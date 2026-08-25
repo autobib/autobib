@@ -75,9 +75,9 @@ impl<'conn> State<'conn, IsMissing> {
     ) -> Result<Updated<'conn, IsEntry>, rusqlite::Error> {
         debug!("Inserting data for canonical id '{canonical}'");
         let modified = Local::now();
-        let row_id: i64 = self.prepare_cached("INSERT OR ABORT INTO Records (canonical, data, modified) values (?1, ?2, ?3) RETURNING rev")?.query_row(
+        let row_id = self.prepare_cached("INSERT OR ABORT INTO Records (canonical, data, modified) values (?1, ?2, ?3) RETURNING rev")?.query_row(
             (canonical.as_key(), data.as_bytes(), &modified),
-            |row| row.get(0),
+            |row| row.get(0).map(super::TxRevId::new),
         )?;
         let row = State::init(self.tx, IsEntry(row_id));
         row.add_refs(refs)?;

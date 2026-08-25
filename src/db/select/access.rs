@@ -8,7 +8,8 @@ use crate::{
     db::{
         Record,
         state::{
-            ArbitraryData, ArbitraryDataRef, HistRecord, NotVoidData, RevisionId, Variant, WithRev,
+            ArbitraryData, ArbitraryDataRef, HistRecord, NotVoidData, RevId, TxRevId, Variant,
+            WithRev,
         },
     },
     record::Key,
@@ -19,13 +20,20 @@ use super::{AccessRow, AccessRowUnchecked, col};
 
 // core types
 
-/// Read a [`RevisionId`] from a `rev` column.
-impl<'row> AccessRowUnchecked<'row> for RevisionId {
+/// Read a [`RevId`] from a `rev` column.
+impl<'row> AccessRowUnchecked<'row> for RevId {
     fn access_row_unchecked(row: &'row Row<'_>) -> Self {
         Self(row.get_unwrap("rev"))
     }
 }
-impl<'row, Q: col::Rev> AccessRow<'row, Q> for RevisionId {}
+impl<'row, Q: col::Rev> AccessRow<'row, Q> for RevId {}
+
+impl<'row> AccessRowUnchecked<'row> for TxRevId {
+    fn access_row_unchecked(row: &'row Row<'_>) -> Self {
+        Self::new(row.get_unwrap("rev"))
+    }
+}
+impl<'row, Q: col::Rev> AccessRow<'row, Q> for TxRevId {}
 
 impl<'row> AccessRowUnchecked<'row> for Variant {
     fn access_row_unchecked(row: &'row Row<'_>) -> Self {
@@ -68,12 +76,13 @@ impl<'row> AccessRowUnchecked<'row> for String {
 }
 impl<'row, Q: col::Name> AccessRow<'row, Q> for String {}
 
-impl<'row> AccessRowUnchecked<'row> for Option<i64> {
+impl<'row> AccessRowUnchecked<'row> for Option<TxRevId> {
     fn access_row_unchecked(row: &'row Row<'_>) -> Self {
-        row.get_unwrap("parent_rev")
+        row.get_unwrap::<_, Option<i64>>("parent_rev")
+            .map(TxRevId::new)
     }
 }
-impl<'row, Q: col::Parent> AccessRow<'row, Q> for Option<i64> {}
+impl<'row, Q: col::Parent> AccessRow<'row, Q> for Option<TxRevId> {}
 
 impl<'row> AccessRowUnchecked<'row> for Identifier<&'row str> {
     fn access_row_unchecked(row: &'row Row<'_>) -> Self {
@@ -205,7 +214,7 @@ where
     Record<D, S>: AccessRowUnchecked<'row>,
 {
     fn access_row_unchecked(row: &'row Row<'_>) -> Self {
-        let parent = Option::<i64>::access_row_unchecked(row);
+        let parent = Option::<TxRevId>::access_row_unchecked(row);
         let record = Record::access_row_unchecked(row);
 
         Self { record, parent }
@@ -234,14 +243,20 @@ where
 {
 }
 
-impl<'r, R> AccessRowUnchecked<'r> for WithRev<R>
+impl<'r, R, V> AccessRowUnchecked<'r> for WithRev<R, V>
 where
     R: AccessRowUnchecked<'r>,
+    V: AccessRowUnchecked<'r>,
 {
     fn access_row_unchecked(row: &'r Row<'_>) -> Self {
         let inner = R::access_row_unchecked(row);
-        let rev = RevisionId::access_row_unchecked(row);
+        let rev = V::access_row_unchecked(row);
         Self { inner, rev }
     }
 }
-impl<'r, R, Q: col::Rev> AccessRow<'r, Q> for WithRev<R> where R: AccessRow<'r, Q> {}
+impl<'r, R, V, Q: col::Rev> AccessRow<'r, Q> for WithRev<R, V>
+where
+    R: AccessRow<'r, Q>,
+    V: AccessRow<'r, Q>,
+{
+}

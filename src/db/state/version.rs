@@ -18,20 +18,29 @@ use crate::db::{
 #[derive(Debug)]
 pub struct Version<'tx, 'conn> {
     pub hist: HistRecord,
-    pub(in crate::db) row_id: i64,
+    pub(in crate::db) row_id: TxRevId,
     pub(super) tx: &'tx Tx<'conn>,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct RevisionId(pub(in crate::db) i64);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct RevId(pub(in crate::db) i64);
 
-impl ToSql for RevisionId {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct TxRevId(pub(in crate::db) RevId);
+
+impl ToSql for RevId {
     fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
         self.0.to_sql()
     }
 }
 
-impl FromSql for RevisionId {
+impl ToSql for TxRevId {
+    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+        self.0.to_sql()
+    }
+}
+
+impl FromSql for RevId {
     fn column_result(value: ValueRef<'_>) -> Result<Self, FromSqlError> {
         if let ValueRef::Integer(row_id) = value {
             Ok(Self(row_id))
@@ -41,7 +50,7 @@ impl FromSql for RevisionId {
     }
 }
 
-impl Serialize for RevisionId {
+impl Serialize for RevId {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -50,27 +59,47 @@ impl Serialize for RevisionId {
     }
 }
 
-impl fmt::Display for RevisionId {
+impl fmt::Display for RevId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:0>4x}", self.0)
     }
 }
 
-impl FromStr for RevisionId {
-    type Err = std::num::ParseIntError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        i64::from_str_radix(s, 16).map(RevisionId)
+impl fmt::Display for TxRevId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
     }
 }
 
-impl RevisionId {
+impl FromStr for RevId {
+    type Err = std::num::ParseIntError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        i64::from_str_radix(s, 16).map(RevId)
+    }
+}
+
+impl RevId {
     pub fn fmt_pretty(&self) -> impl fmt::Display {
         RevIdPretty(self)
     }
 }
 
-struct RevIdPretty<'a>(&'a RevisionId);
+impl TxRevId {
+    pub(in crate::db) fn new(row_id: i64) -> Self {
+        Self(RevId(row_id))
+    }
+
+    pub fn rev_id(self) -> RevId {
+        self.0
+    }
+
+    pub(in crate::db) fn row_id(self) -> i64 {
+        self.0.0
+    }
+}
+
+struct RevIdPretty<'a>(&'a RevId);
 
 impl fmt::Display for RevIdPretty<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -87,12 +116,12 @@ impl<'conn, I: InRecordsTable> State<'conn, I> {
 }
 
 impl<'tx, 'conn> Version<'tx, 'conn> {
-    fn init(tx: &'tx Tx<'conn>, row_id: i64) -> rusqlite::Result<Self> {
+    fn init(tx: &'tx Tx<'conn>, row_id: TxRevId) -> rusqlite::Result<Self> {
         let hist = stmt::GetHist::select_one_unchecked(tx, row_id)?;
         Ok(Self { hist, tx, row_id })
     }
 
-    fn new(tx: &'tx Tx<'conn>, row_id: i64, hist: HistRecord) -> Self {
+    fn new(tx: &'tx Tx<'conn>, row_id: TxRevId, hist: HistRecord) -> Self {
         Self { hist, tx, row_id }
     }
 
@@ -128,9 +157,14 @@ impl<'tx, 'conn> Version<'tx, 'conn> {
         Ok(self)
     }
 
-    /// Get a printable form of the row-id, suitable for displaying to an end user.
-    pub fn rev_id(&self) -> RevisionId {
-        RevisionId(self.row_id)
+    /// DOC-TODO[Document that this returns the durable revision identifier, not the private
+    /// transaction-valid identifier.]
+    pub fn rev_id(&self) -> RevId {
+        self.row_id.rev_id()
+    }
+
+    pub(in crate::db) fn tx_rev_id(&self) -> TxRevId {
+        self.row_id
     }
 
     /// The number of children.
@@ -152,13 +186,13 @@ impl<'tx, 'conn> Version<'tx, 'conn> {
     /// The order in which the closure is applied is unspecified.
     pub(super) fn map_children<F>(&self, mut f: F) -> rusqlite::Result<()>
     where
-        F: FnMut(WithRev<HistRecord>),
+        F: FnMut(WithRev<HistRecord, TxRevId>),
     {
         stmt::SelectChildren::select_map(
             self.tx,
             #[allow(clippy::unit_arg)]
             FnMutMap::new(|r| Ok(f(r))),
-            RevisionId(self.row_id),
+            self.row_id,
         )?;
         Ok(())
     }
@@ -171,7 +205,7 @@ impl<'tx, 'conn> Version<'tx, 'conn> {
                  inner: ch,
                  rev: row_id,
              }| {
-                children.push(Version::new(self.tx, row_id.0, ch));
+                children.push(Version::new(self.tx, row_id, ch));
             },
         )?;
 

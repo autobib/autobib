@@ -1,10 +1,10 @@
-use crate::db::state::RevisionId;
+use crate::db::state::{RevId, TxRevId};
 
 use super::{SelectOneUnchecked, SelectStatement, col};
 
 pub struct GetArbitraryRecord;
 impl SelectStatement for GetArbitraryRecord {
-    type Args<'a> = RevisionId;
+    type Args<'a> = RevId;
     const STATEMENT: &str = "
     SELECT data, canonical, modified, variant \
       FROM Records \
@@ -21,7 +21,7 @@ impl SelectOneUnchecked for GetArbitraryRecord {}
 
 pub struct GetHist;
 impl SelectStatement for GetHist {
-    type Args<'a> = RevisionId;
+    type Args<'a> = RevId;
     const STATEMENT: &str = "
     SELECT data, canonical, modified, variant, parent_rev \
       FROM Records \
@@ -36,9 +36,9 @@ impl col::Parent for GetHist {}
 impl col::DataArbitrary for GetHist {}
 impl SelectOneUnchecked for GetHist {}
 
-pub struct SelectChildren;
+pub(in crate::db) struct SelectChildren;
 impl SelectStatement for SelectChildren {
-    type Args<'a> = RevisionId;
+    type Args<'a> = TxRevId;
     const STATEMENT: &str = "
     SELECT rev, canonical, modified, data, variant, parent_rev
       FROM Records \

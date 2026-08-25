@@ -32,31 +32,31 @@ use nucleo_picker::{Injector, Render};
 use rusqlite::{Connection, OptionalExtension, Row};
 
 use crate::{
-    db::{Record, RecordDatabase, Snapshot, state::RevisionId},
+    db::{Record, RecordDatabase, Snapshot, state::RevId},
     logger::debug,
 };
 
 mod unchecked {
     use rusqlite::{Connection, Row};
 
-    use super::{AccessRow, SelectStatement};
-    use crate::db::state::RevisionId;
+    use super::SelectStatement;
+    use crate::db::state::{RevId, TxRevId};
     use core::ops::Deref;
 
     pub trait AccessRowUnchecked<'row>: Sized {
         fn access_row_unchecked(row: &'row Row<'_>) -> Self;
     }
 
-    pub trait SelectOneUnchecked: SelectStatement<Args<'static> = RevisionId> {
-        fn select_one_unchecked<R, Conn>(tx: &Conn, id: i64) -> Result<R, rusqlite::Error>
+    pub trait SelectOneUnchecked: SelectStatement<Args<'static> = RevId> {
+        fn select_one_unchecked<R, Conn>(tx: &Conn, id: TxRevId) -> Result<R, rusqlite::Error>
         where
-            R: for<'r> AccessRow<'r, Self>,
+            R: for<'r> AccessRowUnchecked<'r>,
             Conn: Deref<Target = Connection>,
         {
-            Self::select_one_unchecked_cast(tx, id)
+            Self::select_one_unchecked_cast(tx, id.rev_id())
         }
 
-        fn select_one_unchecked_cast<R, Conn>(tx: &Conn, id: i64) -> Result<R, rusqlite::Error>
+        fn select_one_unchecked_cast<R, Conn>(tx: &Conn, id: RevId) -> Result<R, rusqlite::Error>
         where
             R: for<'r> AccessRowUnchecked<'r>,
             Conn: Deref<Target = Connection>,
@@ -107,12 +107,12 @@ impl<T: SelectOneUnchecked> SelectOne for T {}
 ///
 /// These statements are essentially of the form `SELECT ... FROM Records WHERE rev = ?1`.
 pub trait SelectOne: SelectOneUnchecked {
-    fn select_one<R, Conn>(tx: &Conn, rev: RevisionId) -> Result<Option<R>, rusqlite::Error>
+    fn select_one<R, Conn>(tx: &Conn, rev: RevId) -> Result<Option<R>, rusqlite::Error>
     where
         R: for<'r> AccessRow<'r, Self>,
         Conn: Deref<Target = rusqlite::Connection>,
     {
-        Self::select_one_unchecked(tx, rev.0).optional()
+        Self::select_one_unchecked_cast(tx, rev).optional()
     }
 }
 

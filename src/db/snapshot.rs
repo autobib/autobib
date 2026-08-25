@@ -1,6 +1,9 @@
 use chrono::{DateTime, Local, TimeDelta};
 
-use super::{Tx, state::RevisionId};
+use super::{
+    Tx,
+    state::{RevId, TxRevId},
+};
 use crate::{
     db::{AsKey, state::create_rewind_target},
     logger::info,
@@ -57,7 +60,7 @@ DELETE FROM Records WHERE rev NOT IN (SELECT rev FROM descendants);
 
         // create a new version for every non-leaf node, returning the required update pairs
         // for the Keys table
-        let mut to_update: Vec<(i64, i64)> = Vec::new();
+        let mut to_update: Vec<(TxRevId, TxRevId)> = Vec::new();
 
         let mut stmt = self.tx.prepare(
             "
@@ -69,7 +72,10 @@ RETURNING rev, parent_rev",
         )?;
 
         for row in stmt.query_map([now], |row| {
-            Ok((row.get_unwrap("rev"), row.get_unwrap("parent_rev")))
+            Ok((
+                TxRevId::new(row.get_unwrap("rev")),
+                TxRevId::new(row.get_unwrap("parent_rev")),
+            ))
         })? {
             let (rev, parent_rev) = row?;
             to_update.push((rev, parent_rev));
@@ -153,7 +159,7 @@ DELETE FROM Records WHERE rev NOT IN (SELECT rev FROM descendants);
     }
 
     /// Check whether a specific revision is active.
-    pub fn is_active(&self, rev_id: RevisionId) -> rusqlite::Result<bool> {
+    pub fn is_active(&self, rev_id: RevId) -> rusqlite::Result<bool> {
         self.tx
             .prepare("SELECT EXISTS (SELECT 1 FROM Keys WHERE record_rev = ?1)")?
             .query_one([rev_id.0], |row| row.get(0))
@@ -197,17 +203,20 @@ WHERE variant = 1
             .tx
             .prepare("SELECT canonical, rev FROM Records WHERE rev IN (SELECT record_rev FROM Keys) AND modified > ?1")?;
 
-        let mut outdated: Vec<(String, i64)> = Vec::new();
+        let mut outdated: Vec<(String, TxRevId)> = Vec::new();
 
         for rev in retriever.query_map([after], |row| {
-            Ok((row.get_unwrap("canonical"), row.get_unwrap("rev")))
+            Ok((
+                row.get_unwrap("canonical"),
+                TxRevId::new(row.get_unwrap("rev")),
+            ))
         })? {
             outdated.push(rev?);
         }
 
         for (canonical, row_id) in outdated {
             let new_row_id = create_rewind_target(&self.tx, &canonical, after)?;
-            info!("Rewinding '{canonical}' from rev {row_id:0>4x} to rev {new_row_id:0>4x}");
+            info!("Rewinding '{canonical}' from rev {row_id} to rev {new_row_id}");
             self.tx
                 .prepare_cached("UPDATE Keys SET record_rev = ?1 WHERE record_rev = ?2")?
                 .execute((new_row_id, row_id))?;

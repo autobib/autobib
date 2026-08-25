@@ -6,7 +6,7 @@ use serde_bibtex::token::is_entry_key;
 
 use crate::{
     config::Config,
-    db::state::{ArbitraryData, InRecordsTable, Record, RevisionId, State},
+    db::state::{ArbitraryData, InRecordsTable, Record, RevId, State},
 };
 
 #[derive(Serialize)]
@@ -20,7 +20,7 @@ pub struct KeyInfo {
 #[derive(Serialize)]
 pub struct RecordInfo {
     pub key: KeyInfo,
-    pub revision: RevisionId,
+    pub revision: RevId,
     pub record: Record<ArbitraryData>,
 }
 

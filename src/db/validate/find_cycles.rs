@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::db::state::RevisionId;
+use crate::db::state::RevId;
 
 use super::DatabaseFault;
 
@@ -20,7 +20,7 @@ use super::DatabaseFault;
 /// detect_cycles(&records, &mut faults);
 /// assert!(!faults.is_empty());
 /// ```
-pub fn detect_cycles(parent_map: &HashMap<i64, Option<i64>>, faults: &mut Vec<DatabaseFault>) {
+pub fn detect_cycles(parent_map: &HashMap<RevId, Option<RevId>>, faults: &mut Vec<DatabaseFault>) {
     // the row-ids we have already visited
     let mut visited = HashSet::new();
 
@@ -63,7 +63,7 @@ pub fn detect_cycles(parent_map: &HashMap<i64, Option<i64>>, faults: &mut Vec<Da
                 }
                 None => {
                     // parent undefined
-                    faults.push(DatabaseFault::MissingParentRevision(RevisionId(*current)));
+                    faults.push(DatabaseFault::MissingParentRevision(*current));
 
                     visited.extend(path);
                     break;
@@ -77,13 +77,18 @@ pub fn detect_cycles(parent_map: &HashMap<i64, Option<i64>>, faults: &mut Vec<Da
 mod tests {
     use super::*;
 
+    fn records<const N: usize>(values: [(i64, Option<i64>); N]) -> HashMap<RevId, Option<RevId>> {
+        values
+            .into_iter()
+            .map(|(rev, parent)| (RevId(rev), parent.map(RevId)))
+            .collect()
+    }
+
     #[test]
     fn test_no_cycles() {
         // Simple tree: 1 <- 2 <- 3
         let mut faults = Vec::new();
-        let records = [(1, None), (2, Some(1)), (3, Some(2))]
-            .into_iter()
-            .collect();
+        let records = records([(1, None), (2, Some(1)), (3, Some(2))]);
         detect_cycles(&records, &mut faults);
         assert!(faults.is_empty());
     }
@@ -92,7 +97,7 @@ mod tests {
     fn test_simple_cycle() {
         // Cycle: 1 -> 2 -> 1
         let mut faults = Vec::new();
-        let records = [(1, Some(2)), (2, Some(1))].into_iter().collect();
+        let records = records([(1, Some(2)), (2, Some(1))]);
         detect_cycles(&records, &mut faults);
         assert_eq!(faults.len(), 1);
     }
@@ -101,7 +106,7 @@ mod tests {
     fn test_self_loop() {
         // Self-loop: 1 -> 1
         let mut faults = Vec::new();
-        let records = [(1, Some(1))].into_iter().collect();
+        let records = records([(1, Some(1))]);
         detect_cycles(&records, &mut faults);
         assert_eq!(faults.len(), 1);
     }
@@ -110,15 +115,13 @@ mod tests {
     fn test_multiple_trees() {
         // Two separate trees: (1 <- 2 <- 3) and (4 <- 5)
         let mut faults = Vec::new();
-        let records = [
+        let records = records([
             (1, None),
             (2, Some(1)),
             (3, Some(2)),
             (4, None),
             (5, Some(4)),
-        ]
-        .into_iter()
-        .collect();
+        ]);
         detect_cycles(&records, &mut faults);
         assert!(faults.is_empty());
     }
@@ -127,9 +130,7 @@ mod tests {
     fn test_multiple_cycles() {
         // Two separate cycles: (1 -> 2 -> 1) and (3 -> 4 -> 3)
         let mut faults = Vec::new();
-        let records = [(1, Some(2)), (2, Some(1)), (3, Some(4)), (4, Some(3))]
-            .into_iter()
-            .collect();
+        let records = records([(1, Some(2)), (2, Some(1)), (3, Some(4)), (4, Some(3))]);
         detect_cycles(&records, &mut faults);
         assert_eq!(faults.len(), 2);
     }

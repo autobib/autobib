@@ -28,7 +28,7 @@ use functions::{AppFunction, register_application_function};
 use rusqlite::{Connection, OpenFlags, OptionalExtension};
 
 use self::{
-    state::{DatabaseIdResponse, DatabaseResponse, Record},
+    state::{DatabaseIdResponse, DatabaseResponse, Record, TxRevId},
     validate::{DatabaseFault, DatabaseValidator},
 };
 use crate::{
@@ -51,20 +51,20 @@ pub const fn application_id() -> i32 {
     0x16611f2f
 }
 
-/// An alias for the internal row ID used by SQLite for the `Records` and the `NullRecords` table. This is
-/// the `key` column in the table schema defined in [`schema::records`], and the
-/// implicit `rowid` column in the table schema defined in [`schema::null_records`]
-type RowId = i64;
+/// The internal SQLite row ID for `NullRecords`.
+type NullRowId = i64;
 
-/// Determine the [`RowId`] in the `Records` table corresponding to an [`Identifier`].
-fn get_row_id<K: AsKey>(tx: &Tx, key: &K) -> Result<Option<RowId>, rusqlite::Error> {
+/// Determine the [`TxRevId`] in the `Records` table corresponding to an [`Identifier`].
+fn get_row_id<K: AsKey>(tx: &Tx, key: &K) -> Result<Option<TxRevId>, rusqlite::Error> {
     tx.prepare_cached("SELECT record_rev FROM Keys WHERE name = ?1")?
-        .query_row([key.as_key()], |row| row.get("record_rev"))
+        .query_row([key.as_key()], |row| {
+            row.get("record_rev").map(TxRevId::new)
+        })
         .optional()
 }
 
-/// Determine the [`RowId`] in the `NullRecords` table corresponding to an [`Identifier`].
-pub fn get_null_row_id(tx: &Tx, id: &Identifier) -> Result<Option<RowId>, rusqlite::Error> {
+/// Determine the [`NullRowId`] in the `NullRecords` table corresponding to an [`Identifier`].
+pub fn get_null_row_id(tx: &Tx, id: &Identifier) -> Result<Option<NullRowId>, rusqlite::Error> {
     tx.prepare_cached("SELECT rowid FROM NullRecords WHERE canonical = ?1")?
         .query_row([id.as_key()], |row| row.get("rowid"))
         .optional()

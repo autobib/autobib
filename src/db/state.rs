@@ -35,8 +35,15 @@ mod version;
 use chrono::{DateTime, Local};
 use rusqlite::{CachedStatement, Error, Statement};
 
-pub use self::{disp::*, missing::*, null::*, record::*, version::*};
-use super::{RowId, Tx, get_null_row_id, get_row_id};
+pub(in crate::db) use self::version::TxRevId;
+pub use self::{
+    disp::*,
+    missing::*,
+    null::*,
+    record::*,
+    version::{RevId, Version},
+};
+use super::{Tx, get_null_row_id, get_row_id};
 use crate::{
     Alias, AliasOrId, Identifier, Key, MappedKey,
     config::AliasTransform,
@@ -162,11 +169,11 @@ pub enum DatabaseResponse<'conn> {
 }
 
 impl<'conn> DatabaseResponse<'conn> {
-    /// Create a new `Existent` variant from the provided [`Tx`] and [`RowId`], using the
+    /// Create a new `Existent` variant from the provided [`Tx`] and [`TxRevId`], using the
     /// provided key as the original key for the request.
     fn existent(
         tx: Tx<'conn>,
-        row_id: RowId,
+        row_id: TxRevId,
         key: impl Into<String>,
     ) -> Result<Self, rusqlite::Error> {
         Self::existent_with_callback(
@@ -179,12 +186,12 @@ impl<'conn> DatabaseResponse<'conn> {
         )
     }
 
-    /// Create a new `Existent` variant from the provided [`Tx`] and [`RowId`], using the
+    /// Create a new `Existent` variant from the provided [`Tx`] and [`TxRevId`], using the
     /// provided callback to perform an action on the resulting row if it exists or if it was
     /// deleted.
     fn existent_with_callback<K>(
         tx: Tx<'conn>,
-        row_id: RowId,
+        row_id: TxRevId,
         produce_key_entry: impl FnOnce(&mut State<'conn, IsEntry>, K) -> Result<String, rusqlite::Error>,
         produce_key_deleted: impl FnOnce(&State<'conn, IsDeleted>, K) -> Result<String, rusqlite::Error>,
         produce_key_void: impl FnOnce(&State<'conn, IsVoid>, K) -> Result<String, rusqlite::Error>,
@@ -220,7 +227,9 @@ impl<'conn> DatabaseResponse<'conn> {
     ) -> Result<Self, rusqlite::Error> {
         match get_null_row_id(&tx, id_from_context(&context))? {
             Some(row_id) => {
-                debug!("Beginning new transaction for cached null record with id '{row_id}' in the `NullRecords` table.");
+                debug!(
+                    "Beginning new transaction for cached null record with id '{row_id}' in the `NullRecords` table."
+                );
                 Ok(Self::NullId(
                     produce_null(context),
                     State::init(tx, IsNull(row_id)),
