@@ -1307,9 +1307,9 @@ dependencies = [
 
 [[package]]
 name = "quick-xml"
-version = "0.38.4"
+version = "0.42.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b66c2058c55a409d601666cffe35f04333cf1013010882cec174a7467cd4e21c"
+checksum = "41b1177fdf999d2321d3fb46ff47159d9c1fb9ad66a4879f8c50a0b504615e9b"
 dependencies = [
  "memchr",
 ]
@@ -1454,9 +1454,9 @@ dependencies = [
 
 [[package]]
 name = "rsxiv"
-version = "0.4.3"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cff7fe12b449afeadf7f8f30ad82b346c464031c6c00a2678486a8f9e48eea28"
+checksum = "0f43b57250e3336d6d8815fdc8d47a019ede4a597f33c54b1ad8c4575a115bd9"
 dependencies = [
  "chrono",
  "quick-xml",
