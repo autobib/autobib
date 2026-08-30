@@ -1,0 +1,49 @@
+name: Dependency licenses
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  generate-licenses:
+    name: Collect and verify dependency licenses
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install cargo-about
+        shell: bash
+        env:
+          CARGO_ABOUT_VERSION: 0.8.2
+          SHA256: "3d0a79ce63391a9aa49504d347af03cb716ce9abe6a12673d005ccdf3d9a03f6"
+        run: |
+          about_root="cargo-about-$CARGO_ABOUT_VERSION-x86_64-unknown-linux-musl"
+          archive="$RUNNER_TEMP/$about_root.tar.gz"
+          extract_dir="$RUNNER_TEMP/about-download"
+          url="https://github.com/EmbarkStudios/cargo-about/releases/download/$CARGO_ABOUT_VERSION/$about_root.tar.gz"
+
+          mkdir "$extract_dir"
+          curl --fail --location --retry 3 --show-error \
+            --output "$archive" "$url"
+          echo "$SHA256  $archive" | sha256sum --check
+          tar xzf "$archive" --directory "$extract_dir"
+          echo "CARGO_ABOUT=$extract_dir/$about_root/cargo-about" >> "$GITHUB_ENV"
+
+      - name: Generate licenses file
+        shell: bash
+        run: |
+          "$CARGO_ABOUT" generate --config about/config.toml \
+            --output-file third-party-licenses.html about/template.hbs
+
+      - name: Create licenses file artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: cargo-about-licenses-html
+          path: third-party-licenses.html
+          if-no-files-found: error
+          retention-days: 1

@@ -22,6 +22,9 @@ env:
   CACHE_PREFIX: responses
 
 jobs:
+  dependency-licenses:
+    uses: ./.github/workflows/cargo-about.yml
+
   tests:
     strategy:
       fail-fast: false
