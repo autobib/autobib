@@ -6,30 +6,38 @@ on:
       - "v*"
 
 permissions:
-  # write permission is necessary to create releases.
-  contents: write
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 env:
   CARGO_TERM_COLOR: always
   RUSTDOCFLAGS: -D warnings
   RUST_BACKTRACE: 1
   RUST_VERSION: ${{ vars.RUST_VERSION }}
+  RELEASE_TAG: ${{ github.ref_name }}
 
 jobs:
   # initialize the GitHub release as a draft
   create-release:
     name: Create release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Get the release version from the tag
+        id: release
         if: env.VERSION == ''
         shell: bash
         run: |
-          VERSION_TAG="${{ github.ref_name }}"
-          echo "VERSION=${VERSION_TAG:1}" >> $GITHUB_ENV
+          version="${RELEASE_TAG:1}"
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Show the version
         run: |
@@ -47,12 +55,12 @@ jobs:
       - name: Check that a changelog file with the correct name exists
         shell: bash
         run: |
-          CHANGELOG_FILE="docs/changelog/${{ github.ref_name }}.md"
+          CHANGELOG_FILE="docs/changelog/$RELEASE_TAG.md"
           if [[ ! -f "$CHANGELOG_FILE" ]]; then
             echo >&2 "Changelog file not found!"
             exit 1
           fi
-          echo "CHANGELOG_FILE=$CHANGELOG_FILE" >> $GITHUB_ENV
+          echo "CHANGELOG_FILE=$CHANGELOG_FILE" >> "$GITHUB_ENV"
 
       - name: Show the changelog file
         run: |
@@ -62,10 +70,16 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create ${{ github.ref_name }}	--prerelease --draft --verify-tag \
-            --title "Autobib $VERSION" --notes "$(tail -n +2 $CHANGELOG_FILE)"
+          draft_exists="$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft 2> /dev/null || true)"
+          if [[ "$draft_exists" == "true" ]]; then
+            echo "Draft release already exists; reusing it."
+          else
+            tail -n +2 "$CHANGELOG_FILE" > "$RUNNER_TEMP/release-notes.md"
+            gh release create "$RELEASE_TAG" --prerelease --draft --verify-tag \
+              --title "Autobib $VERSION" --notes-file "$RUNNER_TEMP/release-notes.md"
+          fi
     outputs:
-      version: ${{ env.VERSION }}
+      version: ${{ steps.release.outputs.version }}
 
   generate-licenses:
     name: Collect and verify dependency licenses
@@ -73,7 +87,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Install cargo-about
         shell: bash
@@ -111,6 +125,8 @@ jobs:
     name: Compile release binaries
     needs: [create-release, generate-licenses]
     runs-on: ${{ matrix.image }}
+    permissions:
+      contents: write
 
     strategy:
       fail-fast: false
@@ -144,7 +160,7 @@ jobs:
             target: aarch64-pc-windows-msvc
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@master
@@ -165,7 +181,7 @@ jobs:
           cargo build --verbose --release --locked \
             --config 'target."cfg(all())".rustflags = ["-D", "warnings"]' \
             --target ${{ matrix.target }}
-          if [[ "${{ matrix.image }}" = "windows-latest" ]]; then
+          if [[ "${{ runner.os }}" = "Windows" ]]; then
             bin="target/${{ matrix.target }}/release/autobib.exe"
           else
             bin="target/${{ matrix.target }}/release/autobib"
@@ -195,7 +211,7 @@ jobs:
           mkdir -p "$ARCHIVE"
           cp "$BIN" "$ARCHIVE"/
           cp {README.md,COPYRIGHT,LICENSE,third-party-licenses.html} "$ARCHIVE"/
-          cp "docs/changelog/${{ github.ref_name }}.md" "$ARCHIVE"/CHANGELOG.md
+          cp "docs/changelog/$RELEASE_TAG.md" "$ARCHIVE"/CHANGELOG.md
 
       - name: Build archive (Windows)
         shell: bash
@@ -203,8 +219,8 @@ jobs:
         run: |
           7z a "$ARCHIVE.zip" "$ARCHIVE"
           certutil -hashfile "$ARCHIVE.zip" SHA256 > "$ARCHIVE.zip.sha256"
-          echo "ASSET=$ARCHIVE.zip" >> $GITHUB_ENV
-          echo "ASSET_SUM=$ARCHIVE.zip.sha256" >> $GITHUB_ENV
+          echo "ASSET=$ARCHIVE.zip" >> "$GITHUB_ENV"
+          echo "ASSET_SUM=$ARCHIVE.zip.sha256" >> "$GITHUB_ENV"
 
       - name: Build archive (Unix)
         shell: bash
@@ -212,15 +228,15 @@ jobs:
         run: |
           tar czf "$ARCHIVE.tar.gz" "$ARCHIVE"
           shasum -a 256 "$ARCHIVE.tar.gz" > "$ARCHIVE.tar.gz.sha256"
-          echo "ASSET=$ARCHIVE.tar.gz" >> $GITHUB_ENV
-          echo "ASSET_SUM=$ARCHIVE.tar.gz.sha256" >> $GITHUB_ENV
+          echo "ASSET=$ARCHIVE.tar.gz" >> "$GITHUB_ENV"
+          echo "ASSET_SUM=$ARCHIVE.tar.gz.sha256" >> "$GITHUB_ENV"
 
       - name: Upload release archive
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          gh release upload "${{ github.ref_name }}" ${{ env.ASSET }} ${{ env.ASSET_SUM }}
+          gh release upload "$RELEASE_TAG" "$ASSET" "$ASSET_SUM" --clobber
 
   publish-crates-io:
     name: Publish release to crates.io
@@ -228,16 +244,17 @@ jobs:
     runs-on: ubuntu-latest
     environment: crates.io
     permissions:
+      contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: rust-lang/crates-io-auth-action@v1
         id: auth
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ env.RUST_VERSION }}
       - name: Publish release
-        run: cargo publish
+        run: cargo publish --locked
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
 
@@ -245,8 +262,10 @@ jobs:
     name: Publish GitHub release
     needs: [create-release, upload-binary, publish-crates-io]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release edit ${{ github.ref_name }} --draft=false --verify-tag
+          gh release edit "$RELEASE_TAG" --repo "${{ github.repository }}" --draft=false --verify-tag
