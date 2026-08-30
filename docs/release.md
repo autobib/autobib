@@ -11,7 +11,12 @@
 8. Create (and push) a new tag on the release commit of the form `vX.Y.Z`.
     The release workflow will automatically compile the binaries and publish to `crates.io`.
     It will also create a GitHub release with all of the release binaries.
-9. Start a run of the "formula bump" workflow on the autobib/homebrew-autobib tap repo to update the autobib formula.
+9. Update the Homebrew formula on the custom tap by running
+    ```sh
+    gh workflow run --repo autobib/homebrew-autobib formula-bump.yml -f formula=autobib -f version=X.Y.Z
+    ```
+    This starts a run of the "formula bump" workflow on the autobib/homebrew-autobib repo.
+    Following successful bottling, the updated formula is published automatically.
     See [the tap's docs](https://github.com/autobib/homebrew-autobib/blob/main/docs/formula-bumps.md) for more details on the formula bump process.
 
 ## Automation
