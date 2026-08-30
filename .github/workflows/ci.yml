@@ -41,7 +41,9 @@ jobs:
         if: runner.os == 'Windows'
         run: git config --global core.autocrlf false
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ env.RUST_VERSION }}
@@ -60,7 +62,7 @@ jobs:
       - name: Create response cache
         if: steps.response-cache.outputs.cache-hit != 'true'
         shell: bash
-        run: cargo run --profile=ci --locked --features write_response_cache -- -vv source --retrieve-only --ignore-null '${{ env.REMOTES_FILE }}'
+        run: cargo run --profile=ci --locked --features write_response_cache -- -vv source --retrieve-only --ignore-null "$REMOTES_FILE"
 
       # Actually run tests
       - name: Build test binaries
@@ -71,7 +73,9 @@ jobs:
   checks:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ env.RUST_VERSION }}
@@ -82,7 +86,7 @@ jobs:
       - name: Build docs
         run: cargo doc --no-deps --locked
       - name: Run Clippy lints
-        run: cargo clippy --locked
+        run: cargo clippy --locked --all-targets
       - name: Check formatting
         run: cargo fmt --check
 
@@ -97,10 +101,10 @@ jobs:
       # Check remotes file formatting
       - name: Check remotes file is sorted
         shell: bash
-        run: sort -C ${{ env.REMOTES_FILE }}
+        run: sort -C "$REMOTES_FILE"
       - name: Check remotes file contains no duplicates
         shell: bash
-        run: test "$(cat ${{ env.REMOTES_FILE }} | uniq -d | wc -w)" -eq 0
+        run: test "$(uniq -d < "$REMOTES_FILE" | wc -l)" -eq 0
 
       # Check bash scripts
       - name: Checking contents of `scripts` directory

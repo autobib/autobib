@@ -2577,7 +2577,9 @@ fn void_visibility() -> Result<()> {
 
 #[test]
 fn prune() -> Result<()> {
-    fn init() -> Result<(TestState, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)> {
+    type PruneState = (TestState, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>);
+
+    fn init() -> Result<PruneState> {
         let s = TestState::init()?;
 
         // create a node with two children

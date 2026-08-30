@@ -402,8 +402,6 @@ mod tests {
     #[test]
     fn keys_contained_in() {
         fn check<const N: usize>(s: &str, keys: [(&'static str, &'static str); N], expected: bool) {
-            println!("Testing template: {s}");
-
             let template = Template::compile(s).unwrap();
             let mut data = MutableEntryData::default();
             for (k, v) in keys {
@@ -444,8 +442,6 @@ mod tests {
             sub_id: &str,
             rendered: &str,
         ) {
-            println!("Testing template: {s}");
-
             let template = Template::compile(s).unwrap();
             let mut data = MutableEntryData::default();
             for (k, v) in keys {
@@ -457,9 +453,6 @@ mod tests {
                 canonical: Identifier::from_parts(provider, sub_id).unwrap(),
                 modified: Local::now(),
             };
-
-            println!("{:?}", row_data.data.get_field("b"));
-            println!("{:?}", MutableEntryData::from_entry_data(&row_data.data));
 
             assert_eq!(template.render(&row_data), rendered);
         }
