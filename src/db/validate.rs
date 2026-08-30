@@ -20,9 +20,9 @@ pub enum DatabaseFault {
     VoidHasIncorrectTimestamp(RevId, DateTime<Local>),
     /// A row has a parent revision with a modification time later than its own.
     ParentHasLaterTimestamp(RevId),
-    /// A record-id in the 'Records' table has multiple corresponding trees.
+    /// A canonical id in the `Records` table has multiple corresponding trees.
     OrphanedNodes(String, u64),
-    /// A record-id in the 'Records' table has multiple citation keys pointing
+    /// A canonical id in the `Records` table has multiple active rows.
     IncorrectActiveRowCount(String, u64),
     /// The `parent_rev` refers to a revision which does not exist.
     MissingParentRevision(RevId),
