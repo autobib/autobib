@@ -19,14 +19,13 @@ env:
   RUST_VERSION: ${{ vars.RUST_VERSION }}
   RELEASE_TAG: ${{ github.ref_name }}
   RELEASE_BRANCH: main
+  CRATE: autobib
+  BIN: autobib
 
 jobs:
-  # initialize the GitHub release as a draft
-  create-release:
-    name: Create release
+  verify:
+    name: Verify release
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -36,7 +35,6 @@ jobs:
 
       - name: Get the release version from the tag
         id: release
-        if: env.VERSION == ''
         shell: bash
         run: |
           version="${RELEASE_TAG:1}"
@@ -57,13 +55,19 @@ jobs:
       - name: Check that tag version and Cargo.toml version are the same
         shell: bash
         run: |
-          PACKAGE_VERSION="$(yq '.package.version' Cargo.toml)"
+          PACKAGE_VERSION="$(
+            cargo metadata --no-deps --format-version 1 |
+              jq -r --arg crate "$CRATE" \
+                '.packages[] | select(.name == $crate) | .version'
+          )"
+
           if [[ "$PACKAGE_VERSION" != "$VERSION" ]]; then
             echo >&2 "version does not match Cargo.toml"
             exit 1
           fi
 
       - name: Check that a changelog file with the correct name exists
+        id: changelog
         shell: bash
         run: |
           CHANGELOG_FILE="docs/changelog/$RELEASE_TAG.md"
@@ -72,70 +76,54 @@ jobs:
             exit 1
           fi
           echo "CHANGELOG_FILE=$CHANGELOG_FILE" >> "$GITHUB_ENV"
+          echo "changelog_file=$CHANGELOG_FILE" >> "$GITHUB_OUTPUT"
 
       - name: Show the changelog file
         run: |
           echo "changelog file is: $CHANGELOG_FILE"
 
-      - name: Create draft GitHub release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          draft_exists="$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft 2> /dev/null || true)"
-          if [[ "$draft_exists" == "true" ]]; then
-            echo "Draft release already exists; reusing it."
-          else
-            tail -n +2 "$CHANGELOG_FILE" > "$RUNNER_TEMP/release-notes.md"
-            gh release create "$RELEASE_TAG" --prerelease --draft --verify-tag \
-              --title "Autobib $VERSION" --notes-file "$RUNNER_TEMP/release-notes.md"
-          fi
     outputs:
       version: ${{ steps.release.outputs.version }}
+      changelog_file: ${{ steps.changelog.outputs.changelog_file }}
 
   generate-licenses:
-    needs: create-release
+    needs: verify
     uses: ./.github/workflows/cargo-about.yml
 
-  upload-binary:
+  build:
     name: Compile release binaries
-    needs: [create-release, generate-licenses]
+    needs: [verify, generate-licenses]
     runs-on: ${{ matrix.image }}
     permissions:
-      contents: write
+      contents: read
 
     strategy:
       fail-fast: false
       matrix:
         include:
-          - image: ubuntu-latest
+          - image: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
-
-          - image: ubuntu-latest
+          - image: ubuntu-24.04
             target: x86_64-unknown-linux-musl
-
           - image: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
-
           - image: ubuntu-24.04-arm
             target: aarch64-unknown-linux-musl
-
-          - image: macos-latest
+          - image: macos-26
             target: aarch64-apple-darwin
-
-          - image: macos-latest
+          - image: macos-26-intel
             target: x86_64-apple-darwin
-
-          - image: windows-latest
+          - image: windows-2025
             target: x86_64-pc-windows-gnu
-
-          - image: windows-latest
+          - image: windows-2025
             target: x86_64-pc-windows-msvc
-
           - image: windows-11-arm
             target: aarch64-pc-windows-msvc
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # make sure this contains the toolchain version!
@@ -150,84 +138,79 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y musl-tools
 
-      - name: Build release binary
-        shell: bash
-        run: |
-          cargo build --verbose --release --locked \
-            --config 'target."cfg(all())".rustflags = ["-D", "warnings"]' \
-            --target ${{ matrix.target }}
-          if [[ "${{ runner.os }}" = "Windows" ]]; then
-            bin="target/${{ matrix.target }}/release/autobib.exe"
-          else
-            bin="target/${{ matrix.target }}/release/autobib"
-          fi
-          echo "BIN=$bin" >> $GITHUB_ENV
-
-      - name: Determine archive name
-        shell: bash
-        run: |
-          version="${{ needs.create-release.outputs.version }}"
-          echo "ARCHIVE=autobib-$version-${{ matrix.target }}" >> $GITHUB_ENV
-
-      - name: Show variables
-        shell: bash
-        run: |
-          echo "archive is: $ARCHIVE"
-          echo "bin is: $BIN"
-
       - name: Download licenses file artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: cargo-about-licenses-html
 
-      - name: Create directory for archive
+      - name: Build and package
         shell: bash
-        run: |
-          mkdir -p "$ARCHIVE"
-          cp "$BIN" "$ARCHIVE"/
-          cp {README.md,COPYRIGHT,LICENSE,third-party-licenses.html} "$ARCHIVE"/
-          cp "docs/changelog/$RELEASE_TAG.md" "$ARCHIVE"/CHANGELOG.md
-
-      - name: Build archive (Windows)
-        shell: bash
-        if: runner.os == 'Windows'
-        run: |
-          7z a "$ARCHIVE.zip" "$ARCHIVE"
-          certutil -hashfile "$ARCHIVE.zip" SHA256 > "$ARCHIVE.zip.sha256"
-          echo "ASSET=$ARCHIVE.zip" >> "$GITHUB_ENV"
-          echo "ASSET_SUM=$ARCHIVE.zip.sha256" >> "$GITHUB_ENV"
-
-      - name: Build archive (Unix)
-        shell: bash
-        if: runner.os != 'Windows'
-        run: |
-          tar czf "$ARCHIVE.tar.gz" "$ARCHIVE"
-          shasum -a 256 "$ARCHIVE.tar.gz" > "$ARCHIVE.tar.gz.sha256"
-          echo "ASSET=$ARCHIVE.tar.gz" >> "$GITHUB_ENV"
-          echo "ASSET_SUM=$ARCHIVE.tar.gz.sha256" >> "$GITHUB_ENV"
-
-      - name: Upload release archive
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
+          TARGET: ${{ matrix.target }}
+          VERSION: ${{ needs.verify.outputs.version }}
         run: |
-          gh release upload "$RELEASE_TAG" "$ASSET" "$ASSET_SUM" --clobber
+          set -euxo pipefail
+
+          # build release binary
+          cargo build --verbose --release --locked \
+            --package "$CRATE" --bin "$BIN" \
+            --config 'target."cfg(all())".rustflags = ["-D", "warnings"]' \
+            --target "$TARGET"
+
+          # some naming setup
+          suffix=""
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            suffix=".exe"
+          fi
+
+          # target dirs:
+          # - archive is the directory that will be zipped for this target
+          # - dist/ is where things are copied at the end
+          archive="$BIN-$VERSION-$TARGET"
+          mkdir "$archive" dist
+
+          # check that the binary runs and copy it to the archive
+          compiled="target/$TARGET/release/$BIN$suffix"
+          "$compiled" --version
+          cp "$compiled" "$archive"/
+
+          # copy documentation files
+          cp {README.md,COPYRIGHT,LICENSE,third-party-licenses.html} "$archive"/
+          cp "docs/changelog/$RELEASE_TAG.md" "$archive"/CHANGELOG.md
+
+          # create compressed archives and hashes
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            7z a dist/"$archive.zip" "$archive"
+          else
+            tar czf dist/"$archive.tar.gz" "$archive"
+          fi
+
+      - name: Preserve build archive
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
 
   publish-crates-io:
     name: Publish release to crates.io
-    needs: [create-release, generate-licenses, upload-binary]
+    needs: [verify, generate-licenses, build]
     runs-on: ubuntu-latest
     environment: crates.io
     permissions:
       contents: read
       id-token: write
+
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
         id: auth
       - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # make sure this contains the toolchain version!
         with:
           toolchain: ${{ env.RUST_VERSION }}
+
       - name: Publish release
         run: cargo publish --locked
         env:
@@ -235,12 +218,43 @@ jobs:
 
   publish-github-release:
     name: Publish GitHub release
-    needs: [create-release, upload-binary, publish-crates-io]
+    needs: [verify, generate-licenses, build, publish-crates-io]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download release assets
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+
+      - name: Create unified checksum file
         run: |
-          gh release edit "$RELEASE_TAG" --repo "${{ github.repository }}" --draft=false --verify-tag
+          set -euxo pipefail
+
+          cd dist
+          sha256sum * > SHA256SUMS
+
+      - name: Create GitHub release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          VERSION: ${{ needs.verify.outputs.version }}
+          CHANGELOG_FILE: ${{ needs.verify.outputs.changelog_file }}
+        run: |
+          set -euxo pipefail
+
+          tail -n +2 "$CHANGELOG_FILE" > "$RUNNER_TEMP/release-notes.md"
+
+          gh release create "$RELEASE_TAG" dist/* \
+            --prerelease \
+            --verify-tag \
+            --title "Autobib $VERSION" \
+            --repo "$REPO" \
+            --notes-file "$RUNNER_TEMP/release-notes.md"
