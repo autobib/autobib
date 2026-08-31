@@ -18,6 +18,7 @@ env:
   RUST_BACKTRACE: 1
   RUST_VERSION: ${{ vars.RUST_VERSION }}
   RELEASE_TAG: ${{ github.ref_name }}
+  RELEASE_BRANCH: main
 
 jobs:
   # initialize the GitHub release as a draft
@@ -29,6 +30,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # required for verifying the tag lives on origin/$RELEASE_BRANCH
+          persist-credentials: false
 
       - name: Get the release version from the tag
         id: release
@@ -38,6 +42,13 @@ jobs:
           version="${RELEASE_TAG:1}"
           echo "VERSION=$version" >> "$GITHUB_ENV"
           echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Check that the tag is on main
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          git merge-base --is-ancestor "$RELEASE_TAG^{}" "origin/$RELEASE_BRANCH"
 
       - name: Show the version
         run: |
