@@ -37,12 +37,15 @@ else
 fi
 
 cargo test --locked --no-fail-fast "${FEATURE_ARGS[@]}" --features read_response_cache -- "$@"
+if [[ "${AUTOBIB_RUN_EXTENDED_CHECKS:-1}" != "0" ]]; then
+    # run checks which are not required for correctness of the binary
+    cargo clippy --locked "${FEATURE_ARGS[@]}"
+    cargo doc --no-deps --locked "${FEATURE_ARGS[@]}"
+    cargo fmt --check
 
-cargo doc --no-deps --locked "${FEATURE_ARGS[@]}"
-cargo clippy --locked "${FEATURE_ARGS[@]}"
-cargo fmt --check
-sort -C "${REMOTES_FILE}"
-REPETITIONS="$(uniq -d < "${REMOTES_FILE}" | wc -w)"
-test "${REPETITIONS}" -eq 0
-shellcheck scripts/*.sh --enable=all
-deno run --allow-read --allow-sys --no-config npm:markdownlint-cli2 -- '**/*.md' '!target/**/*.md'
+    sort -C "${REMOTES_FILE}"
+    REPETITIONS="$(uniq -d < "${REMOTES_FILE}" | wc -w)"
+    test "${REPETITIONS}" -eq 0
+    shellcheck scripts/*.sh --enable=all
+    deno run --allow-read --allow-sys --no-config npm:markdownlint-cli2 -- '**/*.md' '!target/**/*.md'
+fi
