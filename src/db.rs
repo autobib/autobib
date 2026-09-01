@@ -23,7 +23,6 @@ mod validate;
 use std::path::Path;
 
 use autobib_entry::{Archive, data::MutableEntryData, v1::ArchivedEntryData};
-use delegate::delegate;
 use functions::{AppFunction, register_application_function};
 use rusqlite::{Connection, OpenFlags, OptionalExtension};
 
@@ -588,16 +587,26 @@ impl Tx<'_> {
         tx.rollback()
     }
 
-    // only expose internal methods privately
-    delegate! {
-        to self.tx {
-            fn pragma_query<F>(&self, schema_name: Option<&str>, pragma_name: &str, f: F) -> rusqlite::Result<()>
-            where
-                F: FnMut(&rusqlite::Row<'_>) -> rusqlite::Result<()>;
+    #[inline]
+    fn pragma_query<F>(
+        &self,
+        schema_name: Option<&str>,
+        pragma_name: &str,
+        f: F,
+    ) -> rusqlite::Result<()>
+    where
+        F: FnMut(&rusqlite::Row<'_>) -> rusqlite::Result<()>,
+    {
+        self.tx.pragma_query::<F>(schema_name, pragma_name, f)
+    }
 
-            fn prepare(&self, sql: &str) -> rusqlite::Result<rusqlite::Statement<'_>>;
+    #[inline]
+    fn prepare(&self, sql: &str) -> rusqlite::Result<rusqlite::Statement<'_>> {
+        self.tx.prepare(sql)
+    }
 
-            fn prepare_cached(&self, sql: &str) -> rusqlite::Result<rusqlite::CachedStatement<'_>>;
-        }
+    #[inline]
+    fn prepare_cached(&self, sql: &str) -> rusqlite::Result<rusqlite::CachedStatement<'_>> {
+        self.tx.prepare_cached(sql)
     }
 }
