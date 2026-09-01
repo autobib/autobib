@@ -2,7 +2,7 @@
 
 1. Modify `Cargo.toml` version to the desired version `X.Y.Z`.
 2. Run `cargo update`.
-3. Rename `docs/changelog/next.md` to `docs/changelog/vX.Y.Z.md`.
+3. Rename `docs/changelog/next.md` to `docs/changelog/vX.Y.Z.md` and re-recreate `docs/changelog/next.md` to contain a single line `# Unreleased`.
 4. Change the header of `docs/changelog/vX.Y.Z.md` to `# Version X.Y.Z (<date +%Y-%m-%d>)`.
    For example, `# Version 0.2.0 (2024-11-26)`.
 5. Create a new branch called `create-release-vX.Y.Z`, add all, and commit changes.
@@ -22,7 +22,7 @@
 ## Automation
 
 A convenience script has been created to automate steps 1-5.
-The script can be found in [`scripts/release.sh`](../scripts/release.sh) and can be run with
+The script can be found in [`scripts/release.sh`](/scripts/release.sh) and can be run with
 ```sh
 ./scripts/release.sh {major, minor, patch, rc, beta, alpha}
 ```
