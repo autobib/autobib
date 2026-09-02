@@ -25,8 +25,7 @@ Pre-compiled binaries for recent tagged releases can be found on the [releases p
 
 If you use Homebrew, then you can also install Autobib through our tap:
 ```sh
-brew tap autobib/autobib
-brew install autobib
+brew install autobib/autobib/autobib
 ```
 
 If a binary is not available for your platform, you can install from source.
