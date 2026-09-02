@@ -9,3 +9,10 @@
     Instead, a unified `SHA256SUMS` file contains hashes for all of the files.
   - Future GitHub releases will be [immutable](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases).
     In short, this means that version tags cannot be moved and release assets cannot be changed.
+
+## Fixes
+
+- Many picker interface fixes, including:
+  - Improved Unicode handling of NFD forms
+  - Fixes for missing exact matches at the end of strings
+  - Score fixes for case-insensitive ASCII substring matching
