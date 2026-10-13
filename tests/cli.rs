@@ -2415,8 +2415,12 @@ fn json_schema() -> Result<()> {
         let mut schemas = Schemas::new();
         let mut compiler = Compiler::new();
         let sch_index = compiler.compile(schema_path, &mut schemas)?;
+        let mut cmd = s.cmd()?;
+        // test void timestamp west of UTC.
+        #[cfg(unix)]
+        cmd.env("TZ", "America/Los_Angeles");
         let instance: serde_json::Value =
-            serde_json::from_slice(&s.cmd()?.args(args).assert().success().get_output().stdout)?;
+            serde_json::from_slice(&cmd.args(args).assert().success().get_output().stdout)?;
         assert!(schemas.validate(&instance, sch_index).is_ok());
 
         Ok(())
@@ -2482,6 +2486,11 @@ fn json_schema() -> Result<()> {
         &s,
         ["info", "--json", "mr:3224722"],
         "docs/schema/info.schema.json",
+    )?;
+    assert_schema(
+        &s,
+        ["info", "--json", "--report", "modified", "mr:3224722"],
+        "docs/schema/record_void.schema.json#/properties/modified",
     )?;
 
     s.close()
