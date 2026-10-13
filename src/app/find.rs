@@ -1,41 +1,19 @@
 use std::io::Write;
 
 use anyhow::Result;
-use nucleo_picker::Selection;
+use nucleo_picker::{Interface, Picker, Render};
 
 use crate::{db::state::Record, logger::error, output::stdout_lock_wrap};
 
-pub trait FindSelection<'a> {
-    fn is_empty(&self) -> bool;
-    fn iter(&'a self) -> impl Iterator<Item = &'a Record>;
-}
-
-impl<'a> FindSelection<'a> for Option<&'a Record> {
-    fn is_empty(&self) -> bool {
-        self.is_none()
-    }
-
-    fn iter(&'a self) -> impl Iterator<Item = &'a Record> {
-        (*self).into_iter()
-    }
-}
-
-impl<'a> FindSelection<'a> for Selection<'a, Record> {
-    fn is_empty(&self) -> bool {
-        Selection::is_empty(self)
-    }
-
-    fn iter(&'a self) -> impl Iterator<Item = &'a Record> {
-        Selection::iter(self)
-    }
-}
-
-pub fn output_find_selection<'a>(selection: &'a impl FindSelection<'a>) -> Result<()> {
-    if selection.is_empty() {
+pub fn pick_and_output(
+    picker: &mut Picker<Record, impl Render<Record>, impl Interface<Record>>,
+) -> Result<()> {
+    let selection = picker.pick()?.into_iter();
+    if selection.len() == 0 {
         error!("No item selected.");
     } else {
         let mut stdout = stdout_lock_wrap();
-        for row_data in selection.iter() {
+        for row_data in selection {
             writeln!(&mut stdout, "{}", row_data.canonical)?;
         }
     }

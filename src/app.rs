@@ -69,7 +69,7 @@ use self::{
     cli::{AliasCommand, FindMode, InfoReportType, OnConflict, UtilCommand},
     delete::{hard_delete, soft_delete},
     edit::{create_alias_if_valid, insert, merge_record_data},
-    find::output_find_selection,
+    find::pick_and_output,
     import::ImportConfig,
     picker::{choose_attachment, choose_attachment_path, choose_canonical_id},
     retrieve::{retrieve_entries, retrieve_entries_read_only},
@@ -539,11 +539,9 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                 FindMode::Records => {
                     let (mut picker, _) = choose_canonical_id(record_db, template, strict, limit);
                     if one {
-                        let selection = picker.pick()?;
-                        output_find_selection(&selection)?;
+                        pick_and_output(&mut picker)?;
                     } else {
-                        let selection = picker.pick_multi()?;
-                        output_find_selection(&selection)?;
+                        pick_and_output(&mut picker.multi())?;
                     }
                 }
             }
