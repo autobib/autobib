@@ -1,15 +1,27 @@
 use std::{
+    convert::Infallible,
     num::NonZero,
     path::{Path, PathBuf},
     thread,
+    time::Duration,
 };
 
 use nonempty::NonEmpty;
-use nucleo_picker::{Picker, PickerOptions, Render};
+use nucleo_picker::{
+    Picker, PickerOptions, Render,
+    preview::{
+        Preview, PreviewBuffer, PreviewPicker,
+        request::{PreviewRequest, PreviewResponse},
+    },
+};
 use walkdir::{DirEntry, WalkDir};
 
 use crate::{
-    db::{RecordDatabase, select::Select, state::Record},
+    db::{
+        AsKey, RecordDatabase,
+        select::Select,
+        state::{Record, render_bibtex},
+    },
     format::Template,
     path_hash::AttachmentRoot,
 };
@@ -50,9 +62,12 @@ pub fn choose_attachment_path<F: FnMut(&Path) -> bool + Send + 'static>(
     attachment_root: AttachmentRoot<false>,
     ignore_hidden: bool,
     mut filter: F,
-) -> Picker<AttachmentData, Template> {
+) -> PreviewPicker<AttachmentData, Template, RecordPreviewer> {
     // initialize picker
-    let picker = Picker::new(template);
+    let picker = PickerOptions::new()
+        .preview_size(0.4)
+        .picker(template)
+        .with_preview(RecordPreviewer);
 
     // populate the picker from a separate thread
     let injector = picker.injector();
@@ -110,12 +125,14 @@ pub fn choose_canonical_id(
     strict: bool,
     max_selection_count: Option<NonZero<u32>>,
 ) -> (
-    Picker<Record, Template>,
+    PreviewPicker<Record, Template, RecordPreviewer>,
     thread::JoinHandle<Result<RecordDatabase, rusqlite::Error>>,
 ) {
     let picker = PickerOptions::new()
         .max_selection_count(max_selection_count)
-        .picker(template);
+        .preview_size(0.4)
+        .picker(template)
+        .with_preview(RecordPreviewer);
 
     // populate the picker from a separate thread
     let injector = picker.injector();
@@ -137,12 +154,60 @@ pub fn choose_canonical_id(
     (picker, handle)
 }
 
+pub struct RecordPreviewer;
+
+impl RecordPreviewer {
+    fn render(&self, record: &Record, buffer: &mut PreviewBuffer) {
+        buffer.set_line_numbers(false);
+        render_bibtex(
+            &record.data,
+            record.canonical.as_key(),
+            "",
+            |text, style| {
+                buffer.push_styled_text(text, style);
+                Ok(())
+            },
+        )
+        .expect("Writing to a preview buffer cannot fail");
+    }
+}
+
+impl Preview<Record> for RecordPreviewer {
+    type AbortErr = Infallible;
+
+    fn preview(
+        &mut self,
+        request: PreviewRequest<'_, Record>,
+        _timeout: Duration,
+    ) -> Result<PreviewResponse, Self::AbortErr> {
+        let record = request.item();
+        let mut buffer = request.ready();
+        self.render(record, &mut buffer);
+        Ok(PreviewResponse::Ready(buffer))
+    }
+}
+
 /// A wrapper around a [`Record`] which also contains a list of attachments associated with the
 /// record.
 pub struct AttachmentData {
     pub row_data: Record,
     pub attachments: NonEmpty<DirEntry>,
     pub attachment_root: PathBuf,
+}
+
+impl Preview<AttachmentData> for RecordPreviewer {
+    type AbortErr = Infallible;
+
+    fn preview(
+        &mut self,
+        request: PreviewRequest<'_, AttachmentData>,
+        _timeout: Duration,
+    ) -> Result<PreviewResponse, Self::AbortErr> {
+        let record = &request.item().row_data;
+        let mut buffer = request.ready();
+        self.render(record, &mut buffer);
+        Ok(PreviewResponse::Ready(buffer))
+    }
 }
 
 impl Render<AttachmentData> for Template {
