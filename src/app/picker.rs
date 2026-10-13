@@ -5,11 +5,18 @@ use std::{
 };
 
 use nonempty::NonEmpty;
-use nucleo_picker::{Picker, PickerOptions, Render};
+use nucleo_picker::{
+    Picker, PickerOptions, Render, Single,
+    preview::{Preview, PreviewBuffer, SyncPreviewer, WithPreview},
+};
 use walkdir::{DirEntry, WalkDir};
 
 use crate::{
-    db::{RecordDatabase, select::Select, state::Record},
+    db::{
+        AsKey, RecordDatabase,
+        select::Select,
+        state::{Record, render_bibtex},
+    },
     format::Template,
     path_hash::AttachmentRoot,
 };
@@ -30,14 +37,14 @@ impl Render<DirEntry> for DirEntryRenderer {
 }
 
 pub fn choose_attachment(att_data: &AttachmentData) -> Picker<DirEntry, DirEntryRenderer> {
-    let mut picker = PickerOptions::new()
+    let picker = PickerOptions::new()
         .match_paths()
         // Use our custom renderer for a `DirEntry`
         .picker(DirEntryRenderer {
             root: att_data.attachment_root.clone(),
         });
 
-    picker.extend(att_data.attachments.iter().cloned());
+    picker.push_batch(att_data.attachments.iter().cloned());
 
     picker
 }
@@ -50,9 +57,16 @@ pub fn choose_attachment_path<F: FnMut(&Path) -> bool + Send + 'static>(
     attachment_root: AttachmentRoot<false>,
     ignore_hidden: bool,
     mut filter: F,
-) -> Picker<AttachmentData, Template> {
+) -> Picker<AttachmentData, Template, WithPreview<Single, impl Preview<AttachmentData>>> {
     // initialize picker
-    let picker = Picker::new(template);
+    let picker = PickerOptions::new()
+        .preview_size(0.4)
+        .picker(template)
+        .with_preview(SyncPreviewer(
+            |item: &AttachmentData, buffer: &mut PreviewBuffer| {
+                preview_record(&item.row_data, buffer);
+            },
+        ));
 
     // populate the picker from a separate thread
     let injector = picker.injector();
@@ -110,12 +124,14 @@ pub fn choose_canonical_id(
     strict: bool,
     max_selection_count: Option<NonZero<u32>>,
 ) -> (
-    Picker<Record, Template>,
+    Picker<Record, Template, WithPreview<Single, impl Preview<Record>>>,
     thread::JoinHandle<Result<RecordDatabase, rusqlite::Error>>,
 ) {
     let picker = PickerOptions::new()
         .max_selection_count(max_selection_count)
-        .picker(template);
+        .preview_size(0.4)
+        .picker(template)
+        .with_preview(SyncPreviewer(preview_record));
 
     // populate the picker from a separate thread
     let injector = picker.injector();
@@ -135,6 +151,20 @@ pub fn choose_canonical_id(
     });
 
     (picker, handle)
+}
+
+fn preview_record(record: &Record, buffer: &mut PreviewBuffer) {
+    buffer.set_line_numbers(false);
+    render_bibtex(
+        &record.data,
+        record.canonical.as_key(),
+        "",
+        |text, style| {
+            buffer.push_styled_text(text, style);
+            Ok(())
+        },
+    )
+    .expect("Writing to a preview buffer cannot fail");
 }
 
 /// A wrapper around a [`Record`] which also contains a list of attachments associated with the
