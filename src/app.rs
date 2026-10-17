@@ -1032,7 +1032,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     InfoReportType::Modified => {
                         let modified = record.modified;
                         if json {
-                            serde_json::to_writer(&mut writer, &modified)?;
+                            serde_json::to_writer(&mut writer, &modified.to_utc())?;
                         } else {
                             writeln!(writer, "{modified}")?;
                         }
