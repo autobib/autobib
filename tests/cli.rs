@@ -240,6 +240,107 @@ fn suggest_alternatives() -> Result<()> {
     Ok(())
 }
 
+#[test]
+fn find_records() -> Result<()> {
+    let s = TestState::init()?;
+
+    s.cmd()?.arg("find").assert().failure().stdout("");
+    s.cmd()?
+        .args(["find", "--mode", "attachments"])
+        .assert()
+        .failure()
+        .stdout("")
+        .stderr(contains("cannot run in non-interactive mode"));
+
+    for (id, title) in [
+        ("first", "Questions about momentum"),
+        ("second", "Quantum"),
+        ("third", "Topology"),
+        ("deleted", "Quantum"),
+    ] {
+        s.cmd()?
+            .args(["local", id, "--with-entry-type", "book", "--with-field"])
+            .arg(format!("title = {{{title}}}"))
+            .assert()
+            .success();
+    }
+    s.cmd()?
+        .args(["edit", "local:first", "--set-field", "author = {Ada}"])
+        .assert()
+        .success();
+    s.cmd()?
+        .args(["delete", "local:deleted"])
+        .assert()
+        .success();
+
+    let output = s
+        .cmd()?
+        .arg("find")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let output = String::from_utf8(output)?;
+    let mut records: Vec<_> = output.lines().collect();
+    records.sort_unstable();
+    assert_eq!(records, ["local:first", "local:second", "local:third"]);
+
+    for (args, expected) in [
+        (vec![], "local:second\nlocal:first\n"),
+        (vec!["--one"], "local:second\n"),
+        (vec!["--limit", "1"], "local:second\n"),
+        (vec!["--limit", "10"], "local:second\nlocal:first\n"),
+        (vec!["--strict"], "local:first\n"),
+    ] {
+        s.cmd()?
+            .args(["find", "--query", "qntm"])
+            .args(args)
+            .assert()
+            .success()
+            .stdout(expected)
+            .stderr("");
+    }
+
+    Command::new(assert_cmd::cargo_bin!())
+        .arg("--database")
+        .arg(s.database.as_ref())
+        .arg("--config")
+        .arg(s.config.as_ref())
+        .args(["find", "--query", "qntm", "--one"])
+        .assert()
+        .success()
+        .stdout("local:second\n");
+
+    s.cmd()?
+        .args(["find", "--query", "nonexistent"])
+        .assert()
+        .failure()
+        .stdout("");
+    s.cmd()?.args(["find", "--limit", "0"]).assert().failure();
+    s.cmd()?
+        .args(["find", "--limit", "1", "--one"])
+        .assert()
+        .failure();
+
+    fs::write(
+        s.config.as_ref(),
+        "[find]\ndefault_template = '{%full_id}'\n",
+    )?;
+    s.cmd()?
+        .args(["find", "--query", "^local:first$"])
+        .assert()
+        .success()
+        .stdout("local:first\n");
+    s.cmd()?
+        .args(["find", "--template", "{title}", "--query", "^Quantum$"])
+        .assert()
+        .success()
+        .stdout("local:second\n");
+
+    s.close()
+}
+
 /// Check that `autobib get` returns what is expected.
 #[test]
 fn get() -> Result<()> {
