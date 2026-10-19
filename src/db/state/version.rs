@@ -157,8 +157,7 @@ impl<'tx, 'conn> Version<'tx, 'conn> {
         Ok(self)
     }
 
-    /// DOC-TODO[Document that this returns the durable revision identifier, not the private
-    /// transaction-valid identifier.]
+    /// Returns the revision identifier.
     pub fn rev_id(&self) -> RevId {
         self.row_id.rev_id()
     }

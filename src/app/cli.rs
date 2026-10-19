@@ -242,6 +242,13 @@ pub enum Command {
     /// Open an interactive picker to search all records. The lines in the
     /// picker are rendered using the template provided by the `--template` option, falling
     /// back to the config value or a default template.
+    ///
+    /// Search also works in non-interactive mode, in which case the value of `--query` is used for
+    /// the query string. Non-interactive mode respects the value of `--limit N` (in which case only
+    /// `N` best items will be returned) and `--one` (in which case only the best item will be
+    /// returned).
+    ///
+    /// Note that non-interactive mode is currently not supported for searching attachments.
     Find {
         /// Set the format template.
         #[arg(short, long)]
@@ -249,10 +256,13 @@ pub enum Command {
         /// Only include records which contain all of the fields in the template.
         #[arg(short, long)]
         strict: bool,
+        /// Set the initial query string.
+        #[arg(long, default_value_t)]
+        query: String,
         /// The type of search to perform.
         #[arg(short, long, value_enum, default_value_t)]
         mode: FindMode,
-        /// Limit the number of selections
+        /// Limit the number of selections.
         #[arg(long, conflicts_with = "one", value_name = "N")]
         limit: Option<NonZero<u32>>,
         /// Force exactly one selection.
