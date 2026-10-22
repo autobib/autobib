@@ -98,7 +98,9 @@ impl<D: AsRecordData, T: AsRef<str>> Serialize for Record<D, T> {
         let mut state = serializer.serialize_struct("Record", field_count)?;
         self.data.serialize_in(&mut state)?;
         state.serialize_field("canonical", self.canonical.as_key())?;
-        state.serialize_field("modified", &self.modified)?;
+        // void records use MIN_UTC and this can result in underflow in a timezone west of UTC
+        // in the JSON schema checker
+        state.serialize_field("modified", &self.modified.to_utc())?;
         state.end()
     }
 }

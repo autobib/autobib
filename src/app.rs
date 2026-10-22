@@ -23,7 +23,7 @@ use std::{
     str::FromStr,
 };
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use autobib_entry::{
     Archive,
     data::{EntryEditCommand, MutableEntryData, Normalization, Normalize},
@@ -69,7 +69,7 @@ use self::{
     cli::{AliasCommand, FindMode, InfoReportType, OnConflict, UtilCommand},
     delete::{hard_delete, soft_delete},
     edit::{create_alias_if_valid, insert, merge_record_data},
-    find::output_find_selection,
+    find::{output_records, pick_and_output},
     import::ImportConfig,
     picker::{choose_attachment, choose_attachment_path, choose_canonical_id},
     retrieve::{retrieve_entries, retrieve_entries_read_only},
@@ -478,14 +478,15 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
             }
         }
         Command::Find {
+            query,
             template: format,
             strict,
             mode: find_mode,
             limit,
             one,
         } => {
-            if cli.no_interactive {
-                bail!("`autobib find` cannot run in non-interactive mode");
+            if cli.no_interactive && matches!(find_mode, FindMode::Attachments) {
+                bail!("`autobib find --mode attachments` cannot run in non-interactive mode");
             }
 
             let cfg = config::load(&config_path, missing_ok)?;
@@ -513,6 +514,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                         cfg.find.ignore_hidden,
                         Path::is_file,
                     );
+                    picker.update_query(query);
                     match picker.pick()? {
                         Some(data) => {
                             if data.attachments.len() > 1 {
@@ -537,13 +539,26 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     }
                 }
                 FindMode::Records => {
-                    let (mut picker, _) = choose_canonical_id(record_db, template, strict, limit);
-                    if one {
-                        let selection = picker.pick()?;
-                        output_find_selection(&selection)?;
+                    let (mut picker, handle) =
+                        choose_canonical_id(record_db, template, strict, limit);
+                    picker.update_query(query);
+                    if cli.no_interactive {
+                        handle
+                            .join()
+                            .map_err(|_| anyhow!("Picker thread panicked!"))??;
+                        let matches = picker.filter().expect(
+                            "Picker thread has dropped all injectors so filtering succeeds",
+                        );
+                        let cap = if one {
+                            1
+                        } else {
+                            limit.map_or(usize::MAX, |n| n.get() as usize)
+                        };
+                        output_records(matches.iter().take(cap))?;
+                    } else if one {
+                        pick_and_output(&mut picker)?;
                     } else {
-                        let selection = picker.pick_multi()?;
-                        output_find_selection(&selection)?;
+                        pick_and_output(&mut picker.multi())?;
                     }
                 }
             }
@@ -1032,7 +1047,7 @@ pub fn run_cli<C: Client>(cli: Cli, client: &C) -> Result<()> {
                     InfoReportType::Modified => {
                         let modified = record.modified;
                         if json {
-                            serde_json::to_writer(&mut writer, &modified)?;
+                            serde_json::to_writer(&mut writer, &modified.to_utc())?;
                         } else {
                             writeln!(writer, "{modified}")?;
                         }
