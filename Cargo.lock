@@ -1025,6 +1025,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d15f86d12da44cd8d4ec3c73984537eb7f4cadcb9776a575a0a8a05ca11005c"
 
 [[package]]
+name = "lru"
+version = "0.18.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ef9ac18847474e638e3702b76c65d4eb93428471a74778ef0f1be711717f89b5"
+dependencies = [
+ "hashbrown",
+]
+
+[[package]]
 name = "memchr"
 version = "2.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1063,9 +1072,9 @@ dependencies = [
 
 [[package]]
 name = "ncp-engine"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2550888c72a8a6f7a800e51b82d9f31231419f1b1e0734b4051c7ed0fcf2b29a"
+checksum = "3953e84e813d245b6c455f57ebc5c72651f62ae856cb6c0833bc9b759667adc4"
 dependencies = [
  "ncp-matcher",
  "parking_lot",
@@ -1074,9 +1083,9 @@ dependencies = [
 
 [[package]]
 name = "ncp-matcher"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a2e6aa4bc41a66ec0cfe0b1665e62f1834b3d1e9079a8fc2c1284e4892daf9c1"
+checksum = "9b39dc931418399dde0e0a50307dd4882e84252b13fe6ff4f0eaf289c342cac7"
 dependencies = [
  "memchr",
  "unicode-normalization",
@@ -1097,11 +1106,12 @@ checksum = "61807f77802ff30975e01f4f071c8ba10c022052f98b3294119f3e615d13e5be"
 
 [[package]]
 name = "nucleo-picker"
-version = "0.12.2"
+version = "0.13.0-beta.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b6287f5340a5d08d7153120d8975ba7cbd4f28ccb7f5f1fbf44fb999db1f62a"
+checksum = "041dffeb6176039a28497ba2737f2ea538d00cce2d20e072a71b9ea6a614e96d"
 dependencies = [
  "crossterm",
+ "lru",
  "memchr",
  "ncp-engine",
  "parking_lot",

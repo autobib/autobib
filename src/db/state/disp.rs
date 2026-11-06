@@ -8,7 +8,34 @@ use autobib_entry::data::EntryData;
 use crossterm::style::{ContentStyle, StyledContent, Stylize};
 
 use super::{ArbitraryDataRef, InRecordsTable, Record, State, Version, WithRev};
-use crate::logger::LogDisplay;
+use crate::{db::AsKey, logger::LogDisplay};
+
+pub(crate) fn render_bibtex(
+    data: &impl EntryData,
+    canonical: &str,
+    prefix: &str,
+    mut write: impl FnMut(&str, ContentStyle) -> fmt::Result,
+) -> fmt::Result {
+    let plain = ContentStyle::default();
+    write(prefix, plain)?;
+    write("@", plain.cyan())?;
+    write(data.entry_type().inner(), plain.green())?;
+    write("{", plain.cyan())?;
+    write(canonical, plain)?;
+    write(",\n", plain)?;
+    for (key, value) in data.fields() {
+        write(prefix, plain)?;
+        write("  ", plain)?;
+        write(key.inner(), plain.blue())?;
+        write(" = ", plain)?;
+        write("{", plain.cyan())?;
+        write(value.inner(), plain)?;
+        write("}", plain.cyan())?;
+        write(",\n", plain)?;
+    }
+    write(prefix, plain)?;
+    write("}", plain.cyan())
+}
 
 impl<'conn, I: InRecordsTable> LogDisplay for State<'conn, I> {
     fn log_display(&self, styled: bool, mut buf: impl std::io::Write) -> anyhow::Result<()> {
@@ -76,29 +103,13 @@ impl<'a> fmt::Display for RecordRowDisplay<'a> {
         match &self.tagged.inner.data {
             ArbitraryDataRef::Entry(raw_entry_data) => {
                 writeln!(buf, "{hex} {datestamp}\n")?;
-                if self.styled {
-                    writeln!(
-                        buf,
-                        "{PREFIX}@{}{{{canonical},",
-                        raw_entry_data.entry_type().inner().green(),
-                    )?;
-                } else {
-                    writeln!(
-                        buf,
-                        "{PREFIX}@{}{{{canonical},",
-                        raw_entry_data.entry_type(),
-                    )?;
-                }
-                for (key, val) in raw_entry_data.fields() {
+                render_bibtex(raw_entry_data, canonical.as_key(), PREFIX, |text, style| {
                     if self.styled {
-                        writeln!(buf, "{PREFIX}  {} = {{{val}}},", key.inner().blue())?;
+                        write!(buf, "{}", style.apply(text))
                     } else {
-                        writeln!(buf, "{PREFIX}  {key} = {{{val}}},",)?;
+                        buf.write_str(text)
                     }
-                }
-                write!(buf, "{PREFIX}}}")?;
-
-                Ok(())
+                })
             }
             ArbitraryDataRef::Deleted(replacement) => {
                 writeln!(buf, "{hex} {datestamp}\n")?;
