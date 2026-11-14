@@ -132,8 +132,8 @@ impl<E> From<rusqlite::Error> for SelectErr<E> {
     }
 }
 
-impl From<SelectErr<std::convert::Infallible>> for rusqlite::Error {
-    fn from(err: SelectErr<std::convert::Infallible>) -> Self {
+impl From<SelectErr<!>> for rusqlite::Error {
+    fn from(err: SelectErr<!>) -> Self {
         let SelectErr::DatabaseError(inner) = err;
         inner
     }

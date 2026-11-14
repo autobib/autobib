@@ -1,9 +1,6 @@
-use std::{
-    collections::{
-        BTreeMap,
-        btree_map::Entry::{Occupied, Vacant},
-    },
-    convert::Infallible,
+use std::collections::{
+    BTreeMap,
+    btree_map::Entry::{Occupied, Vacant},
 };
 
 use nonempty::NonEmpty;
@@ -52,7 +49,7 @@ pub fn sync_entries<T: IntoIterator<Item = Key>, C: Client>(
 ) {
     for id in ids {
         retrieve_single_entry(record_db, id, client, ignore_null, config, |_, _| {
-            Ok(Option::<Infallible>::None)
+            Ok(Option::<!>::None)
         })
         .unwrap_or_else(|error| {
             reraise(&error);
@@ -90,7 +87,7 @@ pub fn sync_entries_read_only<T: IntoIterator<Item = Key>>(
 ) {
     for id in ids {
         retrieve_single_entry_read_only(record_db, id, ignore_null, config, |_, _| {
-            Ok(Option::<Infallible>::None)
+            Ok(Option::<!>::None)
         })
         .unwrap_or_else(|error| {
             reraise(&error);

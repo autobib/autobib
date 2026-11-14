@@ -1,6 +1,6 @@
 mod parse;
 
-use std::{convert::Infallible, fmt, io, str::FromStr};
+use std::{fmt, io, str::FromStr};
 
 use autobib_entry::{data::EntryData, ident::FieldKey, v1::ArchivedEntryData};
 use chrono::{DateTime, Local};
@@ -270,7 +270,7 @@ impl<T: TemplateData> fmt::Display for DataAst<'_, '_, T> {
 pub struct ManifestSmall<'r, T>(&'r T);
 
 impl<'r, T: TemplateData> Manifest<Expression> for ManifestSmall<'r, T> {
-    type Error = Infallible;
+    type Error = !;
 
     fn manifest(&self, ast: &Expression) -> Result<impl fmt::Display, Self::Error> {
         Ok(DataAst { row: self.0, ast })

@@ -1,5 +1,4 @@
 use std::{
-    convert::Infallible,
     io::IsTerminal,
     io::{self, BufRead},
 };
@@ -30,7 +29,7 @@ pub trait TryFromDbState: Sized {
     ) -> Result<Option<Self>, DatabaseError>;
 }
 
-impl TryFromDbState for Infallible {
+impl TryFromDbState for ! {
     fn filter_map(_: KeyedRecord, _: &State<'_, IsEntry>) -> Result<Option<Self>, DatabaseError> {
         Ok(None)
     }
@@ -71,9 +70,9 @@ pub trait Get: Output<Self::Data> {
 
 pub struct NoOutput;
 
-impl Output<Infallible> for NoOutput {
-    fn write_item(&mut self, data: &Infallible) -> Result<(), io::Error> {
-        match *data {}
+impl Output<!> for NoOutput {
+    fn write_item(&mut self, data: &!) -> Result<(), io::Error> {
+        *data
     }
 
     fn finish(self) -> Result<(), io::Error> {
@@ -82,7 +81,7 @@ impl Output<Infallible> for NoOutput {
 }
 
 impl Get for NoOutput {
-    type Data = Infallible;
+    type Data = !;
 }
 
 pub struct BibtexOutput<'r, W: ?Sized> {
