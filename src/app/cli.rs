@@ -445,7 +445,6 @@ pub enum Command {
             default_value_if("no_interactive", ArgPredicate::IsPresent, "prefer-current"),
             default_value_t
         )]
-        #[arg(long)]
         on_conflict: OnConflict,
         /// Update aliases to point to the new record.
         #[arg(long)]
