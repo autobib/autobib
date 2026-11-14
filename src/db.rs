@@ -20,7 +20,7 @@ pub mod state;
 pub mod tree;
 mod validate;
 
-use std::path::Path;
+use std::{mem::DropGuard, path::Path};
 
 use autobib_entry::{Archive, data::MutableEntryData, v1::ArchivedEntryData};
 use functions::{AppFunction, register_application_function};
@@ -533,18 +533,7 @@ impl Drop for RecordDatabase {
 /// fewer public methods.
 #[derive(Debug)]
 pub struct Tx<'conn> {
-    tx: rusqlite::Transaction<'conn>,
-    _drop_log: TxDropLog,
-}
-
-#[derive(Debug)]
-struct TxDropLog;
-
-/// A drop guard which writes a debug message on implicit rollback.
-impl Drop for TxDropLog {
-    fn drop(&mut self) {
-        debug!("Implicitly rolling back transaction");
-    }
+    tx: DropGuard<rusqlite::Transaction<'conn>, fn(rusqlite::Transaction<'conn>)>,
 }
 
 impl core::ops::Deref for Tx<'_> {
@@ -558,8 +547,10 @@ impl core::ops::Deref for Tx<'_> {
 impl<'conn> From<rusqlite::Transaction<'conn>> for Tx<'conn> {
     fn from(tx: rusqlite::Transaction<'conn>) -> Self {
         Self {
-            tx,
-            _drop_log: TxDropLog,
+            tx: DropGuard::new(tx, |tx| {
+                drop(tx);
+                debug!("Implicitly rolling back transaction");
+            }),
         }
     }
 }
@@ -571,18 +562,14 @@ impl Tx<'_> {
 
     /// Commit the transaction.
     pub fn commit(self) -> rusqlite::Result<()> {
-        let Self { tx, _drop_log } = self;
-        // suppress drop guard rollback message.
-        std::mem::forget(_drop_log);
+        let tx = DropGuard::dismiss(self.tx);
         debug!("Committing transaction");
         tx.commit()
     }
 
     /// Roll back the transaction.
     pub fn rollback(self) -> rusqlite::Result<()> {
-        let Self { tx, _drop_log } = self;
-        // suppress drop guard rollback message.
-        std::mem::forget(_drop_log);
+        let tx = DropGuard::dismiss(self.tx);
         debug!("Rolling back transaction");
         tx.rollback()
     }
